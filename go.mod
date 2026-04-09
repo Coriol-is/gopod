@@ -9,6 +9,7 @@ require (
 )
 
 require (
+	github.com/go-telegram/bot v1.20.0 // indirect
 	github.com/ncruces/julianday v1.0.0 // indirect
 	github.com/tetratelabs/wazero v1.11.0 // indirect
 	golang.org/x/sys v0.41.0 // indirect

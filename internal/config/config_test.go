@@ -11,6 +11,7 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("PICOCLAW_LOG_LEVEL", "")
 	t.Setenv("PICOCLAW_LOG_FORMAT", "")
 	t.Setenv("PICOCLAW_OWNER_CHAT_ID", "")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "")
 
 	cfg, err := Load(false)
 	if err != nil {
@@ -30,6 +31,20 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.OwnerChatID != 0 {
 		t.Errorf("OwnerChatID = %d, want 0 (unset)", cfg.OwnerChatID)
+	}
+	if cfg.TelegramBotToken != "" {
+		t.Errorf("TelegramBotToken = %q, want empty", cfg.TelegramBotToken)
+	}
+}
+
+func TestLoadTelegramBotToken(t *testing.T) {
+	t.Setenv("TELEGRAM_BOT_TOKEN", "1234:abc")
+	cfg, err := Load(false)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.TelegramBotToken != "1234:abc" {
+		t.Errorf("TelegramBotToken = %q, want 1234:abc", cfg.TelegramBotToken)
 	}
 }
 

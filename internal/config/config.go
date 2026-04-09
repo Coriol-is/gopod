@@ -45,6 +45,16 @@ type Config struct {
 	// (the runner has nothing to gate yet); enforced from M2 onward.
 	// Zero means "unset".
 	OwnerChatID int64
+
+	// TelegramBotToken is the Bot API token from @BotFather.
+	//
+	// Optional at config level: if empty, the telegram subsystem refuses
+	// to start (with a warning log) and the rest of picoclaw still runs.
+	// This keeps the M0-style "binary that just opens the store" mode
+	// available for diagnostics and tests.
+	//
+	// Required from M1 onward for any actual messaging work.
+	TelegramBotToken string
 }
 
 // Load reads environment, applies defaults, validates, and returns a
@@ -60,9 +70,10 @@ func Load(loadDotenv bool) (Config, error) {
 	}
 
 	cfg := Config{
-		DataDir:   getenvDefault("PICOCLAW_DATA_DIR", "./data"),
-		LogLevel:  parseLevel(getenvDefault("PICOCLAW_LOG_LEVEL", "info")),
-		LogFormat: strings.ToLower(getenvDefault("PICOCLAW_LOG_FORMAT", "text")),
+		DataDir:          getenvDefault("PICOCLAW_DATA_DIR", "./data"),
+		LogLevel:         parseLevel(getenvDefault("PICOCLAW_LOG_LEVEL", "info")),
+		LogFormat:        strings.ToLower(getenvDefault("PICOCLAW_LOG_FORMAT", "text")),
+		TelegramBotToken: os.Getenv("TELEGRAM_BOT_TOKEN"),
 	}
 
 	abs, err := filepath.Abs(cfg.DataDir)
