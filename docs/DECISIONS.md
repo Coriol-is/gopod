@@ -568,6 +568,134 @@ both `vec_version()` and a real KNN query against `memory_vec`).
 
 ---
 
+## D018 — Telegram-mediated web-auth onboarding; drop M2 from critical path
+
+**Date:** 2026-04-09
+**Status:** Accepted
+**Refines:** [D002](#d002--go-no-typescript-in-repo), [D003](#d003--container-per-chat-long-lived-exec-per-turn), [D008](#d008--no-onecli-secrets-via-env-vars)
+
+**Context.** picoclaw needs Anthropic credentials. There are two surfaces:
+
+1. **API key** (`ANTHROPIC_API_KEY`) — issued via console.anthropic.com,
+   pay-per-token. Used by [Path A](ARCHITECTURE.md) (`anthropic-sdk-go` direct
+   API calls), originally slotted as M2 in the roadmap.
+2. **Pro/Max session** (`claude /login`) — OAuth/session via claude.ai, billed
+   against the operator's Anthropic subscription. Used by Claude Code CLI,
+   which is what [Path B](ARCHITECTURE.md) (M5+M6) talks to via `docker exec`.
+
+The original roadmap (M2 → M3 → M3.5 → M3.6 → M4 → M5 → M6) put the API-key
+path first. Two problems showed up while planning M2:
+
+- **API key is a meaningful adoption tax.** Pro/Max subscribers should not
+  have to provision a separate billing surface to use picoclaw.
+- **Anthropic does not publish an OAuth client API for third parties.**
+  picoclaw cannot legitimately implement the Pro/Max login flow itself —
+  the endpoints are an implementation detail of Claude Code, the contract
+  is unstable, and reverse-engineering is fragile and ToS-grey. Whatever
+  picoclaw does about web-auth has to **proxy Claude Code's own login
+  flow**, not replicate it.
+
+There is, however, a clean primitive available: `claude /login` running
+**inside the agent container**, with credentials persisted into the
+already-mounted `data/sessions/<chat>/.claude/` directory ([ISOLATION.md §3](ISOLATION.md)).
+A `/login` slash command in Telegram can spawn that flow inside the
+container, intercept the verification URL Claude prints to stdout, forward
+it to the user via the bot, wait for `claude` to report success on stdout,
+and never touch a credential value itself. The trust boundary stays at the
+container; picoclaw stays a thin orchestrator.
+
+**Decision.** Three coupled changes:
+
+1. **Drop M2 (Direct API agent) from the critical path.** It is downgraded
+   to **optional**: if `ANTHROPIC_API_KEY` is set in the environment, the
+   direct-API path is available as an opt-in mode for cheap-chat use cases.
+   If unset (the new default), picoclaw simply doesn't expose Path A and
+   nothing fails. M2 status changes from ⬜ to ⏸️ in the roadmap.
+
+2. **Promote M5 + M6 to the critical path** as the first agent
+   implementation. The new build order is:
+
+   `M0 ✅ → M1 ✅ → M5 → M6 → M6.5 → M3 → M3.5 → M3.6 → M4 → M7 → M8 → M9`
+
+   The numerical ID order in [ROADMAP.md](../ROADMAP.md) stays the same
+   (IDs are stable identifiers cited from many places); the **build order**
+   is documented as a separate callout at the top of the file.
+
+3. **Add M6.5: Telegram-mediated `/login`.** A new milestone that wires the
+   `/login` slash command to a small interactive proxy:
+
+   - User sends `/login` in their picoclaw chat.
+   - Bot ensures the agent container for that chat is running (boots one
+     per M5 if needed).
+   - Bot runs `docker exec -i <name> claude /login` and reads the CLI's
+     stdout line by line.
+   - When `claude` prints the verification URL, the bot forwards it to the
+     user as a Telegram message.
+   - When `claude` prints the success line, the bot forwards "logged in
+     as <email>" (or whatever Claude prints) and exits the proxy.
+   - Credentials live in `/home/node/.claude/` inside the container, which
+     is bind-mounted from `data/sessions/<chat>/.claude/` on the host
+     ([ISOLATION.md §3](ISOLATION.md)). picoclaw never reads, parses, or
+     transmits the credential bytes.
+
+   M6.5 has no host-side OAuth code, no callback listener, no public URL
+   requirement, and depends only on `claude /login` printing a stable
+   URL+success contract on stdout. If that contract changes upstream, M6.5
+   needs a small parser bump but no architectural rework.
+
+**Consequences.**
+
+- **Faster time to first real agent reply.** Pro/Max users get a working
+  picoclaw the moment M6.5 lands; no API-key provisioning step.
+- **CLI subcommands stay deferred.** The earlier ask "do we need a CLI
+  frontend for onboarding before M3.5?" answers no — onboarding goes
+  through Telegram. The CLI continues to slot in at M3.5 alongside the
+  Telegram frontend, both behind the same `internal/control` Router.
+- **picoclaw never holds Pro/Max credentials in process memory.** They
+  live exclusively in the container-mounted directory and Claude Code
+  manages their lifecycle. This is strictly stronger than the API-key
+  path under [D012](#d012--secrets-in-environment-variables-only-never-in-config-files):
+  there is no env var, no file picoclaw reads, no log line that could
+  ever leak them.
+- **M3 (GroupQueue), M3.5 (Control plane), M3.6 (Observability) ship
+  later than originally planned.** Tradeoffs:
+  - Per-chat serialization that M3 provides becomes a stub `sync.Mutex`
+    map keyed by chat folder when M5+M6 land. Replaced by GroupQueue at
+    M3 for backoff and the global concurrency cap.
+  - The `/login` and `/ping` slash commands land in M1/M6.5 wired
+    directly via go-telegram/bot's `RegisterHandler`, not through the
+    not-yet-existing `internal/control` Router. M3.5 then folds them
+    into the Router as part of its own scope. Acceptable churn — both
+    are tiny handlers.
+  - Logs (`internal/log` SQLite handler, M3.5/C5) ship later. Until
+    then `slog` writes to stderr only. The `logs` table exists from M0
+    but stays empty.
+  - Observability metrics/spans land later. M5/M6 code emits no
+    spans/metrics initially; they get added in M3.6 by editing the
+    relevant packages, not by changing their public API.
+- **M7 (IPC), M8 (recovery), M9 (memory) keep their relative order at
+  the tail of the build.**
+- **D015 (claude SDK custom command via wrapper) is unaffected.** M6
+  still uses the per-chat wrapper script for the agent loop. M6.5 talks
+  to `claude /login` directly via `docker exec` since the SDK isn't in
+  the picture for that one-shot interactive command.
+
+**Open questions for M6.5 (track in HANDOFF):**
+
+- Exact stdout contract of `claude /login` (URL line format, success line
+  format, error format). Verify against the installed `claude` version
+  before implementing M6.5.
+- What if the user starts `/login` and never completes it? Pick a
+  timeout (10 min default), kill the `docker exec` on timeout, send the
+  user a "session expired, try /login again" message.
+- Per-chat vs owner-only login: each chat has its own session dir, so in
+  principle each chat could have its own Pro/Max account. v0 should
+  probably restrict `/login` to the owner chat and reuse the owner's
+  credential dir for non-owner chats; revisit if a real use case wants
+  per-chat accounts.
+
+---
+
 ## Template for new ADRs
 
 ```

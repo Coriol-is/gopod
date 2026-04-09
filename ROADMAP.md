@@ -16,19 +16,32 @@ right now" view, see [docs/HANDOFF.md](docs/HANDOFF.md).
 
 ---
 
+## Build order (reordered by [D018](docs/DECISIONS.md))
+
+The numerical IDs below are stable identifiers cited from many places —
+**they do not encode build order**. Per [D018](docs/DECISIONS.md), picoclaw
+is built in this sequence so that the first end-to-end agent reply uses
+Claude Code's web-auth (Pro/Max) inside a container, not a paid API key:
+
+`M0 ✅ → M1 ✅ → M5 → M6 → M6.5 → M3 → M3.5 → M3.6 → M4 → M7 → M8 → M9`
+
+M2 (Direct API) is no longer on the critical path; it is opt-in if and only
+if `ANTHROPIC_API_KEY` is set in the environment.
+
 ## Phase 1 — Core (M0–M9)
 
 | ID | Milestone | Status | Notes |
 |----|-----------|--------|-------|
 | M0 | Skeleton: `go.mod`, `cmd/picoclaw/main.go`, `internal/config`, `internal/store` schema, slog wiring | ✅ | sqlite-vec verified at startup (`vec_version=v0.1.6`); ncruces pinned to v0.20.0 per [D017](docs/DECISIONS.md) |
-| M1 | Telegram echo: long-poll, default handler stores every message, `/ping` replies | ⬜ | Lib: `go-telegram/bot` |
-| M2 | Direct API agent (no container): `anthropic-sdk-go`, single chat, trigger pattern, per-chat session | ⬜ | First end-to-end response |
-| M3 | GroupQueue: per-chat serialization + global concurrency cap + backoff | ⬜ | |
-| M3.5 | **Control plane** (`internal/control` Router + Telegram + CLI frontends + logs subsystem). Sub-steps C1–C5 below. See [docs/CONTROL.md](docs/CONTROL.md). | ⬜ | M4+ depend on this — every later milestone registers commands through the Router |
+| M1 | Telegram echo: long-poll, default handler stores every message, `/ping` replies | ✅ | `internal/telegram` wraps `go-telegram/bot`; `internal/store/messages.go` + `chats.go` ingest. End-to-end with a real bot token works without an agent |
+| M2 | Direct API agent (no container): `anthropic-sdk-go`, single chat, trigger pattern, per-chat session | ⏸️ | **Optional, off the critical path per [D018](docs/DECISIONS.md).** Auto-enabled if `ANTHROPIC_API_KEY` is set; otherwise skipped silently |
+| M3 | GroupQueue: per-chat serialization + global concurrency cap + backoff | ⬜ | Demoted behind M5/M6/M6.5 per [D018](docs/DECISIONS.md). Until then a `sync.Mutex` map keyed by chat folder lives inside `internal/runner` |
+| M3.5 | **Control plane** (`internal/control` Router + Telegram + CLI frontends + logs subsystem). Sub-steps C1–C5 below. See [docs/CONTROL.md](docs/CONTROL.md). | ⬜ | Demoted behind M5/M6/M6.5 per [D018](docs/DECISIONS.md). Until then `/ping` and `/login` are wired directly via go-telegram/bot; M3.5 folds them into the Router |
 | M3.6 | **Observability** (`internal/observability`: opt-in Prometheus `/metrics` + opt-in OTel OTLP traces; logs are already covered by M3.5/C5). Sub-steps O1–O6 below. See [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) and [D014](docs/DECISIONS.md). | ⬜ | Both subsystems are no-op by default; later milestones add their own metrics/spans using helpers from M3.6 |
 | M4 | Scheduler: cron/interval/once via `robfig/cron/v3`, registers `/tasks *` handlers with the Router | ⬜ | |
-| M5 | Container runtime: Docker SDK, mounts, exec attach, idle kill, label-based recovery | ⬜ | `PICOCLAW_NO_CONTAINER=1` keeps M2 path alive |
-| M6 | Agent SDK in container: switch from direct API to `character-ai/claude-agent-sdk-go` Client over `docker exec ... claude` | ⬜ | Real Read/Write/Bash |
+| M5 | Container runtime: Docker SDK, mounts, exec attach, idle kill, label-based recovery | ⬜ | **Now first on the critical path** per [D018](docs/DECISIONS.md). `PICOCLAW_NO_CONTAINER=1` dev fallback still alive. Implements [ISOLATION.md](docs/ISOLATION.md) policy from day one |
+| M6 | Agent SDK in container: switch from direct API to `character-ai/claude-agent-sdk-go` Client over `docker exec ... claude` | ⬜ | Real Read/Write/Bash. Uses the per-chat wrapper script per [D015](docs/DECISIONS.md) |
+| M6.5 | **Telegram-mediated `/login`.** New per [D018](docs/DECISIONS.md). `/login` slash command spawns `claude /login` inside the agent container, intercepts the verification URL on stdout, forwards it via Telegram, waits for success. Credentials persist in mounted `data/sessions/<chat>/.claude/`. picoclaw never reads them. | ⬜ | First Pro/Max-authenticated agent reply lands here |
 | M7 | IPC: filesystem watcher, container → host messages, task ops, owner gating | ⬜ | |
 | M8 | Recovery & polish: cursor backfill, leftover-container cleanup, structured logs, README + Compose example | ⬜ | |
 | M9 | Native memory: sqlite-vec, embedder, `memory_*` tools, Anthropic Memory Tool, auto-summarize. See [docs/MEMORY.md §10](docs/MEMORY.md) for sub-steps M9.1–M9.10 | ⬜ | |

@@ -9,18 +9,39 @@
 
 ## Current state
 
-**Phase:** M0 done. Code: skeleton only (config, store, main).
+**Phase:** M1 done. Code: skeleton + telegram echo. The bot ingests every
+message and answers `/ping` end-to-end with a real `TELEGRAM_BOT_TOKEN`.
+No agent yet.
 **Last updated:** 2026-04-09
-**Last working session:** initial setup + M0 — research, architecture, memory
-design, integration triage, skill ecosystem design, doc structure bootstrap,
-control plane design, secrets policy lockdown, container isolation policy,
-observability design, ADR sync (D013–D016), `.gitignore`, then M0 skeleton:
-`go.mod`, `internal/config`, `internal/store` (with full schema including
-`memory_vec` vec0 virtual table), `cmd/picoclaw/main.go`, smoke-tested
-end-to-end. ncruces version compatibility wrinkle pinned in [D017](DECISIONS.md).
+**Last working session:** M1 (Telegram echo) + a roadmap pivot. Built
+`internal/store/messages.go` + `chats.go` (idempotent SaveMessage,
+monotone UpsertChat), `internal/telegram/{bot.go,handler.go}` wrapping
+`go-telegram/bot`, wired into `cmd/picoclaw/main.go` behind a graceful
+"skip if no token" branch so M0-style store-only mode still works.
+Then the operator surfaced that they have an active Pro/Max subscription
+but no API key — recorded as [D018](DECISIONS.md), which drops M2
+(Direct API) from the critical path, promotes M5 + M6, and adds **M6.5**
+(Telegram-mediated `/login` proxying `claude /login` inside the agent
+container). New build order is `M0 ✅ → M1 ✅ → M5 → M6 → M6.5 → M3 →
+M3.5 → M3.6 → M4 → M7 → M8 → M9`.
 
 ## What's done
 
+- ✅ **M1 — Telegram echo landed.** `internal/telegram` wraps
+  `go-telegram/bot` v1.20: `Bot.New` + `Bot.Run(ctx)` with long-poll,
+  `defaultHandler` storing every inbound update, `pingHandler`
+  registered via `MatchTypeCommand` (catches `/ping@picoclawbot` too)
+  that stores + replies "pong". Pure helpers (chat JID, display name,
+  reply field extraction) are unit-tested. `internal/store/messages.go`
+  + `chats.go` provide idempotent ingest:
+  `INSERT … ON CONFLICT(chat_jid, tg_message_id) DO NOTHING` for
+  re-delivered Telegram updates, and `MAX(...)` semantics on
+  `last_message_time` so out-of-order arrivals don't regress it.
+  `cmd/picoclaw/main.go` boots the telegram subsystem in a goroutine
+  when `TELEGRAM_BOT_TOKEN` is set; if unset it logs a warning and
+  keeps running in store-only mode (preserves M0 behavior). New
+  `sync.WaitGroup` drains subsystems before deferred store close.
+  `go test ./...` covers config/store/telegram.
 - ✅ **M0 — Skeleton landed.** `go.mod` (Go 1.24, autobumped by `go mod tidy`
   to satisfy `tetratelabs/wazero` v1.11; ncruces pinned to v0.20.0
   per [D017](DECISIONS.md)), `internal/config` with env loader + tests,
@@ -36,7 +57,7 @@ end-to-end. ncruces version compatibility wrinkle pinned in [D017](DECISIONS.md)
   (`character-ai/claude-agent-sdk-go` + `anthropic-sdk-go`), SQLite
   (`ncruces/go-sqlite3` + `sqlite-vec`), cron (`robfig/cron/v3`), Docker
   (`docker/docker/client`)
-- ✅ ADRs D001–D017 recorded
+- ✅ ADRs D001–D018 recorded
 - ✅ Memory architecture: 5-layer model, sqlite-vec schema, embedder
   abstraction, auto-ingestion plan ([MEMORY.md](MEMORY.md))
 - ✅ Integration triage: Tier 1/2/Skip with effort estimates and an
@@ -67,20 +88,45 @@ end-to-end. ncruces version compatibility wrinkle pinned in [D017](DECISIONS.md)
 
 Nothing actively in flight.
 
-## What's next (in order)
+## What's next (in order — per [D018](DECISIONS.md))
 
-1. **M1 — Telegram echo.** Wire `go-telegram/bot` long polling, default
-   handler stores every message in the `messages` table (which already
-   exists from M0), `/ping` slash command replies. No agent yet. New env
-   var: `TELEGRAM_BOT_TOKEN` (required from M1 onward — extend
-   `internal/config` accordingly).
-2. **M2 — Direct API agent.** Use `anthropic-sdk-go` directly for the first
-   end-to-end response. One chat folder, no tools, plain text in/out.
-   New env var: `ANTHROPIC_API_KEY`.
-3. **M3 — GroupQueue.** Per-chat serialization + global cap + backoff.
-4. **M3.5 — Control plane** (`internal/control` Router + Telegram + CLI
-   frontends + logs subsystem). M4+ depend on this.
-5. (continue with ROADMAP M3.6, M4, …)
+1. **M5 — Container runtime.** Docker SDK, mounts per [ISOLATION.md](ISOLATION.md)
+   from day one (RO root, dropped caps, non-root uid, blocked patterns,
+   `mount-allowlist.json`). Long-lived per chat, idle-killed,
+   label-based recovery. `PICOCLAW_NO_CONTAINER=1` dev fallback alive.
+2. **M6 — Agent SDK in container.** Wire
+   `character-ai/claude-agent-sdk-go` Client at the per-chat wrapper
+   script per [D015](DECISIONS.md). First agent loop with real
+   Read/Write/Bash inside the container. **At this point the operator
+   can manually run `docker exec -it <name> claude /login` once and
+   start using picoclaw with their Pro/Max subscription.**
+3. **M6.5 — Telegram-mediated `/login`.** New per [D018](DECISIONS.md).
+   `/login` slash command spawns `claude /login` inside the container,
+   intercepts the verification URL on stdout, forwards via Telegram,
+   waits for success. Replaces step 2's manual `docker exec`. After this
+   the entire onboarding fits inside Telegram chat with no terminal access.
+4. **M3 — GroupQueue.** Per-chat serialization + global cap + backoff.
+   Replaces the stub `sync.Mutex` map M5/M6 will use.
+5. **M3.5 — Control plane** (`internal/control` Router + Telegram + CLI
+   frontends + logs subsystem). Folds the directly-wired `/ping` and
+   `/login` handlers into the Router. M4+ depend on this.
+6. (continue with M3.6, M4, M7, M8, M9 per ROADMAP)
+
+**Optional, off the critical path:** **M2 (Direct API)** auto-enabled
+if `ANTHROPIC_API_KEY` is set. Skipped silently otherwise. Operator
+currently has no API key, so this stays at ⏸️.
+
+## Right now you can already...
+
+…drop a real `TELEGRAM_BOT_TOKEN` in `.env`, run `go run ./cmd/picoclaw`,
+and message your bot. Every inbound message is persisted in
+`data/store.sqlite` (`messages` + `chats` tables), and `/ping` replies
+"pong". No agent yet. Verify with:
+
+```sh
+sqlite3 data/store.sqlite 'select count(*) from messages;'
+sqlite3 data/store.sqlite 'select jid, name, last_message_time from chats;'
+```
 
 ## Open questions
 
