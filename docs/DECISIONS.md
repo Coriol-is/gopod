@@ -296,6 +296,278 @@ for v0; revisit only if a real use case demands per-chat *values*.
 
 ---
 
+## D013 — Container isolation policy: blocked patterns + RO root + dropped caps
+
+**Date:** 2026-04-09
+**Status:** Accepted
+**Refines:** [D003](#d003--container-per-chat-long-lived-exec-per-turn), [D006](#d006--owner-chat-replaces-main-group-privilege)
+
+**Context.** [D003](#d003--container-per-chat-long-lived-exec-per-turn) decided
+on container-per-chat with `docker exec` per turn but did not pin down the
+*security posture* of those containers. NanoClaw has two pieces of prior art —
+`src/mount-security.ts` (allowlist + blocked patterns + symlink resolution) and
+`src/container-runner.ts` (the actual `docker run` flag set) — and we need a
+single picoclaw-shaped policy that survives the agent doing `cat ~/.ssh/id_rsa`,
+the agent following a symlink out of its workspace, and a previous picoclaw
+process being killed mid-run leaving a container behind.
+
+A separate hedge in [ARCHITECTURE.md §3](ARCHITECTURE.md) said "compile-time
+path policy + a small `mount.json` next to binary". That was a placeholder; we
+now need to commit.
+
+**Decision.** Three-tier mount model (owner / registered / unregistered),
+single allowlist file at `${PICOCLAW_DATA_DIR}/mount-allowlist.json` (chmod
+0600, refused to start if wider), compiled-in blocked-pattern list that even
+the owner cannot override, and a fixed Docker spawn flag set: `--read-only`,
+`--cap-drop=ALL`, `--security-opt=no-new-privileges:true`, `seccomp=default`,
+`--user=<uid>:<gid>` (never root), `--pids-limit=1024`, RAM/CPU caps, three
+small `tmpfs` mounts for `/tmp`, `/home/node/.cache`, `/run`. The full policy
+including the blocked-pattern list, validation rules, lifecycle (boot
+cleanup, idle kill, crash recovery, version-mismatch eviction), and module
+layout lives in [ISOLATION.md](ISOLATION.md).
+
+`internal/runner/mountsec` is its own subpackage so the security-critical
+allowlist validator can be tested in complete isolation from the Docker SDK,
+with `t.TempDir` + `os.Symlink` based fixtures.
+
+**Consequences.** A single, audited mount construction path. `.env`, `~/.ssh`,
+`~/.aws`, `~/.gnupg`, `~/.docker`, `~/.config/picoclaw`, `id_rsa*`,
+`credentials*`, `/etc/shadow`, `/proc`, `/sys`, `/dev` are unmountable for
+**any** chat including the owner. Symlinks are resolved before pattern matching
+so a symlink-to-secrets attack fails. The agent never runs as root inside the
+container, which keeps bind-mount writes owned by the host user and survives
+the next backup. Adding back a Linux capability (e.g. `SYS_PTRACE` for
+profiling) requires a new ADR, not a code patch. Supersedes the
+ARCHITECTURE.md placeholder of "`mount.json` next to binary".
+
+---
+
+## D014 — Observability: opt-in Prometheus + OTel, logs always on
+
+**Date:** 2026-04-09
+**Status:** Accepted
+
+**Context.** picoclaw needs visibility into agent latency, container churn,
+queue depth, memory operations, and LLM token usage so the operator can spot
+when an agent is stuck or burning tokens. Three signals are on the table:
+logs, metrics, traces. The constraint pulling against "instrument everything"
+is that picoclaw is a *personal* binary on a *personal* machine — fresh
+installs must not open ports the operator did not ask for or send telemetry
+anywhere unexpected.
+
+**Decision.** Three signals, three postures:
+
+1. **Logs — always on.** `log/slog` with the `internal/log` SQLite handler
+   (already covered by [CONTROL.md §9](CONTROL.md) / M3.5 step C5). stderr +
+   `logs` table, with the [D012](#d012--secrets-in-environment-variables-only-never-in-config-files)
+   redaction allowlist applied on the way in.
+2. **Metrics — opt-in via `PICOCLAW_METRICS_ADDR`.** When unset (default), no
+   listener is started. When set (e.g. `127.0.0.1:9090`), a tiny dedicated
+   `http.Server` exposes `/metrics` (Prometheus exposition via
+   `prometheus/client_golang`) and `/healthz`. No other handlers, no auth —
+   bind to loopback or put a reverse proxy in front. The control plane is
+   **not** on this listener (per [D011](#d011--unified-command-gateway-internalcontrol)
+   the control plane has no HTTP frontend in v0).
+3. **Traces — opt-in via `PICOCLAW_OTLP_ENDPOINT`.** When unset, the global
+   tracer provider is the OTel no-op implementation; every `tracer.Start` is
+   free, every span attribute write is dropped. When set, an OTLP exporter
+   (gRPC or HTTP, auto-derived from URL scheme) batches spans to the
+   configured collector. W3C `traceparent` is propagated into the agent
+   container as an env var on every `docker exec`, so future Claude Code
+   versions or MCP skill processes can join the trace.
+
+Cardinality is bounded by labelling only on closed sets (`provider`, `model`,
+`tool`, `skill`, `kind`, `result`) plus `chat`; an escape hatch
+`PICOCLAW_METRICS_DROP_CHAT_LABEL=1` exists for users with many chats. Span
+attribute setters go through `obs.SetAttr`, which applies the same
+`(?i)token|key|secret|password|cookie|auth` redaction matcher as the slog
+handler.
+
+`internal/observability` is the only package new code touches to add a
+metric or a span; `cmd/picoclaw/main.go` calls `Init` once and gets back a
+single `shutdown(ctx)` that flushes both subsystems with a 5-second grace
+period. Slotted into [ROADMAP.md](../ROADMAP.md) as **M3.6** with sub-steps
+**O1–O6** (see [OBSERVABILITY.md §6](OBSERVABILITY.md)).
+
+**Consequences.** Default install opens zero ports beyond Telegram long-poll
+outbound. Operators who want a Grafana stack flip one env var; operators who
+want Honeycomb flip two. Adding metrics/spans to a new package is a local
+change in that package — no central "log this thing" indirection. The OTel
+no-op default means picoclaw cannot accidentally hard-depend on a collector
+being reachable. Refines [D012](#d012--secrets-in-environment-variables-only-never-in-config-files):
+the one observability env var that may carry a secret value
+(`PICOCLAW_OTLP_HEADERS`) is read into memory at process start, used to
+construct exporter headers, and runs through the same redaction matcher if
+ever logged.
+
+---
+
+## D015 — Claude Agent SDK custom command via wrapper script
+
+**Date:** 2026-04-09
+**Status:** Accepted
+**Refines:** [D003](#d003--container-per-chat-long-lived-exec-per-turn)
+
+**Context.** [D003](#d003--container-per-chat-long-lived-exec-per-turn) chose
+container-per-chat with `docker exec` per turn, talked to via the Go
+`character-ai/claude-agent-sdk-go` `Client`. That left an open question in
+HANDOFF.md: does the SDK actually let us override what binary it spawns so we
+can point it at `docker exec -i <container> claude` instead of a host
+`claude`? If not, the only alternative is to embed `claude` directly in the
+host process, which loses the per-chat container isolation D003 is built on.
+
+**Decision.** Verified against the SDK source: it exposes
+`Options.CLIPath string` (defaults to `"claude"`) which is consumed by
+`(*Client).runStreaming` as `exec.CommandContext(ctx, cliPath, args...)`.
+This is **single argv[0]** — there is no `Command []string` / `CLIPrefixArgs`
+option, and `Options.ExtraArgs` appends *after* the SDK args (so it goes to
+Claude, not to docker). `exec.LookPath` runs on the raw `cliPath`, so a
+multi-word string doesn't work either.
+
+picoclaw uses a tiny per-chat wrapper script as `CLIPath`:
+
+```sh
+#!/bin/sh
+# data/wrappers/<chat>.sh — generated at chat-folder creation
+exec docker exec -i \
+  -e ANTHROPIC_API_KEY \
+  -e OTHER_VAR_FROM_ALLOWLIST \
+  "picoclaw-<chat>" \
+  claude "$@"
+```
+
+`internal/runner` generates one of these per registered chat (idempotent,
+chmod 0755), and points the SDK Client at it:
+
+```go
+client := claude.NewClient(claude.Options{
+    CLIPath:        wrapperPath,            // /path/to/data/wrappers/<chat>.sh
+    PermissionMode: claude.PermissionAcceptEdits,
+    Cwd:            "/workspace/chat",      // interpreted INSIDE the container
+    // ...
+})
+```
+
+`PICOCLAW_NO_CONTAINER=1` (dev fallback) sets `CLIPath = "claude"` to talk to
+host-installed Claude directly.
+
+**Consequences.** D003 holds — container isolation is preserved, no host
+embedding of `claude`. The wrapper file is the per-chat trust boundary in
+addition to the mount allowlist: it bakes in the `-e VAR` set the chat is
+allowed to receive (per [D012](#d012--secrets-in-environment-variables-only-never-in-config-files)
+allow-list), and a chat with no entries gets none. `Options.Cwd` is sent to
+Claude as a `--cwd` *flag* interpreted inside the container — host cwd
+doesn't matter, the path must exist in the container (i.e. the bind-mounted
+chat folder). `Close()` sends SIGINT to the wrapper which propagates to
+`docker exec`; because Docker's signal forwarding is historically flaky, the
+runner additionally calls `docker exec <name> pkill -INT claude` on close as
+a belt-and-suspenders measure. Stderr from the wrapper carries both Claude's
+own errors and Docker's "Error response from daemon" lines; the runner
+classifies them by prefix matching before logging. Upstream issue/PR for
+first-class `Command []string` support: none filed; if it ever lands we
+revisit and possibly retire the wrapper script.
+
+---
+
+## D016 — Default embedding model: OpenAI `text-embedding-3-small` at 1024 dim
+
+**Date:** 2026-04-09
+**Status:** Accepted
+
+**Context.** [MEMORY.md §6](MEMORY.md) sketches three embedding providers
+(OpenAI, Voyage, Ollama) and proposes OpenAI `text-embedding-3-small`
+truncated from its native 1536 to 1024 dimensions as the default. HANDOFF.md
+flagged this as an open question pending verification of the OpenAI
+`dimensions` API parameter and its retrieval-quality impact, because changing
+the dimension after the fact is a re-embed pass and a `sqlite-vec` schema
+churn.
+
+**Decision.** Default embedder = OpenAI `text-embedding-3-small` with
+`dimensions=1024`, server-side. Verified against the OpenAI announcement
+post, the embeddings guide, the API reference, and the dev-forum empirical
+analysis:
+
+1. The `dimensions` parameter is officially supported on `text-embedding-3-small`
+   and `text-embedding-3-large` (but not on `text-embedding-ada-002`, which is
+   fixed at 1536).
+2. OpenAI returns **unit-length** vectors regardless of `dimensions`, i.e.
+   server-side `dimensions=N` performs `truncate → L2-renormalize`. Cosine
+   distance and inner product give identical rankings.
+3. Both `-3-small` and `-3-large` are trained with Matryoshka Representation
+   Learning, so earlier dimensions carry more signal. OpenAI's own claim:
+   `-3-large` shortened to 256 still beats `ada-002` at 1536. The drop from
+   1536 → 1024 on `-3-small` is well under one MTEB point — not measurable
+   for a personal-assistant memory layer.
+4. `sqlite-vec`'s `vec0` virtual table requires a fixed dimension per column,
+   so picking one and committing matters. 1024 is ~33% smaller on disk than
+   1536 (4 KiB vs 6 KiB per vector at float32) with no meaningful retrieval
+   loss.
+
+The picoclaw `memories` table stores `(model, dim)` next to every vector so
+a future migration to e.g. `-3-large` at 1024 or 1536 is a clean re-embed
+pass rather than a silent corruption: the runner refuses to mix vectors from
+different `(model, dim)` tuples in the same query.
+
+**Consequences.** `PICOCLAW_EMBEDDING_MODEL=text-embedding-3-small` and
+`PICOCLAW_EMBEDDING_DIM=1024` are baked as the defaults; the schema in
+[MEMORY.md §3](MEMORY.md) (`embedding float[1024]`) is now load-bearing.
+Operators can switch providers via `PICOCLAW_EMBEDDING_PROVIDER` but doing
+so on an existing store requires a re-embed pass. Client-side truncation is
+**banned** — if the runner ever needs a smaller vector it must request it
+from the API with a new `dimensions` value; truncating a stored vector
+locally would skip the L2-renormalization and silently degrade recall.
+
+---
+
+## D017 — Pin `ncruces/go-sqlite3` to v0.20.0 for sqlite-vec compatibility
+
+**Date:** 2026-04-09
+**Status:** Accepted
+**Refines:** [D004](#d004--sqlite-driver-ncrucesgo-sqlite3-wasm-pure-go)
+
+**Context.** [D004](#d004--sqlite-driver-ncrucesgo-sqlite3-wasm-pure-go)
+chose `ncruces/go-sqlite3` paired with the `asg017/sqlite-vec-go-bindings`
+ncruces variant. M0 implementation surfaced a real compatibility wrinkle:
+
+1. The asg017 binding works by setting `sqlite3.Binary = wasmBinary` in its
+   `init()`. The pre-built `sqlite3.wasm` it ships uses the WebAssembly
+   threads/atomics feature (`i32.atomic.store`).
+2. Starting at `ncruces/go-sqlite3 v0.21.0` and continuing through v0.32.x,
+   the embedded wazero runtime instantiation does not enable threads, so
+   the binding's wasm fails to load with
+   `i32.atomic.store invalid as feature "" is disabled`.
+3. At `ncruces/go-sqlite3 v0.33.0` the entire `Binary` variable and the
+   `embed` subpackage were removed in favor of a compile-time-bundled
+   wasm via `github.com/ncruces/go-sqlite3-wasm`, breaking the binding's
+   `init()` at compile time.
+4. The asg017 binding has not been updated to follow either change
+   (latest tag `v0.1.7-alpha.2` still references `sqlite3.Binary` and
+   ships the same atomics-using wasm).
+
+A bisect against asg017 v0.1.6 found exactly two ncruces versions that work:
+**v0.19.0** and **v0.20.0**. v0.18.0 has a separate `go_busy_timeout` ABI
+mismatch. v0.17.1 and v0.21.0+ all hit the atomics error.
+
+**Decision.** Pin `github.com/ncruces/go-sqlite3` to **v0.20.0** in `go.mod`
+and use the asg017 ncruces binding for side-effect import in
+`internal/store/store.go`. Do **not** also import
+`github.com/ncruces/go-sqlite3/embed` — the asg017 init() already populates
+`sqlite3.Binary`, and the two would race.
+
+**Consequences.** picoclaw runs on a year-old SQLite WASM build until either
+(a) asg017 publishes a binding compatible with current `ncruces/go-sqlite3`,
+or (b) we vendor our own sqlite-vec-bundled wasm. The pin is invisible to
+consumers — `sql.Open("sqlite3", …)` still works exactly as documented.
+Verified at runtime: M0 binary opens the store, queries `vec_version()`
+which returns `v0.1.6`, creates the `vec0` virtual table, and idempotently
+re-applies the schema on restart.
+
+When upgrading: re-run the bisect, update this ADR with a new pinned
+version, and re-test `internal/store/store_test.go` end-to-end (it covers
+both `vec_version()` and a real KNN query against `memory_vec`).
+
+---
+
 ## Template for new ADRs
 
 ```

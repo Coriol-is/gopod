@@ -20,11 +20,12 @@ right now" view, see [docs/HANDOFF.md](docs/HANDOFF.md).
 
 | ID | Milestone | Status | Notes |
 |----|-----------|--------|-------|
-| M0 | Skeleton: `go.mod`, `cmd/picoclaw/main.go`, `internal/config`, `internal/store` schema, slog wiring | ⬜ | |
+| M0 | Skeleton: `go.mod`, `cmd/picoclaw/main.go`, `internal/config`, `internal/store` schema, slog wiring | ✅ | sqlite-vec verified at startup (`vec_version=v0.1.6`); ncruces pinned to v0.20.0 per [D017](docs/DECISIONS.md) |
 | M1 | Telegram echo: long-poll, default handler stores every message, `/ping` replies | ⬜ | Lib: `go-telegram/bot` |
 | M2 | Direct API agent (no container): `anthropic-sdk-go`, single chat, trigger pattern, per-chat session | ⬜ | First end-to-end response |
 | M3 | GroupQueue: per-chat serialization + global concurrency cap + backoff | ⬜ | |
 | M3.5 | **Control plane** (`internal/control` Router + Telegram + CLI frontends + logs subsystem). Sub-steps C1–C5 below. See [docs/CONTROL.md](docs/CONTROL.md). | ⬜ | M4+ depend on this — every later milestone registers commands through the Router |
+| M3.6 | **Observability** (`internal/observability`: opt-in Prometheus `/metrics` + opt-in OTel OTLP traces; logs are already covered by M3.5/C5). Sub-steps O1–O6 below. See [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) and [D014](docs/DECISIONS.md). | ⬜ | Both subsystems are no-op by default; later milestones add their own metrics/spans using helpers from M3.6 |
 | M4 | Scheduler: cron/interval/once via `robfig/cron/v3`, registers `/tasks *` handlers with the Router | ⬜ | |
 | M5 | Container runtime: Docker SDK, mounts, exec attach, idle kill, label-based recovery | ⬜ | `PICOCLAW_NO_CONTAINER=1` keeps M2 path alive |
 | M6 | Agent SDK in container: switch from direct API to `character-ai/claude-agent-sdk-go` Client over `docker exec ... claude` | ⬜ | Real Read/Write/Bash |
@@ -41,6 +42,17 @@ right now" view, see [docs/HANDOFF.md](docs/HANDOFF.md).
 | C3 | CLI frontend: argv parser, `serve`/`migrate` reserved subcommands, `--json`, mirror of public commands | ⬜ |
 | C4 | First batch of real handlers: chats, queue, container, system | ⬜ |
 | C5 | Logs subsystem: `internal/log/sqlite_handler.go`, retention task, `/logs` and `picoclaw logs` | ⬜ |
+
+### M3.6 sub-steps (observability)
+
+| ID | Step | Status |
+|----|------|--------|
+| O1 | `internal/observability` scaffold: `Init`, no-op providers, config loader, shutdown | ⬜ |
+| O2 | Metric definitions in one place, registry, `127.0.0.1:9090/metrics` listener gated by `PICOCLAW_METRICS_ADDR` | ⬜ |
+| O3 | Wire counters/gauges/histograms into `store`, `queue`, `runner`, `telegram`, `control` | ⬜ |
+| O4 | OTel scaffold: `Init`, no-op tracer when env unset, exporter selection, redaction wrapper | ⬜ |
+| O5 | `runner.run` root span tree + propagation env vars on `docker exec` + MCP spawn | ⬜ |
+| O6 | Smoke tests: hit a local Prom, hit a local OTel collector, verify cardinality | ⬜ |
 
 ---
 

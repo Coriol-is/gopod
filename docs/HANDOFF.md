@@ -9,20 +9,34 @@
 
 ## Current state
 
-**Phase:** Design. No code yet.
+**Phase:** M0 done. Code: skeleton only (config, store, main).
 **Last updated:** 2026-04-09
-**Last working session:** initial setup — research, architecture, memory design,
-integration triage, skill ecosystem design, doc structure bootstrap, control
-plane design, secrets policy lockdown.
+**Last working session:** initial setup + M0 — research, architecture, memory
+design, integration triage, skill ecosystem design, doc structure bootstrap,
+control plane design, secrets policy lockdown, container isolation policy,
+observability design, ADR sync (D013–D016), `.gitignore`, then M0 skeleton:
+`go.mod`, `internal/config`, `internal/store` (with full schema including
+`memory_vec` vec0 virtual table), `cmd/picoclaw/main.go`, smoke-tested
+end-to-end. ncruces version compatibility wrinkle pinned in [D017](DECISIONS.md).
 
 ## What's done
 
+- ✅ **M0 — Skeleton landed.** `go.mod` (Go 1.24, autobumped by `go mod tidy`
+  to satisfy `tetratelabs/wazero` v1.11; ncruces pinned to v0.20.0
+  per [D017](DECISIONS.md)), `internal/config` with env loader + tests,
+  `internal/store` opening SQLite via `ncruces/go-sqlite3` with sqlite-vec
+  bundled in via the asg017 binding, full schema applied idempotently
+  (chats, messages, registered_chats, sessions, scheduled_tasks,
+  task_run_logs, router_state, memories, memory_vec vec0, memory_fts5 +
+  triggers), runtime check of `vec_version()`, KNN smoke test, and
+  `cmd/picoclaw/main.go` that wires slog (text|json), opens the store,
+  blocks on SIGINT/SIGTERM, exits cleanly. `go test ./...` is green.
 - ✅ NanoClaw architecture mapped (see [ARCHITECTURE.md §2](ARCHITECTURE.md))
 - ✅ Library research: Telegram (`go-telegram/bot`), Claude SDK
   (`character-ai/claude-agent-sdk-go` + `anthropic-sdk-go`), SQLite
   (`ncruces/go-sqlite3` + `sqlite-vec`), cron (`robfig/cron/v3`), Docker
   (`docker/docker/client`)
-- ✅ ADRs D001–D012 recorded
+- ✅ ADRs D001–D017 recorded
 - ✅ Memory architecture: 5-layer model, sqlite-vec schema, embedder
   abstraction, auto-ingestion plan ([MEMORY.md](MEMORY.md))
 - ✅ Integration triage: Tier 1/2/Skip with effort estimates and an
@@ -34,11 +48,20 @@ plane design, secrets policy lockdown.
   ([CONTROL.md](CONTROL.md), [D011](DECISIONS.md))
 - ✅ Secrets policy locked down: env-only, no values in committed files,
   slog redaction ([D012](DECISIONS.md))
+- ✅ Container isolation policy: three-tier mounts, allowlist file at
+  `${DATA_DIR}/mount-allowlist.json`, compiled-in blocked patterns, RO root
+  + dropped caps + non-root uid, `internal/runner/mountsec` subpackage.
+  ([ISOLATION.md](ISOLATION.md), [D013](DECISIONS.md))
+- ✅ Observability design: opt-in Prometheus `/metrics` + opt-in OTel OTLP
+  traces, logs always on via M3.5/C5; slotted as M3.6 with sub-steps O1–O6.
+  ([OBSERVABILITY.md](OBSERVABILITY.md), [D014](DECISIONS.md))
 - ✅ No socket / HTTP control frontend in v0 (user decision 2026-04-09)
 - ✅ Documentation structure: README, CLAUDE.md, ROADMAP, docs/{ARCHITECTURE,
-  MEMORY, INTEGRATIONS, SKILLS, CONTROL, DECISIONS, GLOSSARY, HANDOFF}.md
+  MEMORY, INTEGRATIONS, SKILLS, CONTROL, ISOLATION, OBSERVABILITY,
+  DECISIONS, GLOSSARY, HANDOFF}.md
 - ✅ Sanity-check pass on the doc set: stale references, env var prefixes,
   ADR consistency, SKILLS hedge wording all reconciled
+- ✅ `.gitignore` for Go + macOS + picoclaw runtime (data/, *.sqlite, .env)
 
 ## What's in progress
 
@@ -46,40 +69,65 @@ Nothing actively in flight.
 
 ## What's next (in order)
 
-1. **M0 — Skeleton.** Initialize `go.mod`, scaffold `cmd/picoclaw/main.go`,
-   `internal/config`, `internal/store` (schema + open). Pick Go 1.22+. Wire
-   `log/slog`. Verify `ncruces/go-sqlite3` + `sqlite-vec` registers correctly.
-2. **M1 — Telegram echo.** Wire `go-telegram/bot` long polling, default
-   handler stores every message in `messages` table, `/ping` slash command
-   replies. No agent yet.
-3. **M2 — Direct API agent.** Use `anthropic-sdk-go` directly for the first
+1. **M1 — Telegram echo.** Wire `go-telegram/bot` long polling, default
+   handler stores every message in the `messages` table (which already
+   exists from M0), `/ping` slash command replies. No agent yet. New env
+   var: `TELEGRAM_BOT_TOKEN` (required from M1 onward — extend
+   `internal/config` accordingly).
+2. **M2 — Direct API agent.** Use `anthropic-sdk-go` directly for the first
    end-to-end response. One chat folder, no tools, plain text in/out.
-4. (continue with ROADMAP)
+   New env var: `ANTHROPIC_API_KEY`.
+3. **M3 — GroupQueue.** Per-chat serialization + global cap + backoff.
+4. **M3.5 — Control plane** (`internal/control` Router + Telegram + CLI
+   frontends + logs subsystem). M4+ depend on this.
+5. (continue with ROADMAP M3.6, M4, …)
 
 ## Open questions
 
-- **`character-ai/claude-agent-sdk-go` Client custom command.** D003 assumes
-  the SDK lets us override the executable so we can point it at
-  `docker exec -i <name> claude`. Verify this in the SDK source before M6.
-  If not, alternative is to embed `claude` directly in the host process and
-  drop the container layer for that path (loses isolation — undesirable).
-- **Telegram privacy mode.** Bots in groups by default only see commands,
-  mentions, and replies. Setup docs need to call this out explicitly when M1
-  lands. Decide whether to require BotFather privacy-mode disable, or
-  document the tradeoff.
-- **Embedding dim default.** MEMORY.md proposes OpenAI
-  `text-embedding-3-small` truncated to 1024. Confirm OpenAI's
-  `dimensions` parameter behaves as expected before freezing M9.
 - **Control plane open Qs** ([CONTROL.md §13](CONTROL.md)):
   chat-local commands in unregistered chats (silent ignore vs reply),
   `/help` rendering across permission levels, rate-limiting (probably no),
   inline-keyboard confirmations for destructive ops (probably defer).
-- **Telemetry / tracing stack.** New ask: add OTel tracing + Prometheus
-  metrics. Not yet designed. See "Nearby work noted but out of scope".
-- **Container isolation policy doc.** New ask: write down NanoClaw-style
-  Docker isolation (RO mounts, mount allowlist, blocked patterns, --user
-  uid:gid, .env redaction). ARCHITECTURE.md only sketches it. See "Nearby
-  work noted but out of scope".
+- **ARCHITECTURE.md drift on mount allowlist location.** §3 still says
+  "compile-time path policy + a small `mount.json` next to binary". D013 /
+  ISOLATION.md superseded that with `${DATA_DIR}/mount-allowlist.json`.
+  Reword §3 the next time you touch ARCHITECTURE.md (low priority — the
+  authoritative location is ISOLATION.md).
+- **`ncruces/go-sqlite3` upgrade path.** Currently pinned to v0.20.0 per
+  [D017](DECISIONS.md) because the asg017 sqlite-vec binding hasn't kept
+  up with upstream. Watch for either a new asg017 release or a vendored
+  sqlite-vec wasm we ship ourselves. Re-bisect when bumping.
+
+### Recently resolved (2026-04-09)
+
+- ✅ **`claude-agent-sdk-go` custom command.** PARTIAL: `Options.CLIPath`
+  exists but takes single argv[0], no `Command []string` / `CLIPrefixArgs`.
+  Resolution: per-chat wrapper script generated under
+  `data/wrappers/<chat>.sh` that `exec`s `docker exec -i <name> claude "$@"`.
+  Recorded as [D015](DECISIONS.md). Caveats baked in: explicit `-e VAR`
+  allowlist, host-side `Cwd` is ignored (the SDK passes `Options.Cwd` as a
+  `--cwd` *flag* interpreted inside the container), `Close()` belt-and-
+  suspenders `pkill -INT claude` for Docker's flaky signal forwarding,
+  stderr classification by prefix (`Error response from daemon` → docker
+  layer, else → claude layer).
+- ✅ **Telegram privacy mode.** Confirmed: privacy mode is on by default,
+  group-only (1-on-1 and channels are unaffected), toggled via
+  `@BotFather` → `/setprivacy`, and **the bot must be removed and re-added
+  to every existing group** for the toggle to take effect on those groups.
+  picoclaw setup docs (when M1 lands) will require disabling privacy mode
+  because picoclaw is supposed to see every message in its registered
+  chats; the usual user-privacy concern doesn't apply because privileges
+  are enforced by `PICOCLAW_OWNER_CHAT_ID`. No rate-limit penalties for
+  disabling; standard Bot API flood limits still apply normally.
+- ✅ **Embedding dim default.** Confirmed: OpenAI `dimensions` parameter is
+  supported on `text-embedding-3-small` (and `-3-large`, but not on
+  `ada-002`). Server-side it does `truncate → L2-renormalize`, so vectors
+  are unit-length and cosine == inner product for ranking. MTEB drop from
+  1536 → 1024 on `-3-small` is well under one point (MRL training). Locked
+  in as default at 1024 dim, recorded as [D016](DECISIONS.md). Client-side
+  truncation is banned — always request the target dim from the API. The
+  `memories` table stores `(model, dim)` per row so a future migration is
+  a clean re-embed pass.
 
 ## Blockers
 
@@ -90,16 +138,8 @@ None.
 (Things you bumped into and want to revisit later — write them here so they
 don't get lost.)
 
-- **Telemetry / tracing layer.** User asked for OTel + Prometheus. Need a
-  `docs/OBSERVABILITY.md` design doc + ADR + a metrics endpoint decision
-  (likely a localhost:9090/metrics for Prometheus pull, OTLP exporter for
-  traces). Not yet started.
-- **Container isolation deep doc.** ARCHITECTURE.md §7 has a per-chat
-  isolation table but the full security policy (mount allowlist outside
-  the repo, blocked-path patterns, symlink resolution, --user uid:gid, RO
-  project mount, .env → /dev/null) isn't written down. Need a dedicated
-  `docs/ISOLATION.md` mirroring NanoClaw's `src/mount-security.ts` and
-  `src/container-runner.ts`. Not yet started.
+_None at the moment. The two big "noted" items (observability, isolation)
+both landed as full design docs and ADRs._
 
 ## How to update this file
 

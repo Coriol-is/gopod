@@ -190,7 +190,7 @@ Three implementations in v0:
 
 | Provider | Model | Dim | Cost | Notes |
 |---|---|---|---|---|
-| **OpenAI** | `text-embedding-3-small` | 1536 (or 512 truncated) | $0.02/M tok | Default. We already require `OPENAI_API_KEY` for Whisper, no new dep. |
+| **OpenAI** | `text-embedding-3-small` | native 1536, default 1024 (server-side `dimensions` truncation, MRL-trained) | $0.02/M tok | Default. We already require `OPENAI_API_KEY` for Whisper, no new dep. See [D016](DECISIONS.md). |
 | **Voyage** | `voyage-3-lite` | 512 | $0.02/M tok | Anthropic-recommended for Claude pairings. Requires `VOYAGE_API_KEY`. |
 | **Ollama** | `nomic-embed-text` (768) or `bge-m3` (1024) | varies | free | Fully offline. Requires Ollama running locally. |
 
