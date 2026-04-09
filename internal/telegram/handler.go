@@ -89,6 +89,7 @@ func (b *Bot) persistMessage(ctx context.Context, m *models.Message) {
 		slog.Int64("tg_msg_id", msg.TGMessageID),
 		slog.Int64("row_id", id),
 		slog.String("sender", msg.SenderName),
+		slog.Int("len", len(msg.Content)),
 	)
 }
 
