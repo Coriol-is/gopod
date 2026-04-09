@@ -1,0 +1,59 @@
+# ---- Go ----
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/picoclaw
+/bin/
+/dist/
+
+# Test binaries / coverage
+*.test
+*.out
+coverage.txt
+coverage.html
+
+# Go workspace
+go.work
+go.work.sum
+
+# Vendor (we don't vendor)
+/vendor/
+
+# ---- picoclaw ----
+# Local data, secrets, runtime state
+/data/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+.env
+.env.local
+
+# ---- macOS ----
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# ---- Editors ----
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
