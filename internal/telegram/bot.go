@@ -1,9 +1,14 @@
 // Package telegram is picoclaw's Telegram frontend.
 //
-// M1 scope: long-poll a single bot token, store every inbound message in
-// internal/store, and answer /ping with "pong". No agent loop, no
-// triggers, no chunking, no owner gating yet — those land in M2/M3/M3.5
-// alongside the runner and control plane.
+// As of M6 the default handler routes inbound text from registered
+// chats through the runner and replies with the agent's output. The
+// owner chat (PICOCLAW_OWNER_CHAT_ID) is auto-registered on first
+// sight; other chats are registered explicitly via /register from
+// the owner chat.
+//
+// Auth state is checked before every prompt: if the agent container
+// is not logged in, the bot replies asking the user to run /login
+// instead of trying to talk to claude.
 package telegram
 
 import (
@@ -15,6 +20,8 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
+	"github.com/spaceinvaderz/picoclaw/internal/runner"
+	"github.com/spaceinvaderz/picoclaw/internal/runner/mountsec"
 	"github.com/spaceinvaderz/picoclaw/internal/store"
 )
 
@@ -32,6 +39,33 @@ import (
 // implement, so keep them in sync.
 var publicCommands = []models.BotCommand{
 	{Command: "ping", Description: "check the bot is alive"},
+	{Command: "register", Description: "(owner) register a chat for agent access"},
+	{Command: "whoami", Description: "show this chat's id and registration state"},
+}
+
+// Deps groups picoclaw's runtime dependencies the telegram bot needs
+// at construction time. Bundling them in a struct keeps New()'s
+// signature stable as new fields land.
+type Deps struct {
+	// Store is the SQLite handle. Required.
+	Store *store.Store
+
+	// Runner is the agent runner. Optional: if nil, the default
+	// handler stays at M1 behaviour (persist + ignore for non-/ping
+	// text), useful for store-only and pre-M6 dev modes.
+	Runner *runner.Runner
+
+	// Allowlist is the parsed mount allowlist. Optional: nil means
+	// "no extras", which is the common case.
+	Allowlist *mountsec.Allowlist
+
+	// OwnerChatID is the Telegram chat id picoclaw treats as the
+	// owner. Zero means "no owner", in which case auto-registration
+	// is disabled and /register is rejected from every chat.
+	OwnerChatID int64
+
+	// Log is the slog logger; defaults to slog.Default if nil.
+	Log *slog.Logger
 }
 
 // Bot is picoclaw's wrapper around go-telegram/bot.Bot. It owns the
@@ -41,28 +75,39 @@ var publicCommands = []models.BotCommand{
 // cancelled (typically by SIGINT/SIGTERM in main). One Bot instance
 // corresponds to one Telegram bot token.
 type Bot struct {
-	api   *bot.Bot
-	store *store.Store
-	log   *slog.Logger
+	api         *bot.Bot
+	store       *store.Store
+	runner      *runner.Runner
+	allowlist   *mountsec.Allowlist
+	ownerChatID int64
+	log         *slog.Logger
 }
 
 // New constructs a Bot. The token must be a valid @BotFather token; an
 // empty token returns ErrEmptyToken so callers can branch on "no
 // telegram subsystem at all" without scattering empty-string checks.
 //
-// The store handle is required — every inbound update is persisted there.
-func New(token string, st *store.Store, log *slog.Logger) (*Bot, error) {
+// The Store handle in deps is required — every inbound update is
+// persisted there. The Runner handle is optional; without it the bot
+// runs in M1-style "echo" mode (persist + /ping reply + nothing else).
+func New(token string, deps Deps) (*Bot, error) {
 	if token == "" {
 		return nil, ErrEmptyToken
 	}
-	if st == nil {
-		return nil, errors.New("telegram: nil store")
+	if deps.Store == nil {
+		return nil, errors.New("telegram: nil Store")
 	}
-	if log == nil {
-		log = slog.Default()
+	if deps.Log == nil {
+		deps.Log = slog.Default()
 	}
 
-	b := &Bot{store: st, log: log}
+	b := &Bot{
+		store:       deps.Store,
+		runner:      deps.Runner,
+		allowlist:   deps.Allowlist,
+		ownerChatID: deps.OwnerChatID,
+		log:         deps.Log,
+	}
 
 	api, err := bot.New(token,
 		bot.WithDefaultHandler(b.defaultHandler),
@@ -78,6 +123,8 @@ func New(token string, st *store.Store, log *slog.Logger) (*Bot, error) {
 	// the @botname suffix automatically (it walks Telegram's bot_command
 	// entities, which already account for it).
 	api.RegisterHandler(bot.HandlerTypeMessageText, "ping", bot.MatchTypeCommand, b.pingHandler)
+	api.RegisterHandler(bot.HandlerTypeMessageText, "whoami", bot.MatchTypeCommand, b.whoamiHandler)
+	api.RegisterHandler(bot.HandlerTypeMessageText, "register", bot.MatchTypeCommand, b.registerHandler)
 
 	return b, nil
 }

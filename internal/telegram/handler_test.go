@@ -103,9 +103,9 @@ func TestMessageText(t *testing.T) {
 }
 
 func TestNewRejectsEmptyToken(t *testing.T) {
-	_, err := New("", nil, nil)
+	_, err := New("", Deps{})
 	if err == nil {
-		t.Fatal("New(\"\", nil, nil): want error")
+		t.Fatal("New(\"\", Deps{}): want error")
 	}
 	if err != ErrEmptyToken {
 		t.Errorf("err = %v, want ErrEmptyToken", err)
