@@ -16,6 +16,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"strings"
@@ -178,6 +179,14 @@ func TestIntegrationCheckAuthOnAgentImage(t *testing.T) {
 	}
 	if status.AuthMethod != "none" {
 		t.Errorf("AuthMethod = %q, want \"none\"", status.AuthMethod)
+	}
+
+	// RunPrompt against the same unauthenticated container must map to
+	// ErrNotLoggedIn — that is the contract M6's telegram handler
+	// depends on to prompt the user to /login.
+	_, err = d.RunPrompt(ctx, id, "hello")
+	if !errors.Is(err, ErrNotLoggedIn) {
+		t.Errorf("RunPrompt: err = %v, want ErrNotLoggedIn", err)
 	}
 }
 

@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -51,4 +52,62 @@ func (d *Docker) CheckAuth(ctx context.Context, containerID string) (AuthStatus,
 		return AuthStatus{}, fmt.Errorf("docker: claude auth status: parse %q: %w", out, err)
 	}
 	return status, nil
+}
+
+// ErrNotLoggedIn is returned by RunPrompt when the agent container has
+// no Claude credentials. M6 callers map this to a "please /login"
+// reply on Telegram.
+var ErrNotLoggedIn = errors.New("runner: agent container is not logged in")
+
+// RunPrompt runs `claude -p <prompt>` inside the container and returns
+// the assistant's reply text from stdout. Synchronous: blocks until
+// the agent finishes.
+//
+// Each call is a fresh Claude Code session. Multi-turn conversation
+// memory across Telegram messages is intentionally NOT plumbed in M6 —
+// session continuity comes later via the sessions table and a
+// `--resume <id>` flag, which needs the JSON output format to recover
+// session ids from. M6 ships the simplest possible call shape that
+// proves the round trip works.
+//
+// If the container is not authenticated, claude exits non-zero with
+// "Not logged in" on stderr; this is mapped to ErrNotLoggedIn so
+// callers can distinguish it from real failures and prompt the user
+// to run /login.
+func (d *Docker) RunPrompt(ctx context.Context, containerID, prompt string) (string, error) {
+	if prompt == "" {
+		return "", errors.New("docker: RunPrompt: empty prompt")
+	}
+
+	res, err := d.Exec(ctx, containerID, []string{"claude", "-p", prompt}, nil)
+	if err != nil {
+		return "", fmt.Errorf("docker: RunPrompt: %w", err)
+	}
+
+	if res.ExitCode != 0 {
+		stderr := strings.TrimSpace(res.Stderr)
+		if isNotLoggedInError(stderr, res.Stdout) {
+			return "", ErrNotLoggedIn
+		}
+		return "", fmt.Errorf("docker: RunPrompt: claude exited %d (stderr=%q)",
+			res.ExitCode, stderr)
+	}
+
+	return strings.TrimSpace(res.Stdout), nil
+}
+
+// isNotLoggedInError detects Claude Code's "Not logged in" failure mode
+// from stderr or stdout. Verified against Claude Code 2.1.x against
+// the picoclaw-agent:latest image: a non-authenticated invocation of
+// `claude -p hello` exits non-zero and prints "Not logged in · Please
+// run /login" to stderr.
+//
+// Both stdout and stderr are checked because the exact stream Claude
+// Code chooses for the message has historically varied between minor
+// CLI versions. The match is case-insensitive substring on a stable
+// fragment ("not logged in") to survive minor wording tweaks.
+func isNotLoggedInError(stderr, stdout string) bool {
+	const needle = "not logged in"
+	return strings.Contains(strings.ToLower(stderr), needle) ||
+		strings.Contains(strings.ToLower(stdout), needle)
 }
