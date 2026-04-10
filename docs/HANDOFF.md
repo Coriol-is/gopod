@@ -9,24 +9,48 @@
 
 ## Current state
 
-**Phase:** M1 done. Code: skeleton + telegram echo. The bot ingests every
-message and answers `/ping` end-to-end with a real `TELEGRAM_BOT_TOKEN`.
-No agent yet.
-**Last updated:** 2026-04-09
-**Last working session:** M1 (Telegram echo) + a roadmap pivot. Built
-`internal/store/messages.go` + `chats.go` (idempotent SaveMessage,
-monotone UpsertChat), `internal/telegram/{bot.go,handler.go}` wrapping
-`go-telegram/bot`, wired into `cmd/picoclaw/main.go` behind a graceful
-"skip if no token" branch so M0-style store-only mode still works.
-Then the operator surfaced that they have an active Pro/Max subscription
-but no API key — recorded as [D018](DECISIONS.md), which drops M2
-(Direct API) from the critical path, promotes M5 + M6, and adds **M6.5**
-(Telegram-mediated `/login` proxying `claude /login` inside the agent
-container). New build order is `M0 ✅ → M1 ✅ → M5 → M6 → M6.5 → M3 →
-M3.5 → M3.6 → M4 → M7 → M8 → M9`.
+**Phase:** M5 done. Code: skeleton + telegram echo + container runtime.
+The runner can spawn, exec, and tear down per-chat containers with the
+full [ISOLATION.md](ISOLATION.md) policy applied, but nothing is wired
+to call it yet — M6 is where the agent loop starts using it.
+**Last updated:** 2026-04-10
+**Last working session:** M5 (Container runtime) in six commits —
+`mountsec` subpackage (5a), three-tier `BuildMounts` (5b),
+`BuildContainerArgs` (5c), Docker SDK wrapper + `CleanupLeftovers` (5d)
+with integration tests verified against live Docker Desktop, the
+minimal `picoclaw-agent:latest` image (5e) with Claude Code 2.1.100
+verified working, and wiring into `cmd/picoclaw/main.go` (5f) that
+opens the Docker client, loads the mount allowlist, runs the boot
+cleanup, and continues gracefully if Docker is unreachable. Integration
+tests live behind `//go:build docker_integration` so `go test ./...`
+runs without a daemon. Build order as of now:
+`M0 ✅ → M1 ✅ → M5 ✅ → M6 → M6.5 → M3 → M3.5 → M3.6 → M4 → M7 → M8 → M9`.
 
 ## What's done
 
+- ✅ **M5 — Container runtime landed.** `internal/runner/mountsec`
+  subpackage does pure allowlist validation: JSON schema, compiled-in
+  blocked patterns (SSH/GPG/AWS/Docker/.env/id_rsa/etc), symlink
+  resolution, traversal checks, darwin case-insensitivity, 0600
+  file-mode enforcement. `internal/runner/mounts.go` builds the
+  three-tier mount list from ISOLATION.md §3: owner gets project root
+  RO + store.sqlite RW + .env mask via an EmptyFile bind-mount; non-
+  owner gets workspace/memory/ipc/sessions/skills baseline only.
+  `internal/runner/docker_args.go` assembles every ISOLATION.md §6
+  flag: ReadonlyRootfs, CapDrop=ALL, no-new-privileges, seccomp=default,
+  non-root uid, tmpfs trio, resource caps, labels, env allowlist via
+  `os.LookupEnv` (D012). `internal/runner/docker.go` wraps the Docker
+  SDK with `EnsureRunning`/`Exec`/`Stop`/`Remove`/`ListPicoclawContainers`
+  plus `CleanupLeftovers` in `lifecycle.go` (keeps running containers
+  at the current version, stops+removes everything else). Integration
+  tests behind `//go:build docker_integration` verified end-to-end
+  against Docker Desktop: EnsureRunning idempotency, Exec success +
+  non-zero exit, Stop+Remove, and a mixed current-version/stale-version
+  cleanup scenario. `container/Dockerfile` builds `picoclaw-agent:latest`
+  from node:22-slim + claude-code + git + ripgrep (Claude Code 2.1.100
+  verified inside). `cmd/picoclaw/main.go` now boots the runner
+  subsystem after the store, loads the mount allowlist, runs cleanup,
+  and continues gracefully if Docker is unreachable.
 - ✅ **M1 — Telegram echo landed.** `internal/telegram` wraps
   `go-telegram/bot` v1.20: `Bot.New` + `Bot.Run(ctx)` with long-poll,
   `defaultHandler` storing every inbound update, `pingHandler`
@@ -90,27 +114,28 @@ Nothing actively in flight.
 
 ## What's next (in order — per [D018](DECISIONS.md))
 
-1. **M5 — Container runtime.** Docker SDK, mounts per [ISOLATION.md](ISOLATION.md)
-   from day one (RO root, dropped caps, non-root uid, blocked patterns,
-   `mount-allowlist.json`). Long-lived per chat, idle-killed,
-   label-based recovery. `PICOCLAW_NO_CONTAINER=1` dev fallback alive.
-2. **M6 — Agent SDK in container.** Wire
+1. **M6 — Agent SDK in container.** Wire
    `character-ai/claude-agent-sdk-go` Client at the per-chat wrapper
    script per [D015](DECISIONS.md). First agent loop with real
-   Read/Write/Bash inside the container. **At this point the operator
-   can manually run `docker exec -it <name> claude /login` once and
-   start using picoclaw with their Pro/Max subscription.**
-3. **M6.5 — Telegram-mediated `/login`.** New per [D018](DECISIONS.md).
+   Read/Write/Bash inside the container. Plug into the telegram default
+   handler so incoming messages actually get an agent reply. **At this
+   point the operator can manually run `docker exec -it picoclaw-<chat>
+   claude /login` once and start using picoclaw with their Pro/Max
+   subscription.**
+   - Also: idle watcher goroutine (intentionally deferred from M5d —
+     the per-chat activity-tracking state lives most naturally next to
+     the runner Run() call).
+2. **M6.5 — Telegram-mediated `/login`.** New per [D018](DECISIONS.md).
    `/login` slash command spawns `claude /login` inside the container,
    intercepts the verification URL on stdout, forwards via Telegram,
-   waits for success. Replaces step 2's manual `docker exec`. After this
+   waits for success. Replaces step 1's manual `docker exec`. After this
    the entire onboarding fits inside Telegram chat with no terminal access.
-4. **M3 — GroupQueue.** Per-chat serialization + global cap + backoff.
-   Replaces the stub `sync.Mutex` map M5/M6 will use.
-5. **M3.5 — Control plane** (`internal/control` Router + Telegram + CLI
+3. **M3 — GroupQueue.** Per-chat serialization + global cap + backoff.
+   Replaces the stub `sync.Mutex` map M6 will use.
+4. **M3.5 — Control plane** (`internal/control` Router + Telegram + CLI
    frontends + logs subsystem). Folds the directly-wired `/ping` and
    `/login` handlers into the Router. M4+ depend on this.
-6. (continue with M3.6, M4, M7, M8, M9 per ROADMAP)
+5. (continue with M3.6, M4, M7, M8, M9 per ROADMAP)
 
 **Optional, off the critical path:** **M2 (Direct API)** auto-enabled
 if `ANTHROPIC_API_KEY` is set. Skipped silently otherwise. Operator
