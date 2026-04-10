@@ -55,6 +55,48 @@ type Config struct {
 	//
 	// Required from M1 onward for any actual messaging work.
 	TelegramBotToken string
+
+	// --- Runner / container runtime (M5+) ---------------------------
+
+	// ContainerEnabled is true unless PICOCLAW_NO_CONTAINER=1.
+	//
+	// When false, picoclaw skips the Docker subsystem entirely (no
+	// client open, no leftover cleanup). This is a dev-only escape
+	// hatch; there is no working host-subprocess agent path yet
+	// (see docs/ROADMAP.md notes on the NO_CONTAINER stub).
+	ContainerEnabled bool
+
+	// RepoRoot is the absolute path to the picoclaw checkout. The
+	// runner mounts it RO inside the owner chat's agent container per
+	// ISOLATION.md §3.1. Defaults to os.Getwd() if unset.
+	RepoRoot string
+
+	// ContainerSkillsDir is the host directory bind-mounted at
+	// /home/node/.claude/skills inside every agent container. Defaults
+	// to ${RepoRoot}/container/skills.
+	ContainerSkillsDir string
+
+	// ChatsDir is the host directory holding per-chat workspaces.
+	// Defaults to ${RepoRoot}/chats.
+	ChatsDir string
+
+	// MountAllowlistPath is the operator-managed extras allowlist.
+	// Defaults to ${DataDir}/mount-allowlist.json. Missing file is
+	// not an error — picoclaw runs with only the standard mounts.
+	MountAllowlistPath string
+
+	// EmptyFile masks ${REPO_ROOT}/.env inside the owner agent
+	// container. EnsureChatDirs creates it if missing. Defaults to
+	// ${DataDir}/empty-env.
+	EmptyFile string
+
+	// ContainerImage is the image tag the runner spawns per chat.
+	ContainerImage string
+
+	// LeftoverCleanupEnabled controls the boot-time cleanup pass in
+	// lifecycle.go. Default true; set PICOCLAW_LEFTOVER_CLEANUP=0 to
+	// disable (debug only).
+	LeftoverCleanupEnabled bool
 }
 
 // Load reads environment, applies defaults, validates, and returns a
@@ -70,10 +112,14 @@ func Load(loadDotenv bool) (Config, error) {
 	}
 
 	cfg := Config{
-		DataDir:          getenvDefault("PICOCLAW_DATA_DIR", "./data"),
-		LogLevel:         parseLevel(getenvDefault("PICOCLAW_LOG_LEVEL", "info")),
-		LogFormat:        strings.ToLower(getenvDefault("PICOCLAW_LOG_FORMAT", "text")),
-		TelegramBotToken: os.Getenv("TELEGRAM_BOT_TOKEN"),
+		DataDir:                getenvDefault("PICOCLAW_DATA_DIR", "./data"),
+		LogLevel:               parseLevel(getenvDefault("PICOCLAW_LOG_LEVEL", "info")),
+		LogFormat:              strings.ToLower(getenvDefault("PICOCLAW_LOG_FORMAT", "text")),
+		TelegramBotToken:       os.Getenv("TELEGRAM_BOT_TOKEN"),
+		ContainerEnabled:       !envFlag("PICOCLAW_NO_CONTAINER"),
+		RepoRoot:               os.Getenv("PICOCLAW_REPO_ROOT"),
+		ContainerImage:         getenvDefault("PICOCLAW_CONTAINER_IMAGE", "picoclaw-agent:latest"),
+		LeftoverCleanupEnabled: !envFlag("PICOCLAW_LEFTOVER_CLEANUP_DISABLED"),
 	}
 
 	abs, err := filepath.Abs(cfg.DataDir)
@@ -82,6 +128,33 @@ func Load(loadDotenv bool) (Config, error) {
 	}
 	cfg.DataDir = abs
 	cfg.StorePath = filepath.Join(cfg.DataDir, "store.sqlite")
+
+	// Runner/container path defaults. RepoRoot falls back to cwd so
+	// `go run ./cmd/picoclaw` from the project root does the right
+	// thing without extra configuration.
+	if cfg.RepoRoot == "" {
+		wd, err := os.Getwd()
+		if err != nil {
+			return Config{}, fmt.Errorf("resolving RepoRoot from cwd: %w", err)
+		}
+		cfg.RepoRoot = wd
+	}
+	cfg.RepoRoot, err = filepath.Abs(cfg.RepoRoot)
+	if err != nil {
+		return Config{}, fmt.Errorf("resolving PICOCLAW_REPO_ROOT=%q: %w", cfg.RepoRoot, err)
+	}
+	if cfg.ChatsDir == "" {
+		cfg.ChatsDir = filepath.Join(cfg.RepoRoot, "chats")
+	}
+	if cfg.ContainerSkillsDir == "" {
+		cfg.ContainerSkillsDir = filepath.Join(cfg.RepoRoot, "container", "skills")
+	}
+	if cfg.MountAllowlistPath == "" {
+		cfg.MountAllowlistPath = filepath.Join(cfg.DataDir, "mount-allowlist.json")
+	}
+	if cfg.EmptyFile == "" {
+		cfg.EmptyFile = filepath.Join(cfg.DataDir, "empty-env")
+	}
 
 	if v := os.Getenv("PICOCLAW_OWNER_CHAT_ID"); v != "" {
 		id, err := strconv.ParseInt(v, 10, 64)
@@ -117,6 +190,18 @@ func getenvDefault(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// envFlag parses an env var as a boolean with the "anything truthy
+// means true" convention used across picoclaw. Accepts 1, true, yes,
+// on (case-insensitive). Unset or unrecognised value is false.
+func envFlag(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func parseLevel(s string) slog.Level {
