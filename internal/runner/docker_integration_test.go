@@ -134,6 +134,53 @@ func TestIntegrationEnsureRunningExecStopRemove(t *testing.T) {
 	}
 }
 
+func TestIntegrationCheckAuthOnAgentImage(t *testing.T) {
+	d := mkDocker(t)
+
+	// This test depends on picoclaw-agent:latest being built locally.
+	// We do NOT pull it (it is not on Docker Hub) — if it is missing,
+	// skip rather than fail.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	if _, _, err := d.cli.ImageInspectWithRaw(ctx, "picoclaw-agent:latest"); err != nil {
+		t.Skipf("picoclaw-agent:latest not built locally (run `docker build -t picoclaw-agent:latest container/`): %v", err)
+	}
+
+	name := "picoclaw-inttest-auth"
+	if id, _ := d.inspectByName(ctx, name); id != "" {
+		_ = d.Remove(ctx, id)
+	}
+
+	cfg := &container.Config{
+		Image:  "picoclaw-agent:latest",
+		Cmd:    strslice.StrSlice{"sleep", "3600"},
+		Labels: map[string]string{LabelChat: "inttest-auth", LabelVersion: "integration-test"},
+	}
+	host := &container.HostConfig{
+		RestartPolicy: container.RestartPolicy{Name: "no"},
+	}
+	id, err := d.EnsureRunning(ctx, name, cfg, host)
+	if err != nil {
+		t.Fatalf("EnsureRunning: %v", err)
+	}
+	t.Cleanup(func() { _ = d.Remove(context.Background(), id) })
+
+	status, err := d.CheckAuth(ctx, id)
+	if err != nil {
+		t.Fatalf("CheckAuth: %v", err)
+	}
+	// A vanilla picoclaw-agent:latest with no mounted credentials is
+	// definitely not logged in. We assert that exact state because if
+	// it ever returns LoggedIn=true on a stock image, our auth gate
+	// is broken.
+	if status.LoggedIn {
+		t.Errorf("LoggedIn = true on stock image (expected false): %+v", status)
+	}
+	if status.AuthMethod != "none" {
+		t.Errorf("AuthMethod = %q, want \"none\"", status.AuthMethod)
+	}
+}
+
 func TestIntegrationCleanupLeftovers(t *testing.T) {
 	d := mkDocker(t)
 	ensureAlpinePulled(t, d)
