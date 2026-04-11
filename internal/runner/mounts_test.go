@@ -108,6 +108,13 @@ func TestBuildMountsOwner(t *testing.T) {
 	if err := EnsureChatDirs(p, "owner"); err != nil {
 		t.Fatalf("EnsureChatDirs: %v", err)
 	}
+	// The .env mask mount is only emitted when RepoRoot/.env actually
+	// exists on the host (Docker can't create a mountpoint inside a
+	// RO bind). Touch a fake .env so this test exercises the
+	// "8 mounts including the mask" branch.
+	if err := os.WriteFile(filepath.Join(p.RepoRoot, ".env"), []byte("# test\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	ms, err := BuildMounts(p, "owner", TierOwner, nil)
 	if err != nil {
 		t.Fatalf("BuildMounts: %v", err)
@@ -149,6 +156,29 @@ func TestBuildMountsOwner(t *testing.T) {
 	for target := range want {
 		if !seen[target] {
 			t.Errorf("missing target %q", target)
+		}
+	}
+}
+
+func TestBuildMountsOwnerSkipsEnvMaskWhenAbsent(t *testing.T) {
+	p := mkPaths(t)
+	if err := EnsureChatDirs(p, "owner"); err != nil {
+		t.Fatalf("EnsureChatDirs: %v", err)
+	}
+	// No .env in RepoRoot — the mask mount must be skipped because
+	// Docker cannot create a mountpoint inside a RO bind mount when
+	// the target file does not already exist.
+	ms, err := BuildMounts(p, "owner", TierOwner, nil)
+	if err != nil {
+		t.Fatalf("BuildMounts: %v", err)
+	}
+	// 8 - 1 (no mask) = 7 mounts.
+	if len(ms) != 7 {
+		t.Errorf("len(mounts) = %d, want 7 (.env mask should have been skipped)", len(ms))
+	}
+	for _, m := range ms {
+		if m.Target == "/workspace/project/.env" {
+			t.Errorf(".env mask was emitted despite missing RepoRoot/.env: %+v", m)
 		}
 	}
 }

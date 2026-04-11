@@ -19,6 +19,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -187,6 +188,128 @@ func TestIntegrationCheckAuthOnAgentImage(t *testing.T) {
 	_, err = d.RunPrompt(ctx, id, "hello")
 	if !errors.Is(err, ErrNotLoggedIn) {
 		t.Errorf("RunPrompt: err = %v, want ErrNotLoggedIn", err)
+	}
+}
+
+// TestIntegrationBuildContainerArgsAgainstAgentImage exercises the
+// full BuildContainerArgs → ContainerCreate → ContainerStart → Exec
+// pipeline against picoclaw-agent:latest. This is the regression
+// test that would have caught the seccomp=default and the HOME=/
+// bugs that the M6d end-to-end testing surfaced — both lived in
+// flag assembly that the older alpine-based tests bypassed.
+//
+// Skipped if picoclaw-agent:latest is not built locally.
+func TestIntegrationBuildContainerArgsAgainstAgentImage(t *testing.T) {
+	d := mkDocker(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	if _, _, err := d.cli.ImageInspectWithRaw(ctx, "picoclaw-agent:latest"); err != nil {
+		t.Skipf("picoclaw-agent:latest not built locally: %v", err)
+	}
+
+	// Tear down any leftover from previous runs.
+	name := "picoclaw-inttest-buildargs"
+	if id, _ := d.inspectByName(ctx, name); id != "" {
+		_ = d.Remove(ctx, id)
+	}
+
+	// We need temp host dirs for the bind mounts BuildMounts will
+	// emit. Reuse the mounts_test helper layout.
+	root := t.TempDir()
+	paths := Paths{
+		RepoRoot:           root + "/repo",
+		DataDir:            root + "/data",
+		ChatsDir:           root + "/repo/chats",
+		ContainerSkillsDir: root + "/repo/container/skills",
+		EmptyFile:          root + "/data/empty-env",
+	}
+	for _, dir := range []string{paths.RepoRoot, paths.DataDir, paths.ChatsDir, paths.ContainerSkillsDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+	}
+	// Touch the store.sqlite owner mounts wants to bind RW.
+	if err := os.WriteFile(paths.DataDir+"/store.sqlite", []byte{}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The owner-tier .env mask mount overlays EmptyFile onto
+	// /workspace/project/.env. Docker cannot create the in-container
+	// mountpoint inside a RO bind mount, so the target file must
+	// already exist on the host inside RepoRoot. Production picoclaw
+	// runs out of a real checkout where .env actually exists; the
+	// test fixture has to recreate that.
+	if err := os.WriteFile(paths.RepoRoot+"/.env", []byte("# placeholder for .env mask test\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureChatDirs(paths, "inttest-buildargs"); err != nil {
+		t.Fatalf("EnsureChatDirs: %v", err)
+	}
+
+	mounts, err := BuildMounts(paths, "inttest-buildargs", TierOwner, nil)
+	if err != nil {
+		t.Fatalf("BuildMounts: %v", err)
+	}
+
+	cfg, host, _, err := BuildContainerArgs(SpawnConfig{
+		Image:       "picoclaw-agent:latest",
+		ChatFolder:  "inttest-buildargs",
+		Version:     "integration-test",
+		Mounts:      mounts,
+		UID:         os.Getuid(),
+		GID:         os.Getgid(),
+		MemoryBytes: 4 << 30,
+		NanoCPUs:    2_000_000_000,
+		PidsLimit:   1024,
+	})
+	if err != nil {
+		t.Fatalf("BuildContainerArgs: %v", err)
+	}
+
+	id, err := d.EnsureRunning(ctx, name, cfg, host)
+	if err != nil {
+		// This is the line that was failing with the seccomp bug:
+		// `Error response from daemon: Decoding seccomp profile failed`
+		// Any future regression in flag assembly that prevents
+		// ContainerStart from succeeding will surface here.
+		t.Fatalf("EnsureRunning via BuildContainerArgs: %v", err)
+	}
+	t.Cleanup(func() { _ = d.Remove(context.Background(), id) })
+
+	// HOME must be /home/node inside the container after the M6
+	// HOME-fix. Verifying via Exec is the matching half of the
+	// docker_args_test.go unit assertion.
+	res, err := d.Exec(ctx, id, []string{"sh", "-c", "echo $HOME"}, nil)
+	if err != nil {
+		t.Fatalf("Exec echo HOME: %v", err)
+	}
+	if got := strings.TrimSpace(res.Stdout); got != "/home/node" {
+		t.Errorf("HOME inside container = %q, want /home/node", got)
+	}
+
+	// $HOME must be writable. Without the /home/node tmpfs the
+	// rootfs is RO and this would fail with EROFS.
+	res, err = d.Exec(ctx, id, []string{"sh", "-c", "touch /home/node/test && echo ok"}, nil)
+	if err != nil {
+		t.Fatalf("Exec touch HOME: %v", err)
+	}
+	if res.ExitCode != 0 || strings.TrimSpace(res.Stdout) != "ok" {
+		t.Errorf("touch /home/node failed: exit=%d stdout=%q stderr=%q",
+			res.ExitCode, res.Stdout, res.Stderr)
+	}
+
+	// claude --version must produce its identification line on
+	// stdout. The bug we are guarding against (claude exits 0 with
+	// empty stdout) was specifically about silent EROFS failures
+	// during state writes; --version is the simplest claude
+	// invocation that still touches enough of its init path to
+	// catch them.
+	res, err = d.Exec(ctx, id, []string{"claude", "--version"}, nil)
+	if err != nil {
+		t.Fatalf("Exec claude --version: %v", err)
+	}
+	if !strings.Contains(res.Stdout, "Claude Code") {
+		t.Errorf("claude --version stdout = %q, want to contain 'Claude Code'", res.Stdout)
 	}
 }
 

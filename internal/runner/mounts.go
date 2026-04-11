@@ -130,11 +130,17 @@ func BuildMounts(p Paths, chatFolder string, tier Tier, al *mountsec.Allowlist) 
 // standardMounts returns the ISOLATION.md §3.1 / §3.2 standard mount set
 // for the tier.
 //
-// Owner adds four extras on top of the non-owner baseline:
+// Owner adds three extras on top of the non-owner baseline:
 //  1. RepoRoot → /workspace/project (RO)
-//  2. EmptyFile → /workspace/project/.env (RO)         — masks .env
-//  3. store.sqlite → /workspace/store/store.sqlite (RW) — direct SQL access
-//  4. (reserved — owner gets the same skills mount as non-owners today)
+//  2. (optional) EmptyFile → /workspace/project/.env (RO) — masks .env
+//     if and only if RepoRoot/.env exists on the host. Docker cannot
+//     create a mountpoint inside a RO bind mount, so trying to nest
+//     the mask mount when there is no real .env to overlay produces
+//     `make mountpoint .../workspace/project/.env: read-only file
+//     system` and the spawn fails. If there is no .env to begin with
+//     there is also nothing to mask, so skipping is safe.
+//  3. store.sqlite → /workspace/store/store.sqlite (RW) — direct SQL
+//     access for the owner.
 func standardMounts(p Paths, chatFolder string, tier Tier) []Mount {
 	chatDir := filepath.Join(p.ChatsDir, chatFolder)
 	memoryDir := filepath.Join(chatDir, "memory")
@@ -152,14 +158,18 @@ func standardMounts(p Paths, chatFolder string, tier Tier) []Mount {
 			Target:   "/workspace/project",
 			ReadOnly: true,
 		})
-		// Mask the .env inside the project mount. Even though project
-		// is RO, we do not want the agent *reading* .env values either.
-		// See [D012](../../docs/DECISIONS.md).
-		out = append(out, Mount{
-			Source:   p.EmptyFile,
-			Target:   "/workspace/project/.env",
-			ReadOnly: true,
-		})
+		// Mask the .env inside the project mount IF it exists. The
+		// stat call is the one filesystem hit BuildMounts performs;
+		// it stays "pure-ish" (deterministic given the host fs state)
+		// and the alternative is a hard spawn failure for any
+		// operator who runs picoclaw out of a checkout without .env.
+		if envExists(filepath.Join(p.RepoRoot, ".env")) {
+			out = append(out, Mount{
+				Source:   p.EmptyFile,
+				Target:   "/workspace/project/.env",
+				ReadOnly: true,
+			})
+		}
 		// Direct SQL access for advanced debugging. Acknowledged risk:
 		// agent in owner chat can corrupt the store. See D006 / ISOLATION.md §3.1.
 		out = append(out, Mount{
@@ -257,6 +267,17 @@ func EnsureChatDirs(p Paths, chatFolder string) error {
 		return err
 	}
 	return nil
+}
+
+// envExists reports whether path is a regular file (not a dir, not
+// missing). Used by standardMounts to decide whether to emit the
+// .env mask mount for the owner tier.
+func envExists(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return info.Mode().IsRegular()
 }
 
 // ensureEmptyFile makes sure path is a regular empty file. If path
