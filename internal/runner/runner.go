@@ -111,7 +111,7 @@ func (r *Runner) Ensure(
 	r.lockChat(chatFolder)
 	defer r.unlockChat(chatFolder)
 
-	if err := EnsureChatDirs(r.paths, chatFolder); err != nil {
+	if err := EnsureChatDirs(r.paths, chatFolder, tier == TierOwner, r.log); err != nil {
 		return "", err
 	}
 

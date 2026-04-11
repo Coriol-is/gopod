@@ -242,7 +242,7 @@ func TestIntegrationBuildContainerArgsAgainstAgentImage(t *testing.T) {
 	if err := os.WriteFile(paths.RepoRoot+"/.env", []byte("# placeholder for .env mask test\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := EnsureChatDirs(paths, "inttest-buildargs"); err != nil {
+	if err := EnsureChatDirs(paths, "inttest-buildargs", true, nil); err != nil {
 		t.Fatalf("EnsureChatDirs: %v", err)
 	}
 

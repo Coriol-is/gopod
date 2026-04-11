@@ -50,10 +50,10 @@ func TestPathsValidate(t *testing.T) {
 
 func TestEnsureChatDirsIdempotent(t *testing.T) {
 	p := mkPaths(t)
-	if err := EnsureChatDirs(p, "alice"); err != nil {
+	if err := EnsureChatDirs(p, "alice", false, nil); err != nil {
 		t.Fatalf("first: %v", err)
 	}
-	if err := EnsureChatDirs(p, "alice"); err != nil {
+	if err := EnsureChatDirs(p, "alice", false, nil); err != nil {
 		t.Fatalf("second: %v", err)
 	}
 
@@ -83,7 +83,7 @@ func TestEnsureChatDirsIdempotent(t *testing.T) {
 
 func TestEnsureChatDirsRejectsEmptyChat(t *testing.T) {
 	p := mkPaths(t)
-	if err := EnsureChatDirs(p, ""); err == nil {
+	if err := EnsureChatDirs(p, "", false, nil); err == nil {
 		t.Error("want error for empty chat folder")
 	}
 }
@@ -98,14 +98,14 @@ func TestEnsureEmptyFileRejectsNonEmpty(t *testing.T) {
 	if err := os.WriteFile(p.EmptyFile, []byte("surprise"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := EnsureChatDirs(p, "alice"); err == nil {
+	if err := EnsureChatDirs(p, "alice", false, nil); err == nil {
 		t.Error("want error when EmptyFile exists with content")
 	}
 }
 
 func TestBuildMountsOwner(t *testing.T) {
 	p := mkPaths(t)
-	if err := EnsureChatDirs(p, "owner"); err != nil {
+	if err := EnsureChatDirs(p, "owner", true, nil); err != nil {
 		t.Fatalf("EnsureChatDirs: %v", err)
 	}
 	// The .env mask mount is only emitted when RepoRoot/.env actually
@@ -162,7 +162,7 @@ func TestBuildMountsOwner(t *testing.T) {
 
 func TestBuildMountsOwnerSkipsEnvMaskWhenAbsent(t *testing.T) {
 	p := mkPaths(t)
-	if err := EnsureChatDirs(p, "owner"); err != nil {
+	if err := EnsureChatDirs(p, "owner", true, nil); err != nil {
 		t.Fatalf("EnsureChatDirs: %v", err)
 	}
 	// No .env in RepoRoot — the mask mount must be skipped because
@@ -185,7 +185,7 @@ func TestBuildMountsOwnerSkipsEnvMaskWhenAbsent(t *testing.T) {
 
 func TestBuildMountsRegistered(t *testing.T) {
 	p := mkPaths(t)
-	if err := EnsureChatDirs(p, "alice"); err != nil {
+	if err := EnsureChatDirs(p, "alice", false, nil); err != nil {
 		t.Fatalf("EnsureChatDirs: %v", err)
 	}
 	ms, err := BuildMounts(p, "alice", TierRegistered, nil)
@@ -206,7 +206,7 @@ func TestBuildMountsRegistered(t *testing.T) {
 
 func TestBuildMountsAllowlistExtras(t *testing.T) {
 	p := mkPaths(t)
-	if err := EnsureChatDirs(p, "alice"); err != nil {
+	if err := EnsureChatDirs(p, "alice", false, nil); err != nil {
 		t.Fatalf("EnsureChatDirs: %v", err)
 	}
 

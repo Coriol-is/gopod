@@ -21,9 +21,11 @@ package runner
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
+	"github.com/spaceinvaderz/picoclaw/internal/runner/chattmpl"
 	"github.com/spaceinvaderz/picoclaw/internal/runner/mountsec"
 )
 
@@ -234,23 +236,37 @@ func chatMatches(chatFolder string, allowed []string) bool {
 }
 
 // EnsureChatDirs creates the host-side directories a chat's mounts will
-// point at, plus the shared EmptyFile if it doesn't already exist. This
-// is the one side-effecting function in mounts.go; callers run it once
-// before BuildMounts when onboarding a chat or before spawning a
-// container for the first time after picoclaw restart.
+// point at, plus the shared EmptyFile if it doesn't already exist, plus
+// the seeded CLAUDE.md / memory/MEMORY.md template files (only on first
+// creation — never overwritten). This is the one side-effecting
+// function in mounts.go; callers run it once before BuildMounts when
+// onboarding a chat or before spawning a container for the first time
+// after picoclaw restart.
 //
-// Idempotent: safe to call repeatedly on the same chatFolder.
-func EnsureChatDirs(p Paths, chatFolder string) error {
+// isOwner toggles the owner-specific blurb in the seeded CLAUDE.md.
+//
+// log is used to surface "seeded N file(s)" once per first-creation;
+// pass nil to fall back to slog.Default.
+//
+// Idempotent: safe to call repeatedly on the same chatFolder. Files
+// created on prior runs are left alone.
+func EnsureChatDirs(p Paths, chatFolder string, isOwner bool, log *slog.Logger) error {
 	if err := p.Validate(); err != nil {
 		return err
 	}
 	if chatFolder == "" {
 		return errors.New("mounts: empty chatFolder")
 	}
+	if log == nil {
+		log = slog.Default()
+	}
+
+	chatDir := filepath.Join(p.ChatsDir, chatFolder)
+	memoryDir := filepath.Join(chatDir, "memory")
 
 	dirs := []string{
-		filepath.Join(p.ChatsDir, chatFolder),
-		filepath.Join(p.ChatsDir, chatFolder, "memory"),
+		chatDir,
+		memoryDir,
 		filepath.Join(p.DataDir, "ipc", chatFolder),
 		filepath.Join(p.DataDir, "sessions", chatFolder, ".claude"),
 	}
@@ -265,6 +281,22 @@ func EnsureChatDirs(p Paths, chatFolder string) error {
 	// inside the container as a RO file.
 	if err := ensureEmptyFile(p.EmptyFile); err != nil {
 		return err
+	}
+
+	// Seed CLAUDE.md and memory/MEMORY.md from embedded templates
+	// the very first time this chat folder is created. Never
+	// overwrites existing files — operator and agent edits win.
+	created, err := chattmpl.Seed(chatDir, memoryDir, chattmpl.Vars{
+		ChatFolder: chatFolder,
+		IsOwner:    isOwner,
+	})
+	if err != nil {
+		return fmt.Errorf("mounts: seed templates: %w", err)
+	}
+	if len(created) > 0 {
+		log.Info("seeded chat workspace templates",
+			slog.String("chat", chatFolder),
+			slog.Int("files", len(created)))
 	}
 	return nil
 }

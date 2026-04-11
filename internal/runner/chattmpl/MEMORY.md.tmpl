@@ -1,0 +1,35 @@
+# Memory: {{.ChatFolder}}
+
+This is the **Anthropic Memory Tool scratchpad** for this picoclaw chat.
+Anything in this directory survives container restarts (it is bind-
+mounted from `${PICOCLAW_DATA_DIR}/../chats/{{.ChatFolder}}/memory/`
+on the host).
+
+The agent owns this file. Add a section per stable fact, preference,
+or decision worth remembering across turns. picoclaw never edits or
+deletes content here — only the agent does.
+
+## Format suggestion
+
+```
+## <short topic>
+
+- <fact or preference>
+- <another>
+
+_Last updated: <date>_
+```
+
+## Examples (delete once real entries arrive)
+
+## Operator preferences
+
+- (placeholder — first real preference will replace this section)
+
+## Decisions
+
+- (placeholder)
+
+---
+
+_Seeded by picoclaw on {{.Date}} for chat folder `{{.ChatFolder}}`._
