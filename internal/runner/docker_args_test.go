@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/docker/docker/api/types/mount"
@@ -91,8 +92,15 @@ func TestBuildContainerArgsFlags(t *testing.T) {
 	if !hasString(host.SecurityOpt, "no-new-privileges:true") {
 		t.Errorf("SecurityOpt missing no-new-privileges: %v", host.SecurityOpt)
 	}
-	if !hasString(host.SecurityOpt, "seccomp=default") {
-		t.Errorf("SecurityOpt missing seccomp=default: %v", host.SecurityOpt)
+	// seccomp is NOT set explicitly — the daemon's default profile
+	// applies automatically when SecurityOpt has no `seccomp=` entry.
+	// Setting it explicitly to "default" via the SDK is broken
+	// because the daemon JSON-parses the value (the CLI accepts
+	// "default" as a keyword; the SDK does not).
+	for _, s := range host.SecurityOpt {
+		if strings.HasPrefix(s, "seccomp=") {
+			t.Errorf("SecurityOpt unexpectedly carries seccomp entry %q (default profile applies on its own)", s)
+		}
 	}
 	if host.RestartPolicy.Name != "no" {
 		t.Errorf("RestartPolicy = %q, want no", host.RestartPolicy.Name)

@@ -149,11 +149,21 @@ func BuildContainerArgs(cfg SpawnConfig) (*container.Config, *container.HostConf
 		CapDrop: strslice.StrSlice{"ALL"},
 
 		// no-new-privileges blocks setuid/setgid escalation even if
-		// the image contains such a binary. seccomp=default applies
-		// Docker's default syscall filter.
+		// the image contains such a binary.
+		//
+		// Note on seccomp: the Docker daemon applies its default
+		// seccomp profile automatically when no `seccomp=` SecurityOpt
+		// is set — that is the documented behaviour and what we want.
+		// We do NOT pass `seccomp=default` explicitly because the
+		// daemon parses the SecurityOpt VALUE as either inline JSON
+		// or a JSON file path; the literal string "default" is
+		// neither and the spawn fails with
+		// `Decoding seccomp profile failed: invalid character 'd'`.
+		// The CLI flag `--security-opt seccomp=default` works
+		// because the docker CLI translates "default" to "no value"
+		// before sending to the daemon; the SDK does not.
 		SecurityOpt: []string{
 			"no-new-privileges:true",
-			"seccomp=default",
 		},
 
 		// picoclaw decides restart policy, not Docker. Crashes should
