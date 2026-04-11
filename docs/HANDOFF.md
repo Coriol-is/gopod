@@ -9,22 +9,30 @@
 
 ## Current state
 
-**Phase:** M5 done. Code: skeleton + telegram echo + container runtime.
-The runner can spawn, exec, and tear down per-chat containers with the
-full [ISOLATION.md](ISOLATION.md) policy applied, but nothing is wired
-to call it yet — M6 is where the agent loop starts using it.
-**Last updated:** 2026-04-10
-**Last working session:** M5 (Container runtime) in six commits —
-`mountsec` subpackage (5a), three-tier `BuildMounts` (5b),
-`BuildContainerArgs` (5c), Docker SDK wrapper + `CleanupLeftovers` (5d)
-with integration tests verified against live Docker Desktop, the
-minimal `picoclaw-agent:latest` image (5e) with Claude Code 2.1.100
-verified working, and wiring into `cmd/picoclaw/main.go` (5f) that
-opens the Docker client, loads the mount allowlist, runs the boot
-cleanup, and continues gracefully if Docker is unreachable. Integration
-tests live behind `//go:build docker_integration` so `go test ./...`
-runs without a daemon. Build order as of now:
-`M0 ✅ → M1 ✅ → M5 ✅ → M6 → M6.5 → M3 → M3.5 → M3.6 → M4 → M7 → M8 → M9`.
+**Phase:** M6 done. picoclaw is a working Telegram Claude assistant.
+A real Pro/Max-authenticated `claude -p` reply round-trips end to
+end via the bot. /login is still manual (`docker exec -it
+picoclaw-<chat> claude /login` on the host); M6.5 wires it through
+Telegram next.
+**Last updated:** 2026-04-11
+**Last working session:** M6 (Agent SDK in container) in seven
+focused commits — registered_chats CRUD (6a), `claude auth status
+--json` parser (6b), synchronous `claude -p` runner (6c), telegram
+default handler that auto-registers the owner and routes registered
+chats through the runner with /register + /whoami slash commands
+(6d), idle watcher (6e), then three runtime fixes uncovered by
+end-to-end testing against the real bot:
+`seccomp=default` SecurityOpt was rejected by the daemon as invalid
+JSON (the CLI shorthand does not survive the SDK), `--user 501:20`
+without `HOME=/home/node` left HOME=/ on a read-only rootfs and
+claude silently EROFS-failed before printing anything, and the
+.env mask mount tried to nest inside a RO bind without a target
+file existing on the host. Each fix landed with a regression test;
+the BuildContainerArgs integration test now exercises the full
+production flag-assembly path against picoclaw-agent:latest so
+the next regression in this area gets caught automatically.
+Build order as of now:
+`M0 ✅ → M1 ✅ → M5 ✅ → M6 ✅ → M6.5 → M3 → M3.5 → M3.6 → M4 → M7 → M8 → M9`.
 
 ## What's done
 
