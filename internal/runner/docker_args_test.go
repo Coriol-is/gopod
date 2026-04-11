@@ -115,11 +115,26 @@ func TestBuildContainerArgsFlags(t *testing.T) {
 		t.Errorf("PidsLimit = %v, want 1024", host.Resources.PidsLimit)
 	}
 
-	// Tmpfs trio.
-	for _, target := range []string{"/tmp", "/home/node/.cache", "/run"} {
-		if _, ok := host.Tmpfs[target]; !ok {
+	// Tmpfs targets: /tmp, /home/node, /run. /home/node MUST be present
+	// or `--user <uid>` containers can't write `$HOME/.claude.json` and
+	// claude silently exits with empty stdout (regression hunted by
+	// this test after the M6d end-to-end test surfaced it).
+	for _, target := range []string{"/tmp", "/home/node", "/run"} {
+		spec, ok := host.Tmpfs[target]
+		if !ok {
 			t.Errorf("missing tmpfs %q", target)
+			continue
 		}
+		if !strings.Contains(spec, "mode=1777") {
+			t.Errorf("tmpfs %q missing mode=1777 (got %q): non-root uid override needs world-writable tmpfs", target, spec)
+		}
+	}
+
+	// HOME must be set in Env so the --user override doesn't inherit
+	// HOME=/ from the image. This is the matching half of the tmpfs
+	// fix above.
+	if !hasString(conf.Env, "HOME=/home/node") {
+		t.Errorf("Env missing HOME=/home/node: %v", conf.Env)
 	}
 
 	// Mount conversion.

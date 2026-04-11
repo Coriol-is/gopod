@@ -114,6 +114,16 @@ func BuildContainerArgs(cfg SpawnConfig) (*container.Config, *container.HostConf
 
 	// -- container.Config -------------------------------------------------
 
+	// HOME must be explicitly set when --user overrides the image's
+	// default user: Docker does not adjust HOME automatically, so a
+	// `--user 501:20` invocation inherits HOME from the image (which
+	// for node:22-slim with no USER directive is "/", the root
+	// directory). Claude Code then tries to write its config to
+	// `/.claude.json` on the read-only rootfs and silently fails.
+	// Forcing HOME=/home/node points it at the writable tmpfs we set
+	// up in the HostConfig below.
+	env := append(buildEnvSlice(cfg.EnvAllowlist), "HOME=/home/node")
+
 	conf := &container.Config{
 		Image:      cfg.Image,
 		User:       fmt.Sprintf("%d:%d", cfg.UID, cfg.GID),
@@ -127,7 +137,7 @@ func BuildContainerArgs(cfg SpawnConfig) (*container.Config, *container.HostConf
 			"picoclaw.chat":    cfg.ChatFolder,
 			"picoclaw.version": cfg.Version,
 		},
-		Env:             buildEnvSlice(cfg.EnvAllowlist),
+		Env:             env,
 		AttachStdin:     false,
 		AttachStdout:    false,
 		AttachStderr:    false,
@@ -177,12 +187,30 @@ func BuildContainerArgs(cfg SpawnConfig) (*container.Config, *container.HostConf
 			PidsLimit: &pidsLimit,
 		},
 
-		// Three tmpfs mounts from ISOLATION.md §6.1. Sizes are fixed
-		// at the values ISOLATION.md picks; scaling them is future work.
+		// Tmpfs mounts. ISOLATION.md §6.1 names three; we add one
+		// more (/home/node) once end-to-end testing of M6d showed
+		// that Claude Code needs a writable HOME to store its
+		// per-instance state (`$HOME/.claude.json` plus npm/node
+		// scratch). The /home/node tmpfs sits below the
+		// /home/node/.claude bind mount in the mount tree — Docker
+		// applies mounts in target-depth order so the bind mount
+		// nests on top of the tmpfs, giving us:
+		//
+		//   /home/node                 → tmpfs (writable, ephemeral)
+		//   /home/node/.claude         → bind  (writable, persistent)
+		//   /home/node/.claude/skills  → bind  (read-only, persistent)
+		//
+		// mode=1777 is the sticky-write-all mode; without it, the
+		// default tmpfs mode is 1755 and a non-root uid override
+		// (`--user 501:20` etc) cannot write into it.
+		//
+		// /home/node/.cache is intentionally NOT a separate tmpfs
+		// any more — it falls through to the parent /home/node
+		// tmpfs naturally.
 		Tmpfs: map[string]string{
-			"/tmp":              "rw,size=512m,mode=1777",
-			"/home/node/.cache": "rw,size=256m",
-			"/run":              "rw,size=64m",
+			"/tmp":       "rw,size=512m,mode=1777",
+			"/home/node": "rw,size=256m,mode=1777",
+			"/run":       "rw,size=64m,mode=1777",
 		},
 
 		// Bind mounts from BuildMounts.
