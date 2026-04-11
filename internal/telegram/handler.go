@@ -72,9 +72,13 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 		if errors.Is(err, runner.ErrNotLoggedIn) {
 			b.replyText(ctx, m.Chat.ID,
 				"This chat's agent container is not authenticated yet.\n\n"+
-					"Run /login to sign in with your Anthropic Pro/Max account "+
-					"(or set ANTHROPIC_API_KEY in picoclaw's environment for "+
-					"the API-key path).")
+					"Until M6.5 wires /login through Telegram, run this on "+
+					"the picoclaw host once:\n\n"+
+					"  docker exec -it picoclaw-"+rc.Folder+" claude /login\n\n"+
+					"Open the URL it prints, sign in with your Anthropic "+
+					"Pro/Max account, then send another message here. "+
+					"Credentials persist in data/sessions/"+rc.Folder+
+					"/.claude/ across restarts.")
 			return
 		}
 		b.log.Error("runner.Run failed",
