@@ -124,7 +124,7 @@ func (d *Docker) RunPrompt(ctx context.Context, containerID, prompt string, opts
 	// Commander.js treats -p as a boolean flag; everything after it
 	// becomes the positional prompt argument. If --allowedTools
 	// follows -p, it swallows the prompt as a tool name.
-	cmd := []string{"claude", "--allowedTools", DefaultAllowedTools}
+	cmd := []string{"claude", "--continue", "--allowedTools", DefaultAllowedTools}
 	if len(opts) > 0 && opts[0].AppendSystemPrompt != "" {
 		cmd = append(cmd, "--append-system-prompt", opts[0].AppendSystemPrompt)
 	}
