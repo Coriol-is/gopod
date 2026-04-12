@@ -98,6 +98,42 @@ func recallHandler(ops MemoryOps, lookup func(int64) string) Handler {
 	}
 }
 
+// RegisterMemoryGC adds /memory command with gc/stats subcommands.
+func RegisterMemoryGC(r *Router, archiveFn func(ctx context.Context, chatFolder string) (int64, error), statsFn func(ctx context.Context, chatFolder string) (string, error), chatFolderLookup func(chatID int64) string) {
+	r.Register("memory", "memory", "memory management (gc, stats)", PermChatLocal,
+		func(ctx context.Context, cmd Command) (Response, error) {
+			folder := chatFolderLookup(cmd.Caller.ChatID)
+			if folder == "" {
+				return Response{Text: "Chat not registered.", Code: 1}, nil
+			}
+
+			sub := "stats"
+			if len(cmd.Args) > 0 {
+				sub = cmd.Args[0]
+			}
+
+			switch sub {
+			case "gc":
+				n, err := archiveFn(ctx, folder)
+				if err != nil {
+					return Response{}, err
+				}
+				if n == 0 {
+					return Response{Text: "No stale memories to archive (store too small or all memories are fresh)."}, nil
+				}
+				return Response{Text: fmt.Sprintf("Archived %d stale memories.", n)}, nil
+			case "stats":
+				text, err := statsFn(ctx, folder)
+				if err != nil {
+					return Response{}, err
+				}
+				return Response{Text: text}, nil
+			default:
+				return Response{Text: "Usage: /memory stats | /memory gc", Code: 1}, nil
+			}
+		})
+}
+
 func truncateStr(s string, n int) string {
 	if len(s) <= n {
 		return s
