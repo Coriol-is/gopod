@@ -37,8 +37,49 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 		return
 	}
 
-	// Skip empty / non-text messages — media handling lands in I2/I3/I4.
 	text := strings.TrimSpace(messageText(m))
+
+	// Handle photo messages (I2): download, save, build prompt.
+	var filePath string
+	if len(m.Photo) > 0 {
+		rc, ok := b.resolveRegistered(ctx, m)
+		if !ok {
+			return
+		}
+		_, containerPath, err := b.downloadPhoto(ctx, rc.Folder, m.Photo)
+		if err != nil {
+			b.log.Error("download photo failed", slog.Any("err", err))
+			b.replyTo(ctx, m.Chat.ID, m.ID, "Failed to download photo.")
+			return
+		}
+		filePath = containerPath
+		if text == "" {
+			text = "The user sent a photo. Describe what you see in it."
+		} else {
+			text = text + "\n\n[Photo attached at " + containerPath + "]"
+		}
+	}
+
+	// Handle document messages: download, save, reference in prompt.
+	if m.Document != nil && filePath == "" {
+		rc, ok := b.resolveRegistered(ctx, m)
+		if !ok {
+			return
+		}
+		_, containerPath, err := b.downloadDocument(ctx, rc.Folder, m.Document)
+		if err != nil {
+			b.log.Error("download document failed", slog.Any("err", err))
+			b.replyTo(ctx, m.Chat.ID, m.ID, "Failed to download document.")
+			return
+		}
+		filePath = containerPath
+		if text == "" {
+			text = "The user sent a file: " + containerPath + ". Read and analyze it."
+		} else {
+			text = text + "\n\n[File attached at " + containerPath + "]"
+		}
+	}
+
 	if text == "" {
 		return
 	}
@@ -73,6 +114,7 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 		Folder:    rc.Folder,
 		IsOwner:   rc.IsOwner,
 		Text:      text,
+		FilePath:  filePath,
 	}
 
 	// If queue is wired (M3+), enqueue and return immediately.

@@ -34,6 +34,7 @@ type Item struct {
 	Folder    string // registered chat folder
 	IsOwner   bool
 	Text      string // the user's message text
+	FilePath  string // container-side path to an uploaded file (photo/doc), empty if text-only
 }
 
 // Handler is the callback the queue invokes for each agent turn.

@@ -241,6 +241,9 @@ func (r *Runner) extractAndIngest(ctx context.Context, chatFolder, userMsg, agen
 	}
 }
 
+// ChatsDir returns the host-side chats directory path.
+func (r *Runner) ChatsDir() string { return r.paths.ChatsDir }
+
 // Docker returns the underlying Docker client handle. Used by
 // login.go to call ExecInteractive directly (the login flow needs
 // the raw interactive exec primitive, not the high-level Run facade).
