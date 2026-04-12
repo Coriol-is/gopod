@@ -91,6 +91,18 @@ var schemaStatements = []string{
 	  error TEXT
 	)`,
 
+	// --- Structured logs (M8b).
+	`CREATE TABLE IF NOT EXISTS logs (
+	  id INTEGER PRIMARY KEY AUTOINCREMENT,
+	  timestamp INTEGER NOT NULL,
+	  level TEXT NOT NULL,
+	  subsystem TEXT,
+	  message TEXT NOT NULL,
+	  attrs_json TEXT
+	)`,
+	`CREATE INDEX IF NOT EXISTS idx_logs_ts
+	   ON logs(timestamp DESC)`,
+
 	// --- Generic key/value state (router cursors etc.).
 	`CREATE TABLE IF NOT EXISTS router_state (
 	  key TEXT PRIMARY KEY,

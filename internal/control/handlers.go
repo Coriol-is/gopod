@@ -61,6 +61,36 @@ func RegisterWhoami(r *Router, ownerChatID int64) {
 
 // RegisterVoiceCommand adds /voice to the Router with a callback for
 // setting the per-chat reply mode.
+// RegisterLogsCommand adds /logs to the Router. Owner-only.
+func RegisterLogsCommand(r *Router, queryFn func(level, subsystem string, limit int) (string, error)) {
+	r.Register("logs", "logs", "(owner) show recent picoclaw logs", PermOwnerOnly,
+		func(ctx context.Context, cmd Command) (Response, error) {
+			level := ""
+			subsys := ""
+			limit := 20
+			for i, a := range cmd.Args {
+				switch a {
+				case "--level", "-l":
+					if i+1 < len(cmd.Args) {
+						level = cmd.Args[i+1]
+					}
+				case "--subsys", "-s":
+					if i+1 < len(cmd.Args) {
+						subsys = cmd.Args[i+1]
+					}
+				}
+			}
+			text, err := queryFn(level, subsys, limit)
+			if err != nil {
+				return Response{}, err
+			}
+			if text == "" {
+				text = "No log entries found."
+			}
+			return Response{Text: text}, nil
+		})
+}
+
 func RegisterVoiceCommand(r *Router, setMode func(chatID int64, mode string)) {
 	r.Register("voice", "voice", "set reply mode: voice, text, voice+text, auto", PermChatLocal,
 		func(ctx context.Context, cmd Command) (Response, error) {
