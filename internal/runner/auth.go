@@ -67,7 +67,11 @@ func (d *Docker) CheckAuth(ctx context.Context, containerID string) (AuthStatus,
 //   Glob   — find files by pattern
 //   WebSearch — search the web
 //   WebFetch  — fetch a URL
-const DefaultAllowedTools = "Bash Read Write Edit Grep Glob WebSearch WebFetch"
+// DefaultAllowedTools uses comma separation because --allowedTools
+// is a variadic flag in commander.js — space-separated values would
+// cause it to consume ALL subsequent argv entries (including the
+// prompt) as tool names.
+const DefaultAllowedTools = "Bash,Read,Write,Edit,Grep,Glob,WebSearch,WebFetch"
 
 // ErrNotLoggedIn is returned by RunPrompt when the agent container has
 // no Claude credentials and has never been authenticated.
