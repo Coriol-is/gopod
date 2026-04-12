@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -168,12 +169,43 @@ func (r *Runner) Run(
 	}
 	r.touch(chatFolder)
 
-	reply, err := r.d.RunPrompt(ctx, id, prompt)
+	// Build memory context for the system prompt if memory is wired.
+	var opts RunPromptOpts
+	if r.memory != nil {
+		memories, err := r.memory.Search(ctx, chatFolder, prompt, 5)
+		if err != nil {
+			r.log.Warn("memory search failed, proceeding without context",
+				slog.String("chat", chatFolder),
+				slog.Any("err", err))
+		} else if len(memories) > 0 {
+			opts.AppendSystemPrompt = formatMemoryContext(memories)
+			r.log.Debug("injecting memory context",
+				slog.String("chat", chatFolder),
+				slog.Int("memories", len(memories)))
+		}
+	}
+
+	reply, err := r.d.RunPrompt(ctx, id, prompt, opts)
 	if err != nil {
 		return "", err
 	}
 	r.touch(chatFolder)
 	return reply, nil
+}
+
+// formatMemoryContext builds the --append-system-prompt text from
+// retrieved memories.
+func formatMemoryContext(memories []MemoryItem) string {
+	var sb strings.Builder
+	sb.WriteString("Here are relevant facts from previous conversations with this user. Use them to personalize your response when relevant, but do not mention that you are reading from a memory system unless asked:\n\n")
+	for i, m := range memories {
+		if m.Title != "" {
+			fmt.Fprintf(&sb, "%d. [%s] %s: %s\n", i+1, m.Kind, m.Title, m.Content)
+		} else {
+			fmt.Fprintf(&sb, "%d. [%s] %s\n", i+1, m.Kind, m.Content)
+		}
+	}
+	return sb.String()
 }
 
 // CheckAuth proxies through to docker.CheckAuth so the telegram
