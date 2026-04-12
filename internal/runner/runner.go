@@ -30,6 +30,7 @@ type Runner struct {
 	allow   []string // env var names to forward into containers
 	version string
 	log     *slog.Logger
+	store   stateStore // for persisting compact timestamps
 
 	// memory is the long-term memory layer. Optional: if nil, prompts
 	// are sent without memory context. Set via SetMemory after
@@ -46,6 +47,10 @@ type Runner struct {
 	// turnCount tracks turns per chat for auto-compact.
 	turnCountMu sync.Mutex
 	turnCount   map[string]int
+
+	// lastCompact tracks last compact time per chat (for interval/daily triggers).
+	// Protected by activityMu (reuses the same lock as activity map).
+	lastCompact map[string]time.Time
 
 	// compactAfter triggers auto-compact after N turns. 0 = disabled.
 	compactAfter int
@@ -239,6 +244,16 @@ func (r *Runner) CheckAuth(ctx context.Context, chatFolder string, tier Tier, al
 	}
 	return r.d.CheckAuth(ctx, id)
 }
+
+// stateStore is the interface Runner needs for persisting compact
+// timestamps across restarts. Consumer-side interface.
+type stateStore interface {
+	GetState(ctx context.Context, key string) (string, error)
+	SetState(ctx context.Context, key, value string) error
+}
+
+// SetStore wires the state store for persisting compact timestamps.
+func (r *Runner) SetStore(s stateStore) { r.store = s }
 
 // MemoryCompiler is the interface the Runner needs from the memory
 // layer. CompileContext returns the formatted system prompt appendix

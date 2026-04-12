@@ -46,6 +46,17 @@ type Config struct {
 	// Zero means "unset".
 	OwnerChatID int64
 
+	// --- Session compact settings ---
+
+	// CompactAfter triggers auto-compact after N turns. 0 = disabled.
+	CompactAfter int
+
+	// CompactInterval triggers compact every N duration. "" = disabled.
+	CompactInterval string
+
+	// CompactTime triggers compact at a specific time daily (HH:MM). "" = disabled.
+	CompactTime string
+
 	// TelegramBotToken is the Bot API token from @BotFather.
 	//
 	// Optional at config level: if empty, the telegram subsystem refuses
@@ -111,6 +122,11 @@ func Load(loadDotenv bool) (Config, error) {
 		}
 	}
 
+	compactAfter := 30
+	if v := os.Getenv("PICOCLAW_COMPACT_AFTER"); v != "" {
+		fmt.Sscanf(v, "%d", &compactAfter)
+	}
+
 	cfg := Config{
 		DataDir:                getenvDefault("PICOCLAW_DATA_DIR", "./data"),
 		LogLevel:               parseLevel(getenvDefault("PICOCLAW_LOG_LEVEL", "info")),
@@ -120,6 +136,9 @@ func Load(loadDotenv bool) (Config, error) {
 		RepoRoot:               os.Getenv("PICOCLAW_REPO_ROOT"),
 		ContainerImage:         getenvDefault("PICOCLAW_CONTAINER_IMAGE", "picoclaw-agent:latest"),
 		LeftoverCleanupEnabled: !envFlag("PICOCLAW_LEFTOVER_CLEANUP_DISABLED"),
+		CompactAfter:           compactAfter,
+		CompactInterval:        os.Getenv("PICOCLAW_COMPACT_INTERVAL"),
+		CompactTime:            os.Getenv("PICOCLAW_COMPACT_TIME"),
 	}
 
 	abs, err := filepath.Abs(cfg.DataDir)

@@ -64,6 +64,12 @@ func (m *Memory) Add(ctx context.Context, chatFolder, kind, title, content, sour
 			len(vecs[0]), m.embedder.Dim())
 	}
 
+	// For conversation_summary: supersede the previous one so they
+	// don't accumulate. Each chat should have at most one active summary.
+	if kind == "conversation_summary" {
+		m.supersedePreviousSummary(ctx, chatFolder)
+	}
+
 	// Dedup: if a very similar active memory already exists (cosine
 	// similarity > 0.92), update it instead of creating a duplicate.
 	existingID, sim, err := m.FindSimilar(ctx, chatFolder, vecs[0])
@@ -426,6 +432,16 @@ func sanitizeFTS(s string) string {
 		clean = append(clean, `"`+w+`"`)
 	}
 	return strings.Join(clean, " ")
+}
+
+// supersedePreviousSummary marks all existing active conversation_summary
+// entries for a chat as superseded, so only the newest one remains active.
+func (m *Memory) supersedePreviousSummary(ctx context.Context, chatFolder string) {
+	m.store.DB().ExecContext(ctx, `
+		UPDATE memories SET status = 'superseded', updated_at = ?
+		 WHERE chat_folder = ? AND kind = 'conversation_summary'
+		   AND IFNULL(status, 'active') = 'active'`,
+		time.Now().UnixMilli(), chatFolder)
 }
 
 func nullableStr(s string) interface{} {
