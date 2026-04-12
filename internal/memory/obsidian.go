@@ -17,6 +17,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -30,7 +32,7 @@ type ObsidianIngester struct {
 	log        *slog.Logger
 
 	// indexed tracks path → mtime+size for change detection.
-	// Only files whose mtime or size changed get re-embedded.
+	mu      sync.Mutex
 	indexed map[string]fileInfo
 }
 
@@ -60,10 +62,16 @@ func (o *ObsidianIngester) Scan(ctx context.Context) (int, error) {
 		return 0, nil
 	}
 
-	var ingested, skipped int
-	seen := make(map[string]bool) // track files still in vault for reconcile
+	// Collect files to process (Walk is fast, embedding is slow).
+	type fileJob struct {
+		fullPath string
+		relPath  string
+		info     fileInfo
+	}
+	var jobs []fileJob
+	var skipped int
 
-	err := filepath.Walk(o.vaultPath, func(path string, info os.FileInfo, err error) error {
+	filepath.Walk(o.vaultPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -78,10 +86,8 @@ func (o *ObsidianIngester) Scan(ctx context.Context) (int, error) {
 		}
 
 		relPath, _ := filepath.Rel(o.vaultPath, path)
-		seen[relPath] = true
-
-		// Delta check: skip if mtime + size unchanged.
 		current := fileInfo{ModTime: info.ModTime().Unix(), Size: info.Size()}
+
 		if prev, ok := o.indexed[relPath]; ok {
 			if prev.ModTime == current.ModTime && prev.Size == current.Size {
 				skipped++
@@ -89,15 +95,7 @@ func (o *ObsidianIngester) Scan(ctx context.Context) (int, error) {
 			}
 		}
 
-		n, err := o.ingestFile(ctx, path, relPath)
-		if err != nil {
-			o.log.Warn("obsidian: ingest failed",
-				slog.String("file", relPath),
-				slog.Any("err", err))
-			return nil
-		}
-		ingested += n
-		o.indexed[relPath] = current
+		jobs = append(jobs, fileJob{fullPath: path, relPath: relPath, info: current})
 		return nil
 	})
 
@@ -106,7 +104,46 @@ func (o *ObsidianIngester) Scan(ctx context.Context) (int, error) {
 			slog.Int("skipped", skipped))
 	}
 
-	return ingested, err
+	if len(jobs) == 0 {
+		return 0, nil
+	}
+
+	// Process files in parallel (bounded concurrency).
+	const workers = 5
+	var ingested int64
+	var wg sync.WaitGroup
+	ch := make(chan fileJob, len(jobs))
+
+	for _, j := range jobs {
+		ch <- j
+	}
+	close(ch)
+
+	for i := 0; i < workers && i < len(jobs); i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := range ch {
+				n, err := o.ingestFile(ctx, j.fullPath, j.relPath)
+				if err != nil {
+					o.log.Warn("obsidian: ingest failed",
+						slog.String("file", j.relPath),
+						slog.Any("err", err))
+					continue
+				}
+				atomic.AddInt64(&ingested, int64(n))
+				// Track indexed file (thread-safe via mutex in caller
+				// after wg.Wait, but safe here because each goroutine
+				// handles a unique relPath).
+				o.mu.Lock()
+				o.indexed[j.relPath] = j.info
+				o.mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+
+	return int(ingested), nil
 }
 
 // ingestFile reads a markdown file, splits into heading-based chunks,
