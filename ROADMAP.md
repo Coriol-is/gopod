@@ -96,11 +96,11 @@ Tracked as its own phase because the milestones are orthogonal to core work.
 
 | ID | Step | Status |
 |----|------|--------|
-| S1 | Container-skills directory + mount into agent container | ⬜ |
-| S2 | MCP skill loader: spawn local MCP servers per chat, register tools | ⬜ |
-| S3 | Skill manifest format + validation | ⬜ |
-| S4 | Per-chat skill enable/disable | ⬜ |
-| S5 | Dev-time Claude Code skills in `.claude/skills/` for picoclaw maintainers | ⬜ |
+| S1 | Container-skills directory + mount into agent container | ✅ | Mechanism works: `container/skills/memory/SKILL.md` mounted. Per-chat `skills.json` filter deferred |
+| S2 | MCP tool server: picoclaw as MCP stdio server proxying memory/tasks/control HTTP APIs → natively registered Claude tools via `--mcp-config`. Agent sees tools as first-class (no curl). Hybrid approach: HTTP API as backend, thin MCP wrapper as frontend. | ⬜ | |
+| S3 | Skill manifest format + validation | ⬜ | |
+| S4 | Per-chat skill enable/disable (`/skills enable/disable`) | ⬜ | |
+| S5 | Dev-time Claude Code skills in `.claude/skills/` for picoclaw maintainers | ⬜ | |
 
 ---
 
