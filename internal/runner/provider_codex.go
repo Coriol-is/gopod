@@ -43,9 +43,10 @@ func (p *CodexProvider) RunFreshCmd(prompt string) []string {
 }
 
 func (p *CodexProvider) RestoreConfigCmd() []string {
-	// Codex stores config in ~/.codex/config.toml — no backup dance
-	// needed like Claude's .claude.json. Return nil = skip.
-	return nil
+	// Codex requires a trusted git repo in the working directory.
+	// Init one if it doesn't exist. Also skip git repo check via config.
+	return []string{"sh", "-c",
+		`cd /workspace/chat && [ -d .git ] || git init -q && git config user.email "agent@picoclaw" && git config user.name "picoclaw"`}
 }
 
 func (p *CodexProvider) AuthStatusCmd() []string {
