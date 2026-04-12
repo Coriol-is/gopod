@@ -57,6 +57,11 @@ type Config struct {
 	// CompactTime triggers compact at a specific time daily (HH:MM). "" = disabled.
 	CompactTime string
 
+	// ObsidianVault is the path to the Obsidian vault to ingest.
+	// Empty = disabled. Markdown files are chunked by heading,
+	// embedded, and stored in memory with kind=document.
+	ObsidianVault string
+
 	// TelegramBotToken is the Bot API token from @BotFather.
 	//
 	// Optional at config level: if empty, the telegram subsystem refuses
@@ -139,6 +144,7 @@ func Load(loadDotenv bool) (Config, error) {
 		CompactAfter:           compactAfter,
 		CompactInterval:        os.Getenv("PICOCLAW_COMPACT_INTERVAL"),
 		CompactTime:            os.Getenv("PICOCLAW_COMPACT_TIME"),
+		ObsidianVault:          os.Getenv("PICOCLAW_OBSIDIAN_VAULT"),
 	}
 
 	abs, err := filepath.Abs(cfg.DataDir)
