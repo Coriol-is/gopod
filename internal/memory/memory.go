@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"math"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/spaceinvaderz/picoclaw/internal/store"
@@ -312,6 +313,13 @@ func (m *Memory) vecSearch(ctx context.Context, chatFolder string, queryVec []fl
 
 // ftsSearch runs a BM25 query against memory_fts.
 func (m *Memory) ftsSearch(ctx context.Context, chatFolder, query string, k int) ([]Item, error) {
+	// Sanitize query for FTS5: wrap each word in double quotes so
+	// punctuation (.,?!) doesn't break FTS5 query syntax. FTS5 MATCH
+	// treats raw punctuation as operators and errors on them.
+	sanitized := sanitizeFTS(query)
+	if sanitized == "" {
+		return nil, nil
+	}
 	rows, err := m.store.DB().QueryContext(ctx, `
 		SELECT m.id, m.chat_folder, m.kind, IFNULL(m.title,''), m.content,
 		       IFNULL(m.source,''), m.created_at, rank
@@ -321,7 +329,7 @@ func (m *Memory) ftsSearch(ctx context.Context, chatFolder, query string, k int)
 		   AND (? = '' OR m.chat_folder = ?)
 		   AND IFNULL(m.status, 'active') = 'active'
 		 ORDER BY rank ASC
-		 LIMIT ?`, query, chatFolder, chatFolder, k)
+		 LIMIT ?`, sanitized, chatFolder, chatFolder, k)
 	if err != nil {
 		return nil, err
 	}
@@ -394,6 +402,30 @@ func float32sToBlob(v []float32) []byte {
 		binary.LittleEndian.PutUint32(out[4*i:], bits)
 	}
 	return out
+}
+
+// sanitizeFTS turns arbitrary user text into a valid FTS5 query by
+// extracting alphanumeric words and joining them with spaces. FTS5
+// MATCH treats punctuation as query operators (AND/OR/NOT/NEAR);
+// passing raw text with dots, commas, or question marks produces
+// "fts5: syntax error near ..." errors. Wrapping each word in
+// double quotes makes them literal phrase tokens.
+func sanitizeFTS(s string) string {
+	words := strings.Fields(s)
+	var clean []string
+	for _, w := range words {
+		// Strip non-alphanumeric characters from both ends.
+		w = strings.TrimFunc(w, func(r rune) bool {
+			return !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+				(r >= '0' && r <= '9') || r >= 0x80) // keep unicode letters
+		})
+		if w == "" {
+			continue
+		}
+		// Wrap in double quotes for literal FTS5 matching.
+		clean = append(clean, `"`+w+`"`)
+	}
+	return strings.Join(clean, " ")
 }
 
 func nullableStr(s string) interface{} {

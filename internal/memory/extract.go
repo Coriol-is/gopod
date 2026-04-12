@@ -124,13 +124,17 @@ func (m *Memory) IngestExtracted(ctx context.Context, chatFolder string, facts [
 func (m *Memory) trySupersede(ctx context.Context, chatFolder, keyword string) {
 	// Use FTS for keyword match — more precise than vector for
 	// supersession detection.
+	sanitized := sanitizeFTSKeyword(keyword)
+	if sanitized == "" {
+		return
+	}
 	rows, err := m.store.DB().QueryContext(ctx, `
 		SELECT m.id FROM memory_fts f
 		  JOIN memories m ON m.id = f.rowid
 		 WHERE memory_fts MATCH ?
 		   AND m.chat_folder = ?
 		   AND IFNULL(m.status, 'active') = 'active'
-		 LIMIT 1`, keyword, chatFolder)
+		 LIMIT 1`, sanitized, chatFolder)
 	if err != nil {
 		return
 	}
@@ -174,6 +178,26 @@ func extractJSONArray(s string) string {
 		return ""
 	}
 	return s[start : end+1]
+}
+
+// sanitizeFTSKeyword wraps a supersession keyword for FTS5 MATCH.
+func sanitizeFTSKeyword(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	words := strings.Fields(s)
+	var clean []string
+	for _, w := range words {
+		w = strings.TrimFunc(w, func(r rune) bool {
+			return !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+				(r >= '0' && r <= '9') || r >= 0x80)
+		})
+		if w != "" {
+			clean = append(clean, `"`+w+`"`)
+		}
+	}
+	return strings.Join(clean, " ")
 }
 
 func truncateForPrompt(s string, n int) string {
