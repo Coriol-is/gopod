@@ -34,14 +34,16 @@ func New(st *store.Store, embedder Embedder, log *slog.Logger) *Memory {
 
 // Item is a memory record returned by Search / List.
 type Item struct {
-	ID         int64
-	ChatFolder string
-	Kind       string
-	Title      string
-	Content    string
-	Source     string
-	Score      float64 // combined score from hybrid search (higher = more relevant)
-	CreatedAt  time.Time
+	ID              int64
+	ChatFolder      string
+	Kind            string
+	Title           string
+	Content         string
+	Source          string
+	Score           float64   // combined score from hybrid search
+	CreatedAt       time.Time
+	LastRetrievedAt time.Time // zero if never retrieved
+	Pinned          bool
 }
 
 // Add stores a new memory item, embeds its content, and inserts
@@ -287,7 +289,8 @@ func (m *Memory) FindSimilar(ctx context.Context, chatFolder string, vec []float
 func (m *Memory) vecSearch(ctx context.Context, chatFolder string, queryVec []float32, k int) ([]Item, error) {
 	rows, err := m.store.DB().QueryContext(ctx, `
 		SELECT m.id, m.chat_folder, m.kind, IFNULL(m.title,''), m.content,
-		       IFNULL(m.source,''), m.created_at, v.distance
+		       IFNULL(m.source,''), m.created_at, IFNULL(m.last_retrieved_at,0),
+		       IFNULL(m.pinned,0), v.distance
 		  FROM memory_vec v
 		  JOIN memories m ON m.id = v.rowid
 		 WHERE v.embedding MATCH ?
@@ -304,14 +307,19 @@ func (m *Memory) vecSearch(ctx context.Context, chatFolder string, queryVec []fl
 	var items []Item
 	for rows.Next() {
 		var it Item
-		var createdMs int64
+		var createdMs, retrievedMs int64
+		var pinned int
 		var dist float64
 		if err := rows.Scan(&it.ID, &it.ChatFolder, &it.Kind, &it.Title,
-			&it.Content, &it.Source, &createdMs, &dist); err != nil {
+			&it.Content, &it.Source, &createdMs, &retrievedMs, &pinned, &dist); err != nil {
 			return nil, err
 		}
 		it.CreatedAt = time.UnixMilli(createdMs)
-		it.Score = 1.0 / (1.0 + dist) // convert distance to similarity
+		if retrievedMs > 0 {
+			it.LastRetrievedAt = time.UnixMilli(retrievedMs)
+		}
+		it.Pinned = pinned != 0
+		it.Score = 1.0 / (1.0 + dist)
 		items = append(items, it)
 	}
 	return items, rows.Err()
@@ -357,8 +365,12 @@ func (m *Memory) ftsSearch(ctx context.Context, chatFolder, query string, k int)
 	return items, rows.Err()
 }
 
-// rrfMerge combines two ranked lists using Reciprocal Rank Fusion.
-// k=60 is the standard RRF constant.
+// rrfMerge combines two ranked lists using Reciprocal Rank Fusion
+// with decay scoring. k=60 is the standard RRF constant.
+//
+// Decay: memories not retrieved in the last 7 days get a penalty
+// that increases with staleness. Pinned memories are exempt.
+// Recently retrieved memories get a small boost.
 func rrfMerge(vecResults, ftsResults []Item, topK int) []Item {
 	const rrfK = 60.0
 	scores := make(map[int64]float64)
@@ -373,6 +385,13 @@ func rrfMerge(vecResults, ftsResults []Item, topK int) []Item {
 		if _, ok := items[it.ID]; !ok {
 			items[it.ID] = it
 		}
+	}
+
+	// Apply decay multiplier.
+	now := time.Now()
+	for id, score := range scores {
+		it := items[id]
+		scores[id] = score * decayMultiplier(it, now)
 	}
 
 	type scored struct {
@@ -397,6 +416,43 @@ func rrfMerge(vecResults, ftsResults []Item, topK int) []Item {
 		result = append(result, s.item)
 	}
 	return result
+}
+
+// decayMultiplier returns a score multiplier based on how recently
+// a memory was retrieved. Range: 0.3 (very stale) to 1.2 (fresh).
+//
+// - Retrieved in last 24h: 1.2x boost
+// - Retrieved in last 7 days: 1.0x (no change)
+// - Not retrieved in 7-30 days: 0.7x penalty
+// - Not retrieved in 30+ days: 0.5x penalty
+// - Never retrieved (last_retrieved_at zero): 0.8x (new memory, slight penalty)
+// - Pinned: always 1.0x (exempt from decay)
+func decayMultiplier(it Item, now time.Time) float64 {
+	if it.Pinned {
+		return 1.0
+	}
+	if it.LastRetrievedAt.IsZero() {
+		// Never retrieved — new memory, slight penalty so established
+		// memories rank higher.
+		daysSinceCreated := now.Sub(it.CreatedAt).Hours() / 24
+		if daysSinceCreated < 1 {
+			return 1.1 // very fresh, boost
+		}
+		return 0.8
+	}
+
+	daysSinceRetrieved := now.Sub(it.LastRetrievedAt).Hours() / 24
+
+	switch {
+	case daysSinceRetrieved < 1:
+		return 1.2
+	case daysSinceRetrieved < 7:
+		return 1.0
+	case daysSinceRetrieved < 30:
+		return 0.7
+	default:
+		return 0.5
+	}
 }
 
 // float32sToBlob serializes a float32 slice to little-endian bytes
@@ -442,6 +498,42 @@ func (m *Memory) supersedePreviousSummary(ctx context.Context, chatFolder string
 		 WHERE chat_folder = ? AND kind = 'conversation_summary'
 		   AND IFNULL(status, 'active') = 'active'`,
 		time.Now().UnixMilli(), chatFolder)
+}
+
+// ArchiveStale marks memories not retrieved in archiveAfter days as
+// status=archived. Returns count of archived items. Pinned memories
+// are exempt. Only runs if total memory count > minCount (decay is
+// pointless on a small store).
+func (m *Memory) ArchiveStale(ctx context.Context, chatFolder string, archiveAfterDays, minCount int) (int64, error) {
+	if archiveAfterDays <= 0 {
+		archiveAfterDays = 90
+	}
+	if minCount <= 0 {
+		minCount = 50
+	}
+
+	// Check if we have enough memories to justify archiving.
+	var count int64
+	m.store.DB().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM memories WHERE chat_folder = ? AND IFNULL(status,'active') = 'active'`,
+		chatFolder).Scan(&count)
+	if count < int64(minCount) {
+		return 0, nil // too few memories, skip
+	}
+
+	cutoff := time.Now().Add(-time.Duration(archiveAfterDays) * 24 * time.Hour).UnixMilli()
+	res, err := m.store.DB().ExecContext(ctx, `
+		UPDATE memories SET status = 'archived', updated_at = ?
+		 WHERE chat_folder = ?
+		   AND IFNULL(status, 'active') = 'active'
+		   AND IFNULL(pinned, 0) = 0
+		   AND (last_retrieved_at IS NULL OR last_retrieved_at < ?)
+		   AND created_at < ?`,
+		time.Now().UnixMilli(), chatFolder, cutoff, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 func nullableStr(s string) interface{} {
