@@ -23,7 +23,7 @@ The numerical IDs below are stable identifiers cited from many places —
 is built in this sequence so that the first end-to-end agent reply uses
 Claude Code's web-auth (Pro/Max) inside a container, not a paid API key:
 
-`M0 ✅ → M1 ✅ → M5 ✅ → M6 ✅ → M6.5 → M3 → M3.5 → M3.6 → M4 → M7 → M8 → M9`
+`M0 ✅ → M1 ✅ → M5 ✅ → M6 ✅ → M6.5 ✅ → M3 → M3.5 → M3.6 → M4 → M7 → M8 → M9`
 
 M2 (Direct API) is no longer on the critical path; it is opt-in if and only
 if `ANTHROPIC_API_KEY` is set in the environment.
@@ -41,7 +41,7 @@ if `ANTHROPIC_API_KEY` is set in the environment.
 | M4 | Scheduler: cron/interval/once via `robfig/cron/v3`, registers `/tasks *` handlers with the Router | ⬜ | |
 | M5 | Container runtime: Docker SDK, mounts, exec attach, idle kill, label-based recovery | ✅ | `internal/runner` has `mountsec` subpackage, three-tier `BuildMounts`, full `BuildContainerArgs` flag assembly, Docker client with `EnsureRunning`/`Exec`/`Stop`/`Remove`/`CleanupLeftovers`, plus the `picoclaw-agent:latest` image (node:22-slim + claude-code 2.1.100 + git + ripgrep). Integration tests behind `//go:build docker_integration` verified end-to-end. Idle watcher intentionally deferred to M6 wiring |
 | M6 | Agent SDK in container: synchronous `claude -p` via `docker exec`, registered_chats CRUD, /register + /whoami slash commands, owner auto-register, auth detection, idle watcher | ✅ | Verified end-to-end: real Pro/Max reply on Telegram. SDK migration (per [D015](docs/DECISIONS.md) wrapper script) deferred until streaming/tools/MCP land. Three runtime fixes: drop bogus `seccomp=default` SecurityOpt, add /home/node tmpfs + HOME env, skip .env mask when RepoRoot/.env absent |
-| M6.5 | **Telegram-mediated `/login`.** New per [D018](docs/DECISIONS.md). `/login` slash command spawns `claude /login` inside the agent container, intercepts the verification URL on stdout, forwards it via Telegram, waits for success. Credentials persist in mounted `data/sessions/<chat>/.claude/`. picoclaw never reads them. | ⬜ | First Pro/Max-authenticated agent reply lands here |
+| M6.5 | **Telegram-mediated `/login`.** Interactive OAuth proxy: spawns `claude auth login` with PTY+stdin via Docker SDK, captures URL from stdout, forwards to Telegram, intercepts user's next message as the OAuth code, pipes it to claude's stdin, confirms. Session-expired vs never-logged-in distinction in error replies. 10-min timeout with auto-cleanup. | ✅ | Full onboarding fits inside Telegram — no terminal access needed |
 | M7 | IPC: filesystem watcher, container → host messages, task ops, owner gating | ⬜ | |
 | M8 | Recovery & polish: cursor backfill, leftover-container cleanup, structured logs, README + Compose example | ⬜ | |
 | M9 | Native memory: sqlite-vec, embedder, `memory_*` tools, Anthropic Memory Tool, auto-summarize. See [docs/MEMORY.md §10](docs/MEMORY.md) for sub-steps M9.1–M9.10 | ⬜ | |

@@ -9,30 +9,21 @@
 
 ## Current state
 
-**Phase:** M6 done. picoclaw is a working Telegram Claude assistant.
-A real Pro/Max-authenticated `claude -p` reply round-trips end to
-end via the bot. /login is still manual (`docker exec -it
-picoclaw-<chat> claude /login` on the host); M6.5 wires it through
-Telegram next.
-**Last updated:** 2026-04-11
-**Last working session:** M6 (Agent SDK in container) in seven
-focused commits — registered_chats CRUD (6a), `claude auth status
---json` parser (6b), synchronous `claude -p` runner (6c), telegram
-default handler that auto-registers the owner and routes registered
-chats through the runner with /register + /whoami slash commands
-(6d), idle watcher (6e), then three runtime fixes uncovered by
-end-to-end testing against the real bot:
-`seccomp=default` SecurityOpt was rejected by the daemon as invalid
-JSON (the CLI shorthand does not survive the SDK), `--user 501:20`
-without `HOME=/home/node` left HOME=/ on a read-only rootfs and
-claude silently EROFS-failed before printing anything, and the
-.env mask mount tried to nest inside a RO bind without a target
-file existing on the host. Each fix landed with a regression test;
-the BuildContainerArgs integration test now exercises the full
-production flag-assembly path against picoclaw-agent:latest so
-the next regression in this area gets caught automatically.
-Build order as of now:
-`M0 ✅ → M1 ✅ → M5 ✅ → M6 ✅ → M6.5 → M3 → M3.5 → M3.6 → M4 → M7 → M8 → M9`.
+**Phase:** M6.5 done. picoclaw is a fully self-service Telegram Claude
+assistant. The entire onboarding — from first message to first real
+Claude reply — fits inside Telegram chat with no terminal access needed.
+**Last updated:** 2026-04-12
+**Last working session:** M6.5 (Telegram-mediated `/login`) —
+interactive OAuth proxy via Docker SDK `ExecInteractive` (PTY+stdin).
+`/login` spawns `claude auth login` inside the agent container,
+captures the URL from stdout, forwards to Telegram, intercepts the
+user's next message as the OAuth code, pipes it to claude's stdin,
+confirms success. 10-minute timeout with auto-cleanup. Session-expired
+vs never-logged-in distinction in error replies. Also: `/help` command
+(dynamic from publicCommands), all 5 slash commands published to
+Telegram picker via setMyCommands.
+Build order:
+`M0 ✅ → M1 ✅ → M5 ✅ → M6 ✅ → M6.5 ✅ → M3 → M3.5 → M3.6 → M4 → M7 → M8 → M9`.
 
 ## What's done
 
@@ -118,46 +109,19 @@ Build order as of now:
 
 ## What's in progress
 
-**M6.5 — Telegram-mediated `/login`.**
-
-Probed the `claude auth login` stdout contract (2026-04-12). Findings:
-
-- URL appears on stdout line 2: `If the browser didn't open, visit: <URL>`
-- After URL, claude waits silently for an Ink-based TTY code-paste
-  prompt — that prompt requires raw mode and never renders without a
-  real PTY. `docker exec -it` with interactive TTY works (operator
-  verified this manually); non-interactive `docker exec` does not.
-- `claude setup-token` also requires Ink raw mode — same constraint.
-- `claude /login` (slash) is a REPL-only slash command, not a
-  standalone subcommand.
-- The OAuth flow is PKCE with `redirect_uri=https://platform.claude.com/
-  oauth/code/callback` — NOT localhost loopback. The success page either
-  shows a code to paste back or auto-completes via server-side polling.
-  **Open question:** which is it? The operator completed manual login
-  via `docker exec -it` and did not report pasting a code, which
-  suggests claude polls the auth server automatically once the URL is
-  opened. Needs explicit confirmation.
-
-**Implementation plan (once the contract is confirmed):**
-
-- If auto-callback (claude polls): simple — spawn `claude auth login`
-  with PTY via Docker SDK ExecAttach(Tty=true), capture URL from stdout,
-  forward to Telegram, poll `claude auth status --json` until
-  loggedIn=true, confirm. No stdin pipe needed.
-- If code-paste: stateful — hold the exec alive, capture URL, forward to
-  Telegram, wait for the user's next Telegram message (the code), pipe
-  it into the exec's stdin via the HijackedResponse Conn, then capture
-  the success line.
+Nothing actively in flight.
 
 ## What's next (in order — per [D018](DECISIONS.md))
 
-1. **M6.5 — Telegram-mediated `/login`.** (in progress, see above)
-2. **M3 — GroupQueue.** Per-chat serialization + global cap + backoff.
-   Replaces the stub `sync.Mutex` map M6 uses.
-3. **M3.5 — Control plane** (`internal/control` Router + Telegram + CLI
-   frontends + logs subsystem). Folds the directly-wired `/ping` and
-   `/login` handlers into the Router. M4+ depend on this.
-4. (continue with M3.6, M4, M7, M8, M9 per ROADMAP)
+1. **M3 — GroupQueue.** Per-chat serialization + global cap + backoff.
+   Replaces the stub `sync.Mutex` map in `internal/runner`.
+2. **M3.5 — Control plane** (`internal/control` Router + Telegram + CLI
+   frontends + logs subsystem). Folds the directly-wired /help, /ping,
+   /whoami, /login, /register handlers into the Router. M4+ depend on this.
+3. **M3.6 — Observability** (opt-in Prometheus + OTel). Adds metrics
+   and spans to every subsystem.
+4. **M4 — Scheduler** (cron/interval/once tasks). Depends on M3.5.
+5. (continue with M7 IPC, M8 Recovery, M9 Memory per ROADMAP)
 
 **Optional, off the critical path:** **M2 (Direct API)** auto-enabled
 if `ANTHROPIC_API_KEY` is set. Skipped silently otherwise. Operator
@@ -169,13 +133,20 @@ currently has no API key, so this stays at ⏸️.
 2. Build the agent image: `docker build -t picoclaw-agent:latest container/`
 3. Run `go run ./cmd/picoclaw`
 4. Send any text message → owner chat auto-registers, container spawns
-5. First message gets "not authenticated" reply with manual login hint
-6. Run `docker exec -it picoclaw-owner claude /login` once on the host
-7. Open the URL, complete OAuth with Pro/Max subscription
+5. First message gets "not authenticated" reply → tap `/login`
+6. Bot sends you the OAuth URL → open it, sign in, copy the code
+7. Paste the code back in the chat → bot confirms "Logged in"
 8. Send messages → get **real Claude replies** via picoclaw Telegram bot
 
-Slash commands: `/ping` (liveness), `/whoami` (chat id + registration
-state), `/register <chat_id> <folder>` (owner-only, register other chats).
+No terminal access needed for the entire flow.
+
+Slash commands: `/help` (list all), `/ping` (liveness), `/whoami`
+(chat id + registration state), `/login` (interactive OAuth),
+`/register <chat_id> <folder>` (owner-only).
+
+Session management: expired tokens produce "session expired, /login
+to re-authenticate" instead of the cold-start message. /login is
+re-runnable at any time.
 
 Fresh chat workspaces get seeded CLAUDE.md (identity/workspace map) +
 memory/MEMORY.md (scratchpad seed). The agent can read and edit both.
