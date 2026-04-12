@@ -114,9 +114,27 @@ func New(token string, deps Deps) (*Bot, error) {
 		logins:      newLoginSessions(),
 	}
 
-	api, err := bot.New(token,
+	// Load last processed update offset for cursor backfill (M8a).
+	// On restart, this tells Telegram to deliver any updates that
+	// arrived while picoclaw was down.
+	opts := []bot.Option{
 		bot.WithDefaultHandler(b.defaultHandler),
-	)
+		bot.WithMiddlewares(b.offsetMiddleware),
+	}
+	if deps.Store != nil {
+		offsetStr, _ := deps.Store.GetState(context.Background(), "telegram_update_offset")
+		if offsetStr != "" {
+			var offset int64
+			fmt.Sscanf(offsetStr, "%d", &offset)
+			if offset > 0 {
+				opts = append(opts, bot.WithInitialOffset(offset))
+				deps.Log.Info("telegram: resuming from stored offset",
+					slog.Int64("offset", offset))
+			}
+		}
+	}
+
+	api, err := bot.New(token, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("telegram: bot.New: %w", err)
 	}
@@ -178,6 +196,18 @@ func (b *Bot) publishCommands(ctx context.Context) {
 	}
 	b.log.Info("telegram: published commands",
 		slog.Int("count", len(cmds)))
+}
+
+// offsetMiddleware persists the Telegram update_id on every update
+// (registered handlers + default handler) for cursor backfill on restart.
+func (b *Bot) offsetMiddleware(next bot.HandlerFunc) bot.HandlerFunc {
+	return func(ctx context.Context, api *bot.Bot, update *models.Update) {
+		if update != nil && update.ID > 0 && b.store != nil {
+			b.store.SetState(ctx, "telegram_update_offset",
+				fmt.Sprintf("%d", update.ID+1))
+		}
+		next(ctx, api, update)
+	}
 }
 
 // SetQueue wires the GroupQueue after construction. This breaks the
