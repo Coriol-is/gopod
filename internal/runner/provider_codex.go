@@ -81,15 +81,50 @@ func (p *CodexProvider) IsNotLoggedInError(stderr, stdout string) bool {
 }
 
 func (p *CodexProvider) LoginCmd() []string {
-	return []string{"codex", "login"}
+	// --device-auth: prints a URL + one-time code. User opens URL in
+	// browser, enters the code, completes auth. picoclaw's /login
+	// handler forwards the URL + code to Telegram.
+	return []string{"codex", "login", "--device-auth"}
 }
 
 func (p *CodexProvider) ExtractLoginURL(line string) string {
-	// Codex login flow may print a URL for OAuth.
-	if i := strings.Index(line, "https://"); i >= 0 {
-		return strings.TrimRight(line[i:], " \t\r\n")
+	// Codex device auth prints:
+	//   URL: https://auth.openai.com/codex/device
+	//   Code: XXXX-XXXXX
+	// We capture both — the login handler forwards both to Telegram.
+	cleaned := stripANSICodex(line)
+	if i := strings.Index(cleaned, "https://"); i >= 0 {
+		return strings.TrimSpace(cleaned[i:])
+	}
+	// Also match the device code line.
+	cleaned = strings.TrimSpace(cleaned)
+	if len(cleaned) >= 8 && strings.Contains(cleaned, "-") && !strings.Contains(cleaned, " ") {
+		// Looks like a device code (e.g. "ELJK-3JVGQ").
+		return "CODE:" + cleaned
 	}
 	return ""
+}
+
+func stripANSICodex(s string) string {
+	// Strip ANSI escape codes (same logic as telegram's stripANSI).
+	var b strings.Builder
+	i := 0
+	for i < len(s) {
+		if s[i] == '\x1b' && i+1 < len(s) && s[i+1] == '[' {
+			j := i + 2
+			for j < len(s) && !((s[j] >= 'A' && s[j] <= 'Z') || (s[j] >= 'a' && s[j] <= 'z')) {
+				j++
+			}
+			if j < len(s) {
+				j++
+			}
+			i = j
+			continue
+		}
+		b.WriteByte(s[i])
+		i++
+	}
+	return b.String()
 }
 
 func (p *CodexProvider) ClearSessionCmd() []string {

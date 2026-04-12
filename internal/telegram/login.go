@@ -133,9 +133,9 @@ func (b *Bot) loginHandlerReal(ctx context.Context, _ *bot.Bot, update *models.U
 		return
 	}
 
-	// Read lines looking for the URL.
-	var url string
-	for i := 0; i < 20; i++ { // safety cap — don't read forever
+	// Read lines looking for URL and optional device code.
+	var url, deviceCode string
+	for i := 0; i < 30; i++ {
 		line, err := exec.ReadLine()
 		if err != nil {
 			if err == io.EOF {
@@ -146,8 +146,21 @@ func (b *Bot) loginHandlerReal(ctx context.Context, _ *bot.Bot, update *models.U
 			break
 		}
 		b.log.Debug("/login stdout", slog.String("line", line))
-		if u := prov.ExtractLoginURL(line); u != "" {
-			url = u
+		extracted := prov.ExtractLoginURL(line)
+		if extracted == "" {
+			continue
+		}
+		if strings.HasPrefix(extracted, "CODE:") {
+			deviceCode = strings.TrimPrefix(extracted, "CODE:")
+		} else if url == "" {
+			url = extracted
+		}
+		// If we have both URL and code (device auth), stop reading.
+		if url != "" && deviceCode != "" {
+			break
+		}
+		// For Claude-style auth (just URL, no code), stop after URL.
+		if url != "" && prov.Name() == "claude" {
 			break
 		}
 	}
@@ -156,7 +169,7 @@ func (b *Bot) loginHandlerReal(ctx context.Context, _ *bot.Bot, update *models.U
 		loginCancel()
 		exec.DrainAndClose()
 		b.replyText(ctx, m.Chat.ID,
-			"Could not extract the login URL from claude. Check picoclaw logs.")
+			"Could not extract the login URL. Check picoclaw logs.")
 		return
 	}
 
@@ -169,10 +182,19 @@ func (b *Bot) loginHandlerReal(ctx context.Context, _ *bot.Bot, update *models.U
 	}
 	b.logins.set(m.Chat.ID, session)
 
-	b.replyText(ctx, m.Chat.ID,
-		"Open this URL to sign in:\n\n"+url+"\n\n"+
-			"After signing in, copy the authorization code from the "+
-			"success page and send it here as your next message.")
+	var loginMsg string
+	if deviceCode != "" {
+		// Device auth flow (Codex): URL + one-time code.
+		loginMsg = "Open this URL:\n\n" + url +
+			"\n\nEnter this code:\n\n**" + deviceCode + "**" +
+			"\n\nAfter signing in, the bot will detect it automatically."
+	} else {
+		// OAuth code flow (Claude): URL + paste code back.
+		loginMsg = "Open this URL to sign in:\n\n" + url +
+			"\n\nAfter signing in, copy the authorization code from the " +
+			"success page and send it here as your next message."
+	}
+	b.replyText(ctx, m.Chat.ID, loginMsg)
 
 	// Background cleanup goroutine: if the timeout fires before
 	// the user pastes the code, tear down the session.
