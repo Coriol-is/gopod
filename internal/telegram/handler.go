@@ -287,21 +287,36 @@ func (b *Bot) startTyping(ctx context.Context, chatID int64) func() {
 	return func() { close(stopCh) }
 }
 
-// replyText is a small helper that wraps SendMessage with the standard
-// error log path. Splits long messages on a 4096-byte boundary
-// (Telegram's hard limit) by chunking — naive byte split, not
-// markdown-aware. Markdown chunking is part of I5 / M3.5.
+// replyText sends a message converting markdown to Telegram HTML.
+// Splits long messages on a 4000-byte boundary. Falls back to plain
+// text if HTML send fails (Telegram rejects malformed HTML).
 func (b *Bot) replyText(ctx context.Context, chatID int64, text string) {
-	const maxLen = 4000 // a bit under 4096 to leave room for Telegram overhead
-	chunks := chunkString(text, maxLen)
+	const maxLen = 4000
+	htmlText := markdownToTelegramHTML(text)
+	chunks := chunkString(htmlText, maxLen)
 	for _, c := range chunks {
-		if _, err := b.api.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: chatID,
-			Text:   c,
-		}); err != nil {
-			b.log.Error("SendMessage failed",
+		_, err := b.api.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID:    chatID,
+			Text:      c,
+			ParseMode: models.ParseModeHTML,
+		})
+		if err != nil {
+			// Fallback: send as plain text if HTML was malformed.
+			b.log.Debug("HTML send failed, falling back to plain text",
 				slog.Int64("chat_id", chatID),
 				slog.Any("err", err))
+			plainChunks := chunkString(text, maxLen)
+			for _, pc := range plainChunks {
+				if _, err := b.api.SendMessage(ctx, &bot.SendMessageParams{
+					ChatID: chatID,
+					Text:   pc,
+				}); err != nil {
+					b.log.Error("SendMessage failed",
+						slog.Int64("chat_id", chatID),
+						slog.Any("err", err))
+					return
+				}
+			}
 			return
 		}
 	}
