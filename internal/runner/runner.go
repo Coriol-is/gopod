@@ -37,6 +37,11 @@ type Runner struct {
 	// construction (same circular-dep pattern as queue).
 	memory MemorySearcher
 
+	// extractFn is the callback for conversation extraction (Phase A).
+	// It calls Memory.ExtractFromTurn + IngestExtracted. Set via
+	// SetExtractFn after construction.
+	extractFn func(ctx context.Context, chatFolder, userMsg, agentReply string)
+
 	// containerLocksMu serialises EnsureRunning per chat. Without it,
 	// two simultaneous messages on the same chat could race two
 	// ContainerCreate calls and Docker would reject the second with
@@ -190,6 +195,16 @@ func (r *Runner) Run(
 		return "", err
 	}
 	r.touch(chatFolder)
+
+	// Trigger async extraction after successful agent turn.
+	// Fire-and-forget: extraction failures must not affect the reply.
+	if r.memory != nil && r.extractFn != nil && reply != "" {
+		go func() {
+			bgCtx := context.Background()
+			r.extractAndIngest(bgCtx, chatFolder, prompt, reply)
+		}()
+	}
+
 	return reply, nil
 }
 
@@ -235,6 +250,20 @@ type MemoryItem struct {
 
 // SetMemory wires the memory layer after construction.
 func (r *Runner) SetMemory(m MemorySearcher) { r.memory = m }
+
+// SetExtractFn wires the conversation extraction callback.
+func (r *Runner) SetExtractFn(fn func(ctx context.Context, chatFolder, userMsg, agentReply string)) {
+	r.extractFn = fn
+}
+
+// extractAndIngest is the background callback for Phase A. Runs
+// after each successful agent turn — extracts structured facts and
+// stores them in memory.
+func (r *Runner) extractAndIngest(ctx context.Context, chatFolder, userMsg, agentReply string) {
+	if r.extractFn != nil {
+		r.extractFn(ctx, chatFolder, userMsg, agentReply)
+	}
+}
 
 // Docker returns the underlying Docker client handle. Used by
 // login.go to call ExecInteractive directly (the login flow needs
