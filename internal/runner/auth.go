@@ -106,13 +106,28 @@ func (d *Docker) RunPrompt(ctx context.Context, containerID, prompt string, opts
 		return "", errors.New("docker: RunPrompt: empty prompt")
 	}
 
-	cmd := []string{"claude", "-p",
-		"--allowedTools", DefaultAllowedTools,
-	}
+	// Build the claude command. Wrapped in `sh -c` so we can prepend
+	// the .claude.json restore logic. The config file lives on tmpfs
+	// (/home/node) and is lost on container restart; Claude backs it
+	// up to the bind-mounted /home/node/.claude/backups/ dir. We
+	// restore the latest backup before each invocation.
+	var claudeArgs []string
+	claudeArgs = append(claudeArgs, "claude", "-p",
+		"--allowedTools", DefaultAllowedTools)
 	if len(opts) > 0 && opts[0].AppendSystemPrompt != "" {
-		cmd = append(cmd, "--append-system-prompt", opts[0].AppendSystemPrompt)
+		claudeArgs = append(claudeArgs, "--append-system-prompt", opts[0].AppendSystemPrompt)
 	}
-	cmd = append(cmd, prompt)
+	claudeArgs = append(claudeArgs, prompt)
+
+	// Shell wrapper: restore .claude.json from backup if missing,
+	// then exec claude with the constructed args.
+	restore := `if [ ! -f "$HOME/.claude.json" ]; then ` +
+		`b=$(ls -t "$HOME/.claude/backups/.claude.json.backup."* 2>/dev/null | head -1); ` +
+		`[ -n "$b" ] && cp "$b" "$HOME/.claude.json"; ` +
+		`fi; `
+
+	shellCmd := restore + shellQuoteArgs(claudeArgs)
+	cmd := []string{"sh", "-c", shellCmd}
 
 	res, err := d.Exec(ctx, containerID, cmd, nil)
 	if err != nil {
@@ -162,6 +177,17 @@ func (d *Docker) classifyAuthError(ctx context.Context, containerID string) erro
 // Code chooses for the message has historically varied between minor
 // CLI versions. The match is case-insensitive substring on a stable
 // fragment ("not logged in") to survive minor wording tweaks.
+// shellQuoteArgs joins args into a shell command string with proper
+// quoting. Each arg is single-quoted; single quotes inside are escaped.
+func shellQuoteArgs(args []string) string {
+	var parts []string
+	for _, a := range args {
+		escaped := strings.ReplaceAll(a, "'", "'\"'\"'")
+		parts = append(parts, "'"+escaped+"'")
+	}
+	return strings.Join(parts, " ")
+}
+
 func isNotLoggedInError(stderr, stdout string) bool {
 	const needle = "not logged in"
 	return strings.Contains(strings.ToLower(stderr), needle) ||
