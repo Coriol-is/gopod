@@ -107,7 +107,42 @@ Build order:
 
 ## What's in progress
 
-Nothing actively in flight.
+**Session compact mechanism** — design approved, not yet implemented.
+
+Three trigger strategies (combinable, first-fires wins):
+- `PICOCLAW_COMPACT_AFTER=30` — compact after N turns
+- `PICOCLAW_COMPACT_INTERVAL=4h` — compact every N hours
+- `PICOCLAW_COMPACT_TIME=03:00` — compact at a specific time daily
+
+Compact action (same for all triggers):
+1. Send summarize prompt to Claude ("summarize key decisions and
+   context, preserve any in-progress tasks")
+2. Store result as `kind=conversation_summary`, superseding any
+   previous summary for this chat
+3. Clear session files (`/home/node/.claude/projects/*`)
+4. Reset turn counter + last_compact_at timestamp
+5. Next turn starts fresh; Context Compiler injects summary
+
+Manual triggers: `/clear` (compact without summary), `/compact`
+(compact with summary + shows it to user).
+
+Design decisions:
+- conversation_summary gets a **reserved slot** in Context Compiler
+  budget (1 slot guaranteed, not competing with other memories)
+- Skip compact if turnCount==0 since last compact (no wasted LLM)
+- Per-chat mutex in Runner prevents compact during active agent turn
+- `last_compact_at` persisted in router_state so interval/daily
+  triggers survive picoclaw restarts
+- Each new summary supersedes the previous one (no accumulation)
+
+Potential issues identified:
+1. Race: compact must go through Runner's per-chat lock
+2. Mid-task context loss: summary prompt asks to preserve in-progress state
+3. Empty session: skip if 0 turns
+4. Summary accumulation: supersede old summaries
+5. Budget competition: reserved slot for conversation_summary
+6. Restart timer reset: persist last_compact_at in store
+7. Double trigger: idempotent (skip if already compacted)
 
 ## What's next (in order — per [D018](DECISIONS.md))
 
