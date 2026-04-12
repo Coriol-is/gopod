@@ -57,6 +57,10 @@ type Runner struct {
 	// compactAfter triggers auto-compact after N turns. 0 = disabled.
 	compactAfter int
 
+	// Per-chat provider overrides (via /provider command).
+	providersMu   sync.RWMutex
+	chatProviders  map[string]AgentProvider
+
 	// containerLocksMu serialises EnsureRunning per chat. Without it,
 	// two simultaneous messages on the same chat could race two
 	// ContainerCreate calls and Docker would reject the second with
@@ -153,11 +157,12 @@ func (r *Runner) Ensure(
 		return "", err
 	}
 
-	// Merge provider's required env vars with operator's allowlist.
-	envAllow := append(r.provider.RequiredEnvVars(), r.allow...)
+	// Use per-chat provider for image + env vars.
+	prov := r.ProviderForChat(chatFolder)
+	envAllow := append(prov.RequiredEnvVars(), r.allow...)
 
 	spawn := SpawnConfig{
-		Image:        r.cfg.Image,
+		Image:        prov.Image(),
 		ChatFolder:   chatFolder,
 		Version:      r.version,
 		Mounts:       mounts,
@@ -167,7 +172,7 @@ func (r *Runner) Ensure(
 		NanoCPUs:     r.cfg.NanoCPUs,
 		PidsLimit:    r.cfg.PidsLimit,
 		EnvAllowlist: envAllow,
-		HomeDir:      r.provider.HomeDir(),
+		HomeDir:      prov.HomeDir(),
 	}
 	conf, host, name, err := BuildContainerArgs(spawn)
 	if err != nil {
@@ -214,7 +219,8 @@ func (r *Runner) Run(
 		}
 	}
 
-	reply, err := r.execWithProvider(ctx, id, r.provider.RunCmd(prompt, opts.AppendSystemPrompt))
+	prov := r.ProviderForChat(chatFolder)
+	reply, err := r.execWithProvider(ctx, id, prov, prov.RunCmd(prompt, opts.AppendSystemPrompt))
 	if err != nil {
 		return "", err
 	}
@@ -260,14 +266,15 @@ func (r *Runner) RunFresh(
 	if err != nil {
 		return "", fmt.Errorf("runner: ensure %q: %w", chatFolder, err)
 	}
-	return r.execWithProvider(ctx, id, r.provider.RunFreshCmd(prompt))
+	prov := r.ProviderForChat(chatFolder)
+	return r.execWithProvider(ctx, id, prov, prov.RunFreshCmd(prompt))
 }
 
 // execWithProvider runs a provider-built command inside a container
 // with config restore and error classification.
-func (r *Runner) execWithProvider(ctx context.Context, containerID string, cmd []string) (string, error) {
+func (r *Runner) execWithProvider(ctx context.Context, containerID string, prov AgentProvider, cmd []string) (string, error) {
 	// Restore config from backup if needed.
-	if restoreCmd := r.provider.RestoreConfigCmd(); restoreCmd != nil {
+	if restoreCmd := prov.RestoreConfigCmd(); restoreCmd != nil {
 		r.d.Exec(ctx, containerID, restoreCmd, nil)
 	}
 
@@ -277,7 +284,7 @@ func (r *Runner) execWithProvider(ctx context.Context, containerID string, cmd [
 	}
 	if res.ExitCode != 0 {
 		stderr := strings.TrimSpace(res.Stderr)
-		if r.provider.IsNotLoggedInError(stderr, res.Stdout) {
+		if prov.IsNotLoggedInError(stderr, res.Stdout) {
 			return "", r.classifyAuthError(ctx, containerID)
 		}
 		return "", fmt.Errorf("runner: agent exited %d (stderr=%q)", res.ExitCode, stderr)
@@ -305,8 +312,38 @@ func (r *Runner) checkAuthViaProvider(ctx context.Context, containerID string) (
 	return r.provider.ParseAuthStatus(res.Stdout)
 }
 
-// Provider returns the agent provider. Used by telegram/login.go.
+// Provider returns the agent provider for a given chat. If a per-chat
+// override is set, returns that; otherwise the default provider.
 func (r *Runner) Provider() AgentProvider { return r.provider }
+
+// ProviderForChat returns the provider for a specific chat, checking
+// per-chat overrides first.
+func (r *Runner) ProviderForChat(chatFolder string) AgentProvider {
+	r.providersMu.RLock()
+	if p, ok := r.chatProviders[chatFolder]; ok {
+		r.providersMu.RUnlock()
+		return p
+	}
+	r.providersMu.RUnlock()
+	return r.provider
+}
+
+// SetChatProvider sets a per-chat provider override.
+func (r *Runner) SetChatProvider(chatFolder string, p AgentProvider) {
+	r.providersMu.Lock()
+	if r.chatProviders == nil {
+		r.chatProviders = make(map[string]AgentProvider)
+	}
+	r.chatProviders[chatFolder] = p
+	r.providersMu.Unlock()
+}
+
+// ClearChatProvider removes a per-chat override (reverts to default).
+func (r *Runner) ClearChatProvider(chatFolder string) {
+	r.providersMu.Lock()
+	delete(r.chatProviders, chatFolder)
+	r.providersMu.Unlock()
+}
 
 // CheckAuth probes auth state of the chat's agent container.
 func (r *Runner) CheckAuth(ctx context.Context, chatFolder string, tier Tier, allowlist *mountsec.Allowlist) (AuthStatus, error) {

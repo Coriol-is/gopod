@@ -147,6 +147,31 @@ func RegisterVoiceCommand(r *Router, setMode func(chatID int64, mode string)) {
 		})
 }
 
+// ProviderSwitchFunc is the callback for /provider command.
+type ProviderSwitchFunc func(chatFolder, providerName string) (string, error)
+
+// RegisterProviderCommand adds /provider for per-chat agent switching.
+func RegisterProviderCommand(r *Router, switchFn ProviderSwitchFunc, chatFolderLookup func(chatID int64) string) {
+	r.Register("provider", "provider", "switch agent provider (claude, codex)", PermChatLocal,
+		func(ctx context.Context, cmd Command) (Response, error) {
+			folder := chatFolderLookup(cmd.Caller.ChatID)
+			if folder == "" {
+				return Response{Text: "Chat not registered.", Code: 1}, nil
+			}
+			if len(cmd.Args) == 0 {
+				return Response{
+					Text: "Usage: /provider <name>\n\nAvailable: claude, codex\n\n/provider claude — Claude Code CLI (default)\n/provider codex — OpenAI Codex CLI",
+					Code: 1,
+				}, nil
+			}
+			result, err := switchFn(folder, cmd.Args[0])
+			if err != nil {
+				return Response{Text: err.Error(), Code: 1}, nil
+			}
+			return Response{Text: result}, nil
+		})
+}
+
 func versionHandler(_ context.Context, _ Command) (Response, error) {
 	ver := "dev"
 	if info, ok := debug.ReadBuildInfo(); ok {
