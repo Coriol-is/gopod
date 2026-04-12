@@ -236,6 +236,23 @@ func (r *Runner) Run(
 }
 
 
+// RunFresh is like Run but uses RunPromptFresh (no --continue).
+// For system prompts that should not pollute conversation history:
+// compact summarize, task scheduling, memory extraction.
+func (r *Runner) RunFresh(
+	ctx context.Context,
+	chatFolder string,
+	tier Tier,
+	allowlist *mountsec.Allowlist,
+	prompt string,
+) (string, error) {
+	id, err := r.Ensure(ctx, chatFolder, tier, allowlist)
+	if err != nil {
+		return "", fmt.Errorf("runner: ensure %q: %w", chatFolder, err)
+	}
+	return r.d.RunPromptFresh(ctx, id, prompt)
+}
+
 // CheckAuth proxies through to docker.CheckAuth so the telegram
 // handler can probe auth state without holding a Docker reference.
 func (r *Runner) CheckAuth(ctx context.Context, chatFolder string, tier Tier, allowlist *mountsec.Allowlist) (AuthStatus, error) {

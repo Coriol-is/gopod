@@ -124,6 +124,8 @@ func (d *Docker) RunPrompt(ctx context.Context, containerID, prompt string, opts
 	// Commander.js treats -p as a boolean flag; everything after it
 	// becomes the positional prompt argument. If --allowedTools
 	// follows -p, it swallows the prompt as a tool name.
+	// --continue resumes the most recent conversation for this chat.
+	// RunPromptFresh (below) omits it for one-shot prompts like compact.
 	cmd := []string{"claude", "--continue", "--allowedTools", DefaultAllowedTools}
 	if len(opts) > 0 && opts[0].AppendSystemPrompt != "" {
 		cmd = append(cmd, "--append-system-prompt", opts[0].AppendSystemPrompt)
@@ -187,6 +189,37 @@ func shellQuoteArgs(args []string) string {
 		parts = append(parts, "'"+escaped+"'")
 	}
 	return strings.Join(parts, " ")
+}
+
+// RunPromptFresh runs claude -p WITHOUT --continue. Used for
+// one-shot system prompts (compact summarize, task scheduling, memory
+// extraction) that should NOT pollute the conversation history.
+func (d *Docker) RunPromptFresh(ctx context.Context, containerID, prompt string) (string, error) {
+	if prompt == "" {
+		return "", errors.New("docker: RunPromptFresh: empty prompt")
+	}
+
+	d.Exec(ctx, containerID, []string{"sh", "-c",
+		`if [ ! -f "$HOME/.claude.json" ]; then ` +
+			`b=$(ls -t "$HOME/.claude/backups/.claude.json.backup."* 2>/dev/null | head -1); ` +
+			`[ -n "$b" ] && cp "$b" "$HOME/.claude.json"; fi`}, nil)
+
+	// No --continue: fresh session that doesn't touch conversation history.
+	cmd := []string{"claude", "--allowedTools", DefaultAllowedTools, "-p", prompt}
+
+	res, err := d.Exec(ctx, containerID, cmd, nil)
+	if err != nil {
+		return "", fmt.Errorf("docker: RunPromptFresh: %w", err)
+	}
+	if res.ExitCode != 0 {
+		stderr := strings.TrimSpace(res.Stderr)
+		if isNotLoggedInError(stderr, res.Stdout) {
+			return "", ErrNotLoggedIn
+		}
+		return "", fmt.Errorf("docker: RunPromptFresh: claude exited %d (stderr=%q)",
+			res.ExitCode, stderr)
+	}
+	return strings.TrimSpace(res.Stdout), nil
 }
 
 func isNotLoggedInError(stderr, stdout string) bool {
