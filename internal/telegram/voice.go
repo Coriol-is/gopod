@@ -112,7 +112,68 @@ func whisperTranscribe(ctx context.Context, apiKey string, audioData []byte, fil
 	return result.Text, nil
 }
 
-// truncateStr helper (same as in control, duplicated to avoid cross-package import for 3 lines).
+// textToSpeech calls OpenAI's /v1/audio/speech endpoint and returns
+// the audio data as opus-encoded bytes (Telegram's preferred format
+// for voice messages).
+func textToSpeech(ctx context.Context, apiKey, text string) ([]byte, error) {
+	if apiKey == "" {
+		return nil, fmt.Errorf("OPENAI_API_KEY not set")
+	}
+	// Truncate for TTS: OpenAI TTS has a 4096 char limit.
+	if len(text) > 4000 {
+		text = text[:4000]
+	}
+
+	reqBody, _ := json.Marshal(map[string]any{
+		"model": "tts-1",
+		"input": text,
+		"voice": "alloy",
+		"response_format": "opus",
+	})
+
+	req, err := http.NewRequestWithContext(ctx, "POST",
+		"https://api.openai.com/v1/audio/speech",
+		bytes.NewReader(reqBody))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("tts request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("tts API returned %d: %s", resp.StatusCode, truncateStr(string(body), 200))
+	}
+
+	return io.ReadAll(resp.Body)
+}
+
+// sendVoiceReply sends audio data as a Telegram voice message.
+func (b *Bot) sendVoiceReply(ctx context.Context, chatID int64, replyToMsgID int, audioData []byte) error {
+	params := &bot.SendVoiceParams{
+		ChatID: chatID,
+		Voice: &models.InputFileUpload{
+			Filename: "reply.ogg",
+			Data:     bytes.NewReader(audioData),
+		},
+	}
+	if replyToMsgID > 0 {
+		params.ReplyParameters = &models.ReplyParameters{
+			MessageID:                replyToMsgID,
+			AllowSendingWithoutReply: true,
+		}
+	}
+	_, err := b.api.SendVoice(ctx, params)
+	return err
+}
+
+// truncateStr helper.
 func truncateStr(s string, n int) string {
 	if len(s) <= n {
 		return s

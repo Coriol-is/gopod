@@ -59,6 +59,31 @@ func RegisterWhoami(r *Router, ownerChatID int64) {
 		})
 }
 
+// RegisterVoiceCommand adds /voice to the Router with a callback for
+// setting the per-chat reply mode.
+func RegisterVoiceCommand(r *Router, setMode func(chatID int64, mode string)) {
+	r.Register("voice", "voice", "set reply mode: voice, text, voice+text, auto", PermChatLocal,
+		func(ctx context.Context, cmd Command) (Response, error) {
+			mode := "auto"
+			if len(cmd.Args) > 0 {
+				mode = cmd.Args[0]
+			}
+			switch mode {
+			case "voice", "text", "voice+text", "auto":
+				setMode(cmd.Caller.ChatID, mode)
+				if mode == "auto" {
+					return Response{Text: "Reply mode: auto (voice input → voice+text reply, text input → text reply)"}, nil
+				}
+				return Response{Text: "Reply mode set to: " + mode}, nil
+			default:
+				return Response{
+					Text: "Usage: /voice <mode>\n\nModes:\n  auto — voice input → voice+text, text → text (default)\n  voice — always reply with voice\n  text — always reply with text only\n  voice+text — always reply with both",
+					Code: 1,
+				}, nil
+			}
+		})
+}
+
 func versionHandler(_ context.Context, _ Command) (Response, error) {
 	ver := "dev"
 	if info, ok := debug.ReadBuildInfo(); ok {

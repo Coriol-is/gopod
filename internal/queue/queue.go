@@ -35,6 +35,7 @@ type Item struct {
 	IsOwner   bool
 	Text      string // the user's message text
 	FilePath  string // container-side path to an uploaded file (photo/doc), empty if text-only
+	IsVoice   bool   // true if the original message was a voice message
 }
 
 // Handler is the callback the queue invokes for each agent turn.

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"os"
+	"sync"
 	"strconv"
 	"strings"
 	"time"
@@ -40,7 +42,9 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 	text := strings.TrimSpace(messageText(m))
 
 	// Handle voice messages (I3): transcribe via Whisper, use text as prompt.
+	isVoice := false
 	if m.Voice != nil {
+		isVoice = true
 		transcript, err := b.transcribeVoice(ctx, m.Voice)
 		if err != nil {
 			b.log.Error("voice transcription failed", slog.Any("err", err))
@@ -131,6 +135,7 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 		IsOwner:   rc.IsOwner,
 		Text:      text,
 		FilePath:  filePath,
+		IsVoice:   isVoice,
 	}
 
 	// If queue is wired (M3+), enqueue and return immediately.
@@ -198,6 +203,44 @@ func userID(u *models.User) int64 {
 	return u.ID
 }
 
+// replyModes stores per-chat reply mode overrides. Default behavior:
+// voice input → voice+text reply, text input → text reply.
+// Override values: "voice", "text", "voice+text", "" (= auto).
+var (
+	replyModesMu sync.RWMutex
+	replyModes   = make(map[int64]string)
+)
+
+// getReplyMode returns the effective reply mode for a chat.
+// If no override is set, auto-detects: voice input → "voice+text",
+// text input → "text".
+func (b *Bot) getReplyMode(chatID int64, isVoice bool) string {
+	replyModesMu.RLock()
+	mode := replyModes[chatID]
+	replyModesMu.RUnlock()
+
+	if mode != "" {
+		return mode
+	}
+	// Auto: mirror the input modality.
+	if isVoice {
+		return "voice+text"
+	}
+	return "text"
+}
+
+// SetReplyMode sets a per-chat reply mode override. Exported for
+// the /voice Router command registered in main.go.
+func SetReplyMode(chatID int64, mode string) {
+	replyModesMu.Lock()
+	if mode == "" || mode == "auto" {
+		delete(replyModes, chatID)
+	} else {
+		replyModes[chatID] = mode
+	}
+	replyModesMu.Unlock()
+}
+
 // runAgentSync is the synchronous agent path. Used as the queue
 // handler callback (and directly when Queue is nil).
 func (b *Bot) runAgentSync(ctx context.Context, item queue.Item) {
@@ -247,7 +290,29 @@ func (b *Bot) runAgentSync(ctx context.Context, item queue.Item) {
 	if reply == "" {
 		reply = "(empty reply)"
 	}
-	b.replyTo(ctx, item.ChatID, item.MessageID, reply)
+
+	// Determine reply mode: voice+text, text-only, or voice-only.
+	mode := b.getReplyMode(item.ChatID, item.IsVoice)
+
+	if mode == "voice" || mode == "voice+text" {
+		apiKey := os.Getenv("OPENAI_API_KEY")
+		if apiKey != "" {
+			audioData, err := textToSpeech(ctx, apiKey, reply)
+			if err != nil {
+				b.log.Warn("TTS failed, falling back to text",
+					slog.Any("err", err))
+			} else {
+				if err := b.sendVoiceReply(ctx, item.ChatID, item.MessageID, audioData); err != nil {
+					b.log.Warn("send voice reply failed",
+						slog.Any("err", err))
+				}
+			}
+		}
+	}
+
+	if mode != "voice" {
+		b.replyTo(ctx, item.ChatID, item.MessageID, reply)
+	}
 }
 
 // NewAgentHandler returns a queue.Handler callback that the queue
