@@ -79,12 +79,25 @@ var ErrSessionExpired = errors.New("runner: authentication session expired")
 // "Not logged in" on stderr; this is mapped to ErrNotLoggedIn so
 // callers can distinguish it from real failures and prompt the user
 // to run /login.
-func (d *Docker) RunPrompt(ctx context.Context, containerID, prompt string) (string, error) {
+// RunPromptOpts are optional parameters for RunPrompt.
+type RunPromptOpts struct {
+	// AppendSystemPrompt is injected via --append-system-prompt.
+	// Used by the memory layer to inject relevant memories.
+	AppendSystemPrompt string
+}
+
+func (d *Docker) RunPrompt(ctx context.Context, containerID, prompt string, opts ...RunPromptOpts) (string, error) {
 	if prompt == "" {
 		return "", errors.New("docker: RunPrompt: empty prompt")
 	}
 
-	res, err := d.Exec(ctx, containerID, []string{"claude", "-p", prompt}, nil)
+	cmd := []string{"claude", "-p"}
+	if len(opts) > 0 && opts[0].AppendSystemPrompt != "" {
+		cmd = append(cmd, "--append-system-prompt", opts[0].AppendSystemPrompt)
+	}
+	cmd = append(cmd, prompt)
+
+	res, err := d.Exec(ctx, containerID, cmd, nil)
 	if err != nil {
 		return "", fmt.Errorf("docker: RunPrompt: %w", err)
 	}

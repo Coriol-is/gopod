@@ -31,6 +31,11 @@ type Runner struct {
 	version string
 	log     *slog.Logger
 
+	// memory is the long-term memory layer. Optional: if nil, prompts
+	// are sent without memory context. Set via SetMemory after
+	// construction (same circular-dep pattern as queue).
+	memory MemorySearcher
+
 	// containerLocksMu serialises EnsureRunning per chat. Without it,
 	// two simultaneous messages on the same chat could race two
 	// ContainerCreate calls and Docker would reject the second with
@@ -180,6 +185,24 @@ func (r *Runner) CheckAuth(ctx context.Context, chatFolder string, tier Tier, al
 	}
 	return r.d.CheckAuth(ctx, id)
 }
+
+// MemorySearcher is the interface the Runner needs from the memory
+// layer. Defined here (consumer-side) to avoid importing
+// internal/memory into internal/runner.
+type MemorySearcher interface {
+	Search(ctx context.Context, chatFolder, query string, k int) ([]MemoryItem, error)
+}
+
+// MemoryItem is the minimal view of a memory record the Runner needs
+// to format the system prompt appendix. Mirrors memory.Item.
+type MemoryItem struct {
+	Kind    string
+	Title   string
+	Content string
+}
+
+// SetMemory wires the memory layer after construction.
+func (r *Runner) SetMemory(m MemorySearcher) { r.memory = m }
 
 // Docker returns the underlying Docker client handle. Used by
 // login.go to call ExecInteractive directly (the login flow needs
