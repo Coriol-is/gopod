@@ -29,10 +29,11 @@ import (
 
 // Item is one enqueued message waiting for an agent turn.
 type Item struct {
-	ChatID  int64  // Telegram chat ID (for the reply callback)
-	Folder  string // registered chat folder
-	IsOwner bool
-	Text    string // the user's message text
+	ChatID    int64  // Telegram chat ID (for the reply callback)
+	MessageID int    // Telegram message ID (for reply threading + reactions)
+	Folder    string // registered chat folder
+	IsOwner   bool
+	Text      string // the user's message text
 }
 
 // Handler is the callback the queue invokes for each agent turn.

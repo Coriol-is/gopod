@@ -3,7 +3,6 @@ package telegram
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -69,10 +68,11 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 	}
 
 	item := queue.Item{
-		ChatID:  m.Chat.ID,
-		Folder:  rc.Folder,
-		IsOwner: rc.IsOwner,
-		Text:    text,
+		ChatID:    m.Chat.ID,
+		MessageID: m.ID,
+		Folder:    rc.Folder,
+		IsOwner:   rc.IsOwner,
+		Text:      text,
 	}
 
 	// If queue is wired (M3+), enqueue and return immediately.
@@ -125,13 +125,11 @@ func (b *Bot) dispatchSlash(ctx context.Context, m *models.Message, text string)
 
 	resp, err := b.router.Dispatch(ctx, cmd)
 	if err != nil {
-		// ErrNotAuthorized and ErrUnknownCommand both have a useful
-		// resp.Text already set by the Router.
-		b.replyText(ctx, m.Chat.ID, resp.Text)
+		b.replyTo(ctx, m.Chat.ID, m.ID, resp.Text)
 		return
 	}
 	if resp.Text != "" {
-		b.replyText(ctx, m.Chat.ID, resp.Text)
+		b.replyTo(ctx, m.Chat.ID, m.ID, resp.Text)
 	}
 }
 
@@ -142,13 +140,17 @@ func userID(u *models.User) int64 {
 	return u.ID
 }
 
-// runAgentSync is the pre-M3 synchronous agent path. Kept as a
-// fallback when Queue is nil (store-only dev mode). Also used as the
-// callback body for the queue handler (wired in NewAgentHandler).
+// runAgentSync is the synchronous agent path. Used as the queue
+// handler callback (and directly when Queue is nil).
 func (b *Bot) runAgentSync(ctx context.Context, item queue.Item) {
 	tier := runner.TierRegistered
 	if item.IsOwner {
 		tier = runner.TierOwner
+	}
+
+	// 👀 reaction = "processing"
+	if item.MessageID > 0 {
+		b.react(ctx, item.ChatID, item.MessageID, emojiThinking)
 	}
 
 	stopTyping := b.startTyping(ctx, item.ChatID)
@@ -156,31 +158,38 @@ func (b *Bot) runAgentSync(ctx context.Context, item queue.Item) {
 
 	reply, err := b.runner.Run(ctx, item.Folder, tier, b.allowlist, item.Text)
 	if err != nil {
+		// ❌ reaction on error
+		if item.MessageID > 0 {
+			b.react(ctx, item.ChatID, item.MessageID, emojiError)
+		}
+
 		if errors.Is(err, runner.ErrSessionExpired) {
-			b.replyText(ctx, item.ChatID,
-				"Your authentication session has expired.\n\n"+
-					"Run /login to re-authenticate with your Anthropic "+
-					"Pro/Max account.")
+			b.replyTo(ctx, item.ChatID, item.MessageID,
+				"Session expired. Run /login to re-authenticate.")
 			return
 		}
 		if errors.Is(err, runner.ErrNotLoggedIn) {
-			b.replyText(ctx, item.ChatID,
-				"This chat's agent is not authenticated yet.\n\n"+
-					"Run /login to sign in with your Anthropic Pro/Max "+
-					"account. Credentials persist across container restarts.")
+			b.replyTo(ctx, item.ChatID, item.MessageID,
+				"Not authenticated. Run /login to sign in.")
 			return
 		}
 		b.log.Error("runner.Run failed",
 			slog.String("chat_folder", item.Folder),
 			slog.Any("err", err))
-		b.replyText(ctx, item.ChatID, fmt.Sprintf("Sorry, the agent failed: %v", err))
+		b.replyTo(ctx, item.ChatID, item.MessageID,
+			"Something went wrong. Check picoclaw logs for details.")
 		return
+	}
+
+	// ✅ reaction on success
+	if item.MessageID > 0 {
+		b.react(ctx, item.ChatID, item.MessageID, emojiDone)
 	}
 
 	if reply == "" {
 		reply = "(empty reply)"
 	}
-	b.replyText(ctx, item.ChatID, reply)
+	b.replyTo(ctx, item.ChatID, item.MessageID, reply)
 }
 
 // NewAgentHandler returns a queue.Handler callback that the queue
@@ -287,21 +296,41 @@ func (b *Bot) startTyping(ctx context.Context, chatID int64) func() {
 	return func() { close(stopCh) }
 }
 
-// replyText sends a message converting markdown to Telegram HTML.
-// Splits long messages on a 4000-byte boundary. Falls back to plain
-// text if HTML send fails (Telegram rejects malformed HTML).
+// replyTo sends a message as a reply to a specific message, with
+// markdown → HTML conversion and smart chunking. Falls back to plain
+// text if HTML send fails.
+func (b *Bot) replyTo(ctx context.Context, chatID int64, replyToMsgID int, text string) {
+	b.sendFormatted(ctx, chatID, replyToMsgID, text)
+}
+
+// replyText sends a message without reply threading. Used by
+// commands and system messages.
 func (b *Bot) replyText(ctx context.Context, chatID int64, text string) {
+	b.sendFormatted(ctx, chatID, 0, text)
+}
+
+func (b *Bot) sendFormatted(ctx context.Context, chatID int64, replyToMsgID int, text string) {
 	const maxLen = 4000
 	htmlText := markdownToTelegramHTML(text)
 	chunks := chunkString(htmlText, maxLen)
-	for _, c := range chunks {
-		_, err := b.api.SendMessage(ctx, &bot.SendMessageParams{
+
+	for i, c := range chunks {
+		params := &bot.SendMessageParams{
 			ChatID:    chatID,
 			Text:      c,
 			ParseMode: models.ParseModeHTML,
-		})
+		}
+		// Reply threading: only the first chunk replies to the original message.
+		if i == 0 && replyToMsgID > 0 {
+			params.ReplyParameters = &models.ReplyParameters{
+				MessageID:                replyToMsgID,
+				AllowSendingWithoutReply: true,
+			}
+		}
+
+		_, err := b.api.SendMessage(ctx, params)
 		if err != nil {
-			// Fallback: send as plain text if HTML was malformed.
+			// Fallback: send as plain text.
 			b.log.Debug("HTML send failed, falling back to plain text",
 				slog.Int64("chat_id", chatID),
 				slog.Any("err", err))
@@ -322,21 +351,22 @@ func (b *Bot) replyText(ctx context.Context, chatID int64, text string) {
 	}
 }
 
-// chunkString splits s into byte chunks of at most n bytes each. UTF-8
-// safe at boundaries only when the underlying string is ASCII or when
-// the boundary happens to fall outside a multi-byte sequence; for the
-// M6 single-shot replies the agent produces this is good enough. A
-// proper rune-aware splitter lands with I5.
+// chunkString splits s into pieces of at most n bytes. Prefers
+// splitting on double-newline (paragraph boundary) > single newline >
+// last space. Never splits inside <pre>...</pre> blocks if possible.
 func chunkString(s string, n int) []string {
 	if len(s) <= n {
 		return []string{s}
 	}
 	var out []string
 	for len(s) > n {
-		// Walk back from n to the previous newline so we don't split
-		// in the middle of a line when possible.
 		split := n
-		if i := strings.LastIndex(s[:n], "\n"); i > n/2 {
+		// Try double-newline (paragraph) in the second half.
+		if i := strings.LastIndex(s[:n], "\n\n"); i > n/3 {
+			split = i + 2
+		} else if i := strings.LastIndex(s[:n], "\n"); i > n/3 {
+			split = i + 1
+		} else if i := strings.LastIndex(s[:n], " "); i > n/3 {
 			split = i + 1
 		}
 		out = append(out, s[:split])

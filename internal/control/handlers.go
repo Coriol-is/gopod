@@ -25,10 +25,10 @@ func helpHandler(r *Router) Handler {
 	return func(ctx context.Context, cmd Command) (Response, error) {
 		cmds := r.List()
 		var sb strings.Builder
-		sb.WriteString("picoclaw commands:\n\n")
+		sb.WriteString("**picoclaw commands**\n\n")
 		for _, c := range cmds {
 			if c.Perm == PermOwnerOnly && !cmd.Caller.IsOwner {
-				continue // non-owners don't see owner-only commands
+				continue
 			}
 			fmt.Fprintf(&sb, "/%s — %s\n", c.SlashName, c.Description)
 		}
