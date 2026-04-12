@@ -118,8 +118,10 @@ func (b *Bot) loginHandlerReal(ctx context.Context, _ *bot.Bot, update *models.U
 
 	// Spawn interactive exec.
 	loginCtx, loginCancel := context.WithTimeout(context.Background(), loginTimeout)
+	// Use the per-chat provider (could be claude or codex).
+	prov := b.runner.ProviderForChat(rc.Folder)
 	exec, err := b.runner.Docker().ExecInteractive(loginCtx, containerID,
-		b.runner.Provider().LoginCmd(),
+		prov.LoginCmd(),
 		nil,
 	)
 	if err != nil {
@@ -144,7 +146,7 @@ func (b *Bot) loginHandlerReal(ctx context.Context, _ *bot.Bot, update *models.U
 			break
 		}
 		b.log.Debug("/login stdout", slog.String("line", line))
-		if u := b.runner.Provider().ExtractLoginURL(line); u != "" {
+		if u := prov.ExtractLoginURL(line); u != "" {
 			url = u
 			break
 		}
