@@ -74,6 +74,9 @@ type Paths struct {
 	DataDir            string // ${PICOCLAW_DATA_DIR}
 	ChatsDir           string // typically ${RepoRoot}/chats
 	ContainerSkillsDir string // typically ${RepoRoot}/container/skills
+	// ObsidianVault is the host path to the Obsidian vault. If non-empty,
+	// mounted at /workspace/vault inside the container. RW for owner.
+	ObsidianVault string
 	// EmptyFile is an absolute path to an empty, operator-writable file
 	// picoclaw uses to mask ${REPO_ROOT}/.env inside the owner's project
 	// mount. EnsureChatDirs creates it at bootstrap.
@@ -178,6 +181,17 @@ func standardMounts(p Paths, chatFolder string, tier Tier) []Mount {
 			Source:   filepath.Join(p.DataDir, "store.sqlite"),
 			Target:   "/workspace/store/store.sqlite",
 			ReadOnly: false,
+		})
+	}
+
+	// Obsidian vault mount (if configured). RW for owner so the agent
+	// can create/edit notes. RO for non-owner chats.
+	if p.ObsidianVault != "" {
+		readOnly := tier != TierOwner
+		out = append(out, Mount{
+			Source:   p.ObsidianVault,
+			Target:   "/workspace/vault",
+			ReadOnly: readOnly,
 		})
 	}
 

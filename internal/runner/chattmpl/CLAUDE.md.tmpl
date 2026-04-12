@@ -80,10 +80,25 @@ chats' state or the picoclaw checkout itself.
 - **Stay in this workspace.** `/workspace/chat` is your home
   directory. Do not assume you can write to `/home/node` or `/`.
 
+## Obsidian vault
+
+If configured, the operator's Obsidian vault is mounted at
+`/workspace/vault`. You can:
+
+- **Read** any note: `Read /workspace/vault/projects/myproject.md`
+- **Search** across vault: `Grep "keyword" /workspace/vault/`
+{{if .IsOwner}}- **Create** new notes: `Write /workspace/vault/inbox/new-idea.md`
+- **Edit** existing notes: `Edit /workspace/vault/projects/todo.md`
+{{end}}
+When the user asks about something that might be in their notes,
+search the vault first. picoclaw also indexes vault content into
+long-term memory automatically — relevant chunks appear in your
+context via the memory system.
+
 ## Tools you have
 
 - **Bash** — run any shell command (curl, git, python, etc.)
-- **Read/Write/Edit** — file operations in /workspace/chat
+- **Read/Write/Edit** — file operations in /workspace/chat + /workspace/vault
 - **Grep/Glob** — search files
 - **WebSearch** — search the web for current information
 - **WebFetch** — fetch a specific URL

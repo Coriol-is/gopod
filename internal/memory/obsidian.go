@@ -129,46 +129,134 @@ type Chunk struct {
 	Content string // the full text including the heading line
 }
 
-// chunkByHeading splits markdown into chunks at ## headings.
-// Each chunk includes the heading line + all content until the next
-// heading of the same or higher level.
+// chunkByHeading splits markdown into chunks at headings.
+// Each chunk includes:
+// - File frontmatter (YAML between --- delimiters) prepended as context
+// - The heading line + content until next heading
+// - Wiki links [[page]] resolved to "[see: page]" annotations
+// - Overlap: last 2 lines of previous chunk prepended for continuity
 func chunkByHeading(md, filename string) []Chunk {
+	// Extract frontmatter if present.
+	frontmatter := ""
+	body := md
+	if strings.HasPrefix(md, "---\n") {
+		if end := strings.Index(md[4:], "\n---"); end >= 0 {
+			frontmatter = md[4 : 4+end]
+			body = strings.TrimSpace(md[4+end+4:])
+		}
+	}
+
 	var chunks []Chunk
 	var current Chunk
 	var currentLines []string
+	var prevTail []string // last 2 lines of previous chunk for overlap
 
-	scanner := bufio.NewScanner(strings.NewReader(md))
+	scanner := bufio.NewScanner(strings.NewReader(body))
 	for scanner.Scan() {
 		line := scanner.Text()
 		if isHeading(line) {
-			// Save previous chunk.
 			if len(currentLines) > 0 {
-				current.Content = strings.Join(currentLines, "\n")
+				current.Content = buildChunkContent(frontmatter, filename, prevTail, currentLines)
 				chunks = append(chunks, current)
+				// Save tail for overlap.
+				prevTail = tailLines(currentLines, 2)
 			}
-			// Start new chunk.
 			current = Chunk{Heading: strings.TrimLeft(line, "# ")}
 			currentLines = []string{line}
 		} else {
 			currentLines = append(currentLines, line)
 		}
 	}
-	// Save last chunk.
 	if len(currentLines) > 0 {
-		current.Content = strings.Join(currentLines, "\n")
+		current.Content = buildChunkContent(frontmatter, filename, prevTail, currentLines)
 		chunks = append(chunks, current)
 	}
 
-	// If there's only one chunk with no heading (whole file), use
-	// filename as heading and limit to ~500 tokens (~2000 chars).
 	if len(chunks) == 1 && chunks[0].Heading == "" {
 		chunks[0].Heading = filename
-		if len(chunks[0].Content) > 2000 {
-			chunks[0].Content = chunks[0].Content[:2000]
+	}
+
+	// Resolve wiki links in all chunks.
+	for i := range chunks {
+		chunks[i].Content = resolveWikiLinks(chunks[i].Content)
+		// Cap chunk size at ~2000 chars (~500 tokens).
+		if len(chunks[i].Content) > 2000 {
+			chunks[i].Content = chunks[i].Content[:2000]
 		}
 	}
 
 	return chunks
+}
+
+// buildChunkContent assembles a chunk with optional frontmatter context
+// and overlap from the previous chunk.
+func buildChunkContent(frontmatter, filename string, overlap, lines []string) string {
+	var parts []string
+	if frontmatter != "" {
+		parts = append(parts, "[file: "+filename+", metadata: "+compactFrontmatter(frontmatter)+"]")
+	}
+	if len(overlap) > 0 {
+		parts = append(parts, "[..."+strings.Join(overlap, "\n")+"]")
+	}
+	parts = append(parts, strings.Join(lines, "\n"))
+	return strings.Join(parts, "\n")
+}
+
+// compactFrontmatter extracts key fields from YAML frontmatter into
+// a compact one-liner for the chunk context.
+func compactFrontmatter(fm string) string {
+	var pairs []string
+	for _, line := range strings.Split(fm, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		// Keep only simple key: value pairs.
+		if strings.Contains(line, ":") {
+			pairs = append(pairs, line)
+		}
+	}
+	result := strings.Join(pairs, "; ")
+	if len(result) > 200 {
+		result = result[:200]
+	}
+	return result
+}
+
+// resolveWikiLinks replaces [[page]] with [see: page] and
+// [[page|alias]] with [see: alias (page)] so the agent knows
+// there's a linked note without needing to parse wiki syntax.
+func resolveWikiLinks(s string) string {
+	result := s
+	for {
+		start := strings.Index(result, "[[")
+		if start < 0 {
+			break
+		}
+		end := strings.Index(result[start:], "]]")
+		if end < 0 {
+			break
+		}
+		end += start
+		inner := result[start+2 : end]
+		var replacement string
+		if pipe := strings.Index(inner, "|"); pipe >= 0 {
+			page := inner[:pipe]
+			alias := inner[pipe+1:]
+			replacement = "[see: " + alias + " (" + page + ")]"
+		} else {
+			replacement = "[see: " + inner + "]"
+		}
+		result = result[:start] + replacement + result[end+2:]
+	}
+	return result
+}
+
+func tailLines(lines []string, n int) []string {
+	if len(lines) <= n {
+		return lines
+	}
+	return lines[len(lines)-n:]
 }
 
 func isHeading(line string) bool {
@@ -180,6 +268,43 @@ func isHeading(line string) bool {
 func contentHash(s string) string {
 	h := sha256.Sum256([]byte(s))
 	return fmt.Sprintf("%x", h)
+}
+
+// Reconcile archives memories whose source files no longer exist
+// in the vault. Called after each Scan.
+func (o *ObsidianIngester) Reconcile(ctx context.Context) (int64, error) {
+	rows, err := o.mem.store.DB().QueryContext(ctx, `
+		SELECT id, IFNULL(source,'') FROM memories
+		 WHERE chat_folder = ? AND kind = 'document'
+		   AND IFNULL(status,'active') = 'active'
+		   AND source LIKE 'obsidian:%'`, o.chatFolder)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+
+	var archived int64
+	now := time.Now().UnixMilli()
+	for rows.Next() {
+		var id int64
+		var source string
+		if err := rows.Scan(&id, &source); err != nil {
+			continue
+		}
+		// source = "obsidian:path/to/file.md#heading"
+		relPath := strings.TrimPrefix(source, "obsidian:")
+		if hash := strings.Index(relPath, "#"); hash >= 0 {
+			relPath = relPath[:hash]
+		}
+		fullPath := filepath.Join(o.vaultPath, relPath)
+		if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+			o.mem.store.DB().ExecContext(ctx, `
+				UPDATE memories SET status = 'archived', updated_at = ?
+				 WHERE id = ?`, now, id)
+			archived++
+		}
+	}
+	return archived, nil
 }
 
 // StartWatcher launches a background goroutine that re-scans the
@@ -208,6 +333,12 @@ func (o *ObsidianIngester) StartWatcher(ctx context.Context, interval time.Durat
 				} else if n > 0 {
 					o.log.Info("obsidian: ingested chunks",
 						slog.Int("count", n))
+				}
+				// Reconcile: archive memories for deleted files.
+				archived, _ := o.Reconcile(ctx)
+				if archived > 0 {
+					o.log.Info("obsidian: reconciled",
+						slog.Int64("archived", archived))
 				}
 			}
 		}
