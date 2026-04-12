@@ -1,0 +1,10 @@
+.git
+data/
+chats/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+.env
+.env.local
+picoclaw
