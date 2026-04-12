@@ -55,6 +55,10 @@ type SpawnConfig struct {
 	// is allowed to spawn. 0 means "unset" and is an error.
 	PidsLimit int64
 
+	// HomeDir overrides the HOME env var inside the container.
+	// Set from provider.HomeDir(). Defaults to "/home/node" if empty.
+	HomeDir string
+
 	// EnvAllowlist is the list of environment variable names that
 	// should be forwarded from the picoclaw process into the agent
 	// container. Values are read from os.Environ() at spawn time; only
@@ -122,8 +126,12 @@ func BuildContainerArgs(cfg SpawnConfig) (*container.Config, *container.HostConf
 	// `/.claude.json` on the read-only rootfs and silently fails.
 	// Forcing HOME=/home/node points it at the writable tmpfs we set
 	// up in the HostConfig below.
+	homeDir := "/home/node" // default; overridden by provider if set
+	if cfg.HomeDir != "" {
+		homeDir = cfg.HomeDir
+	}
 	env := append(buildEnvSlice(cfg.EnvAllowlist),
-		"HOME=/home/node",
+		"HOME="+homeDir,
 		"PICOCLAW_CHAT_FOLDER="+cfg.ChatFolder,
 	)
 

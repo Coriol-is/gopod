@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,13 +25,14 @@ import (
 // is the job of M3 GroupQueue. Until then a small per-chat sync.Mutex
 // inside lastTouchMu serializes EnsureRunning calls for the same chat.
 type Runner struct {
-	d       *Docker
-	paths   Paths
-	cfg     SpawnDefaults
-	allow   []string // env var names to forward into containers
-	version string
-	log     *slog.Logger
-	store   stateStore // for persisting compact timestamps
+	d        *Docker
+	provider AgentProvider
+	paths    Paths
+	cfg      SpawnDefaults
+	allow    []string // additional env var names beyond provider's RequiredEnvVars
+	version  string
+	log      *slog.Logger
+	store    stateStore // for persisting compact timestamps
 
 	// memory is the long-term memory layer. Optional: if nil, prompts
 	// are sent without memory context. Set via SetMemory after
@@ -87,6 +89,7 @@ type SpawnDefaults struct {
 // container so CleanupLeftovers can age them out across upgrades).
 func New(
 	d *Docker,
+	provider AgentProvider,
 	paths Paths,
 	defaults SpawnDefaults,
 	envAllow []string,
@@ -96,17 +99,21 @@ func New(
 	if d == nil {
 		return nil, errors.New("runner: nil Docker")
 	}
+	if provider == nil {
+		return nil, errors.New("runner: nil provider")
+	}
 	if err := paths.Validate(); err != nil {
 		return nil, err
 	}
 	if defaults.Image == "" {
-		return nil, errors.New("runner: empty image")
+		defaults.Image = provider.Image()
 	}
 	if log == nil {
 		log = slog.Default()
 	}
 	return &Runner{
 		d:              d,
+		provider:       provider,
 		paths:          paths,
 		cfg:            defaults,
 		allow:          envAllow,
@@ -115,7 +122,7 @@ func New(
 		containerLocks: make(map[string]*sync.Mutex),
 		activity:       make(map[string]time.Time),
 		turnCount:      make(map[string]int),
-		compactAfter:   30, // default, overridable via SetCompactAfter
+		compactAfter:   30,
 	}, nil
 }
 
@@ -146,6 +153,9 @@ func (r *Runner) Ensure(
 		return "", err
 	}
 
+	// Merge provider's required env vars with operator's allowlist.
+	envAllow := append(r.provider.RequiredEnvVars(), r.allow...)
+
 	spawn := SpawnConfig{
 		Image:        r.cfg.Image,
 		ChatFolder:   chatFolder,
@@ -156,7 +166,8 @@ func (r *Runner) Ensure(
 		MemoryBytes:  r.cfg.MemoryBytes,
 		NanoCPUs:     r.cfg.NanoCPUs,
 		PidsLimit:    r.cfg.PidsLimit,
-		EnvAllowlist: r.allow,
+		EnvAllowlist: envAllow,
+		HomeDir:      r.provider.HomeDir(),
 	}
 	conf, host, name, err := BuildContainerArgs(spawn)
 	if err != nil {
@@ -203,7 +214,7 @@ func (r *Runner) Run(
 		}
 	}
 
-	reply, err := r.d.RunPrompt(ctx, id, prompt, opts)
+	reply, err := r.execWithProvider(ctx, id, r.provider.RunCmd(prompt, opts.AppendSystemPrompt))
 	if err != nil {
 		return "", err
 	}
@@ -236,9 +247,8 @@ func (r *Runner) Run(
 }
 
 
-// RunFresh is like Run but uses RunPromptFresh (no --continue).
-// For system prompts that should not pollute conversation history:
-// compact summarize, task scheduling, memory extraction.
+// RunFresh is like Run but without session continuity. For system
+// prompts that should not pollute conversation history.
 func (r *Runner) RunFresh(
 	ctx context.Context,
 	chatFolder string,
@@ -250,17 +260,61 @@ func (r *Runner) RunFresh(
 	if err != nil {
 		return "", fmt.Errorf("runner: ensure %q: %w", chatFolder, err)
 	}
-	return r.d.RunPromptFresh(ctx, id, prompt)
+	return r.execWithProvider(ctx, id, r.provider.RunFreshCmd(prompt))
 }
 
-// CheckAuth proxies through to docker.CheckAuth so the telegram
-// handler can probe auth state without holding a Docker reference.
+// execWithProvider runs a provider-built command inside a container
+// with config restore and error classification.
+func (r *Runner) execWithProvider(ctx context.Context, containerID string, cmd []string) (string, error) {
+	// Restore config from backup if needed.
+	if restoreCmd := r.provider.RestoreConfigCmd(); restoreCmd != nil {
+		r.d.Exec(ctx, containerID, restoreCmd, nil)
+	}
+
+	res, err := r.d.Exec(ctx, containerID, cmd, nil)
+	if err != nil {
+		return "", fmt.Errorf("runner: exec: %w", err)
+	}
+	if res.ExitCode != 0 {
+		stderr := strings.TrimSpace(res.Stderr)
+		if r.provider.IsNotLoggedInError(stderr, res.Stdout) {
+			return "", r.classifyAuthError(ctx, containerID)
+		}
+		return "", fmt.Errorf("runner: agent exited %d (stderr=%q)", res.ExitCode, stderr)
+	}
+	return strings.TrimSpace(res.Stdout), nil
+}
+
+// classifyAuthError distinguishes "never logged in" from "session expired".
+func (r *Runner) classifyAuthError(ctx context.Context, containerID string) error {
+	status, err := r.checkAuthViaProvider(ctx, containerID)
+	if err != nil {
+		return ErrNotLoggedIn
+	}
+	if status.AuthMethod != "" && status.AuthMethod != "none" {
+		return ErrSessionExpired
+	}
+	return ErrNotLoggedIn
+}
+
+func (r *Runner) checkAuthViaProvider(ctx context.Context, containerID string) (AuthStatus, error) {
+	res, err := r.d.Exec(ctx, containerID, r.provider.AuthStatusCmd(), nil)
+	if err != nil {
+		return AuthStatus{}, err
+	}
+	return r.provider.ParseAuthStatus(res.Stdout)
+}
+
+// Provider returns the agent provider. Used by telegram/login.go.
+func (r *Runner) Provider() AgentProvider { return r.provider }
+
+// CheckAuth probes auth state of the chat's agent container.
 func (r *Runner) CheckAuth(ctx context.Context, chatFolder string, tier Tier, allowlist *mountsec.Allowlist) (AuthStatus, error) {
 	id, err := r.Ensure(ctx, chatFolder, tier, allowlist)
 	if err != nil {
 		return AuthStatus{}, err
 	}
-	return r.d.CheckAuth(ctx, id)
+	return r.checkAuthViaProvider(ctx, id)
 }
 
 // stateStore is the interface Runner needs for persisting compact
@@ -305,8 +359,7 @@ func (r *Runner) ClearSession(ctx context.Context, chatFolder string, tier Tier,
 	if err != nil {
 		return err
 	}
-	_, err = r.d.Exec(ctx, id, []string{"sh", "-c",
-		`rm -rf "$HOME/.claude/projects" "$HOME/.claude/.active_session"`}, nil)
+	_, err = r.d.Exec(ctx, id, r.provider.ClearSessionCmd(), nil)
 	r.resetTurnCount(chatFolder)
 	return err
 }

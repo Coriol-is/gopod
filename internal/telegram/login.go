@@ -119,7 +119,7 @@ func (b *Bot) loginHandlerReal(ctx context.Context, _ *bot.Bot, update *models.U
 	// Spawn interactive exec.
 	loginCtx, loginCancel := context.WithTimeout(context.Background(), loginTimeout)
 	exec, err := b.runner.Docker().ExecInteractive(loginCtx, containerID,
-		[]string{"claude", "auth", "login"},
+		b.runner.Provider().LoginCmd(),
 		nil,
 	)
 	if err != nil {
@@ -144,7 +144,7 @@ func (b *Bot) loginHandlerReal(ctx context.Context, _ *bot.Bot, update *models.U
 			break
 		}
 		b.log.Debug("/login stdout", slog.String("line", line))
-		if u := extractURL(line); u != "" {
+		if u := b.runner.Provider().ExtractLoginURL(line); u != "" {
 			url = u
 			break
 		}
