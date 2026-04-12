@@ -156,6 +156,33 @@ func (m *Memory) List(ctx context.Context, chatFolder string, limit int) ([]Item
 	return scanItems(rows)
 }
 
+// SearchText is a convenience wrapper around Search that returns
+// results in a shape the control package can consume without importing
+// memory.Item directly.
+func (m *Memory) SearchText(ctx context.Context, chatFolder, query string, k int) ([]SearchResult, error) {
+	items, err := m.Search(ctx, chatFolder, query, k)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]SearchResult, len(items))
+	for i, it := range items {
+		out[i] = SearchResult{
+			ID: it.ID, Kind: it.Kind, Title: it.Title,
+			Content: it.Content, Score: it.Score,
+		}
+	}
+	return out, nil
+}
+
+// SearchResult is the external-facing search result type.
+type SearchResult struct {
+	ID      int64
+	Kind    string
+	Title   string
+	Content string
+	Score   float64
+}
+
 // Delete removes a memory by ID (relational + vector + FTS via trigger).
 func (m *Memory) Delete(ctx context.Context, id int64) error {
 	db := m.store.DB()
