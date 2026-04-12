@@ -54,6 +54,21 @@ func (d *Docker) CheckAuth(ctx context.Context, containerID string) (AuthStatus,
 	return status, nil
 }
 
+// DefaultAllowedTools is the set of Claude Code tools the agent is
+// allowed to use in `-p` mode. Without this, Claude Code's permission
+// model blocks tools that need interactive approval (like WebSearch).
+//
+// Tools:
+//   Bash   — shell commands (curl, git, etc)
+//   Read   — read files
+//   Write  — write files
+//   Edit   — edit files
+//   Grep   — search file contents
+//   Glob   — find files by pattern
+//   WebSearch — search the web
+//   WebFetch  — fetch a URL
+const DefaultAllowedTools = "Bash Read Write Edit Grep Glob WebSearch WebFetch"
+
 // ErrNotLoggedIn is returned by RunPrompt when the agent container has
 // no Claude credentials and has never been authenticated.
 var ErrNotLoggedIn = errors.New("runner: agent container is not logged in")
@@ -91,7 +106,9 @@ func (d *Docker) RunPrompt(ctx context.Context, containerID, prompt string, opts
 		return "", errors.New("docker: RunPrompt: empty prompt")
 	}
 
-	cmd := []string{"claude", "-p"}
+	cmd := []string{"claude", "-p",
+		"--allowedTools", DefaultAllowedTools,
+	}
 	if len(opts) > 0 && opts[0].AppendSystemPrompt != "" {
 		cmd = append(cmd, "--append-system-prompt", opts[0].AppendSystemPrompt)
 	}
