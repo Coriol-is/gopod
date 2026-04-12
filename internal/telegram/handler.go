@@ -39,6 +39,22 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 
 	text := strings.TrimSpace(messageText(m))
 
+	// Handle voice messages (I3): transcribe via Whisper, use text as prompt.
+	if m.Voice != nil {
+		transcript, err := b.transcribeVoice(ctx, m.Voice)
+		if err != nil {
+			b.log.Error("voice transcription failed", slog.Any("err", err))
+			b.replyTo(ctx, m.Chat.ID, m.ID, "Failed to transcribe voice message.")
+			return
+		}
+		if transcript != "" {
+			text = transcript
+			b.log.Debug("voice transcribed",
+				slog.Int("duration", m.Voice.Duration),
+				slog.Int("text_len", len(text)))
+		}
+	}
+
 	// Handle photo messages (I2): download, save, build prompt.
 	var filePath string
 	if len(m.Photo) > 0 {
