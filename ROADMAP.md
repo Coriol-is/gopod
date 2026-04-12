@@ -113,6 +113,10 @@ Tracked as its own phase because the milestones are orthogonal to core work.
 | P3 | Codex provider: OpenAI Codex CLI support (separate Docker image, codex-specific flags/auth/sessions) | ⬜ |
 | P4 | Per-chat provider config: `/provider claude\|codex` command + `PICOCLAW_DEFAULT_PROVIDER` env var | ⬜ |
 | P5 | API providers (Tier 2): OpenAI API / Ollama / any OpenAI-compatible — same interface, no container, HTTP calls | ⬜ |
+| P6 | Gemini CLI provider: `gemini -p` with Google OAuth (browser link auth like Claude), `--resume latest` for sessions, `~/.gemini/` persisted via bind mount | ⬜ |
+| P7 | Goose provider: `goose run -t` — model-agnostic (15+ providers via env), MCP extensible, Rust binary, named sessions | ⬜ |
+| P8 | Cline CLI provider: `cline -y` — multi-provider (Anthropic/OpenAI/Google/Bedrock/Azure), gRPC API, standalone since 2.0 | ⬜ |
+| P9 | Aider provider: `aider --message --yes` — code editing specialist, 20+ models, official Docker image | ⬜ |
 
 ## Deferred
 
