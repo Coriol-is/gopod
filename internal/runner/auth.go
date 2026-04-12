@@ -106,28 +106,26 @@ func (d *Docker) RunPrompt(ctx context.Context, containerID, prompt string, opts
 		return "", errors.New("docker: RunPrompt: empty prompt")
 	}
 
-	// Build the claude command. Wrapped in `sh -c` so we can prepend
-	// the .claude.json restore logic. The config file lives on tmpfs
-	// (/home/node) and is lost on container restart; Claude backs it
-	// up to the bind-mounted /home/node/.claude/backups/ dir. We
-	// restore the latest backup before each invocation.
-	var claudeArgs []string
-	claudeArgs = append(claudeArgs, "claude", "-p",
-		"--allowedTools", DefaultAllowedTools)
-	if len(opts) > 0 && opts[0].AppendSystemPrompt != "" {
-		claudeArgs = append(claudeArgs, "--append-system-prompt", opts[0].AppendSystemPrompt)
-	}
-	claudeArgs = append(claudeArgs, prompt)
-
-	// Shell wrapper: restore .claude.json from backup if missing,
-	// then exec claude with the constructed args.
-	restore := `if [ ! -f "$HOME/.claude.json" ]; then ` +
+	// Build the claude command. Wrapped in `sh -c '...' _ args...`
+	// so we can prepend .claude.json restore logic. The `exec "$@"`
+	// pattern passes all args after `_` as positional parameters —
+	// no shell quoting needed for the prompt text.
+	//
+	// The config file lives on tmpfs (/home/node) and is lost on
+	// container restart; Claude backs it up to the bind-mounted
+	// /home/node/.claude/backups/ dir. We restore before each call.
+	restoreScript := `if [ ! -f "$HOME/.claude.json" ]; then ` +
 		`b=$(ls -t "$HOME/.claude/backups/.claude.json.backup."* 2>/dev/null | head -1); ` +
 		`[ -n "$b" ] && cp "$b" "$HOME/.claude.json"; ` +
-		`fi; `
+		`fi; exec "$@"`
 
-	shellCmd := restore + shellQuoteArgs(claudeArgs)
-	cmd := []string{"sh", "-c", shellCmd}
+	// Args after "_" become $1, $2, ... for exec "$@".
+	cmd := []string{"sh", "-c", restoreScript, "_",
+		"claude", "-p", "--allowedTools", DefaultAllowedTools}
+	if len(opts) > 0 && opts[0].AppendSystemPrompt != "" {
+		cmd = append(cmd, "--append-system-prompt", opts[0].AppendSystemPrompt)
+	}
+	cmd = append(cmd, prompt)
 
 	res, err := d.Exec(ctx, containerID, cmd, nil)
 	if err != nil {
