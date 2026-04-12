@@ -23,7 +23,7 @@ The numerical IDs below are stable identifiers cited from many places —
 is built in this sequence so that the first end-to-end agent reply uses
 Claude Code's web-auth (Pro/Max) inside a container, not a paid API key:
 
-`M0 ✅ → M1 ✅ → M5 ✅ → M6 ✅ → M6.5 ✅ → M3 → M3.5 → M3.6 → M4 → M7 → M8 → M9`
+`M0 ✅ → M1 ✅ → M5 ✅ → M6 ✅ → M6.5 ✅ → M3 ✅ → M3.5 → M3.6 → M4 → M7 → M8 → M9`
 
 M2 (Direct API) is no longer on the critical path; it is opt-in if and only
 if `ANTHROPIC_API_KEY` is set in the environment.
@@ -35,7 +35,7 @@ if `ANTHROPIC_API_KEY` is set in the environment.
 | M0 | Skeleton: `go.mod`, `cmd/picoclaw/main.go`, `internal/config`, `internal/store` schema, slog wiring | ✅ | sqlite-vec verified at startup (`vec_version=v0.1.6`); ncruces pinned to v0.20.0 per [D017](docs/DECISIONS.md) |
 | M1 | Telegram echo: long-poll, default handler stores every message, `/ping` replies | ✅ | `internal/telegram` wraps `go-telegram/bot`; `internal/store/messages.go` + `chats.go` ingest. End-to-end with a real bot token works without an agent |
 | M2 | Direct API agent (no container): `anthropic-sdk-go`, single chat, trigger pattern, per-chat session | ⏸️ | **Optional, off the critical path per [D018](docs/DECISIONS.md).** Auto-enabled if `ANTHROPIC_API_KEY` is set; otherwise skipped silently |
-| M3 | GroupQueue: per-chat serialization + global concurrency cap + backoff | ⬜ | Demoted behind M5/M6/M6.5 per [D018](docs/DECISIONS.md). Until then a `sync.Mutex` map keyed by chat folder lives inside `internal/runner` |
+| M3 | GroupQueue: per-chat serialization + global concurrency cap + backoff | ✅ | `internal/queue` with per-chat worker, buffered-chan cap (default 3), coalescing, exponential backoff (5s→80s, 5 retries). Telegram default handler enqueues; queue worker runs agent async |
 | M3.5 | **Control plane** (`internal/control` Router + Telegram + CLI frontends + logs subsystem). Sub-steps C1–C5 below. See [docs/CONTROL.md](docs/CONTROL.md). | ⬜ | Demoted behind M5/M6/M6.5 per [D018](docs/DECISIONS.md). Until then `/ping` and `/login` are wired directly via go-telegram/bot; M3.5 folds them into the Router |
 | M3.6 | **Observability** (`internal/observability`: opt-in Prometheus `/metrics` + opt-in OTel OTLP traces; logs are already covered by M3.5/C5). Sub-steps O1–O6 below. See [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) and [D014](docs/DECISIONS.md). | ⬜ | Both subsystems are no-op by default; later milestones add their own metrics/spans using helpers from M3.6 |
 | M4 | Scheduler: cron/interval/once via `robfig/cron/v3`, registers `/tasks *` handlers with the Router | ⬜ | |

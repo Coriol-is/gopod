@@ -9,21 +9,21 @@
 
 ## Current state
 
-**Phase:** M6.5 done. picoclaw is a fully self-service Telegram Claude
-assistant. The entire onboarding — from first message to first real
-Claude reply — fits inside Telegram chat with no terminal access needed.
+**Phase:** M3 done. picoclaw now serializes agent runs per-chat,
+caps global concurrency at 3, coalesces pending messages, and
+retries with exponential backoff on failure.
 **Last updated:** 2026-04-12
-**Last working session:** M6.5 (Telegram-mediated `/login`) —
-interactive OAuth proxy via Docker SDK `ExecInteractive` (PTY+stdin).
-`/login` spawns `claude auth login` inside the agent container,
-captures the URL from stdout, forwards to Telegram, intercepts the
-user's next message as the OAuth code, pipes it to claude's stdin,
-confirms success. 10-minute timeout with auto-cleanup. Session-expired
-vs never-logged-in distinction in error replies. Also: `/help` command
-(dynamic from publicCommands), all 5 slash commands published to
-Telegram picker via setMyCommands.
+**Last working session:** M3 (GroupQueue) — `internal/queue` package
+with per-chat worker, buffered-chan global cap (default 3 concurrent
+agent runs), message coalescing (N messages → one handler call with
+the last message), and exponential backoff (5s→80s, max 5 retries).
+Telegram default handler changed from synchronous `runner.Run` to
+`queue.Enqueue` + return immediately; the queue worker goroutine does
+the heavy lifting (typing indicator, agent call, reply). Circular
+dependency between Bot and Queue broken via `SetQueue()` post-
+construction wiring. Fallback: nil Queue = sync path (pre-M3 dev mode).
 Build order:
-`M0 ✅ → M1 ✅ → M5 ✅ → M6 ✅ → M6.5 ✅ → M3 → M3.5 → M3.6 → M4 → M7 → M8 → M9`.
+`M0 ✅ → M1 ✅ → M5 ✅ → M6 ✅ → M6.5 ✅ → M3 ✅ → M3.5 → M3.6 → M4 → M7 → M8 → M9`.
 
 ## What's done
 
@@ -113,8 +113,7 @@ Nothing actively in flight.
 
 ## What's next (in order — per [D018](DECISIONS.md))
 
-1. **M3 — GroupQueue.** Per-chat serialization + global cap + backoff.
-   Replaces the stub `sync.Mutex` map in `internal/runner`.
+1. ~~M3 — GroupQueue.~~ ✅ Done.
 2. **M3.5 — Control plane** (`internal/control` Router + Telegram + CLI
    frontends + logs subsystem). Folds the directly-wired /help, /ping,
    /whoami, /login, /register handlers into the Router. M4+ depend on this.
