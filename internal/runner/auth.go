@@ -120,11 +120,15 @@ func (d *Docker) RunPrompt(ctx context.Context, containerID, prompt string, opts
 			`b=$(ls -t "$HOME/.claude/backups/.claude.json.backup."* 2>/dev/null | head -1); ` +
 			`[ -n "$b" ] && cp "$b" "$HOME/.claude.json"; fi`}, nil)
 
-	cmd := []string{"claude", "-p", "--allowedTools", DefaultAllowedTools}
+	// --allowedTools and --append-system-prompt MUST come before -p.
+	// Commander.js treats -p as a boolean flag; everything after it
+	// becomes the positional prompt argument. If --allowedTools
+	// follows -p, it swallows the prompt as a tool name.
+	cmd := []string{"claude", "--allowedTools", DefaultAllowedTools}
 	if len(opts) > 0 && opts[0].AppendSystemPrompt != "" {
 		cmd = append(cmd, "--append-system-prompt", opts[0].AppendSystemPrompt)
 	}
-	cmd = append(cmd, prompt)
+	cmd = append(cmd, "-p", prompt)
 
 	res, err := d.Exec(ctx, containerID, cmd, nil)
 	if err != nil {
