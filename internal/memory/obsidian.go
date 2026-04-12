@@ -21,12 +21,22 @@ import (
 )
 
 // ObsidianIngester scans an Obsidian vault and ingests markdown
-// files into the memory store.
+// files into the memory store. Tracks file mtimes to avoid
+// re-embedding unchanged files.
 type ObsidianIngester struct {
-	mem       *Memory
-	vaultPath string
-	chatFolder string // which chat's memory to store into
-	log       *slog.Logger
+	mem        *Memory
+	vaultPath  string
+	chatFolder string
+	log        *slog.Logger
+
+	// indexed tracks path → mtime+size for change detection.
+	// Only files whose mtime or size changed get re-embedded.
+	indexed map[string]fileInfo
+}
+
+type fileInfo struct {
+	ModTime int64 // unix seconds
+	Size    int64
 }
 
 // NewObsidianIngester creates an ingester for the given vault path.
@@ -39,6 +49,7 @@ func NewObsidianIngester(mem *Memory, vaultPath, chatFolder string, log *slog.Lo
 		vaultPath:  vaultPath,
 		chatFolder: chatFolder,
 		log:        log,
+		indexed:    make(map[string]fileInfo),
 	}
 }
 
@@ -49,13 +60,14 @@ func (o *ObsidianIngester) Scan(ctx context.Context) (int, error) {
 		return 0, nil
 	}
 
-	var ingested int
+	var ingested, skipped int
+	seen := make(map[string]bool) // track files still in vault for reconcile
+
 	err := filepath.Walk(o.vaultPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			return nil // skip unreadable files
+			return nil
 		}
 		if info.IsDir() {
-			// Skip hidden directories (.obsidian, .git, etc.)
 			if strings.HasPrefix(info.Name(), ".") && info.Name() != "." {
 				return filepath.SkipDir
 			}
@@ -66,16 +78,33 @@ func (o *ObsidianIngester) Scan(ctx context.Context) (int, error) {
 		}
 
 		relPath, _ := filepath.Rel(o.vaultPath, path)
+		seen[relPath] = true
+
+		// Delta check: skip if mtime + size unchanged.
+		current := fileInfo{ModTime: info.ModTime().Unix(), Size: info.Size()}
+		if prev, ok := o.indexed[relPath]; ok {
+			if prev.ModTime == current.ModTime && prev.Size == current.Size {
+				skipped++
+				return nil
+			}
+		}
+
 		n, err := o.ingestFile(ctx, path, relPath)
 		if err != nil {
 			o.log.Warn("obsidian: ingest failed",
 				slog.String("file", relPath),
 				slog.Any("err", err))
-			return nil // continue scanning
+			return nil
 		}
 		ingested += n
+		o.indexed[relPath] = current
 		return nil
 	})
+
+	if skipped > 0 {
+		o.log.Debug("obsidian: skipped unchanged files",
+			slog.Int("skipped", skipped))
+	}
 
 	return ingested, err
 }
