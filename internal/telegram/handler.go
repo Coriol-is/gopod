@@ -128,6 +128,10 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 		return
 	}
 
+	// Instant acknowledgement: 👀 reaction so the user knows the
+	// message was received, even before container spawns (~15s).
+	b.react(ctx, m.Chat.ID, m.ID, emojiThinking)
+
 	item := queue.Item{
 		ChatID:    m.Chat.ID,
 		MessageID: m.ID,
@@ -138,8 +142,6 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 		IsVoice:   isVoice,
 	}
 
-	// If queue is wired (M3+), enqueue and return immediately.
-	// If not (pre-M3 fallback), run synchronously.
 	if b.queue != nil {
 		b.queue.Enqueue(ctx, item)
 		return
@@ -249,11 +251,7 @@ func (b *Bot) runAgentSync(ctx context.Context, item queue.Item) {
 		tier = runner.TierOwner
 	}
 
-	// 👀 reaction = "processing"
-	if item.MessageID > 0 {
-		b.react(ctx, item.ChatID, item.MessageID, emojiThinking)
-	}
-
+	// 👀 already set by defaultHandler before enqueue.
 	stopTyping := b.startTyping(ctx, item.ChatID)
 	defer stopTyping()
 
