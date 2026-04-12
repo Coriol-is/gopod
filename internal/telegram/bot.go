@@ -20,6 +20,7 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
+	"github.com/spaceinvaderz/picoclaw/internal/queue"
 	"github.com/spaceinvaderz/picoclaw/internal/runner"
 	"github.com/spaceinvaderz/picoclaw/internal/runner/mountsec"
 	"github.com/spaceinvaderz/picoclaw/internal/store"
@@ -57,6 +58,12 @@ type Deps struct {
 	// text), useful for store-only and pre-M6 dev modes.
 	Runner *runner.Runner
 
+	// Queue is the M3 GroupQueue. Optional: if nil AND Runner is
+	// set, the default handler falls back to synchronous runner.Run
+	// (pre-M3 behaviour). If set, messages are enqueued and the
+	// queue worker calls the agent asynchronously.
+	Queue *queue.Queue
+
 	// Allowlist is the parsed mount allowlist. Optional: nil means
 	// "no extras", which is the common case.
 	Allowlist *mountsec.Allowlist
@@ -80,6 +87,7 @@ type Bot struct {
 	api         *bot.Bot
 	store       *store.Store
 	runner      *runner.Runner
+	queue       *queue.Queue
 	allowlist   *mountsec.Allowlist
 	ownerChatID int64
 	log         *slog.Logger
@@ -107,6 +115,7 @@ func New(token string, deps Deps) (*Bot, error) {
 	b := &Bot{
 		store:       deps.Store,
 		runner:      deps.Runner,
+		queue:       deps.Queue,
 		allowlist:   deps.Allowlist,
 		ownerChatID: deps.OwnerChatID,
 		log:         deps.Log,
@@ -175,6 +184,12 @@ func (b *Bot) publishCommands(ctx context.Context) {
 	b.log.Info("telegram: published commands",
 		slog.Int("count", len(publicCommands)))
 }
+
+// SetQueue wires the GroupQueue after construction. This breaks the
+// circular dependency between Bot and Queue: the Bot is constructed
+// first, then the Queue is created with NewAgentHandler(), then
+// SetQueue plugs it back in. Must be called before Run().
+func (b *Bot) SetQueue(q *queue.Queue) { b.queue = q }
 
 // ErrEmptyToken signals that no Telegram bot token was provided. Callers
 // (typically cmd/picoclaw/main.go) check for this so they can decide

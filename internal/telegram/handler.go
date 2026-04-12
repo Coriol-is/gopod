@@ -12,6 +12,7 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
+	"github.com/spaceinvaderz/picoclaw/internal/queue"
 	"github.com/spaceinvaderz/picoclaw/internal/runner"
 	"github.com/spaceinvaderz/picoclaw/internal/store"
 )
@@ -62,49 +63,90 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 
 	rc, ok := b.resolveRegistered(ctx, m)
 	if !ok {
-		// Unregistered non-owner chat. Stay silent on text; the user
-		// can still see /ping work and /whoami tells them their id.
 		return
 	}
 
+	item := queue.Item{
+		ChatID:  m.Chat.ID,
+		Folder:  rc.Folder,
+		IsOwner: rc.IsOwner,
+		Text:    text,
+	}
+
+	// If queue is wired (M3+), enqueue and return immediately.
+	// If not (pre-M3 fallback), run synchronously.
+	if b.queue != nil {
+		b.queue.Enqueue(ctx, item)
+		return
+	}
+	// Sync fallback (no queue).
+	b.runAgentSync(ctx, item)
+}
+
+// runAgentSync is the pre-M3 synchronous agent path. Kept as a
+// fallback when Queue is nil (store-only dev mode). Also used as the
+// callback body for the queue handler (wired in NewAgentHandler).
+func (b *Bot) runAgentSync(ctx context.Context, item queue.Item) {
 	tier := runner.TierRegistered
-	if rc.IsOwner {
+	if item.IsOwner {
 		tier = runner.TierOwner
 	}
 
-	// Show "typing..." in Telegram while the agent runs. Chat actions
-	// expire after ~5s, so refresh in a goroutine until the agent
-	// returns.
-	stopTyping := b.startTyping(ctx, m.Chat.ID)
+	stopTyping := b.startTyping(ctx, item.ChatID)
 	defer stopTyping()
 
-	reply, err := b.runner.Run(ctx, rc.Folder, tier, b.allowlist, text)
+	reply, err := b.runner.Run(ctx, item.Folder, tier, b.allowlist, item.Text)
 	if err != nil {
 		if errors.Is(err, runner.ErrSessionExpired) {
-			b.replyText(ctx, m.Chat.ID,
+			b.replyText(ctx, item.ChatID,
 				"Your authentication session has expired.\n\n"+
 					"Run /login to re-authenticate with your Anthropic "+
 					"Pro/Max account.")
 			return
 		}
 		if errors.Is(err, runner.ErrNotLoggedIn) {
-			b.replyText(ctx, m.Chat.ID,
+			b.replyText(ctx, item.ChatID,
 				"This chat's agent is not authenticated yet.\n\n"+
 					"Run /login to sign in with your Anthropic Pro/Max "+
 					"account. Credentials persist across container restarts.")
 			return
 		}
 		b.log.Error("runner.Run failed",
-			slog.String("chat_folder", rc.Folder),
+			slog.String("chat_folder", item.Folder),
 			slog.Any("err", err))
-		b.replyText(ctx, m.Chat.ID, fmt.Sprintf("Sorry, the agent failed: %v", err))
+		b.replyText(ctx, item.ChatID, fmt.Sprintf("Sorry, the agent failed: %v", err))
 		return
 	}
 
 	if reply == "" {
 		reply = "(empty reply)"
 	}
-	b.replyText(ctx, m.Chat.ID, reply)
+	b.replyText(ctx, item.ChatID, reply)
+}
+
+// NewAgentHandler returns a queue.Handler callback that the queue
+// worker invokes for each coalesced batch of items. It runs the agent
+// for the LAST item in the batch (the most recent user message) since
+// each `claude -p` is a fresh session and earlier messages are already
+// in the store for future reference.
+//
+// Call this after constructing the Bot and pass the result to
+// queue.New. The circular dependency (Bot needs Queue, Queue needs
+// Handler from Bot) is broken by constructing the Queue after the Bot.
+func (b *Bot) NewAgentHandler() queue.Handler {
+	return func(ctx context.Context, items []queue.Item) error {
+		if len(items) == 0 {
+			return nil
+		}
+		// Use the last item — the most recent user message.
+		item := items[len(items)-1]
+		b.runAgentSync(ctx, item)
+		// runAgentSync logs and replies on error but always returns
+		// nil so the queue does not retry user-visible failures
+		// (auth errors, agent crashes). Only infrastructure failures
+		// (Docker unreachable, container won't start) should be retried.
+		return nil
+	}
 }
 
 // resolveRegistered looks up the chat's registered_chats row, auto-
