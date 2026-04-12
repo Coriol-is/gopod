@@ -41,6 +41,17 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 	if text == "" {
 		return
 	}
+
+	// If this chat has an active /login session, the next non-empty
+	// message is the OAuth code from the browser success page. Intercept
+	// it and pipe it to claude's stdin instead of sending it to the
+	// agent. Slash commands are NOT intercepted — the user might type
+	// /help mid-login and that should still work.
+	if !strings.HasPrefix(text, "/") && b.logins.get(m.Chat.ID) != nil {
+		b.handleLoginCode(ctx, m.Chat.ID, text)
+		return
+	}
+
 	// Slash commands have their own registered handlers; the default
 	// handler still sees commands picoclaw doesn't recognise. Don't
 	// send those to the agent — that would be a confusing UX.
@@ -71,14 +82,9 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 	if err != nil {
 		if errors.Is(err, runner.ErrNotLoggedIn) {
 			b.replyText(ctx, m.Chat.ID,
-				"This chat's agent container is not authenticated yet.\n\n"+
-					"Until M6.5 wires /login through Telegram, run this on "+
-					"the picoclaw host once:\n\n"+
-					"  docker exec -it picoclaw-"+rc.Folder+" claude /login\n\n"+
-					"Open the URL it prints, sign in with your Anthropic "+
-					"Pro/Max account, then send another message here. "+
-					"Credentials persist in data/sessions/"+rc.Folder+
-					"/.claude/ across restarts.")
+				"This chat's agent is not authenticated yet.\n\n"+
+					"Run /login to sign in with your Anthropic Pro/Max "+
+					"account. Credentials persist across container restarts.")
 			return
 		}
 		b.log.Error("runner.Run failed",

@@ -181,6 +181,11 @@ func (r *Runner) CheckAuth(ctx context.Context, chatFolder string, tier Tier, al
 	return r.d.CheckAuth(ctx, id)
 }
 
+// Docker returns the underlying Docker client handle. Used by
+// login.go to call ExecInteractive directly (the login flow needs
+// the raw interactive exec primitive, not the high-level Run facade).
+func (r *Runner) Docker() *Docker { return r.d }
+
 // LastActivity returns the timestamp of the chat's most recent agent
 // turn, or the zero time if the chat has never been touched. Used by
 // the idle watcher.

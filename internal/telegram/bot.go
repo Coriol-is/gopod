@@ -83,6 +83,7 @@ type Bot struct {
 	allowlist   *mountsec.Allowlist
 	ownerChatID int64
 	log         *slog.Logger
+	logins      *loginSessions
 }
 
 // New constructs a Bot. The token must be a valid @BotFather token; an
@@ -109,6 +110,7 @@ func New(token string, deps Deps) (*Bot, error) {
 		allowlist:   deps.Allowlist,
 		ownerChatID: deps.OwnerChatID,
 		log:         deps.Log,
+		logins:      newLoginSessions(),
 	}
 
 	api, err := bot.New(token,

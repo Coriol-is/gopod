@@ -33,31 +33,22 @@ func (b *Bot) helpHandler(ctx context.Context, _ *bot.Bot, update *models.Update
 	b.replyText(ctx, update.Message.Chat.ID, sb.String())
 }
 
-// loginHandler is the /login entry point. M6.5 will wire this to an
-// interactive OAuth proxy (spawn `claude auth login` inside the agent
-// container, forward URL to Telegram, wait for success). Until then
-// it points the user at the manual docker exec workaround.
-func (b *Bot) loginHandler(ctx context.Context, _ *bot.Bot, update *models.Update) {
+// loginHandler dispatches to the real M6.5 interactive OAuth proxy
+// if the runner is available, otherwise falls back to the manual
+// docker exec workaround hint.
+func (b *Bot) loginHandler(ctx context.Context, api *bot.Bot, update *models.Update) {
+	if b.runner != nil {
+		b.loginHandlerReal(ctx, api, update)
+		return
+	}
+	// Fallback: no runner (Docker unavailable).
 	if update == nil || update.Message == nil {
 		return
 	}
-	m := update.Message
-	b.persistMessage(ctx, m)
-
-	rc, ok := b.resolveRegistered(ctx, m)
-	if !ok {
-		b.replyText(ctx, m.Chat.ID,
-			"This chat is not registered. The owner can register it with /register.")
-		return
-	}
-
-	b.replyText(ctx, m.Chat.ID,
-		"Telegram-native /login is coming in M6.5.\n\n"+
-			"For now, run this on the picoclaw host:\n\n"+
-			"  docker exec -it picoclaw-"+rc.Folder+" claude /login\n\n"+
-			"Open the URL, sign in with your Anthropic Pro/Max account. "+
-			"Credentials persist in data/sessions/"+rc.Folder+"/.claude/ "+
-			"across restarts.")
+	b.persistMessage(ctx, update.Message)
+	b.replyText(ctx, update.Message.Chat.ID,
+		"Runner is not available (Docker may be unreachable). "+
+			"Cannot start interactive login.")
 }
 
 // whoamiHandler answers /whoami with the chat's id, the operator's
