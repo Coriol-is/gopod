@@ -218,10 +218,11 @@ func (r *Runner) Run(
 	}
 
 	// Auto-compact check: if turn count exceeds threshold, compact
-	// the session asynchronously. The user sees the current reply
-	// normally; the compact happens in the background for the NEXT turn.
+	// the session asynchronously. Reset count IMMEDIATELY so
+	// concurrent/subsequent turns don't re-trigger.
 	turns := r.incrementTurnCount(chatFolder)
 	if r.compactAfter > 0 && turns >= r.compactAfter {
+		r.resetTurnCount(chatFolder) // reset BEFORE async compact
 		r.log.Info("auto-compact triggered",
 			slog.String("chat", chatFolder),
 			slog.Int("turns", turns))
