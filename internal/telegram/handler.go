@@ -80,6 +80,13 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 
 	reply, err := b.runner.Run(ctx, rc.Folder, tier, b.allowlist, text)
 	if err != nil {
+		if errors.Is(err, runner.ErrSessionExpired) {
+			b.replyText(ctx, m.Chat.ID,
+				"Your authentication session has expired.\n\n"+
+					"Run /login to re-authenticate with your Anthropic "+
+					"Pro/Max account.")
+			return
+		}
 		if errors.Is(err, runner.ErrNotLoggedIn) {
 			b.replyText(ctx, m.Chat.ID,
 				"This chat's agent is not authenticated yet.\n\n"+

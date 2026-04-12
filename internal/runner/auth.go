@@ -55,9 +55,14 @@ func (d *Docker) CheckAuth(ctx context.Context, containerID string) (AuthStatus,
 }
 
 // ErrNotLoggedIn is returned by RunPrompt when the agent container has
-// no Claude credentials. M6 callers map this to a "please /login"
-// reply on Telegram.
+// no Claude credentials and has never been authenticated.
 var ErrNotLoggedIn = errors.New("runner: agent container is not logged in")
+
+// ErrSessionExpired is returned by RunPrompt when the agent container
+// WAS authenticated but the session/token has expired. Callers show a
+// different message ("session expired, /login to re-authenticate")
+// instead of the cold-start "not authenticated" prompt.
+var ErrSessionExpired = errors.New("runner: authentication session expired")
 
 // RunPrompt runs `claude -p <prompt>` inside the container and returns
 // the assistant's reply text from stdout. Synchronous: blocks until
@@ -87,13 +92,34 @@ func (d *Docker) RunPrompt(ctx context.Context, containerID, prompt string) (str
 	if res.ExitCode != 0 {
 		stderr := strings.TrimSpace(res.Stderr)
 		if isNotLoggedInError(stderr, res.Stdout) {
-			return "", ErrNotLoggedIn
+			// Distinguish "never authenticated" from "session expired"
+			// by checking auth status. If authMethod != "none" it means
+			// credentials existed at some point but are now invalid.
+			return "", d.classifyAuthError(ctx, containerID)
 		}
 		return "", fmt.Errorf("docker: RunPrompt: claude exited %d (stderr=%q)",
 			res.ExitCode, stderr)
 	}
 
 	return strings.TrimSpace(res.Stdout), nil
+}
+
+// classifyAuthError runs `claude auth status --json` and returns
+// ErrSessionExpired if the container was previously authenticated
+// (authMethod != "none"), or ErrNotLoggedIn if never authenticated.
+func (d *Docker) classifyAuthError(ctx context.Context, containerID string) error {
+	status, err := d.CheckAuth(ctx, containerID)
+	if err != nil {
+		// Can't determine — fall back to generic.
+		return ErrNotLoggedIn
+	}
+	// authMethod "none" means never logged in. Anything else (e.g.
+	// "oauth", "api_key", etc) means credentials existed but are now
+	// invalid — i.e. session expired.
+	if status.AuthMethod != "" && status.AuthMethod != "none" {
+		return ErrSessionExpired
+	}
+	return ErrNotLoggedIn
 }
 
 // isNotLoggedInError detects Claude Code's "Not logged in" failure mode
