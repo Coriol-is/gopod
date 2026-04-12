@@ -9,21 +9,20 @@
 
 ## Current state
 
-**Phase:** M3 done. picoclaw now serializes agent runs per-chat,
-caps global concurrency at 3, coalesces pending messages, and
-retries with exponential backoff on failure.
+**Phase:** M3.5 done. picoclaw has a unified control plane — all slash
+commands route through `internal/control.Router` with per-command
+auth enforcement.
 **Last updated:** 2026-04-12
-**Last working session:** M3 (GroupQueue) — `internal/queue` package
-with per-chat worker, buffered-chan global cap (default 3 concurrent
-agent runs), message coalescing (N messages → one handler call with
-the last message), and exponential backoff (5s→80s, max 5 retries).
-Telegram default handler changed from synchronous `runner.Run` to
-`queue.Enqueue` + return immediately; the queue worker goroutine does
-the heavy lifting (typing indicator, agent call, reply). Circular
-dependency between Bot and Queue broken via `SetQueue()` post-
-construction wiring. Fallback: nil Queue = sync path (pre-M3 dev mode).
+**Last working session:** M3.5 (Control plane, C1+C2). Router scaffold
+with Command/Caller/Perm/Response types, Register/Dispatch/List/
+LookupBySlash, auth enforcement (Public/ChatLocal/OwnerOnly).
+Telegram frontend refactored: removed per-command RegisterHandler
+calls, added dispatchSlash that parses "/cmd args" → Router.Dispatch.
+setMyCommands now built from Router.List() automatically. /login
+stays as Telegram-side special case (stateful interactive session).
+C3 (CLI frontend), C4 (extended handlers), C5 (logs subsystem) deferred.
 Build order:
-`M0 ✅ → M1 ✅ → M5 ✅ → M6 ✅ → M6.5 ✅ → M3 ✅ → M3.5 → M3.6 → M4 → M7 → M8 → M9`.
+`M0 ✅ → M1 ✅ → M5 ✅ → M6 ✅ → M6.5 ✅ → M3 ✅ → M3.5 ✅ → M3.6 → M4 → M7 → M8 → M9`.
 
 ## What's done
 
@@ -114,12 +113,10 @@ Nothing actively in flight.
 ## What's next (in order — per [D018](DECISIONS.md))
 
 1. ~~M3 — GroupQueue.~~ ✅ Done.
-2. **M3.5 — Control plane** (`internal/control` Router + Telegram + CLI
-   frontends + logs subsystem). Folds the directly-wired /help, /ping,
-   /whoami, /login, /register handlers into the Router. M4+ depend on this.
+2. ~~M3.5 — Control plane (C1+C2).~~ ✅ Done. C3/C4/C5 deferred.
 3. **M3.6 — Observability** (opt-in Prometheus + OTel). Adds metrics
    and spans to every subsystem.
-4. **M4 — Scheduler** (cron/interval/once tasks). Depends on M3.5.
+4. **M4 — Scheduler** (cron/interval/once tasks).
 5. (continue with M7 IPC, M8 Recovery, M9 Memory per ROADMAP)
 
 **Optional, off the critical path:** **M2 (Direct API)** auto-enabled
