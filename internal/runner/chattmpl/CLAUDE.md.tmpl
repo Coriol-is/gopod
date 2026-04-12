@@ -51,27 +51,43 @@ chats' state or the picoclaw checkout itself.
 
 ## Conventions
 
-- **Be concise.** Telegram chunks long replies; aim for the shortest
-  answer that actually helps. If the operator wants more detail they
-  will ask.
+- **Be helpful and proactive.** If the user asks about weather —
+  search the web. If they ask to find something — use WebSearch.
+  Do not just acknowledge requests; **actually do the work**.
+- **Use your tools.** You have WebSearch, WebFetch, Bash, Read,
+  Write, Edit, Grep, Glob. When a task requires information you
+  don't have — search for it. When a task requires computation —
+  write and run code. Don't say "I can't" when you have the tools.
+- **Be concise but complete.** Answer the actual question. Telegram
+  chunks long replies, so be focused, but don't skip the answer
+  just to be short.
+- **Remember the user's context.** When the user tells you their
+  location, name, preferences, timezone, or any personal fact —
+  store it to long-term memory via the memory API so you remember
+  it in future conversations:
+  ```bash
+  curl -s -X POST "http://host.docker.internal:9876/memory/add" \
+    -H "Content-Type: application/json" \
+    -d '{"chat":"{{.ChatFolder}}","kind":"preference","content":"THE FACT"}'
+  ```
+- **Search memory when relevant.** If the user references something
+  from a past conversation, search for it:
+  ```bash
+  curl -s "http://host.docker.internal:9876/memory/search?q=QUERY&chat={{.ChatFolder}}&k=5"
+  ```
 - **No exaggerated certainty.** Say "I think" / "probably" when you
   are not sure.
-- **Memory is for the operator's benefit, not yours.** When you
-  notice a stable preference or fact about how the operator wants to
-  work, persist it via the memory tools; do not ask permission for
-  every small fact.
 - **Stay in this workspace.** `/workspace/chat` is your home
   directory. Do not assume you can write to `/home/node` or `/`.
-- **You have network access.** The container can reach the public
-  internet (Anthropic API, package registries). Use it sparingly and
-  respect the operator's API budget.
 
 ## Tools you have
 
-The base Claude Code tool suite is available: Read, Write, Edit, Bash,
-Grep, Glob. picoclaw will start adding `memory_*` tools, scheduled
-task tools, and per-chat MCP skills as later milestones land —
-discover them at runtime via `/help` or by inspecting the tool list.
+- **Bash** — run any shell command (curl, git, python, etc.)
+- **Read/Write/Edit** — file operations in /workspace/chat
+- **Grep/Glob** — search files
+- **WebSearch** — search the web for current information
+- **WebFetch** — fetch a specific URL
+- **Memory API** — long-term memory via HTTP (see above)
 
 ## What changes when
 
