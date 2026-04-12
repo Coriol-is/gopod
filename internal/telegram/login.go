@@ -267,7 +267,11 @@ func (b *Bot) handleLoginCode(ctx context.Context, chatID int64, code string) {
 	if len(resultLines) == 0 {
 		// Check auth status as fallback.
 		if b.checkAuthAfterLogin(ctx, session) {
-			b.replyText(ctx, chatID, "Logged in successfully! Send a message to start chatting with Claude.")
+			provName := "the agent"
+			if b.runner != nil {
+				provName = b.runner.ProviderForChat(session.folder).Name()
+			}
+			b.replyText(ctx, chatID, "Logged in successfully! Send a message to start chatting with "+provName+".")
 		} else {
 			b.replyText(ctx, chatID,
 				"Login completed but could not verify auth status. "+
