@@ -118,32 +118,46 @@ Build order as of now:
 
 ## What's in progress
 
-Nothing actively in flight.
+**M6.5 — Telegram-mediated `/login`.**
+
+Probed the `claude auth login` stdout contract (2026-04-12). Findings:
+
+- URL appears on stdout line 2: `If the browser didn't open, visit: <URL>`
+- After URL, claude waits silently for an Ink-based TTY code-paste
+  prompt — that prompt requires raw mode and never renders without a
+  real PTY. `docker exec -it` with interactive TTY works (operator
+  verified this manually); non-interactive `docker exec` does not.
+- `claude setup-token` also requires Ink raw mode — same constraint.
+- `claude /login` (slash) is a REPL-only slash command, not a
+  standalone subcommand.
+- The OAuth flow is PKCE with `redirect_uri=https://platform.claude.com/
+  oauth/code/callback` — NOT localhost loopback. The success page either
+  shows a code to paste back or auto-completes via server-side polling.
+  **Open question:** which is it? The operator completed manual login
+  via `docker exec -it` and did not report pasting a code, which
+  suggests claude polls the auth server automatically once the URL is
+  opened. Needs explicit confirmation.
+
+**Implementation plan (once the contract is confirmed):**
+
+- If auto-callback (claude polls): simple — spawn `claude auth login`
+  with PTY via Docker SDK ExecAttach(Tty=true), capture URL from stdout,
+  forward to Telegram, poll `claude auth status --json` until
+  loggedIn=true, confirm. No stdin pipe needed.
+- If code-paste: stateful — hold the exec alive, capture URL, forward to
+  Telegram, wait for the user's next Telegram message (the code), pipe
+  it into the exec's stdin via the HijackedResponse Conn, then capture
+  the success line.
 
 ## What's next (in order — per [D018](DECISIONS.md))
 
-1. **M6 — Agent SDK in container.** Wire
-   `character-ai/claude-agent-sdk-go` Client at the per-chat wrapper
-   script per [D015](DECISIONS.md). First agent loop with real
-   Read/Write/Bash inside the container. Plug into the telegram default
-   handler so incoming messages actually get an agent reply. **At this
-   point the operator can manually run `docker exec -it picoclaw-<chat>
-   claude /login` once and start using picoclaw with their Pro/Max
-   subscription.**
-   - Also: idle watcher goroutine (intentionally deferred from M5d —
-     the per-chat activity-tracking state lives most naturally next to
-     the runner Run() call).
-2. **M6.5 — Telegram-mediated `/login`.** New per [D018](DECISIONS.md).
-   `/login` slash command spawns `claude /login` inside the container,
-   intercepts the verification URL on stdout, forwards via Telegram,
-   waits for success. Replaces step 1's manual `docker exec`. After this
-   the entire onboarding fits inside Telegram chat with no terminal access.
-3. **M3 — GroupQueue.** Per-chat serialization + global cap + backoff.
-   Replaces the stub `sync.Mutex` map M6 will use.
-4. **M3.5 — Control plane** (`internal/control` Router + Telegram + CLI
+1. **M6.5 — Telegram-mediated `/login`.** (in progress, see above)
+2. **M3 — GroupQueue.** Per-chat serialization + global cap + backoff.
+   Replaces the stub `sync.Mutex` map M6 uses.
+3. **M3.5 — Control plane** (`internal/control` Router + Telegram + CLI
    frontends + logs subsystem). Folds the directly-wired `/ping` and
    `/login` handlers into the Router. M4+ depend on this.
-5. (continue with M3.6, M4, M7, M8, M9 per ROADMAP)
+4. (continue with M3.6, M4, M7, M8, M9 per ROADMAP)
 
 **Optional, off the critical path:** **M2 (Direct API)** auto-enabled
 if `ANTHROPIC_API_KEY` is set. Skipped silently otherwise. Operator
@@ -151,15 +165,24 @@ currently has no API key, so this stays at ⏸️.
 
 ## Right now you can already...
 
-…drop a real `TELEGRAM_BOT_TOKEN` in `.env`, run `go run ./cmd/picoclaw`,
-and message your bot. Every inbound message is persisted in
-`data/store.sqlite` (`messages` + `chats` tables), and `/ping` replies
-"pong". No agent yet. Verify with:
+1. Set `TELEGRAM_BOT_TOKEN` + `PICOCLAW_OWNER_CHAT_ID` in `.env`
+2. Build the agent image: `docker build -t picoclaw-agent:latest container/`
+3. Run `go run ./cmd/picoclaw`
+4. Send any text message → owner chat auto-registers, container spawns
+5. First message gets "not authenticated" reply with manual login hint
+6. Run `docker exec -it picoclaw-owner claude /login` once on the host
+7. Open the URL, complete OAuth with Pro/Max subscription
+8. Send messages → get **real Claude replies** via picoclaw Telegram bot
 
-```sh
-sqlite3 data/store.sqlite 'select count(*) from messages;'
-sqlite3 data/store.sqlite 'select jid, name, last_message_time from chats;'
-```
+Slash commands: `/ping` (liveness), `/whoami` (chat id + registration
+state), `/register <chat_id> <folder>` (owner-only, register other chats).
+
+Fresh chat workspaces get seeded CLAUDE.md (identity/workspace map) +
+memory/MEMORY.md (scratchpad seed). The agent can read and edit both.
+
+The idle watcher kills inactive containers after 30 minutes. Leftover
+cleanup on restart removes all containers when running dev builds
+(`go run`, version=dev).
 
 ## Open questions
 
