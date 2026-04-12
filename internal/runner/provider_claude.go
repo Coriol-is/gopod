@@ -39,7 +39,9 @@ func (p *ClaudeProvider) RunCmd(prompt, systemPrompt string) []string {
 }
 
 func (p *ClaudeProvider) RunFreshCmd(prompt string) []string {
-	return []string{"claude", "--allowedTools", claudeAllowedTools, "-p", prompt}
+	// --no-session-persistence prevents RunFresh from creating session
+	// files that would confuse --continue in the user's conversation.
+	return []string{"claude", "--no-session-persistence", "--allowedTools", claudeAllowedTools, "-p", prompt}
 }
 
 func (p *ClaudeProvider) RestoreConfigCmd() []string {

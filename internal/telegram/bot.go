@@ -202,9 +202,14 @@ func (b *Bot) publishCommands(ctx context.Context) {
 // (registered handlers + default handler) for cursor backfill on restart.
 func (b *Bot) offsetMiddleware(next bot.HandlerFunc) bot.HandlerFunc {
 	return func(ctx context.Context, api *bot.Bot, update *models.Update) {
-		if update != nil && update.ID > 0 && b.store != nil {
-			b.store.SetState(ctx, "telegram_update_offset",
-				fmt.Sprintf("%d", update.ID+1))
+		if update != nil {
+			b.log.Debug("middleware: update received",
+				slog.Int64("update_id", update.ID),
+				slog.Bool("has_message", update.Message != nil))
+			if update.ID > 0 && b.store != nil {
+				b.store.SetState(ctx, "telegram_update_offset",
+					fmt.Sprintf("%d", update.ID+1))
+			}
 		}
 		next(ctx, api, update)
 	}
