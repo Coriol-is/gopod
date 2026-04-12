@@ -9,19 +9,30 @@
 
 ## Current state
 
-**Phase:** M9 done. picoclaw has cross-session memory. The agent
-receives relevant memories automatically via `--append-system-prompt`.
-Users manage memories via `/remember` and `/recall`. Hybrid search
-(FTS5 BM25 + sqlite-vec KNN + RRF merge) with OpenAI embeddings.
-**Last updated:** 2026-04-12
-**Last working session:** M9 (Native memory) — OpenAI embedder
-(text-embedding-3-small @ 1024 dim per D016), Memory facade with
-Add/Search/List/Delete, hybrid retrieval (vec0 + FTS5 + RRF),
-RunPrompt extended with `--append-system-prompt` for memory injection,
-`/remember` + `/recall` commands via Router. Natural language task
-scheduling via Claude parse prompt also landed as M4 polish.
+**Phase:** Core complete. picoclaw is a working personal Telegram
+Claude assistant with session continuity, long-term memory, voice,
+vision, scheduling, and multi-provider architecture ready for Codex.
+**Last updated:** 2026-04-13
+**Last working session:** Massive session — 56 commits in one day.
+
+Key work after M9:
+- M8: cursor backfill, structured SQLite logs, Docker Compose, README
+- I2/I3/I5/I1: image vision, voice+TTS, markdown formatting, reactions
+- Session continuity: `--continue` flag, session files persistent via
+  bind mount, survive container + picoclaw restarts
+- Session compact: /clear, /compact, auto-compact (turns/interval/daily),
+  conversation_summary in memory with reserved Context Compiler slot
+- Advanced memory: extraction layer, context compiler, lifecycle
+  (status/superseded/dedup), memory HTTP API + container skill
+- P1+P2: AgentProvider interface + Claude provider refactor
+- WebSearch + standard tools via --allowedTools
+- Proactive CLAUDE.md instructions (use tools, store to memory)
+- Critical fixes: queue worker context (first msg lost), RunFresh
+  --no-session-persistence (session pollution), FTS5 punctuation,
+  seccomp, HOME/tmpfs, .claude.json restore, reaction emoji
+
 Build order:
-`M0 ✅ → M1 ✅ → M5 ✅ → M6 ✅ → M6.5 ✅ → M3 ✅ → M3.5 ✅ → M4 ✅ → M9 ✅ → M3.6 → M7 → M8`.
+`M0 ✅ → M1 ✅ → M5 ✅ → M6 ✅ → M6.5 ✅ → M3 ✅ → M3.5 ✅ → M4 ✅ → M9 ✅ → M8 ✅ → P1+P2 ✅`
 
 ## What's done
 
