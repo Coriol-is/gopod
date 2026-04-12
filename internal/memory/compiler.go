@@ -10,6 +10,7 @@ import (
 // ContextBudget defines how many items of each kind the compiler
 // selects for the agent's system prompt. Total = sum of all slots.
 type ContextBudget struct {
+	Summary     int // reserved slot for conversation_summary (most recent)
 	Pinned      int // always-include pinned memories (any kind)
 	Decisions   int // recent decisions (last 7 days)
 	Preferences int // semantic-matched preferences
@@ -17,9 +18,9 @@ type ContextBudget struct {
 	Fallback    int // raw search if structured slots not filled
 }
 
-// DefaultBudget is the production budget. 5 items total keeps the
-// system prompt appendix concise.
+// DefaultBudget is the production budget. 6 items total.
 var DefaultBudget = ContextBudget{
+	Summary:     1, // guaranteed slot for conversation summary
 	Pinned:      2,
 	Decisions:   1,
 	Preferences: 1,
@@ -36,6 +37,13 @@ var DefaultBudget = ContextBudget{
 // Returns "" if no relevant memories exist (agent runs context-free).
 func (m *Memory) CompileContext(ctx context.Context, chatFolder, query string, budget ContextBudget) string {
 	var selected []Item
+
+	// 0. Conversation summary (reserved slot — guaranteed to be included
+	// if one exists). This is the bridge after session compact.
+	if budget.Summary > 0 {
+		summaries := m.fetchRecentByKind(ctx, chatFolder, "conversation_summary", 30, budget.Summary)
+		selected = append(selected, summaries...)
+	}
 
 	// 1. Pinned memories (always included regardless of query).
 	if budget.Pinned > 0 {

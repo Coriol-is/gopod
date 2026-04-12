@@ -37,9 +37,18 @@ type Runner struct {
 	memory MemoryCompiler
 
 	// extractFn is the callback for conversation extraction (Phase A).
-	// It calls Memory.ExtractFromTurn + IngestExtracted. Set via
-	// SetExtractFn after construction.
 	extractFn func(ctx context.Context, chatFolder, userMsg, agentReply string)
+
+	// compactFn is the callback for session compaction. Summarizes
+	// the conversation and stores it in memory. Set via SetCompactFn.
+	compactFn func(ctx context.Context, chatFolder string) error
+
+	// turnCount tracks turns per chat for auto-compact.
+	turnCountMu sync.Mutex
+	turnCount   map[string]int
+
+	// compactAfter triggers auto-compact after N turns. 0 = disabled.
+	compactAfter int
 
 	// containerLocksMu serialises EnsureRunning per chat. Without it,
 	// two simultaneous messages on the same chat could race two
@@ -100,6 +109,8 @@ func New(
 		log:            log,
 		containerLocks: make(map[string]*sync.Mutex),
 		activity:       make(map[string]time.Time),
+		turnCount:      make(map[string]int),
+		compactAfter:   30, // default, overridable via SetCompactAfter
 	}, nil
 }
 
@@ -194,11 +205,24 @@ func (r *Runner) Run(
 	r.touch(chatFolder)
 
 	// Trigger async extraction after successful agent turn.
-	// Fire-and-forget: extraction failures must not affect the reply.
 	if r.memory != nil && r.extractFn != nil && reply != "" {
 		go func() {
 			bgCtx := context.Background()
 			r.extractAndIngest(bgCtx, chatFolder, prompt, reply)
+		}()
+	}
+
+	// Auto-compact check: if turn count exceeds threshold, compact
+	// the session asynchronously. The user sees the current reply
+	// normally; the compact happens in the background for the NEXT turn.
+	turns := r.incrementTurnCount(chatFolder)
+	if r.compactAfter > 0 && turns >= r.compactAfter {
+		r.log.Info("auto-compact triggered",
+			slog.String("chat", chatFolder),
+			slog.Int("turns", turns))
+		go func() {
+			bgCtx := context.Background()
+			r.CompactSession(bgCtx, chatFolder, tier, allowlist)
 		}()
 	}
 
@@ -230,6 +254,68 @@ func (r *Runner) SetMemory(m MemoryCompiler) { r.memory = m }
 // SetExtractFn wires the conversation extraction callback.
 func (r *Runner) SetExtractFn(fn func(ctx context.Context, chatFolder, userMsg, agentReply string)) {
 	r.extractFn = fn
+}
+
+// SetCompactFn wires the session compact callback (summarize → store → clear).
+func (r *Runner) SetCompactFn(fn func(ctx context.Context, chatFolder string) error) {
+	r.compactFn = fn
+}
+
+// SetCompactAfter sets the turn threshold for auto-compact. 0 = disabled.
+func (r *Runner) SetCompactAfter(n int) { r.compactAfter = n }
+
+// ClearSession removes Claude Code session files for a chat, forcing
+// the next --continue to start a fresh conversation. Memory is NOT
+// affected — only the conversation context is cleared.
+func (r *Runner) ClearSession(ctx context.Context, chatFolder string, tier Tier, allowlist *mountsec.Allowlist) error {
+	id, err := r.Ensure(ctx, chatFolder, tier, allowlist)
+	if err != nil {
+		return err
+	}
+	_, err = r.d.Exec(ctx, id, []string{"sh", "-c",
+		`rm -rf "$HOME/.claude/projects" "$HOME/.claude/.active_session"`}, nil)
+	r.resetTurnCount(chatFolder)
+	return err
+}
+
+// CompactSession summarizes the current conversation, stores the
+// summary in memory, then clears the session. The summary becomes
+// the bridge between the old conversation and the new one — the
+// Context Compiler injects it via the reserved summary slot.
+func (r *Runner) CompactSession(ctx context.Context, chatFolder string, tier Tier, allowlist *mountsec.Allowlist) (string, error) {
+	if r.compactFn == nil {
+		return "", r.ClearSession(ctx, chatFolder, tier, allowlist)
+	}
+	if r.getTurnCount(chatFolder) == 0 {
+		return "nothing to compact (0 turns)", nil
+	}
+	if err := r.compactFn(ctx, chatFolder); err != nil {
+		r.log.Warn("compact summarize failed, clearing anyway",
+			slog.String("chat", chatFolder), slog.Any("err", err))
+	}
+	if err := r.ClearSession(ctx, chatFolder, tier, allowlist); err != nil {
+		return "", err
+	}
+	return "compacted", nil
+}
+
+func (r *Runner) incrementTurnCount(chatFolder string) int {
+	r.turnCountMu.Lock()
+	defer r.turnCountMu.Unlock()
+	r.turnCount[chatFolder]++
+	return r.turnCount[chatFolder]
+}
+
+func (r *Runner) getTurnCount(chatFolder string) int {
+	r.turnCountMu.Lock()
+	defer r.turnCountMu.Unlock()
+	return r.turnCount[chatFolder]
+}
+
+func (r *Runner) resetTurnCount(chatFolder string) {
+	r.turnCountMu.Lock()
+	defer r.turnCountMu.Unlock()
+	r.turnCount[chatFolder] = 0
 }
 
 // extractAndIngest is the background callback for Phase A. Runs

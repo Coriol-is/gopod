@@ -62,6 +62,39 @@ func RegisterWhoami(r *Router, ownerChatID int64) {
 // RegisterVoiceCommand adds /voice to the Router with a callback for
 // setting the per-chat reply mode.
 // RegisterLogsCommand adds /logs to the Router. Owner-only.
+// CompactFunc is the callback control uses to trigger session compact
+// without importing runner. Wired from main.go.
+type CompactFunc func(ctx context.Context, chatFolder string, clear bool) (string, error)
+
+// RegisterSessionCommands adds /clear and /compact to the Router.
+func RegisterSessionCommands(r *Router, compactFn CompactFunc, chatFolderLookup func(chatID int64) string) {
+	r.Register("clear", "clear", "clear conversation context (memory preserved)", PermChatLocal,
+		func(ctx context.Context, cmd Command) (Response, error) {
+			folder := chatFolderLookup(cmd.Caller.ChatID)
+			if folder == "" {
+				return Response{Text: "Chat not registered.", Code: 1}, nil
+			}
+			_, err := compactFn(ctx, folder, true) // clear = true → no summary
+			if err != nil {
+				return Response{}, err
+			}
+			return Response{Text: "Session cleared. Long-term memory preserved — I still remember your preferences and facts."}, nil
+		})
+
+	r.Register("compact", "compact", "summarize conversation + clear context", PermChatLocal,
+		func(ctx context.Context, cmd Command) (Response, error) {
+			folder := chatFolderLookup(cmd.Caller.ChatID)
+			if folder == "" {
+				return Response{Text: "Chat not registered.", Code: 1}, nil
+			}
+			result, err := compactFn(ctx, folder, false) // clear = false → summarize first
+			if err != nil {
+				return Response{}, err
+			}
+			return Response{Text: "Session compacted. " + result}, nil
+		})
+}
+
 func RegisterLogsCommand(r *Router, queryFn func(level, subsystem string, limit int) (string, error)) {
 	r.Register("logs", "logs", "(owner) show recent picoclaw logs", PermOwnerOnly,
 		func(ctx context.Context, cmd Command) (Response, error) {
