@@ -328,7 +328,8 @@ func (r *Runner) ProviderForChat(chatFolder string) AgentProvider {
 	return r.provider
 }
 
-// SetChatProvider sets a per-chat provider override.
+// SetChatProvider sets a per-chat provider override and kills the
+// existing container so Ensure respawns it with the new provider's image.
 func (r *Runner) SetChatProvider(chatFolder string, p AgentProvider) {
 	r.providersMu.Lock()
 	if r.chatProviders == nil {
@@ -336,6 +337,17 @@ func (r *Runner) SetChatProvider(chatFolder string, p AgentProvider) {
 	}
 	r.chatProviders[chatFolder] = p
 	r.providersMu.Unlock()
+
+	// Kill the existing container — it has the wrong image.
+	name := ContainerName(chatFolder)
+	ctx := context.Background()
+	if id, _ := r.d.inspectByName(ctx, name); id != "" {
+		r.d.Stop(ctx, id, 5*time.Second)
+		r.d.Remove(ctx, id)
+		r.log.Info("killed container for provider switch",
+			slog.String("chat", chatFolder),
+			slog.String("new_provider", p.Name()))
+	}
 }
 
 // ClearChatProvider removes a per-chat override (reverts to default).
