@@ -15,6 +15,51 @@ import (
 	"github.com/spaceinvaderz/picoclaw/internal/store"
 )
 
+// helpHandler lists all available commands with their descriptions.
+// Built dynamically from publicCommands so adding a command to the
+// picker also adds it to /help with zero extra work.
+func (b *Bot) helpHandler(ctx context.Context, _ *bot.Bot, update *models.Update) {
+	if update == nil || update.Message == nil {
+		return
+	}
+	b.persistMessage(ctx, update.Message)
+
+	var sb strings.Builder
+	sb.WriteString("picoclaw commands:\n\n")
+	for _, c := range publicCommands {
+		fmt.Fprintf(&sb, "/%s — %s\n", c.Command, c.Description)
+	}
+	sb.WriteString("\nSend any non-/ text to talk to Claude.")
+	b.replyText(ctx, update.Message.Chat.ID, sb.String())
+}
+
+// loginHandler is the /login entry point. M6.5 will wire this to an
+// interactive OAuth proxy (spawn `claude auth login` inside the agent
+// container, forward URL to Telegram, wait for success). Until then
+// it points the user at the manual docker exec workaround.
+func (b *Bot) loginHandler(ctx context.Context, _ *bot.Bot, update *models.Update) {
+	if update == nil || update.Message == nil {
+		return
+	}
+	m := update.Message
+	b.persistMessage(ctx, m)
+
+	rc, ok := b.resolveRegistered(ctx, m)
+	if !ok {
+		b.replyText(ctx, m.Chat.ID,
+			"This chat is not registered. The owner can register it with /register.")
+		return
+	}
+
+	b.replyText(ctx, m.Chat.ID,
+		"Telegram-native /login is coming in M6.5.\n\n"+
+			"For now, run this on the picoclaw host:\n\n"+
+			"  docker exec -it picoclaw-"+rc.Folder+" claude /login\n\n"+
+			"Open the URL, sign in with your Anthropic Pro/Max account. "+
+			"Credentials persist in data/sessions/"+rc.Folder+"/.claude/ "+
+			"across restarts.")
+}
+
 // whoamiHandler answers /whoami with the chat's id, the operator's
 // user id, and the chat's registration state. Useful for the owner
 // to discover the chat ids of new chats they want to /register, and

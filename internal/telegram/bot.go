@@ -38,9 +38,11 @@ import (
 // publish a command Telegram suggests but picoclaw doesn't actually
 // implement, so keep them in sync.
 var publicCommands = []models.BotCommand{
+	{Command: "help", Description: "list available commands"},
 	{Command: "ping", Description: "check the bot is alive"},
-	{Command: "register", Description: "(owner) register a chat for agent access"},
 	{Command: "whoami", Description: "show this chat's id and registration state"},
+	{Command: "login", Description: "authenticate Claude Code (Pro/Max subscription)"},
+	{Command: "register", Description: "(owner) register a chat for agent access"},
 }
 
 // Deps groups picoclaw's runtime dependencies the telegram bot needs
@@ -122,8 +124,10 @@ func New(token string, deps Deps) (*Bot, error) {
 	// be the bare word ("ping", not "/ping"). The matcher also handles
 	// the @botname suffix automatically (it walks Telegram's bot_command
 	// entities, which already account for it).
+	api.RegisterHandler(bot.HandlerTypeMessageText, "help", bot.MatchTypeCommand, b.helpHandler)
 	api.RegisterHandler(bot.HandlerTypeMessageText, "ping", bot.MatchTypeCommand, b.pingHandler)
 	api.RegisterHandler(bot.HandlerTypeMessageText, "whoami", bot.MatchTypeCommand, b.whoamiHandler)
+	api.RegisterHandler(bot.HandlerTypeMessageText, "login", bot.MatchTypeCommand, b.loginHandler)
 	api.RegisterHandler(bot.HandlerTypeMessageText, "register", bot.MatchTypeCommand, b.registerHandler)
 
 	return b, nil
