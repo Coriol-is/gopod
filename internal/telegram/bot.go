@@ -20,31 +20,16 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
+	"github.com/spaceinvaderz/picoclaw/internal/control"
 	"github.com/spaceinvaderz/picoclaw/internal/queue"
 	"github.com/spaceinvaderz/picoclaw/internal/runner"
 	"github.com/spaceinvaderz/picoclaw/internal/runner/mountsec"
 	"github.com/spaceinvaderz/picoclaw/internal/store"
 )
 
-// publicCommands is the canonical list of slash commands picoclaw exposes
-// to Telegram clients via setMyCommands. The Telegram app uses this to
-// populate the "/" autocomplete picker so users see commands without any
-// BotFather setup step.
-//
-// This list is the temporary M1 source of truth. When the M3.5 control
-// plane (internal/control Router) lands, the Router becomes the authority
-// and this slice goes away — the Telegram frontend will iterate registered
-// commands at the right Perm level and call setMyCommands itself. Adding
-// a command here without also calling RegisterHandler in New() below will
-// publish a command Telegram suggests but picoclaw doesn't actually
-// implement, so keep them in sync.
-var publicCommands = []models.BotCommand{
-	{Command: "help", Description: "list available commands"},
-	{Command: "ping", Description: "check the bot is alive"},
-	{Command: "whoami", Description: "show this chat's id and registration state"},
-	{Command: "login", Description: "authenticate Claude Code (Pro/Max subscription)"},
-	{Command: "register", Description: "(owner) register a chat for agent access"},
-}
+// publicCommands is now built dynamically from the Router's command
+// list in publishCommands(). This global is kept as a nil-init
+// sentinel so the old compile references don't break.
 
 // Deps groups picoclaw's runtime dependencies the telegram bot needs
 // at construction time. Bundling them in a struct keeps New()'s
@@ -63,6 +48,11 @@ type Deps struct {
 	// (pre-M3 behaviour). If set, messages are enqueued and the
 	// queue worker calls the agent asynchronously.
 	Queue *queue.Queue
+
+	// Router is the M3.5 control plane Router. Required from M3.5
+	// onward — all slash commands dispatch through it. If nil,
+	// the bot falls back to the pre-M3.5 direct handlers.
+	Router *control.Router
 
 	// Allowlist is the parsed mount allowlist. Optional: nil means
 	// "no extras", which is the common case.
@@ -88,6 +78,7 @@ type Bot struct {
 	store       *store.Store
 	runner      *runner.Runner
 	queue       *queue.Queue
+	router      *control.Router
 	allowlist   *mountsec.Allowlist
 	ownerChatID int64
 	log         *slog.Logger
@@ -116,6 +107,7 @@ func New(token string, deps Deps) (*Bot, error) {
 		store:       deps.Store,
 		runner:      deps.Runner,
 		queue:       deps.Queue,
+		router:      deps.Router,
 		allowlist:   deps.Allowlist,
 		ownerChatID: deps.OwnerChatID,
 		log:         deps.Log,
@@ -130,16 +122,10 @@ func New(token string, deps Deps) (*Bot, error) {
 	}
 	b.api = api
 
-	// /ping → pong. MatchTypeCommand strips the leading slash from the
-	// message before comparing against the pattern, so the pattern must
-	// be the bare word ("ping", not "/ping"). The matcher also handles
-	// the @botname suffix automatically (it walks Telegram's bot_command
-	// entities, which already account for it).
-	api.RegisterHandler(bot.HandlerTypeMessageText, "help", bot.MatchTypeCommand, b.helpHandler)
-	api.RegisterHandler(bot.HandlerTypeMessageText, "ping", bot.MatchTypeCommand, b.pingHandler)
-	api.RegisterHandler(bot.HandlerTypeMessageText, "whoami", bot.MatchTypeCommand, b.whoamiHandler)
+	// /login is special-cased because it's a stateful interactive
+	// session (stdin pipe, timeout), not a stateless Command→Response.
+	// All other slash commands go through the Router via slashHandler.
 	api.RegisterHandler(bot.HandlerTypeMessageText, "login", bot.MatchTypeCommand, b.loginHandler)
-	api.RegisterHandler(bot.HandlerTypeMessageText, "register", bot.MatchTypeCommand, b.registerHandler)
 
 	return b, nil
 }
@@ -161,19 +147,28 @@ func (b *Bot) Run(ctx context.Context) error {
 	return nil
 }
 
-// publishCommands pushes the publicCommands list to Telegram. It uses
-// the default scope (all chats, all users), which is correct for a
-// personal single-owner bot. When non-owner chats join in M5+, this
-// will be revisited so non-owner chats see a smaller picker.
+// publishCommands pushes the command list to Telegram's autocomplete
+// picker. Built dynamically from Router.List() so adding a command
+// to the Router is all that's needed — no manual sync with a hardcoded
+// slice.
 func (b *Bot) publishCommands(ctx context.Context) {
-	if len(publicCommands) == 0 {
+	var cmds []models.BotCommand
+	if b.router != nil {
+		for _, c := range b.router.List() {
+			cmds = append(cmds, models.BotCommand{
+				Command:     c.SlashName,
+				Description: c.Description,
+			})
+		}
+	}
+	if len(cmds) == 0 {
 		return
 	}
 	ok, err := b.api.SetMyCommands(ctx, &bot.SetMyCommandsParams{
-		Commands: publicCommands,
+		Commands: cmds,
 	})
 	if err != nil {
-		b.log.Warn("telegram: setMyCommands failed (autocomplete will be stale)",
+		b.log.Warn("telegram: setMyCommands failed",
 			slog.Any("err", err))
 		return
 	}
@@ -182,7 +177,7 @@ func (b *Bot) publishCommands(ctx context.Context) {
 		return
 	}
 	b.log.Info("telegram: published commands",
-		slog.Int("count", len(publicCommands)))
+		slog.Int("count", len(cmds)))
 }
 
 // SetQueue wires the GroupQueue after construction. This breaks the

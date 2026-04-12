@@ -12,6 +12,7 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
+	"github.com/spaceinvaderz/picoclaw/internal/control"
 	"github.com/spaceinvaderz/picoclaw/internal/queue"
 	"github.com/spaceinvaderz/picoclaw/internal/runner"
 	"github.com/spaceinvaderz/picoclaw/internal/store"
@@ -53,11 +54,12 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 		return
 	}
 
-	// Slash commands have their own registered handlers; the default
-	// handler still sees commands picoclaw doesn't recognise. Don't
-	// send those to the agent — that would be a confusing UX.
+	// Slash commands are dispatched through the Router. /login is
+	// handled separately (registered via go-telegram/bot's
+	// MatchTypeCommand because it's a stateful interactive session).
+	// Everything else that starts with "/" goes through here.
 	if strings.HasPrefix(text, "/") {
-		b.replyText(ctx, m.Chat.ID, "unknown command")
+		b.dispatchSlash(ctx, m, text)
 		return
 	}
 
@@ -81,6 +83,63 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 	}
 	// Sync fallback (no queue).
 	b.runAgentSync(ctx, item)
+}
+
+// dispatchSlash parses a "/command arg1 arg2" message and dispatches
+// it through the Router. If the Router is nil (pre-M3.5), falls back
+// to "unknown command".
+func (b *Bot) dispatchSlash(ctx context.Context, m *models.Message, text string) {
+	if b.router == nil {
+		b.replyText(ctx, m.Chat.ID, "unknown command")
+		return
+	}
+
+	parts := strings.Fields(text)
+	if len(parts) == 0 {
+		return
+	}
+	// Strip leading "/" and optional "@botname" suffix.
+	slash := parts[0]
+	if i := strings.Index(slash, "@"); i > 0 {
+		slash = slash[:i]
+	}
+	slash = strings.TrimPrefix(slash, "/")
+
+	cmdName, ok := b.router.LookupBySlash(slash)
+	if !ok {
+		b.replyText(ctx, m.Chat.ID, "unknown command: /"+slash)
+		return
+	}
+
+	cmd := control.Command{
+		Name: cmdName,
+		Args: parts[1:],
+		Caller: control.Caller{
+			ChatID:   m.Chat.ID,
+			UserID:   userID(m.From),
+			Username: senderDisplayName(m.From),
+			Source:   control.SourceTelegram,
+			IsOwner:  b.ownerChatID != 0 && m.Chat.ID == b.ownerChatID,
+		},
+	}
+
+	resp, err := b.router.Dispatch(ctx, cmd)
+	if err != nil {
+		// ErrNotAuthorized and ErrUnknownCommand both have a useful
+		// resp.Text already set by the Router.
+		b.replyText(ctx, m.Chat.ID, resp.Text)
+		return
+	}
+	if resp.Text != "" {
+		b.replyText(ctx, m.Chat.ID, resp.Text)
+	}
+}
+
+func userID(u *models.User) int64 {
+	if u == nil {
+		return 0
+	}
+	return u.ID
 }
 
 // runAgentSync is the pre-M3 synchronous agent path. Kept as a

@@ -15,24 +15,6 @@ import (
 	"github.com/spaceinvaderz/picoclaw/internal/store"
 )
 
-// helpHandler lists all available commands with their descriptions.
-// Built dynamically from publicCommands so adding a command to the
-// picker also adds it to /help with zero extra work.
-func (b *Bot) helpHandler(ctx context.Context, _ *bot.Bot, update *models.Update) {
-	if update == nil || update.Message == nil {
-		return
-	}
-	b.persistMessage(ctx, update.Message)
-
-	var sb strings.Builder
-	sb.WriteString("picoclaw commands:\n\n")
-	for _, c := range publicCommands {
-		fmt.Fprintf(&sb, "/%s — %s\n", c.Command, c.Description)
-	}
-	sb.WriteString("\nSend any non-/ text to talk to Claude.")
-	b.replyText(ctx, update.Message.Chat.ID, sb.String())
-}
-
 // loginHandler dispatches to the real M6.5 interactive OAuth proxy
 // if the runner is available, otherwise falls back to the manual
 // docker exec workaround hint.
