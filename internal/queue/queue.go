@@ -110,6 +110,12 @@ func New(handler Handler, maxConcurrent int, log *slog.Logger) *Queue {
 // background goroutine waits for a slot and then starts the worker.
 // The caller (Telegram default handler) returns immediately in all
 // cases.
+//
+// IMPORTANT: the worker uses context.Background(), NOT the caller's
+// ctx. The caller's ctx is a request-scoped context from go-telegram/bot
+// that may be cancelled when the handler returns. The worker must
+// outlive the handler — it runs claude for 10-30 seconds and sends
+// the reply asynchronously.
 func (q *Queue) Enqueue(ctx context.Context, item Item) {
 	q.mu.Lock()
 	cs, ok := q.chats[item.Folder]
@@ -125,9 +131,8 @@ func (q *Queue) Enqueue(ctx context.Context, item Item) {
 	cs.active = true
 	q.mu.Unlock()
 
-	// Start worker in a goroutine. It acquires a semaphore slot,
-	// drains pending, and releases when done.
-	go q.worker(ctx, item.Folder)
+	// Worker uses Background context so it outlives the HTTP handler.
+	go q.worker(context.Background(), item.Folder)
 }
 
 // Pending returns the number of items waiting across all chats. For
