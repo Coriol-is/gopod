@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"sync"
 	"time"
 
@@ -35,7 +34,7 @@ type Runner struct {
 	// memory is the long-term memory layer. Optional: if nil, prompts
 	// are sent without memory context. Set via SetMemory after
 	// construction (same circular-dep pattern as queue).
-	memory MemorySearcher
+	memory MemoryCompiler
 
 	// extractFn is the callback for conversation extraction (Phase A).
 	// It calls Memory.ExtractFromTurn + IngestExtracted. Set via
@@ -174,19 +173,17 @@ func (r *Runner) Run(
 	}
 	r.touch(chatFolder)
 
-	// Build memory context for the system prompt if memory is wired.
+	// Build memory context for the system prompt via the Phase B
+	// Context Compiler (policy-driven selection: pinned → recent
+	// decisions → relevant preferences → facts → fallback).
 	var opts RunPromptOpts
 	if r.memory != nil {
-		memories, err := r.memory.Search(ctx, chatFolder, prompt, 5)
-		if err != nil {
-			r.log.Warn("memory search failed, proceeding without context",
+		compiled := r.memory.CompileContext(ctx, chatFolder, prompt)
+		if compiled != "" {
+			opts.AppendSystemPrompt = compiled
+			r.log.Debug("injecting compiled memory context",
 				slog.String("chat", chatFolder),
-				slog.Any("err", err))
-		} else if len(memories) > 0 {
-			opts.AppendSystemPrompt = formatMemoryContext(memories)
-			r.log.Debug("injecting memory context",
-				slog.String("chat", chatFolder),
-				slog.Int("memories", len(memories)))
+				slog.Int("len", len(compiled)))
 		}
 	}
 
@@ -208,20 +205,6 @@ func (r *Runner) Run(
 	return reply, nil
 }
 
-// formatMemoryContext builds the --append-system-prompt text from
-// retrieved memories.
-func formatMemoryContext(memories []MemoryItem) string {
-	var sb strings.Builder
-	sb.WriteString("Here are relevant facts from previous conversations with this user. Use them to personalize your response when relevant, but do not mention that you are reading from a memory system unless asked:\n\n")
-	for i, m := range memories {
-		if m.Title != "" {
-			fmt.Fprintf(&sb, "%d. [%s] %s: %s\n", i+1, m.Kind, m.Title, m.Content)
-		} else {
-			fmt.Fprintf(&sb, "%d. [%s] %s\n", i+1, m.Kind, m.Content)
-		}
-	}
-	return sb.String()
-}
 
 // CheckAuth proxies through to docker.CheckAuth so the telegram
 // handler can probe auth state without holding a Docker reference.
@@ -233,23 +216,16 @@ func (r *Runner) CheckAuth(ctx context.Context, chatFolder string, tier Tier, al
 	return r.d.CheckAuth(ctx, id)
 }
 
-// MemorySearcher is the interface the Runner needs from the memory
-// layer. Defined here (consumer-side) to avoid importing
-// internal/memory into internal/runner.
-type MemorySearcher interface {
-	Search(ctx context.Context, chatFolder, query string, k int) ([]MemoryItem, error)
-}
-
-// MemoryItem is the minimal view of a memory record the Runner needs
-// to format the system prompt appendix. Mirrors memory.Item.
-type MemoryItem struct {
-	Kind    string
-	Title   string
-	Content string
+// MemoryCompiler is the interface the Runner needs from the memory
+// layer. CompileContext returns the formatted system prompt appendix
+// using the Phase B policy-driven selection (kind-based budgets,
+// pinned items, recency weighting).
+type MemoryCompiler interface {
+	CompileContext(ctx context.Context, chatFolder, query string) string
 }
 
 // SetMemory wires the memory layer after construction.
-func (r *Runner) SetMemory(m MemorySearcher) { r.memory = m }
+func (r *Runner) SetMemory(m MemoryCompiler) { r.memory = m }
 
 // SetExtractFn wires the conversation extraction callback.
 func (r *Runner) SetExtractFn(fn func(ctx context.Context, chatFolder, userMsg, agentReply string)) {
