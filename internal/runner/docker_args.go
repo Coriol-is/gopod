@@ -122,7 +122,10 @@ func BuildContainerArgs(cfg SpawnConfig) (*container.Config, *container.HostConf
 	// `/.claude.json` on the read-only rootfs and silently fails.
 	// Forcing HOME=/home/node points it at the writable tmpfs we set
 	// up in the HostConfig below.
-	env := append(buildEnvSlice(cfg.EnvAllowlist), "HOME=/home/node")
+	env := append(buildEnvSlice(cfg.EnvAllowlist),
+		"HOME=/home/node",
+		"PICOCLAW_CHAT_FOLDER="+cfg.ChatFolder,
+	)
 
 	conf := &container.Config{
 		Image:      cfg.Image,
