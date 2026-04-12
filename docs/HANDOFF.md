@@ -9,21 +9,19 @@
 
 ## Current state
 
-**Phase:** M4 done. picoclaw has a scheduler: scheduled tasks run on
-cron/interval/once schedules, push prompts through the queue (same
-path as Telegram messages), log results. /tasks commands let any
-registered chat manage its own tasks.
+**Phase:** M9 done. picoclaw has cross-session memory. The agent
+receives relevant memories automatically via `--append-system-prompt`.
+Users manage memories via `/remember` and `/recall`. Hybrid search
+(FTS5 BM25 + sqlite-vec KNN + RRF merge) with OpenAI embeddings.
 **Last updated:** 2026-04-12
-**Last working session:** M4 (Scheduler) — store CRUD for
-scheduled_tasks (M4a), scheduler poller with robfig/cron/v3 for
-cron expressions + time.ParseDuration for intervals + RFC3339 for
-once (M4b), /tasks Router commands with add/list/pause/resume/cancel
-sub-dispatch (M4c), wired into main.go (M4d). Scheduler polls every
-60s, pushes due tasks through the queue, computes next_run, logs
-results. One immediate poll at startup to catch tasks that became
-due while picoclaw was down.
+**Last working session:** M9 (Native memory) — OpenAI embedder
+(text-embedding-3-small @ 1024 dim per D016), Memory facade with
+Add/Search/List/Delete, hybrid retrieval (vec0 + FTS5 + RRF),
+RunPrompt extended with `--append-system-prompt` for memory injection,
+`/remember` + `/recall` commands via Router. Natural language task
+scheduling via Claude parse prompt also landed as M4 polish.
 Build order:
-`M0 ✅ → M1 ✅ → M5 ✅ → M6 ✅ → M6.5 ✅ → M3 ✅ → M3.5 ✅ → M4 ✅ → M3.6 → M7 → M8 → M9`.
+`M0 ✅ → M1 ✅ → M5 ✅ → M6 ✅ → M6.5 ✅ → M3 ✅ → M3.5 ✅ → M4 ✅ → M9 ✅ → M3.6 → M7 → M8`.
 
 ## What's done
 

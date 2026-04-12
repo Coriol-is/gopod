@@ -23,7 +23,7 @@ The numerical IDs below are stable identifiers cited from many places —
 is built in this sequence so that the first end-to-end agent reply uses
 Claude Code's web-auth (Pro/Max) inside a container, not a paid API key:
 
-`M0 ✅ → M1 ✅ → M5 ✅ → M6 ✅ → M6.5 ✅ → M3 ✅ → M3.5 ✅ → M4 ✅ → M3.6 → M7 → M8 → M9`
+`M0 ✅ → M1 ✅ → M5 ✅ → M6 ✅ → M6.5 ✅ → M3 ✅ → M3.5 ✅ → M4 ✅ → M9 ✅ → M3.6 → M7 → M8`
 
 M2 (Direct API) is no longer on the critical path; it is opt-in if and only
 if `ANTHROPIC_API_KEY` is set in the environment.
@@ -44,7 +44,7 @@ if `ANTHROPIC_API_KEY` is set in the environment.
 | M6.5 | **Telegram-mediated `/login`.** Interactive OAuth proxy: spawns `claude auth login` with PTY+stdin via Docker SDK, captures URL from stdout, forwards to Telegram, intercepts user's next message as the OAuth code, pipes it to claude's stdin, confirms. Session-expired vs never-logged-in distinction in error replies. 10-min timeout with auto-cleanup. | ✅ | Full onboarding fits inside Telegram — no terminal access needed |
 | M7 | IPC: filesystem watcher, container → host messages, task ops, owner gating | ⬜ | |
 | M8 | Recovery & polish: cursor backfill, leftover-container cleanup, structured logs, README + Compose example | ⬜ | |
-| M9 | Native memory: sqlite-vec, embedder, `memory_*` tools, Anthropic Memory Tool, auto-summarize. See [docs/MEMORY.md §10](docs/MEMORY.md) for sub-steps M9.1–M9.10 | ⬜ | |
+| M9 | Native memory: OpenAI embedder, hybrid FTS5+vec0 search, /remember + /recall, auto-injection into agent prompt via --append-system-prompt | ✅ | Agent gets cross-session memory context automatically. User manages memories via /remember + /recall. Auto-summarize + container skill deferred |
 
 ### M3.5 sub-steps (control plane)
 
