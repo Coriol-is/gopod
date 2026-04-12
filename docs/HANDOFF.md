@@ -9,20 +9,21 @@
 
 ## Current state
 
-**Phase:** M3.5 done. picoclaw has a unified control plane — all slash
-commands route through `internal/control.Router` with per-command
-auth enforcement.
+**Phase:** M4 done. picoclaw has a scheduler: scheduled tasks run on
+cron/interval/once schedules, push prompts through the queue (same
+path as Telegram messages), log results. /tasks commands let any
+registered chat manage its own tasks.
 **Last updated:** 2026-04-12
-**Last working session:** M3.5 (Control plane, C1+C2). Router scaffold
-with Command/Caller/Perm/Response types, Register/Dispatch/List/
-LookupBySlash, auth enforcement (Public/ChatLocal/OwnerOnly).
-Telegram frontend refactored: removed per-command RegisterHandler
-calls, added dispatchSlash that parses "/cmd args" → Router.Dispatch.
-setMyCommands now built from Router.List() automatically. /login
-stays as Telegram-side special case (stateful interactive session).
-C3 (CLI frontend), C4 (extended handlers), C5 (logs subsystem) deferred.
+**Last working session:** M4 (Scheduler) — store CRUD for
+scheduled_tasks (M4a), scheduler poller with robfig/cron/v3 for
+cron expressions + time.ParseDuration for intervals + RFC3339 for
+once (M4b), /tasks Router commands with add/list/pause/resume/cancel
+sub-dispatch (M4c), wired into main.go (M4d). Scheduler polls every
+60s, pushes due tasks through the queue, computes next_run, logs
+results. One immediate poll at startup to catch tasks that became
+due while picoclaw was down.
 Build order:
-`M0 ✅ → M1 ✅ → M5 ✅ → M6 ✅ → M6.5 ✅ → M3 ✅ → M3.5 ✅ → M3.6 → M4 → M7 → M8 → M9`.
+`M0 ✅ → M1 ✅ → M5 ✅ → M6 ✅ → M6.5 ✅ → M3 ✅ → M3.5 ✅ → M4 ✅ → M3.6 → M7 → M8 → M9`.
 
 ## What's done
 
@@ -116,7 +117,7 @@ Nothing actively in flight.
 2. ~~M3.5 — Control plane (C1+C2).~~ ✅ Done. C3/C4/C5 deferred.
 3. **M3.6 — Observability** (opt-in Prometheus + OTel). Adds metrics
    and spans to every subsystem.
-4. **M4 — Scheduler** (cron/interval/once tasks).
+4. ~~M4 — Scheduler.~~ ✅ Done.
 5. (continue with M7 IPC, M8 Recovery, M9 Memory per ROADMAP)
 
 **Optional, off the critical path:** **M2 (Direct API)** auto-enabled
