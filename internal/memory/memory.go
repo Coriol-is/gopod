@@ -63,6 +63,27 @@ func (m *Memory) Add(ctx context.Context, chatFolder, kind, title, content, sour
 			len(vecs[0]), m.embedder.Dim())
 	}
 
+	// Dedup: if a very similar active memory already exists (cosine
+	// similarity > 0.92), update it instead of creating a duplicate.
+	existingID, sim, err := m.FindSimilar(ctx, chatFolder, vecs[0])
+	if err == nil && existingID > 0 && sim > 0.92 {
+		now := time.Now().UnixMilli()
+		_, err := m.store.DB().ExecContext(ctx, `
+			UPDATE memories SET content = ?, kind = ?, updated_at = ?
+			 WHERE id = ?`, content, kind, now, existingID)
+		if err != nil {
+			return 0, fmt.Errorf("memory: Add: dedup update: %w", err)
+		}
+		// Update the vector too.
+		m.store.DB().ExecContext(ctx, `
+			UPDATE memory_vec SET embedding = ? WHERE rowid = ?`,
+			float32sToBlob(vecs[0]), existingID)
+		m.log.Debug("memory: dedup update",
+			slog.Int64("id", existingID),
+			slog.Float64("similarity", sim))
+		return existingID, nil
+	}
+
 	now := time.Now().UnixMilli()
 	db := m.store.DB()
 
@@ -133,6 +154,14 @@ func (m *Memory) Search(ctx context.Context, chatFolder, query string, k int) ([
 
 	// RRF merge.
 	merged := rrfMerge(vecResults, ftsResults, k)
+
+	// Update last_retrieved_at for decay scoring.
+	ids := make([]int64, len(merged))
+	for i, it := range merged {
+		ids[i] = it.ID
+	}
+	m.touchRetrieved(ctx, ids)
+
 	return merged, nil
 }
 
@@ -195,8 +224,59 @@ func (m *Memory) Delete(ctx context.Context, id int64) error {
 	return nil
 }
 
+// Supersede marks an existing memory as superseded by a newer one.
+// The old memory stays in the DB for audit but is excluded from
+// search results (status != 'active').
+func (m *Memory) Supersede(ctx context.Context, oldID, newID int64) error {
+	_, err := m.store.DB().ExecContext(ctx, `
+		UPDATE memories SET status = 'superseded', superseded_by = ?, updated_at = ?
+		 WHERE id = ?`, newID, time.Now().UnixMilli(), oldID)
+	return err
+}
+
+// touchRetrieved updates last_retrieved_at for a set of memory IDs.
+// Called after search results are compiled into the agent prompt.
+func (m *Memory) touchRetrieved(ctx context.Context, ids []int64) {
+	if len(ids) == 0 {
+		return
+	}
+	now := time.Now().UnixMilli()
+	for _, id := range ids {
+		m.store.DB().ExecContext(ctx, `UPDATE memories SET last_retrieved_at = ? WHERE id = ?`, now, id)
+	}
+}
+
+// FindSimilar returns the most similar existing memory to content
+// (by cosine distance). Used for dedup before Add. Returns (id,
+// similarity, error). Similarity > 0.92 suggests a duplicate.
+func (m *Memory) FindSimilar(ctx context.Context, chatFolder string, vec []float32) (int64, float64, error) {
+	rows, err := m.store.DB().QueryContext(ctx, `
+		SELECT m.id, v.distance
+		  FROM memory_vec v
+		  JOIN memories m ON m.id = v.rowid
+		 WHERE v.embedding MATCH ?
+		   AND v.k = 1
+		   AND m.chat_folder = ?
+		   AND IFNULL(m.status, 'active') = 'active'`,
+		float32sToBlob(vec), chatFolder)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return 0, 0, nil // no existing memories
+	}
+	var id int64
+	var dist float64
+	if err := rows.Scan(&id, &dist); err != nil {
+		return 0, 0, err
+	}
+	similarity := 1.0 / (1.0 + dist)
+	return id, similarity, nil
+}
+
 // vecSearch runs a KNN query against memory_vec, filtering by
-// chat_folder via a JOIN.
+// chat_folder via a JOIN. Only returns active memories.
 func (m *Memory) vecSearch(ctx context.Context, chatFolder string, queryVec []float32, k int) ([]Item, error) {
 	rows, err := m.store.DB().QueryContext(ctx, `
 		SELECT m.id, m.chat_folder, m.kind, IFNULL(m.title,''), m.content,
@@ -206,6 +286,7 @@ func (m *Memory) vecSearch(ctx context.Context, chatFolder string, queryVec []fl
 		 WHERE v.embedding MATCH ?
 		   AND v.k = ?
 		   AND (? = '' OR m.chat_folder = ?)
+		   AND IFNULL(m.status, 'active') = 'active'
 		 ORDER BY v.distance ASC`,
 		float32sToBlob(queryVec), k, chatFolder, chatFolder)
 	if err != nil {
@@ -238,6 +319,7 @@ func (m *Memory) ftsSearch(ctx context.Context, chatFolder, query string, k int)
 		  JOIN memories m ON m.id = f.rowid
 		 WHERE memory_fts MATCH ?
 		   AND (? = '' OR m.chat_folder = ?)
+		   AND IFNULL(m.status, 'active') = 'active'
 		 ORDER BY rank ASC
 		 LIMIT ?`, query, chatFolder, chatFolder, k)
 	if err != nil {

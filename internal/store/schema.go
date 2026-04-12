@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"strings"
 )
 
 // schemaStatements is the set of CREATE TABLE / CREATE INDEX /
@@ -142,6 +143,16 @@ var schemaStatements = []string{
 	END`,
 }
 
+// migrations are ALTER TABLE statements that add columns to existing
+// tables. SQLite doesn't support IF NOT EXISTS for columns, so we
+// run each one and ignore "duplicate column name" errors.
+var migrations = []string{
+	// Phase C: memory lifecycle fields.
+	`ALTER TABLE memories ADD COLUMN status TEXT DEFAULT 'active'`,
+	`ALTER TABLE memories ADD COLUMN superseded_by INTEGER`,
+	`ALTER TABLE memories ADD COLUMN last_retrieved_at INTEGER`,
+}
+
 // applySchema runs every statement in schemaStatements in order. Idempotent.
 func (s *Store) applySchema(ctx context.Context) error {
 	for i, stmt := range schemaStatements {
@@ -149,5 +160,18 @@ func (s *Store) applySchema(ctx context.Context) error {
 			return fmt.Errorf("statement %d: %w\n--- sql ---\n%s", i, err, stmt)
 		}
 	}
+	// Run migrations (ALTER TABLE). Ignore "duplicate column" errors
+	// so re-applying on an already-migrated DB is a no-op.
+	for _, stmt := range migrations {
+		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
+			if !isDuplicateColumn(err) {
+				return fmt.Errorf("migration: %w\n--- sql ---\n%s", err, stmt)
+			}
+		}
+	}
 	return nil
+}
+
+func isDuplicateColumn(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "duplicate column name")
 }
