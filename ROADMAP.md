@@ -76,11 +76,11 @@ See [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) for full triage.
 
 | ID | Integration | Tier | Status |
 |----|-------------|------|--------|
-| I1 | Reactions (👀 ✅ ❌) + typing indicator | 1 | ⬜ |
-| I2 | Image vision (multimodal blocks) | 1 | ⬜ |
-| I3 | Voice transcription (OpenAI + local Whisper toggle) | 1 | ⬜ |
+| I1 | Reactions (👀👍👎) + typing indicator + reply threading | 1 | ✅ |
+| I2 | Image vision + document handling | 1 | ✅ |
+| I3 | Voice transcription (Whisper) + TTS replies + `/voice` mode | 1 | ✅ |
 | I4 | PDF reader | 1 | ⬜ |
-| I5 | Channel formatting (Markdown → MarkdownV2) + `/compact` | 1 | ⬜ |
+| I5 | Markdown → Telegram HTML formatting + smart chunking | 1 | ✅ |
 | I6 | Karpathy LLM Wiki convention | 1 | ⬜ |
 | I7 | Telegram Agent Swarm (multi-bot teams) | 1 | ⬜ |
 | I8 | Ollama tool | 2 | ⬜ |
@@ -103,6 +103,16 @@ Tracked as its own phase because the milestones are orthogonal to core work.
 | S5 | Dev-time Claude Code skills in `.claude/skills/` for picoclaw maintainers | ⬜ | |
 
 ---
+
+## Phase 4 — Multi-provider agent support
+
+| ID | Step | Status |
+|----|------|--------|
+| P1 | AgentProvider interface: refactor runner to call provider methods instead of hardcoded `claude` commands | ⬜ |
+| P2 | Claude provider: extract current claude-specific code into provider implementation | ⬜ |
+| P3 | Codex provider: OpenAI Codex CLI support (separate Docker image, codex-specific flags/auth/sessions) | ⬜ |
+| P4 | Per-chat provider config: `/provider claude\|codex` command + `PICOCLAW_DEFAULT_PROVIDER` env var | ⬜ |
+| P5 | API providers (Tier 2): OpenAI API / Ollama / any OpenAI-compatible — same interface, no container, HTTP calls | ⬜ |
 
 ## Deferred
 
