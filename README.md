@@ -1,77 +1,136 @@
 # picoclaw
 
-A small personal Claude assistant on Telegram, written in Go.
+A personal Claude assistant on Telegram, written in Go. One channel,
+one language, per-chat container isolation, native long-term memory
+with hybrid search, voice support, and scheduled tasks.
+
 A focused descendant of [NanoClaw](https://github.com/spaceinvaderz/nanoclaw):
-one channel (Telegram), one language (Go), per-chat container isolation,
-native long-term memory, plus a small skill ecosystem (container skills + MCP)
-that doesn't require recompiling.
+~10% of the surface area, ~90% of the day-to-day value.
 
-**Status:** design phase. No code yet.
-**Position vs NanoClaw:** ~10% of the surface area, ~90% of the day-to-day value.
+## Quick start
 
-## Quick links
+```sh
+# 1. Clone and build the agent image
+git clone https://github.com/spaceinvaderz/picoclaw
+cd picoclaw
+docker build -t picoclaw-agent:latest container/
 
-| Doc | What it covers |
+# 2. Configure
+cp .env.example .env
+# Edit .env: set TELEGRAM_BOT_TOKEN, PICOCLAW_OWNER_CHAT_ID, OPENAI_API_KEY
+
+# 3. Run
+go run ./cmd/picoclaw
+
+# 4. Open your Telegram bot chat and type /login
+# 5. Complete the OAuth flow → send a message → get a Claude reply
+```
+
+## What it does
+
+- **Telegram bot** — long-polls your bot, stores every message in SQLite
+- **Claude agent per chat** — spawns a Docker container with Claude Code CLI, runs `claude -p` per message
+- **Per-chat isolation** — each chat gets its own container, filesystem, memory, and session
+- **Long-term memory** — hybrid FTS5 + sqlite-vec search, auto-extraction of facts from conversations, policy-driven context injection
+- **Voice** — Whisper transcription for voice input, TTS for voice output (auto-mirrors input modality)
+- **Image vision** — send photos/documents, Claude analyzes them
+- **Scheduled tasks** — cron/interval/once via natural language (`/tasks add check weather every morning at 9`)
+- **Markdown formatting** — Claude's markdown renders as bold, italic, code blocks in Telegram
+- **Reactions** — 👀 processing, 👍 success, 👎 error
+- **Reply threading** — bot replies are threaded to your original message
+
+## Commands
+
+| Command | Description |
 |---|---|
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System architecture, package layout, message flow, lib choices |
-| [docs/MEMORY.md](docs/MEMORY.md) | 5-layer memory model: working / identity / scratchpad / semantic / cross-chat |
-| [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) | NanoClaw skills triaged into Tier 1 / 2 / Skip |
-| [docs/SKILLS.md](docs/SKILLS.md) | Skill ecosystem: container skills, MCP skills, dev skills |
-| [docs/CONTROL.md](docs/CONTROL.md) | Control plane: Router, Telegram + CLI frontends, command catalog |
-| [docs/DECISIONS.md](docs/DECISIONS.md) | Architectural decision log (ADR-style) |
-| [docs/GLOSSARY.md](docs/GLOSSARY.md) | Project vocabulary |
-| [docs/HANDOFF.md](docs/HANDOFF.md) | Rolling state — read this first when picking up the project |
-| [ROADMAP.md](ROADMAP.md) | Milestones M0–M9 + integrations I1–I10 with statuses |
-| [CLAUDE.md](CLAUDE.md) | Instructions for Claude / agentic dev sessions |
+| `/help` | list all commands |
+| `/ping` | liveness check |
+| `/whoami` | show chat id and registration state |
+| `/login` | authenticate Claude Code (Pro/Max subscription) |
+| `/register <chat_id> <folder>` | (owner) register another chat |
+| `/tasks add <description>` | schedule a task in natural language |
+| `/tasks list` | list scheduled tasks |
+| `/tasks pause/resume/cancel <id>` | manage tasks |
+| `/remember <fact>` | save to long-term memory |
+| `/recall <query>` | search memories |
+| `/voice <mode>` | set reply mode: auto, voice, text, voice+text |
+| `/logs` | (owner) show recent picoclaw logs |
+| `/version` | build info |
 
-## What it does (when built)
+## Architecture
 
-- Runs as a single Go process (`cmd/picoclaw`)
-- Long-polls a Telegram bot you own
-- Spawns one Docker container per chat the agent is registered in (long-lived,
-  idle-killed) and runs a Claude Code agent loop inside it
-- Per-chat filesystem isolation, per-chat session, per-chat memory
-- Native long-term memory via `sqlite-vec` with hybrid (semantic + lexical) search
-- Scheduled tasks (cron / interval / once) per chat
-- Owner chat (single chat ID in config) has elevated privileges to register
-  new chats and schedule tasks for others
-- Extensible via a small skill ecosystem (container skills + MCP servers,
-  no recompile required) — see [docs/SKILLS.md](docs/SKILLS.md)
+```
+picoclaw (Go, host)
+├── Telegram long-poll
+├── Queue (per-chat serialization, global cap)
+├── Runner (Docker SDK, container lifecycle)
+├── Memory (sqlite-vec + FTS5, OpenAI embeddings)
+├── Scheduler (cron/interval/once, robfig/cron/v3)
+├── Control plane (Router + slash commands)
+└── SQLite store (messages, chats, tasks, memories, logs)
 
-## What it deliberately doesn't do
+Agent containers (node + Claude Code CLI)
+├── /workspace/chat (RW, per-chat)
+├── /workspace/memory (RW, Anthropic Memory Tool)
+├── /home/node/.claude (RW, session state)
+└── /home/node/.claude/skills (RO, container skills)
+```
 
-- WhatsApp / Slack / Discord / Gmail / Signal / Emacs / X channels
-- A NanoClaw-style "merge a `skill/*` branch" plugin model (skills exist,
-  but installed as directories, not as code merges — see [docs/SKILLS.md](docs/SKILLS.md))
-- Multi-runtime support (Docker only; subprocess fallback for dev)
-- OneCLI credential gateway
-- macOS status-bar UI
-- Migration tooling for existing NanoClaw installs
+## Production deployment (Docker Compose)
 
-See [docs/INTEGRATIONS.md §Tier 3](docs/INTEGRATIONS.md) for the full skip list
-and reasoning.
+```sh
+# Set host paths in .env:
+PICOCLAW_HOST_DATA_DIR=/opt/picoclaw/data
+PICOCLAW_HOST_REPO_DIR=/opt/picoclaw/repo
+PICOCLAW_UID=1000
+PICOCLAW_GID=1000
 
-## Layout (planned)
+docker compose build
+docker compose up -d
+```
+
+picoclaw runs inside a container managing agent containers as siblings
+on the same Docker daemon (docker.sock mount, not docker-in-docker).
+
+## Layout
 
 ```
 picoclaw/
-├── README.md                  # this file
-├── CLAUDE.md                  # entry point for agentic dev sessions
-├── ROADMAP.md                 # milestones with status
-├── docs/                      # design docs (stable)
-├── cmd/picoclaw/              # main binary
-├── internal/                  # implementation packages
-├── container/                 # agent container image
-├── chats/                     # per-chat workspace (gitignored)
-└── data/                      # runtime state (gitignored)
+├── cmd/picoclaw/           main binary
+├── internal/
+│   ├── config/             env loader
+│   ├── store/              SQLite persistence
+│   ├── telegram/           Telegram frontend
+│   ├── runner/             Docker container lifecycle
+│   │   ├── mountsec/       mount allowlist validation
+│   │   └── chattmpl/       chat workspace templates
+│   ├── queue/              per-chat serialization + global cap
+│   ├── memory/             embedder + hybrid search + extraction
+│   ├── scheduler/          cron/interval/once poller
+│   ├── control/            Router + slash commands
+│   └── log/                SQLite slog handler
+├── container/
+│   ├── Dockerfile          agent image (node + claude CLI)
+│   └── skills/memory/      memory API skill
+├── Dockerfile              picoclaw binary image
+├── docker-compose.yml      production deployment
+├── docs/                   design documents
+└── data/                   runtime state (gitignored)
 ```
 
-## Origin
+## Design docs
 
-This project exists because NanoClaw is great but its TypeScript footprint and
-plugin surface area are bigger than one person needs. picoclaw keeps the ideas
-that matter (per-chat isolation, container-per-chat agent, GroupQueue, IPC,
-scheduler, layered memory) and drops everything else.
+| Doc | What it covers |
+|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System architecture, package layout, message flow |
+| [docs/MEMORY.md](docs/MEMORY.md) | 5-layer memory model with hybrid search |
+| [docs/ISOLATION.md](docs/ISOLATION.md) | Container security policy |
+| [docs/CONTROL.md](docs/CONTROL.md) | Control plane Router design |
+| [docs/SKILLS.md](docs/SKILLS.md) | Skill ecosystem |
+| [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) | Prometheus + OTel design |
+| [docs/DECISIONS.md](docs/DECISIONS.md) | Architectural decision log (D001–D018) |
+| [docs/HANDOFF.md](docs/HANDOFF.md) | Current state for picking up the project |
+| [ROADMAP.md](ROADMAP.md) | Milestones with statuses |
 
 ## License
 
