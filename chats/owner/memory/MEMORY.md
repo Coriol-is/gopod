@@ -1,8 +1,8 @@
-# Memory: {{.ChatFolder}}
+# Memory: owner
 
 This is the **Anthropic Memory Tool scratchpad** for this gopod chat.
 Anything in this directory survives container restarts (it is bind-
-mounted from `${GOPOD_DATA_DIR}/../chats/{{.ChatFolder}}/memory/`
+mounted from `${GOPOD_DATA_DIR}/../chats/owner/memory/`
 on the host).
 
 The agent owns this file. Add a section per stable fact, preference,
@@ -32,4 +32,4 @@ _Last updated: <date>_
 
 ---
 
-_Seeded by gopod on {{.Date}} for chat folder `{{.ChatFolder}}`._
+_Seeded by gopod on 2026-04-11 for chat folder `owner`._

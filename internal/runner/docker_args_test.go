@@ -9,7 +9,7 @@ import (
 
 func goodSpawnConfig() SpawnConfig {
 	return SpawnConfig{
-		Image:       "picoclaw-agent:latest",
+		Image:       "gopod-agent:latest",
 		ChatFolder:  "alice",
 		Version:     "abc1234",
 		UID:         501,
@@ -64,10 +64,10 @@ func TestBuildContainerArgsFlags(t *testing.T) {
 		t.Fatalf("BuildContainerArgs: %v", err)
 	}
 
-	if name != "picoclaw-alice" {
-		t.Errorf("name = %q, want picoclaw-alice", name)
+	if name != "gopod-alice" {
+		t.Errorf("name = %q, want gopod-alice", name)
 	}
-	if conf.Image != "picoclaw-agent:latest" {
+	if conf.Image != "gopod-agent:latest" {
 		t.Errorf("image = %q", conf.Image)
 	}
 	if conf.User != "501:20" {
@@ -76,11 +76,11 @@ func TestBuildContainerArgsFlags(t *testing.T) {
 	if conf.WorkingDir != "/workspace/chat" {
 		t.Errorf("workdir = %q", conf.WorkingDir)
 	}
-	if conf.Labels["picoclaw.chat"] != "alice" {
-		t.Errorf("chat label = %q", conf.Labels["picoclaw.chat"])
+	if conf.Labels["gopod.chat"] != "alice" {
+		t.Errorf("chat label = %q", conf.Labels["gopod.chat"])
 	}
-	if conf.Labels["picoclaw.version"] != "abc1234" {
-		t.Errorf("version label = %q", conf.Labels["picoclaw.version"])
+	if conf.Labels["gopod.version"] != "abc1234" {
+		t.Errorf("version label = %q", conf.Labels["gopod.version"])
 	}
 
 	if !host.ReadonlyRootfs {
@@ -153,24 +153,24 @@ func TestBuildContainerArgsFlags(t *testing.T) {
 }
 
 func TestBuildContainerArgsEnvAllowlist(t *testing.T) {
-	t.Setenv("PICOCLAW_TEST_PRESENT", "value-here")
-	// leave PICOCLAW_TEST_ABSENT unset
+	t.Setenv("GOPOD_TEST_PRESENT", "value-here")
+	// leave GOPOD_TEST_ABSENT unset
 
 	cfg := goodSpawnConfig()
 	cfg.EnvAllowlist = []string{
-		"PICOCLAW_TEST_PRESENT",
-		"PICOCLAW_TEST_ABSENT",
+		"GOPOD_TEST_PRESENT",
+		"GOPOD_TEST_ABSENT",
 		"", // empty entry must be skipped
 	}
 	conf, _, _, err := BuildContainerArgs(cfg)
 	if err != nil {
 		t.Fatalf("BuildContainerArgs: %v", err)
 	}
-	if !hasString(conf.Env, "PICOCLAW_TEST_PRESENT=value-here") {
+	if !hasString(conf.Env, "GOPOD_TEST_PRESENT=value-here") {
 		t.Errorf("Env missing PRESENT: %v", conf.Env)
 	}
 	for _, e := range conf.Env {
-		if e == "PICOCLAW_TEST_ABSENT=" {
+		if e == "GOPOD_TEST_ABSENT=" {
 			t.Error("Env should NOT include absent var with empty value")
 		}
 	}
@@ -211,7 +211,7 @@ func TestParseMemoryBytes(t *testing.T) {
 }
 
 func TestContainerName(t *testing.T) {
-	if got := ContainerName("alice"); got != "picoclaw-alice" {
+	if got := ContainerName("alice"); got != "gopod-alice" {
 		t.Errorf("got %q", got)
 	}
 }

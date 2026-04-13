@@ -38,7 +38,7 @@ func TestSeedFreshDirCreatesBoth(t *testing.T) {
 	if !strings.Contains(s, "owner") {
 		t.Errorf("CLAUDE.md missing chat folder name 'owner'")
 	}
-	if !strings.Contains(s, "picoclaw owner chat") {
+	if !strings.Contains(s, "gopod owner chat") {
 		t.Errorf("CLAUDE.md missing owner blurb (IsOwner=true should expand)")
 	}
 
@@ -55,7 +55,7 @@ func TestSeedNonOwnerSkipsOwnerBlurb(t *testing.T) {
 	}
 	body, _ := os.ReadFile(filepath.Join(chatDir, "CLAUDE.md"))
 	s := string(body)
-	if strings.Contains(s, "picoclaw owner chat") {
+	if strings.Contains(s, "gopod owner chat") {
 		t.Errorf("non-owner CLAUDE.md should not contain owner blurb")
 	}
 	if !strings.Contains(s, "non-owner registered chat") {

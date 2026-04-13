@@ -7,10 +7,10 @@ import (
 )
 
 func TestLoadDefaults(t *testing.T) {
-	t.Setenv("PICOCLAW_DATA_DIR", "")
-	t.Setenv("PICOCLAW_LOG_LEVEL", "")
-	t.Setenv("PICOCLAW_LOG_FORMAT", "")
-	t.Setenv("PICOCLAW_OWNER_CHAT_ID", "")
+	t.Setenv("GOPOD_DATA_DIR", "")
+	t.Setenv("GOPOD_LOG_LEVEL", "")
+	t.Setenv("GOPOD_LOG_FORMAT", "")
+	t.Setenv("GOPOD_OWNER_CHAT_ID", "")
 	t.Setenv("TELEGRAM_BOT_TOKEN", "")
 
 	cfg, err := Load(false)
@@ -49,7 +49,7 @@ func TestLoadTelegramBotToken(t *testing.T) {
 }
 
 func TestLoadOwnerChatID(t *testing.T) {
-	t.Setenv("PICOCLAW_OWNER_CHAT_ID", "123456789")
+	t.Setenv("GOPOD_OWNER_CHAT_ID", "123456789")
 	cfg, err := Load(false)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
@@ -60,14 +60,14 @@ func TestLoadOwnerChatID(t *testing.T) {
 }
 
 func TestLoadInvalidOwnerChatID(t *testing.T) {
-	t.Setenv("PICOCLAW_OWNER_CHAT_ID", "not-a-number")
+	t.Setenv("GOPOD_OWNER_CHAT_ID", "not-a-number")
 	if _, err := Load(false); err == nil {
 		t.Fatal("Load: want error for non-numeric OwnerChatID, got nil")
 	}
 }
 
 func TestLoadInvalidLogFormat(t *testing.T) {
-	t.Setenv("PICOCLAW_LOG_FORMAT", "yaml")
+	t.Setenv("GOPOD_LOG_FORMAT", "yaml")
 	if _, err := Load(false); err == nil {
 		t.Fatal("Load: want error for invalid log format, got nil")
 	}

@@ -1,10 +1,10 @@
-// Package scheduler runs picoclaw's scheduled tasks.
+// Package scheduler runs gopod's scheduled tasks.
 //
 // The Scheduler polls the store every PollInterval for due tasks
 // (active tasks whose next_run ≤ now), executes each one by pushing
 // the task's prompt through the queue (same path as Telegram messages),
 // computes the next_run, and logs the result. One Scheduler goroutine
-// per picoclaw process.
+// per gopod process.
 //
 // Schedule types:
 //   - cron: standard 5-field cron expression, parsed by robfig/cron/v3
@@ -20,8 +20,8 @@ import (
 
 	"github.com/robfig/cron/v3"
 
-	"github.com/spaceinvaderz/picoclaw/internal/queue"
-	"github.com/spaceinvaderz/picoclaw/internal/store"
+	"github.com/spaceinvaderz/gopod/internal/queue"
+	"github.com/spaceinvaderz/gopod/internal/store"
 )
 
 // PollInterval is how often the scheduler checks the store for due
@@ -54,7 +54,7 @@ func (s *Scheduler) Start(ctx context.Context) {
 	s.log.Info("scheduler started", slog.Duration("poll_interval", PollInterval))
 
 	// Run once immediately at startup to catch tasks that became due
-	// while picoclaw was down.
+	// while gopod was down.
 	s.poll(ctx)
 
 	t := time.NewTicker(PollInterval)

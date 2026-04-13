@@ -32,8 +32,8 @@ var blockedPatterns = []string{
 	"**/.docker/**",
 	"**/.docker",
 
-	// picoclaw's own config + secrets surface
-	"**/.config/picoclaw/**",
+	// gopod's own config + secrets surface
+	"**/.config/gopod/**",
 
 	// Generic secret-shaped files
 	"**/credentials",

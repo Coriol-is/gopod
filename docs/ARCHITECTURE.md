@@ -1,4 +1,4 @@
-# picoclaw — Architecture
+# gopod — Architecture
 
 > Companion docs: [MEMORY.md](MEMORY.md) · [INTEGRATIONS.md](INTEGRATIONS.md) · [SKILLS.md](SKILLS.md) · [CONTROL.md](CONTROL.md) · [DECISIONS.md](DECISIONS.md) · [GLOSSARY.md](GLOSSARY.md)
 > Status & next steps: [HANDOFF.md](HANDOFF.md) · [../ROADMAP.md](../ROADMAP.md)
@@ -60,7 +60,7 @@ host parses, strips `<internal>`, sends back via channel.
 
 ---
 
-## 3. Scope reduction for picoclaw
+## 3. Scope reduction for gopod
 
 | Keep                                                  | Drop                                  | Replace                                                              |
 | ----------------------------------------------------- | ------------------------------------- | -------------------------------------------------------------------- |
@@ -73,7 +73,7 @@ host parses, strips `<internal>`, sends back via channel.
 | Filesystem IPC for container → host (messages/tasks)  | "groups/main" privileged group        | All chats are equal; "owner chat ID" in config gates admin operations |
 | Crash recovery via cursors (`last_agent_timestamp`)   | Pre-compact transcript archiving      | Optional, behind a flag                                              |
 
-The "main group is privileged" idea collapses into a single `PICOCLAW_OWNER_CHAT_ID`
+The "main group is privileged" idea collapses into a single `GOPOD_OWNER_CHAT_ID`
 env var. That chat can schedule tasks for any other chat and register new chats;
 others can only schedule for themselves.
 
@@ -106,7 +106,7 @@ in setup.
 
 ### 4.2 Claude SDK
 
-Two viable paths. picoclaw will support **both**, choosable per chat:
+Two viable paths. gopod will support **both**, choosable per chat:
 
 **Path A — Direct API (`anthropic-sdk-go`)**
 
@@ -262,7 +262,7 @@ through the same per-chat queue as messages.
   `github.com/docker/docker/pkg/stdcopy.StdCopy`
 - Bind mounts via `mount.Mount{Type: mount.TypeBind, Source, Target, ReadOnly}`
 
-Fallback: subprocess mode (no container). When `PICOCLAW_NO_CONTAINER=1`, spawn
+Fallback: subprocess mode (no container). When `GOPOD_NO_CONTAINER=1`, spawn
 the Claude CLI directly with a working directory under `chats/<folder>/`.
 Useful for dev and for users who don't want Docker. Document the lost isolation.
 
@@ -278,7 +278,7 @@ Useful for dev and for users who don't want Docker. Document the lost isolation.
 
 ```
                     ┌──────────────────────────────────────┐
-                    │            picoclaw process          │
+                    │            gopod process          │
                     │  ┌────────────────────────────────┐  │
 [Telegram] ──────►  │  │ telegram.Bot (long poll)       │  │
   Update             │  │   defaultHandler →             │  │
@@ -326,7 +326,7 @@ Useful for dev and for users who don't want Docker. Document the lost isolation.
                     │  ─ /home/node/.claude/  │
                     │      skills/<…>  ◄─── container skills (RO mount)
                     │  ─ Claude Code CLI      │
-                    │     ↕ MCP stdio ────────┼──► picoclaw MCP skills
+                    │     ↕ MCP stdio ────────┼──► gopod MCP skills
                     │     (agent loop)        │
                     └─────────────────────────┘
                            │
@@ -343,10 +343,10 @@ Useful for dev and for users who don't want Docker. Document the lost isolation.
 ### 5.1 Module / package layout
 
 ```
-picoclaw/
+gopod/
 ├── go.mod
 ├── cmd/
-│   └── picoclaw/
+│   └── gopod/
 │       └── main.go              # wires config + components, runs
 ├── internal/
 │   ├── config/
@@ -372,7 +372,7 @@ picoclaw/
 │   ├── runner/
 │   │   ├── runner.go            # Run(chat, prompt) → reply
 │   │   ├── docker.go            # Docker SDK spawn + attach + demux
-│   │   ├── subprocess.go        # PICOCLAW_NO_CONTAINER fallback
+│   │   ├── subprocess.go        # GOPOD_NO_CONTAINER fallback
 │   │   ├── markers.go           # OUTPUT_START/OUTPUT_END parsing
 │   │   └── mounts.go            # per-chat mount construction + safety
 │   ├── ipc/
@@ -386,7 +386,7 @@ picoclaw/
 │   ├── control/                 # see CONTROL.md (M3.5)
 │   │   ├── control.go           # Router, Command, Caller, Perm, Response, Deps
 │   │   ├── parse.go             # parseSlash + parseArgv
-│   │   ├── help.go              # /help and `picoclaw help` rendering
+│   │   ├── help.go              # /help and `gopod help` rendering
 │   │   ├── frontend_telegram.go
 │   │   ├── frontend_cli.go
 │   │   └── handlers/            # one file per command group
@@ -422,7 +422,7 @@ picoclaw/
 │   │   ├── mcp_stdio.go         # stdio transport
 │   │   ├── mcp_http.go          # http transport
 │   │   ├── registry.go          # in-memory map of loaded skills per chat
-│   │   └── cli.go               # `picoclaw skills *` subcommands
+│   │   └── cli.go               # `gopod skills *` subcommands
 │   └── recover/
 │       └── recover.go           # restore cursors, replay pending on boot
 ├── container/
@@ -471,7 +471,7 @@ picoclaw/
 CLI itself, talked to from Go via `docker exec` using
 `character-ai/claude-agent-sdk-go`'s `Client` type with a custom command. See
 [D002](DECISIONS.md). The Claude Code tool ecosystem (Read/Write/Bash/Edit/Grep,
-plus MCP) is provided by the CLI natively — picoclaw doesn't need to
+plus MCP) is provided by the CLI natively — gopod doesn't need to
 re-implement any of it.
 
 ### 5.2 Runner + container interaction
@@ -482,7 +482,7 @@ Two possible boundaries:
 **Option 1 — `docker exec` with attached stdio (chosen)**
 
 1. Container is long-lived per chat (started on first message, idle-killed after
-   `PICOCLAW_IDLE_TIMEOUT`).
+   `GOPOD_IDLE_TIMEOUT`).
 2. Before each turn the runner calls `skills.PrepareForChat(chatFolder)` and
    `memory.ToolsForChat(chatFolder)` — see steps below.
 3. Host calls `ContainerExecCreate` + `ContainerExecAttach` to start one
@@ -528,7 +528,7 @@ gracefully (missing skills/memory just means fewer tools registered).
 
 **Option 2 — one container per message (NanoClaw's current model)**
 
-Simpler, more wasteful. Skip for picoclaw v0 unless idle-management proves
+Simpler, more wasteful. Skip for gopod v0 unless idle-management proves
 fiddly.
 
 ### 5.3 IPC (container → host)
@@ -563,7 +563,7 @@ On startup:
 4. `scheduler.RecoverDue()` runs any tasks whose `next_run` is in the past
    (subject to a `MAX_BACKLOG` clamp to avoid stampedes).
 5. Container leftovers from a previous run are listed and stopped (label
-   `picoclaw.chat=<folder>`).
+   `gopod.chat=<folder>`).
 
 ### 5.5 Concurrency model
 
@@ -583,11 +583,11 @@ On startup:
 ## 6. Message flow (end-to-end)
 
 ```
-1. User: "@picoclaw what's 2+2?" in Telegram group
+1. User: "@gopod what's 2+2?" in Telegram group
 2. go-telegram bot's defaultHandler fires
 3. telegram.handler stores via store.SaveMessage(...)
 4. loop.MessagePoller (2s tick) calls store.GetNewMessages(lastTimestamp)
-5. trigger.Match("@picoclaw ...") → true
+5. trigger.Match("@gopod ...") → true
 6. queue.Enqueue(chatJid, MessageCheck)
 7. queue worker spawns runner.Run(chat)
 8. runner reads last N messages via store.GetMessagesSince(...)
@@ -595,7 +595,7 @@ On startup:
 10. runner.docker.EnsureContainer(chatFolder) — start if not running
 11. runner.docker.ExecAttach(claude, stdinJSON) via character-ai SDK Client
 12. Claude CLI runs agent loop, may use Read/Write/Bash inside container
-13. Agent emits framed result on stdout: ---PICOCLAW_OUT_START---{...}---PICOCLAW_OUT_END---
+13. Agent emits framed result on stdout: ---GOPOD_OUT_START---{...}---GOPOD_OUT_END---
 14. runner parses, applies stripInternalTags
 15. telegram.Send(chatID, replyText) — chunked if > 4096 chars
 16. store.UpdateLastAgentTs(chatJid, now) → persisted in router_state
@@ -613,7 +613,7 @@ On startup:
 | Claude CLI sessions   | `data/sessions/<folder>/.claude/`            |
 | IPC namespace         | `data/ipc/<folder>/`                         |
 | Conversation archives | `chats/<folder>/conversations/` (optional)   |
-| Container             | `picoclaw-<folder>` (label: picoclaw.chat=…) |
+| Container             | `gopod-<folder>` (label: gopod.chat=…) |
 | Mounts inside         | `/workspace/chat` (RW), `/workspace/ipc` (RW), `/home/node/.claude` (RW). Owner chat additionally gets `/workspace/store` (RW for SQLite) and project root RO. |
 
 Folder name validation: `^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`, plus a reserved set
@@ -628,22 +628,22 @@ Single `.env` (or env vars):
 ```
 TELEGRAM_BOT_TOKEN=...
 ANTHROPIC_API_KEY=...
-PICOCLAW_OWNER_CHAT_ID=123456789       # the "main" chat
-PICOCLAW_TRIGGER=@picoclaw              # default trigger word
-PICOCLAW_TIMEZONE=Europe/Berlin         # falls back to system TZ
-PICOCLAW_POLL_INTERVAL=2s
-PICOCLAW_SCHEDULER_INTERVAL=60s
-PICOCLAW_IDLE_TIMEOUT=30m
-PICOCLAW_CONTAINER_TIMEOUT=30m
-PICOCLAW_MAX_CONCURRENT=5
-PICOCLAW_MAX_MESSAGES_PER_PROMPT=10
-PICOCLAW_DATA_DIR=./data
-PICOCLAW_CHATS_DIR=./chats
-PICOCLAW_CONTAINER_IMAGE=picoclaw-agent:latest
-PICOCLAW_NO_CONTAINER=0                 # 1 = subprocess mode
+GOPOD_OWNER_CHAT_ID=123456789       # the "main" chat
+GOPOD_TRIGGER=@gopod              # default trigger word
+GOPOD_TIMEZONE=Europe/Berlin         # falls back to system TZ
+GOPOD_POLL_INTERVAL=2s
+GOPOD_SCHEDULER_INTERVAL=60s
+GOPOD_IDLE_TIMEOUT=30m
+GOPOD_CONTAINER_TIMEOUT=30m
+GOPOD_MAX_CONCURRENT=5
+GOPOD_MAX_MESSAGES_PER_PROMPT=10
+GOPOD_DATA_DIR=./data
+GOPOD_CHATS_DIR=./chats
+GOPOD_CONTAINER_IMAGE=gopod-agent:latest
+GOPOD_NO_CONTAINER=0                 # 1 = subprocess mode
 ```
 
-`PICOCLAW_OWNER_CHAT_ID` replaces NanoClaw's `is_main` flag. The single owner
+`GOPOD_OWNER_CHAT_ID` replaces NanoClaw's `is_main` flag. The single owner
 chat is the only place that can:
 
 - Register new chats
@@ -662,7 +662,7 @@ want to know before writing code in the relevant package.
 
 1. **Prompt envelope: XML.** NanoClaw uses
    `<messages><message ...>...</message></messages>` because multiple senders
-   matter in groups. picoclaw keeps the XML envelope for the same reason.
+   matter in groups. gopod keeps the XML envelope for the same reason.
 
 2. **Recovering "we already replied to this".** Telegram does mark bot
    messages (`from.is_bot`), but our own bot's outgoing messages don't come
@@ -700,7 +700,7 @@ want to know before writing code in the relevant package.
 ## 10. v0 milestones
 
 1. **M0 — skeleton**
-   `go.mod`, `cmd/picoclaw/main.go`, `internal/config`, `internal/store` with
+   `go.mod`, `cmd/gopod/main.go`, `internal/config`, `internal/store` with
    schema + migrations, opens SQLite, starts `slog`.
 
 2. **M1 — Telegram echo**
@@ -721,7 +721,7 @@ want to know before writing code in the relevant package.
 
 6. **M5 — container runtime**
    `internal/runner/docker.go`, mounts, exec attach, idle kill, label-based
-   recovery. `PICOCLAW_NO_CONTAINER=1` keeps M2 path alive.
+   recovery. `GOPOD_NO_CONTAINER=1` keeps M2 path alive.
 
 7. **M6 — agent SDK in container**
    Switch from direct API to `character-ai/claude-agent-sdk-go` `Client` over

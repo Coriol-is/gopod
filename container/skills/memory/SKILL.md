@@ -1,6 +1,6 @@
 # Memory skill
 
-You have access to a long-term memory system via picoclaw's memory API.
+You have access to a long-term memory system via gopod's memory API.
 
 ## Automatic context
 
@@ -19,21 +19,21 @@ Use the memory API via curl when:
 
 ### Search memories
 ```bash
-curl -s "http://host.docker.internal:9876/memory/search?q=YOUR+QUERY&chat=${PICOCLAW_CHAT_FOLDER}&k=5"
+curl -s "http://host.docker.internal:9876/memory/search?q=YOUR+QUERY&chat=${GOPOD_CHAT_FOLDER}&k=5"
 ```
 
 ### Store a new memory
 ```bash
 curl -s -X POST "http://host.docker.internal:9876/memory/add" \
   -H "Content-Type: application/json" \
-  -d '{"chat":"'${PICOCLAW_CHAT_FOLDER}'","kind":"fact","content":"The fact to remember"}'
+  -d '{"chat":"'${GOPOD_CHAT_FOLDER}'","kind":"fact","content":"The fact to remember"}'
 ```
 
 kind must be one of: `fact`, `decision`, `preference`, `hypothesis`
 
 ### List recent memories
 ```bash
-curl -s "http://host.docker.internal:9876/memory/list?chat=${PICOCLAW_CHAT_FOLDER}&limit=10"
+curl -s "http://host.docker.internal:9876/memory/list?chat=${GOPOD_CHAT_FOLDER}&limit=10"
 ```
 
 ## Guidelines

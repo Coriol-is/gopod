@@ -5,7 +5,7 @@
 *.dll
 *.so
 *.dylib
-/picoclaw
+/gopod
 /bin/
 /dist/
 
@@ -22,7 +22,7 @@ go.work.sum
 # Vendor (we don't vendor)
 /vendor/
 
-# ---- picoclaw ----
+# ---- gopod ----
 # Local data, secrets, runtime state
 /data/
 *.sqlite

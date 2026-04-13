@@ -1,4 +1,4 @@
-// Package store is the single SQLite-backed persistence layer for picoclaw.
+// Package store is the single SQLite-backed persistence layer for gopod.
 //
 // Per the architectural rules in CLAUDE.md, all DB access must go through
 // this package — no other package opens database/sql connections directly.
@@ -26,7 +26,7 @@ import (
 	_ "github.com/ncruces/go-sqlite3/driver" // register "sqlite3" driver
 )
 
-// Store is the picoclaw persistence handle. It wraps a *sql.DB and is
+// Store is the gopod persistence handle. It wraps a *sql.DB and is
 // safe for concurrent use.
 type Store struct {
 	db   *sql.DB

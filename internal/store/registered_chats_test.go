@@ -14,7 +14,7 @@ func TestRegisterChatHappyPath(t *testing.T) {
 		JID:             "tg:123",
 		Name:            "Anton",
 		Folder:          "owner",
-		TriggerPattern:  `(?i)@picoclaw\b`,
+		TriggerPattern:  `(?i)@gopod\b`,
 		RequiresTrigger: true,
 		IsOwner:         true,
 		AddedAt:         1700000000000,
@@ -30,7 +30,7 @@ func TestRegisterChatHappyPath(t *testing.T) {
 	if got.Folder != "owner" || !got.IsOwner || !got.RequiresTrigger {
 		t.Errorf("got %+v", got)
 	}
-	if got.TriggerPattern != `(?i)@picoclaw\b` {
+	if got.TriggerPattern != `(?i)@gopod\b` {
 		t.Errorf("trigger pattern lost: %q", got.TriggerPattern)
 	}
 }

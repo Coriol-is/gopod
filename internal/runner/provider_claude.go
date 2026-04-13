@@ -11,10 +11,10 @@ type ClaudeProvider struct {
 }
 
 // NewClaudeProvider creates a provider for Claude Code CLI.
-// image defaults to "picoclaw-agent:latest" if empty.
+// image defaults to "gopod-agent:latest" if empty.
 func NewClaudeProvider(image string) *ClaudeProvider {
 	if image == "" {
-		image = "picoclaw-agent:latest"
+		image = "gopod-agent:latest"
 	}
 	return &ClaudeProvider{image: image}
 }

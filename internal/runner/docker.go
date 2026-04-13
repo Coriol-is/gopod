@@ -15,21 +15,21 @@ import (
 	"github.com/docker/docker/pkg/stdcopy"
 )
 
-// LabelChat and LabelVersion are the Docker labels picoclaw puts on
+// LabelChat and LabelVersion are the Docker labels gopod puts on
 // every container it spawns. CleanupLeftovers uses them to identify
-// leftover containers from prior picoclaw runs.
+// leftover containers from prior gopod runs.
 const (
-	LabelChat    = "picoclaw.chat"
-	LabelVersion = "picoclaw.version"
+	LabelChat    = "gopod.chat"
+	LabelVersion = "gopod.version"
 )
 
-// Docker is picoclaw's thin wrapper around the Docker SDK client. It
+// Docker is gopod's thin wrapper around the Docker SDK client. It
 // centralises ctx-aware versions of the handful of operations the
 // runner actually needs (create/start/inspect/exec/stop/remove/list)
 // and hides the two or three Docker type aliases we don't want
 // leaking into lifecycle.go.
 //
-// One Docker value per picoclaw process. Safe for concurrent use —
+// One Docker value per gopod process. Safe for concurrent use —
 // the underlying *client.Client is.
 type Docker struct {
 	cli *client.Client
@@ -84,7 +84,7 @@ func (d *Docker) Client() *client.Client { return d.cli }
 //     + start.
 //
 // The (cfg, host) pair is applied only when a new container is
-// created. picoclaw does not mutate an already-running container's
+// created. gopod does not mutate an already-running container's
 // config — stop/remove/recreate is the only supported update path.
 func (d *Docker) EnsureRunning(
 	ctx context.Context,
@@ -251,7 +251,7 @@ func (d *Docker) Remove(ctx context.Context, containerID string) error {
 }
 
 // ListPicoclawContainers returns every container on the daemon that
-// carries the picoclaw.chat label, running or not. Used by
+// carries the gopod.chat label, running or not. Used by
 // CleanupLeftovers at boot.
 func (d *Docker) ListPicoclawContainers(ctx context.Context) ([]container.Summary, error) {
 	list, err := d.cli.ContainerList(ctx, container.ListOptions{
@@ -261,7 +261,7 @@ func (d *Docker) ListPicoclawContainers(ctx context.Context) ([]container.Summar
 		),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("docker: list picoclaw containers: %w", err)
+		return nil, fmt.Errorf("docker: list gopod containers: %w", err)
 	}
 	return list, nil
 }

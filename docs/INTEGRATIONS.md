@@ -1,4 +1,4 @@
-# picoclaw — Easy-port integrations from NanoClaw
+# gopod — Easy-port integrations from NanoClaw
 
 > Companion docs: [ARCHITECTURE.md](ARCHITECTURE.md) · [MEMORY.md](MEMORY.md) · [DECISIONS.md](DECISIONS.md) · [GLOSSARY.md](GLOSSARY.md)
 > Status & next steps: [HANDOFF.md](HANDOFF.md) · [../ROADMAP.md](../ROADMAP.md)
@@ -58,7 +58,7 @@ multimodal content block to Claude.
 
 **Go port:** same code as #2 with a configurable base URL:
 ```
-PICOCLAW_WHISPER_URL=http://localhost:8080/inference   # local
+GOPOD_WHISPER_URL=http://localhost:8080/inference   # local
 # or empty → falls back to https://api.openai.com
 ```
 Single env var unlocks both.
@@ -72,7 +72,7 @@ agent calls `pdftotext` (poppler-utils) inside the container.
 
 **Go port — two options:**
 
-(a) **Container-side, like NanoClaw:** install `poppler-utils` in the picoclaw
+(a) **Container-side, like NanoClaw:** install `poppler-utils` in the gopod
 agent container, drop a small `container/tools/pdf-reader` shim. Agent calls it
 when it sees a PDF in the workspace. **Pro:** matches NanoClaw exactly. **Con:**
 bigger image, agent has to invoke the tool explicitly.
@@ -159,8 +159,8 @@ runtime code.
 **NanoClaw model:** subagents posing as different bots in the same group, each
 with its own bot token, so the chat looks like a team conversation.
 
-**Go port:** picoclaw is already Telegram-only — this is just a bot-pool config:
-`PICOCLAW_BOT_TOKENS=token1,token2,token3` mapped to subagent identities. The
+**Go port:** gopod is already Telegram-only — this is just a bot-pool config:
+`GOPOD_BOT_TOKENS=token1,token2,token3` mapped to subagent identities. The
 runner picks which token to send through based on the subagent that emitted the
 message. No new architecture.
 
@@ -196,7 +196,7 @@ tool (agent reads/sends mail when prompted).
 
 **Go port:** ship the **tool** mode only — channel mode duplicates the message
 loop architecture for one extra protocol and isn't worth the complexity for
-picoclaw v0. Use [`google.golang.org/api/gmail/v1`](https://pkg.go.dev/google.golang.org/api/gmail/v1)
+gopod v0. Use [`google.golang.org/api/gmail/v1`](https://pkg.go.dev/google.golang.org/api/gmail/v1)
 + `golang.org/x/oauth2/google`. Register tools `gmail_search`, `gmail_read`,
 `gmail_send` via the agent SDK's tool registry.
 
@@ -225,14 +225,14 @@ or `github.com/dghubble/oauth1` + raw HTTP. Tools: `x_post`, `x_reply`,
 | `add-discord`               | Out of scope                                    |
 | `add-emacs`                 | Out of scope                                    |
 | `add-signal` (implied)      | Out of scope                                    |
-| `convert-to-apple-container`| picoclaw uses Docker SDK directly               |
+| `convert-to-apple-container`| gopod uses Docker SDK directly               |
 | `add-macos-statusbar`       | Not wanted                                      |
 | `init-onecli`               | Replaced by env-var injection                   |
 | `use-native-credential-proxy` | Same — no OneCLI to replace                   |
 | `migrate-from-openclaw`     | Operational, NanoClaw-specific                  |
 | `migrate-nanoclaw`          | Operational                                     |
 | `update-nanoclaw`           | Operational                                     |
-| `update-skills`             | No skills system in picoclaw                    |
+| `update-skills`             | No skills system in gopod                    |
 | `qodo-pr-resolver`          | Dev workflow, not a runtime feature             |
 | `get-qodo-rules`            | Dev workflow                                    |
 | `claw` CLI                  | NanoClaw-specific harness                       |

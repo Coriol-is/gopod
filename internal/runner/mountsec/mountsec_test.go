@@ -151,7 +151,7 @@ func TestValidateRejectsNonexistentHostPath(t *testing.T) {
 		Version: 1,
 		ExtraMounts: []ExtraMount{{
 			Name:          "ghost",
-			HostPath:      "/definitely/does/not/exist/picoclaw-test",
+			HostPath:      "/definitely/does/not/exist/gopod-test",
 			ContainerPath: "/workspace/extra/ghost",
 			Mode:          "ro",
 			AllowedChats:  []string{"*"},
@@ -361,7 +361,7 @@ func TestIsBlockedSamples(t *testing.T) {
 		{"/Users/me/.aws/credentials", true},
 		{"/Users/me/.gnupg", true},
 		{"/Users/me/.docker/config.json", true},
-		{"/Users/me/.config/picoclaw/state.json", true},
+		{"/Users/me/.config/gopod/state.json", true},
 		{"/etc/shadow", true},
 		{"/etc/sudoers", true},
 		{"/etc/sudoers.d/foo", true},
@@ -369,7 +369,7 @@ func TestIsBlockedSamples(t *testing.T) {
 		{"/sys/kernel", true},
 		{"/dev/null", true},
 		{"/Users/me/Downloads/notes.md", false},
-		{"/Users/me/code/picoclaw/main.go", false},
+		{"/Users/me/code/gopod/main.go", false},
 		{"/var/log/system.log", false},
 		{"/Users/me/.envfile-but-not-env", false},
 	}

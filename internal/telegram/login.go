@@ -12,7 +12,7 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
-	"github.com/spaceinvaderz/picoclaw/internal/runner"
+	"github.com/spaceinvaderz/gopod/internal/runner"
 )
 
 // loginTimeout is how long a /login session stays open waiting for
@@ -169,7 +169,7 @@ func (b *Bot) loginHandlerReal(ctx context.Context, _ *bot.Bot, update *models.U
 		loginCancel()
 		exec.DrainAndClose()
 		b.replyText(ctx, m.Chat.ID,
-			"Could not extract the login URL. Check picoclaw logs.")
+			"Could not extract the login URL. Check gopod logs.")
 		return
 	}
 

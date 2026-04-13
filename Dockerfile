@@ -1,5 +1,5 @@
-# Multi-stage build for the picoclaw binary.
-# The final image is scratch-like (distroless) — picoclaw is a single
+# Multi-stage build for the gopod binary.
+# The final image is scratch-like (distroless) — gopod is a single
 # static Go binary with no runtime dependencies.
 
 # --- Build stage ---
@@ -16,21 +16,21 @@ COPY . .
 ARG VERSION=dev
 RUN CGO_ENABLED=0 go build \
     -ldflags="-X main.version=${VERSION}" \
-    -o /picoclaw \
-    ./cmd/picoclaw
+    -o /gopod \
+    ./cmd/gopod
 
 # --- Runtime stage ---
 FROM alpine:3.21
 
 # ca-certificates for HTTPS (Telegram API, OpenAI API).
-# docker-cli for picoclaw to manage agent containers via the
-# mounted docker.sock. picoclaw uses the Go Docker SDK, but
+# docker-cli for gopod to manage agent containers via the
+# mounted docker.sock. gopod uses the Go Docker SDK, but
 # the CLI is useful for debugging inside the compose container.
 RUN apk add --no-cache ca-certificates docker-cli
 
-COPY --from=build /picoclaw /usr/local/bin/picoclaw
+COPY --from=build /gopod /usr/local/bin/gopod
 
-# picoclaw reads .env from the working directory.
+# gopod reads .env from the working directory.
 WORKDIR /app
 
-ENTRYPOINT ["picoclaw"]
+ENTRYPOINT ["gopod"]

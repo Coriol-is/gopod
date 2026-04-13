@@ -13,22 +13,22 @@ import (
 )
 
 // SpawnConfig is the full input to BuildContainerArgs — everything
-// picoclaw needs to decide to start one agent container for one chat.
+// gopod needs to decide to start one agent container for one chat.
 //
 // Every field must be populated by the caller. The resulting
 // (container.Config, container.HostConfig) pair is what we hand to
 // client.ContainerCreate.
 type SpawnConfig struct {
-	// Image is the agent container image tag (e.g. "picoclaw-agent:latest").
+	// Image is the agent container image tag (e.g. "gopod-agent:latest").
 	Image string
 
 	// ChatFolder is the chat identifier; folds into the container name,
-	// the picoclaw.chat label, and nothing else.
+	// the gopod.chat label, and nothing else.
 	ChatFolder string
 
-	// Version is the picoclaw build version string. Recorded as a
+	// Version is the gopod build version string. Recorded as a
 	// container label so boot-time cleanup can evict leftover containers
-	// spawned by an older picoclaw.
+	// spawned by an older gopod.
 	Version string
 
 	// Mounts is the bind-mount list from BuildMounts. Converted to
@@ -60,7 +60,7 @@ type SpawnConfig struct {
 	HomeDir string
 
 	// EnvAllowlist is the list of environment variable names that
-	// should be forwarded from the picoclaw process into the agent
+	// should be forwarded from the gopod process into the agent
 	// container. Values are read from os.Environ() at spawn time; only
 	// names, never values, appear in this struct (per D012). Unknown
 	// names are silently dropped — it is not an error to allow a var
@@ -98,13 +98,13 @@ func (c SpawnConfig) Validate() error {
 	return nil
 }
 
-// ContainerName returns the deterministic container name picoclaw uses
+// ContainerName returns the deterministic container name gopod uses
 // for a chat. Matches the `--name` flag in ISOLATION.md §6.1.
 func ContainerName(chatFolder string) string {
-	return "picoclaw-" + chatFolder
+	return "gopod-" + chatFolder
 }
 
-// BuildContainerArgs is the single place where picoclaw turns a
+// BuildContainerArgs is the single place where gopod turns a
 // validated SpawnConfig into the exact (Config, HostConfig, name)
 // triple that goes into client.ContainerCreate. Every flag from
 // docs/ISOLATION.md §6 lives here.
@@ -132,21 +132,21 @@ func BuildContainerArgs(cfg SpawnConfig) (*container.Config, *container.HostConf
 	}
 	env := append(buildEnvSlice(cfg.EnvAllowlist),
 		"HOME="+homeDir,
-		"PICOCLAW_CHAT_FOLDER="+cfg.ChatFolder,
+		"GOPOD_CHAT_FOLDER="+cfg.ChatFolder,
 	)
 
 	conf := &container.Config{
 		Image:      cfg.Image,
 		User:       fmt.Sprintf("%d:%d", cfg.UID, cfg.GID),
 		WorkingDir: "/workspace/chat",
-		// Long-lived container: picoclaw owns the agent loop via
+		// Long-lived container: gopod owns the agent loop via
 		// `docker exec`, and the container's foreground process just
 		// waits forever until we stop it. The actual sleep loop lives
 		// in the image's entrypoint (M5e); Cmd is left empty here so
 		// the image default wins.
 		Labels: map[string]string{
-			"picoclaw.chat":    cfg.ChatFolder,
-			"picoclaw.version": cfg.Version,
+			"gopod.chat":    cfg.ChatFolder,
+			"gopod.version": cfg.Version,
 		},
 		Env:             env,
 		AttachStdin:     false,
@@ -187,7 +187,7 @@ func BuildContainerArgs(cfg SpawnConfig) (*container.Config, *container.HostConf
 			"no-new-privileges:true",
 		},
 
-		// picoclaw decides restart policy, not Docker. Crashes should
+		// gopod decides restart policy, not Docker. Crashes should
 		// be visible; auto-restart would hide them.
 		RestartPolicy: container.RestartPolicy{Name: "no"},
 
@@ -231,7 +231,7 @@ func BuildContainerArgs(cfg SpawnConfig) (*container.Config, *container.HostConf
 	return conf, host, ContainerName(cfg.ChatFolder), nil
 }
 
-// toDockerMounts converts picoclaw's internal Mount slice to the Docker
+// toDockerMounts converts gopod's internal Mount slice to the Docker
 // SDK's mount.Mount slice.
 func toDockerMounts(in []Mount) []mount.Mount {
 	out := make([]mount.Mount, len(in))
@@ -252,7 +252,7 @@ func toDockerMounts(in []Mount) []mount.Mount {
 // dropped — it is not an error for a chat to allow a variable that
 // doesn't exist, just a no-op.
 //
-// Per [D012](../../docs/DECISIONS.md) this is the only place picoclaw
+// Per [D012](../../docs/DECISIONS.md) this is the only place gopod
 // reads secret-bearing environment variables; the values never hit the
 // logs, never get serialized to disk, and never live in memory outside
 // this Env slice.
@@ -271,7 +271,7 @@ func buildEnvSlice(allow []string) []string {
 	return out
 }
 
-// ParseMemoryBytes parses a picoclaw memory cap string like "4g" or
+// ParseMemoryBytes parses a gopod memory cap string like "4g" or
 // "512m" into bytes. Units are case-insensitive: k=KiB, m=MiB, g=GiB.
 // Bare integers are treated as bytes. Returned for reuse from config
 // loading in M5f.

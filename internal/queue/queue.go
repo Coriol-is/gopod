@@ -1,4 +1,4 @@
-// Package queue implements picoclaw's per-chat serialization and global
+// Package queue implements gopod's per-chat serialization and global
 // concurrency cap for agent runs.
 //
 // The design mirrors NanoClaw's `src/group-queue.ts`. Key properties:
@@ -50,7 +50,7 @@ type Item struct {
 // to claude (cheapest) or to format a multi-message prompt.
 type Handler func(ctx context.Context, items []Item) error
 
-// Queue is picoclaw's agent-run scheduler.
+// Queue is gopod's agent-run scheduler.
 type Queue struct {
 	handler    Handler
 	maxConc    int

@@ -12,7 +12,7 @@ type CodexProvider struct {
 
 func NewCodexProvider(image string) *CodexProvider {
 	if image == "" {
-		image = "picoclaw-agent-codex:latest"
+		image = "gopod-agent-codex:latest"
 	}
 	return &CodexProvider{image: image}
 }
@@ -46,7 +46,7 @@ func (p *CodexProvider) RestoreConfigCmd() []string {
 	// Codex requires a trusted git repo in the working directory.
 	// Init one if it doesn't exist. Also skip git repo check via config.
 	return []string{"sh", "-c",
-		`cd /workspace/chat && [ -d .git ] || git init -q && git config user.email "agent@picoclaw" && git config user.name "picoclaw"`}
+		`cd /workspace/chat && [ -d .git ] || git init -q && git config user.email "agent@gopod" && git config user.name "gopod"`}
 }
 
 func (p *CodexProvider) AuthStatusCmd() []string {
@@ -83,7 +83,7 @@ func (p *CodexProvider) IsNotLoggedInError(stderr, stdout string) bool {
 
 func (p *CodexProvider) LoginCmd() []string {
 	// --device-auth: prints a URL + one-time code. User opens URL in
-	// browser, enters the code, completes auth. picoclaw's /login
+	// browser, enters the code, completes auth. gopod's /login
 	// handler forwards the URL + code to Telegram.
 	return []string{"codex", "login", "--device-auth"}
 }

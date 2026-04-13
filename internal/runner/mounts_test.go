@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/spaceinvaderz/picoclaw/internal/runner/mountsec"
+	"github.com/spaceinvaderz/gopod/internal/runner/mountsec"
 )
 
 // mkPaths builds a fully-validated Paths struct with every directory
@@ -210,7 +210,7 @@ func TestBuildMountsAllowlistExtras(t *testing.T) {
 		t.Fatalf("EnsureChatDirs: %v", err)
 	}
 
-	// Create two real directories outside the picoclaw tree to use as
+	// Create two real directories outside the gopod tree to use as
 	// host_path targets.
 	codeDir := filepath.Join(t.TempDir(), "code")
 	dlDir := filepath.Join(t.TempDir(), "downloads")

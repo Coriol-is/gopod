@@ -6,7 +6,7 @@ import (
 	"fmt"
 )
 
-// ChatRecord describes one row in the chats table — every chat picoclaw
+// ChatRecord describes one row in the chats table — every chat gopod
 // has ever heard from, registered or not.
 type ChatRecord struct {
 	JID             string // "tg:<chat_id>"

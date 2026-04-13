@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// AuthStatus is picoclaw's parsed view of `claude auth status --json`
+// AuthStatus is gopod's parsed view of `claude auth status --json`
 // inside an agent container.
 //
 // Mirror of the JSON keys Claude Code emits as of CLI 2.1.x:
@@ -19,7 +19,7 @@ import (
 //	  "apiProvider": "firstParty"
 //	}
 //
-// Stable enough to depend on for picoclaw's auth gating; if a future
+// Stable enough to depend on for gopod's auth gating; if a future
 // Claude Code release renames the keys, this struct gets a small
 // patch and the M6 code path keeps working.
 type AuthStatus struct {
@@ -172,7 +172,7 @@ func (d *Docker) classifyAuthError(ctx context.Context, containerID string) erro
 
 // isNotLoggedInError detects Claude Code's "Not logged in" failure mode
 // from stderr or stdout. Verified against Claude Code 2.1.x against
-// the picoclaw-agent:latest image: a non-authenticated invocation of
+// the gopod-agent:latest image: a non-authenticated invocation of
 // `claude -p hello` exits non-zero and prints "Not logged in · Please
 // run /login" to stderr.
 //

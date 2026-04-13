@@ -1,4 +1,4 @@
-# picoclaw
+# gopod
 
 A personal Claude assistant on Telegram, written in Go. One channel,
 one language, per-chat container isolation, native long-term memory
@@ -11,16 +11,16 @@ A focused descendant of [NanoClaw](https://github.com/spaceinvaderz/nanoclaw):
 
 ```sh
 # 1. Clone and build the agent image
-git clone https://github.com/spaceinvaderz/picoclaw
-cd picoclaw
-docker build -t picoclaw-agent:latest container/
+git clone https://github.com/spaceinvaderz/gopod
+cd gopod
+docker build -t gopod-agent:latest container/
 
 # 2. Configure
 cp .env.example .env
-# Edit .env: set TELEGRAM_BOT_TOKEN, PICOCLAW_OWNER_CHAT_ID, OPENAI_API_KEY
+# Edit .env: set TELEGRAM_BOT_TOKEN, GOPOD_OWNER_CHAT_ID, OPENAI_API_KEY
 
 # 3. Run
-go run ./cmd/picoclaw
+go run ./cmd/gopod
 
 # 4. Open your Telegram bot chat and type /login
 # 5. Complete the OAuth flow → send a message → get a Claude reply
@@ -54,13 +54,13 @@ go run ./cmd/picoclaw
 | `/remember <fact>` | save to long-term memory |
 | `/recall <query>` | search memories |
 | `/voice <mode>` | set reply mode: auto, voice, text, voice+text |
-| `/logs` | (owner) show recent picoclaw logs |
+| `/logs` | (owner) show recent gopod logs |
 | `/version` | build info |
 
 ## Architecture
 
 ```
-picoclaw (Go, host)
+gopod (Go, host)
 ├── Telegram long-poll
 ├── Queue (per-chat serialization, global cap)
 ├── Runner (Docker SDK, container lifecycle)
@@ -80,23 +80,23 @@ Agent containers (node + Claude Code CLI)
 
 ```sh
 # Set host paths in .env:
-PICOCLAW_HOST_DATA_DIR=/opt/picoclaw/data
-PICOCLAW_HOST_REPO_DIR=/opt/picoclaw/repo
-PICOCLAW_UID=1000
-PICOCLAW_GID=1000
+GOPOD_HOST_DATA_DIR=/opt/gopod/data
+GOPOD_HOST_REPO_DIR=/opt/gopod/repo
+GOPOD_UID=1000
+GOPOD_GID=1000
 
 docker compose build
 docker compose up -d
 ```
 
-picoclaw runs inside a container managing agent containers as siblings
+gopod runs inside a container managing agent containers as siblings
 on the same Docker daemon (docker.sock mount, not docker-in-docker).
 
 ## Layout
 
 ```
-picoclaw/
-├── cmd/picoclaw/           main binary
+gopod/
+├── cmd/gopod/           main binary
 ├── internal/
 │   ├── config/             env loader
 │   ├── store/              SQLite persistence
@@ -112,7 +112,7 @@ picoclaw/
 ├── container/
 │   ├── Dockerfile          agent image (node + claude CLI)
 │   └── skills/memory/      memory API skill
-├── Dockerfile              picoclaw binary image
+├── Dockerfile              gopod binary image
 ├── docker-compose.yml      production deployment
 ├── docs/                   design documents
 └── data/                   runtime state (gitignored)

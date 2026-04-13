@@ -6,7 +6,7 @@ import (
 	"fmt"
 )
 
-// Message is the picoclaw representation of one Telegram message row.
+// Message is the gopod representation of one Telegram message row.
 //
 // Field meaning mirrors the messages table in schema.go. Times are
 // always unix milliseconds. ChatJID is "tg:<chat_id>". Sender is the

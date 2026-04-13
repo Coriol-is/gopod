@@ -1,17 +1,17 @@
-# picoclaw agent container
+# gopod agent container
 
-The image picoclaw spawns per registered chat. See
+The image gopod spawns per registered chat. See
 [../docs/ARCHITECTURE.md §5.2](../docs/ARCHITECTURE.md) and
 [../docs/ISOLATION.md](../docs/ISOLATION.md) for the design rationale.
 
 ## Build
 
 ```sh
-docker build -t picoclaw-agent:latest container/
+docker build -t gopod-agent:latest container/
 ```
 
 The resulting image runs as the non-root `node` user inside, but
-picoclaw overrides this at spawn time with `--user <host_uid>:<host_gid>`
+gopod overrides this at spawn time with `--user <host_uid>:<host_gid>`
 so bind-mounted files stay owned by the operator on the host
 ([D013](../docs/DECISIONS.md) / ISOLATION.md §6.1).
 
@@ -20,7 +20,7 @@ so bind-mounted files stay owned by the operator on the host
 | Component | Why |
 |---|---|
 | `node:22-slim` base | `@anthropic-ai/claude-code` is a Node CLI |
-| `@anthropic-ai/claude-code` | the agent picoclaw drives via `docker exec` |
+| `@anthropic-ai/claude-code` | the agent gopod drives via `docker exec` |
 | `git` | agent workflows and self-modification |
 | `ripgrep` | search tool Claude Code shells out to |
 | `ca-certificates` | outbound TLS to Anthropic API |

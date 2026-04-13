@@ -1,17 +1,17 @@
-// Package chattmpl seeds new picoclaw chat workspaces with default
+// Package chattmpl seeds new gopod chat workspaces with default
 // CLAUDE.md and MEMORY.md files so the agent wakes up with identity,
 // a workspace map, and memory format hints instead of an empty
 // directory.
 //
-// Templates are go:embed-bundled into the picoclaw binary; there is
+// Templates are go:embed-bundled into the gopod binary; there is
 // nothing to copy from the host filesystem at install time.
 //
 // Seeding rules:
 //
-//   - Files are written ONLY if they do not already exist. picoclaw
+//   - Files are written ONLY if they do not already exist. gopod
 //     never overwrites operator-edited or agent-edited content.
 //   - File mode is 0644. The owner is the host operator (whatever
-//     uid runs picoclaw); the agent inside the container reads via
+//     uid runs gopod); the agent inside the container reads via
 //     bind mount.
 //   - Templates render with a tiny Vars struct (chat folder, owner
 //     flag, current date). The text/template syntax is plain Go.

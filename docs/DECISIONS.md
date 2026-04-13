@@ -1,4 +1,4 @@
-# picoclaw — Architectural Decision Log
+# gopod — Architectural Decision Log
 
 ADR-style. Append-only. To overturn an old decision, write a new entry that
 references and supersedes it (`Supersedes: D###`); never delete or rewrite
@@ -17,11 +17,11 @@ the old one in place. Each entry: **context → decision → consequences**.
 Discord, Gmail, Signal, Emacs, X) via a self-registering channel registry.
 This is the largest source of architectural complexity in NanoClaw.
 
-**Decision.** picoclaw supports exactly one channel — Telegram — wired
+**Decision.** gopod supports exactly one channel — Telegram — wired
 statically into `internal/telegram`. No registry, no abstraction over
 messaging providers, no JID prefix system.
 
-**Consequences.** Trivial code paths in `cmd/picoclaw` and `internal/runner`.
+**Consequences.** Trivial code paths in `cmd/gopod` and `internal/runner`.
 Adding a second channel later would be a real refactor; that is acceptable
 because we don't intend to.
 
@@ -57,9 +57,9 @@ wastes the heavy `claude` CLI startup. We want isolation per chat without
 paying startup on every turn.
 
 **Decision.** Container is long-lived per chat (label
-`picoclaw.chat=<folder>`). Each message triggers a fresh `docker exec` of
+`gopod.chat=<folder>`). Each message triggers a fresh `docker exec` of
 `claude` against the running container. Idle-killed after
-`PICOCLAW_IDLE_TIMEOUT` (default 30 min). On startup, leftover containers are
+`GOPOD_IDLE_TIMEOUT` (default 30 min). On startup, leftover containers are
 listed and stopped.
 
 **Consequences.** Cheaper turn latency. State recovery for orphaned containers
@@ -75,7 +75,7 @@ in practice, fall back to NanoClaw's per-message model — note in HANDOFF.md.
 **Supersedes:** initial draft choice of `modernc.org/sqlite` in early
 ARCHITECTURE.md notes (never recorded as an ADR)
 
-**Context.** picoclaw needs vector search for the long-term memory layer.
+**Context.** gopod needs vector search for the long-term memory layer.
 `sqlite-vec` is the only actively maintained vector extension for SQLite. Its
 official Go bindings cover three drivers: `mattn/go-sqlite3` (CGO),
 `ncruces/go-sqlite3` (WASM, no CGO), and a third-party `viant/sqlite-vec`
@@ -120,7 +120,7 @@ identity-reasoning use case becomes critical, Honcho slots in cleanly.
 **Context.** NanoClaw distinguishes a privileged "main group" with extra
 filesystem access and the ability to schedule tasks across other groups.
 
-**Decision.** picoclaw uses a single `PICOCLAW_OWNER_CHAT_ID` env var. The
+**Decision.** gopod uses a single `GOPOD_OWNER_CHAT_ID` env var. The
 chat with that ID is the only one that can register new chats, schedule
 tasks for other chats, see the project root inside its container, and
 mount the SQLite store RW.
@@ -156,7 +156,7 @@ calling path before doing anything else.
 **Context.** NanoClaw uses OneCLI as a credential gateway, intercepting HTTPS
 requests inside the container and injecting tokens. Secure but heavy.
 
-**Decision.** picoclaw injects `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.
+**Decision.** gopod injects `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.
 into the container as environment variables on `ContainerCreate`. Owner chat
 gets the full set; non-owner chats get only what they need.
 
@@ -177,19 +177,19 @@ operational, container) where feature skills are added by merging
 `skill/*` branches from external git remotes. This works but is brittle
 and TypeScript-shaped — it doesn't translate to Go at all.
 
-**Decision.** picoclaw ships a smaller, idiomatic-for-Go skill ecosystem:
+**Decision.** gopod ships a smaller, idiomatic-for-Go skill ecosystem:
 
 1. **Container skills** — drop a directory into `container/skills/<name>/`
    containing a `SKILL.md` plus optional scripts. The directory is mounted
    into the agent container at `/home/node/.claude/skills/<name>/` exactly
    like NanoClaw's container skills. Zero Go code, zero rebuild.
 2. **MCP skills** — drop a directory into `skills/mcp/<name>/` containing
-   `manifest.json` (command, args, env, scope). picoclaw spawns the MCP
+   `manifest.json` (command, args, env, scope). gopod spawns the MCP
    server (or HTTP-connects to it) per chat at agent startup and registers
    its tools with the agent SDK. Adds new agent capabilities without
-   recompiling picoclaw.
+   recompiling gopod.
 3. **Dev-time skills** — `.claude/skills/<name>/` with Claude Code slash
-   commands for picoclaw *maintainers* (e.g. `/release`, `/migrate-schema`).
+   commands for gopod *maintainers* (e.g. `/release`, `/migrate-schema`).
    Not loaded at runtime.
 
 NanoClaw's "feature skills" (which add Go code) become **regular Go packages**
@@ -197,9 +197,9 @@ in `internal/`, conditionally enabled by env vars. They are not skills.
 
 Full design in [SKILLS.md](SKILLS.md).
 
-**Consequences.** picoclaw has an extension story without inheriting
+**Consequences.** gopod has an extension story without inheriting
 NanoClaw's branch-merge complexity. The line between "skill" and "core
-feature" is sharp: anything that requires recompiling picoclaw is a feature,
+feature" is sharp: anything that requires recompiling gopod is a feature,
 anything that doesn't is a skill.
 
 ---
@@ -210,11 +210,11 @@ anything that doesn't is a skill.
 **Status:** Accepted
 
 **Context.** NanoClaw has a macOS menubar tray skill. We considered porting
-it via `getlantern/systray` as a separate `cmd/picoclaw-tray` binary.
+it via `getlantern/systray` as a separate `cmd/gopod-tray` binary.
 
 **Decision.** Skip. User explicitly does not want it.
 
-**Consequences.** No CGO ever needed in any picoclaw binary. Service
+**Consequences.** No CGO ever needed in any gopod binary. Service
 management stays CLI-only (launchd plist on macOS, systemd unit on Linux).
 
 ---
@@ -224,7 +224,7 @@ management stays CLI-only (launchd plist on macOS, systemd unit on Linux).
 **Date:** 2026-04-09
 **Status:** Accepted
 
-**Context.** picoclaw has a growing set of admin operations: scheduled task
+**Context.** gopod has a growing set of admin operations: scheduled task
 control, chat registration, container restart, skill management, log
 inspection, memory inspection, system health. Without a single dispatch
 layer these end up scattered across `internal/telegram` slash handlers and
@@ -242,7 +242,7 @@ Router based on the handler's declared `Perm` (`Public`, `ChatLocal`,
 
 **Consequences.** One auth invariant. Telegram and CLI share handlers and
 output rendering. New handlers are 1 file + 1 line of registration. Future
-frontends (web UI, MCP-server-mode picoclaw, etc.) plug in as new
+frontends (web UI, MCP-server-mode gopod, etc.) plug in as new
 translators without touching handlers. The scheduler, skills loader, memory
 layer, and queue all register their commands through the Router as part of
 their own setup, so M4 onwards depends on M3.5 being in place.
@@ -266,12 +266,12 @@ secrets sneaking into committed config files.
 **Decision.** Hard rule, applied uniformly:
 
 1. **Source of truth = process environment.** `os.Getenv` is the only API
-   that returns secret values. picoclaw itself never opens, parses, or
+   that returns secret values. gopod itself never opens, parses, or
    writes a file containing secret values.
 2. **`.env` is allowed only as a developer convenience.** It is in
    `.gitignore`, loaded by `godotenv` at process start to populate
    `os.Environ()`, and from that point on it does not exist as far as the
-   rest of picoclaw is concerned. Production deployments use systemd
+   rest of gopod is concerned. Production deployments use systemd
    `EnvironmentFile=` or launchd `EnvironmentVariables`.
 3. **No secrets in any committed file.** Not in `chats/<folder>/skills.json`,
    not in `skills/mcp/<name>/manifest.json`, not in `groups/<name>/CLAUDE.md`,
@@ -290,7 +290,7 @@ secrets sneaking into committed config files.
 **Consequences.** One source of truth, no syncing problem, no on-disk
 secret material to leak via backup tools or `git status`. Operators who
 want OS keychain integration use a wrapper that exports env vars before
-launching picoclaw — picoclaw itself stays minimal. Per-chat credential
+launching gopod — gopod itself stays minimal. Per-chat credential
 isolation is coarse (allow-list of variable names) and that is acceptable
 for v0; revisit only if a real use case demands per-chat *values*.
 
@@ -307,8 +307,8 @@ on container-per-chat with `docker exec` per turn but did not pin down the
 *security posture* of those containers. NanoClaw has two pieces of prior art —
 `src/mount-security.ts` (allowlist + blocked patterns + symlink resolution) and
 `src/container-runner.ts` (the actual `docker run` flag set) — and we need a
-single picoclaw-shaped policy that survives the agent doing `cat ~/.ssh/id_rsa`,
-the agent following a symlink out of its workspace, and a previous picoclaw
+single gopod-shaped policy that survives the agent doing `cat ~/.ssh/id_rsa`,
+the agent following a symlink out of its workspace, and a previous gopod
 process being killed mid-run leaving a container behind.
 
 A separate hedge in [ARCHITECTURE.md §3](ARCHITECTURE.md) said "compile-time
@@ -316,7 +316,7 @@ path policy + a small `mount.json` next to binary". That was a placeholder; we
 now need to commit.
 
 **Decision.** Three-tier mount model (owner / registered / unregistered),
-single allowlist file at `${PICOCLAW_DATA_DIR}/mount-allowlist.json` (chmod
+single allowlist file at `${GOPOD_DATA_DIR}/mount-allowlist.json` (chmod
 0600, refused to start if wider), compiled-in blocked-pattern list that even
 the owner cannot override, and a fixed Docker spawn flag set: `--read-only`,
 `--cap-drop=ALL`, `--security-opt=no-new-privileges:true`, `seccomp=default`,
@@ -331,7 +331,7 @@ allowlist validator can be tested in complete isolation from the Docker SDK,
 with `t.TempDir` + `os.Symlink` based fixtures.
 
 **Consequences.** A single, audited mount construction path. `.env`, `~/.ssh`,
-`~/.aws`, `~/.gnupg`, `~/.docker`, `~/.config/picoclaw`, `id_rsa*`,
+`~/.aws`, `~/.gnupg`, `~/.docker`, `~/.config/gopod`, `id_rsa*`,
 `credentials*`, `/etc/shadow`, `/proc`, `/sys`, `/dev` are unmountable for
 **any** chat including the owner. Symlinks are resolved before pattern matching
 so a symlink-to-secrets attack fails. The agent never runs as root inside the
@@ -347,11 +347,11 @@ ARCHITECTURE.md placeholder of "`mount.json` next to binary".
 **Date:** 2026-04-09
 **Status:** Accepted
 
-**Context.** picoclaw needs visibility into agent latency, container churn,
+**Context.** gopod needs visibility into agent latency, container churn,
 queue depth, memory operations, and LLM token usage so the operator can spot
 when an agent is stuck or burning tokens. Three signals are on the table:
 logs, metrics, traces. The constraint pulling against "instrument everything"
-is that picoclaw is a *personal* binary on a *personal* machine — fresh
+is that gopod is a *personal* binary on a *personal* machine — fresh
 installs must not open ports the operator did not ask for or send telemetry
 anywhere unexpected.
 
@@ -361,14 +361,14 @@ anywhere unexpected.
    (already covered by [CONTROL.md §9](CONTROL.md) / M3.5 step C5). stderr +
    `logs` table, with the [D012](#d012--secrets-in-environment-variables-only-never-in-config-files)
    redaction allowlist applied on the way in.
-2. **Metrics — opt-in via `PICOCLAW_METRICS_ADDR`.** When unset (default), no
+2. **Metrics — opt-in via `GOPOD_METRICS_ADDR`.** When unset (default), no
    listener is started. When set (e.g. `127.0.0.1:9090`), a tiny dedicated
    `http.Server` exposes `/metrics` (Prometheus exposition via
    `prometheus/client_golang`) and `/healthz`. No other handlers, no auth —
    bind to loopback or put a reverse proxy in front. The control plane is
    **not** on this listener (per [D011](#d011--unified-command-gateway-internalcontrol)
    the control plane has no HTTP frontend in v0).
-3. **Traces — opt-in via `PICOCLAW_OTLP_ENDPOINT`.** When unset, the global
+3. **Traces — opt-in via `GOPOD_OTLP_ENDPOINT`.** When unset, the global
    tracer provider is the OTel no-op implementation; every `tracer.Start` is
    free, every span attribute write is dropped. When set, an OTLP exporter
    (gRPC or HTTP, auto-derived from URL scheme) batches spans to the
@@ -378,13 +378,13 @@ anywhere unexpected.
 
 Cardinality is bounded by labelling only on closed sets (`provider`, `model`,
 `tool`, `skill`, `kind`, `result`) plus `chat`; an escape hatch
-`PICOCLAW_METRICS_DROP_CHAT_LABEL=1` exists for users with many chats. Span
+`GOPOD_METRICS_DROP_CHAT_LABEL=1` exists for users with many chats. Span
 attribute setters go through `obs.SetAttr`, which applies the same
 `(?i)token|key|secret|password|cookie|auth` redaction matcher as the slog
 handler.
 
 `internal/observability` is the only package new code touches to add a
-metric or a span; `cmd/picoclaw/main.go` calls `Init` once and gets back a
+metric or a span; `cmd/gopod/main.go` calls `Init` once and gets back a
 single `shutdown(ctx)` that flushes both subsystems with a 5-second grace
 period. Slotted into [ROADMAP.md](../ROADMAP.md) as **M3.6** with sub-steps
 **O1–O6** (see [OBSERVABILITY.md §6](OBSERVABILITY.md)).
@@ -393,10 +393,10 @@ period. Slotted into [ROADMAP.md](../ROADMAP.md) as **M3.6** with sub-steps
 outbound. Operators who want a Grafana stack flip one env var; operators who
 want Honeycomb flip two. Adding metrics/spans to a new package is a local
 change in that package — no central "log this thing" indirection. The OTel
-no-op default means picoclaw cannot accidentally hard-depend on a collector
+no-op default means gopod cannot accidentally hard-depend on a collector
 being reachable. Refines [D012](#d012--secrets-in-environment-variables-only-never-in-config-files):
 the one observability env var that may carry a secret value
-(`PICOCLAW_OTLP_HEADERS`) is read into memory at process start, used to
+(`GOPOD_OTLP_HEADERS`) is read into memory at process start, used to
 construct exporter headers, and runs through the same redaction matcher if
 ever logged.
 
@@ -424,7 +424,7 @@ option, and `Options.ExtraArgs` appends *after* the SDK args (so it goes to
 Claude, not to docker). `exec.LookPath` runs on the raw `cliPath`, so a
 multi-word string doesn't work either.
 
-picoclaw uses a tiny per-chat wrapper script as `CLIPath`:
+gopod uses a tiny per-chat wrapper script as `CLIPath`:
 
 ```sh
 #!/bin/sh
@@ -432,7 +432,7 @@ picoclaw uses a tiny per-chat wrapper script as `CLIPath`:
 exec docker exec -i \
   -e ANTHROPIC_API_KEY \
   -e OTHER_VAR_FROM_ALLOWLIST \
-  "picoclaw-<chat>" \
+  "gopod-<chat>" \
   claude "$@"
 ```
 
@@ -448,7 +448,7 @@ client := claude.NewClient(claude.Options{
 })
 ```
 
-`PICOCLAW_NO_CONTAINER=1` (dev fallback) sets `CLIPath = "claude"` to talk to
+`GOPOD_NO_CONTAINER=1` (dev fallback) sets `CLIPath = "claude"` to talk to
 host-installed Claude directly.
 
 **Consequences.** D003 holds — container isolation is preserved, no host
@@ -503,15 +503,15 @@ analysis:
    1536 (4 KiB vs 6 KiB per vector at float32) with no meaningful retrieval
    loss.
 
-The picoclaw `memories` table stores `(model, dim)` next to every vector so
+The gopod `memories` table stores `(model, dim)` next to every vector so
 a future migration to e.g. `-3-large` at 1024 or 1536 is a clean re-embed
 pass rather than a silent corruption: the runner refuses to mix vectors from
 different `(model, dim)` tuples in the same query.
 
-**Consequences.** `PICOCLAW_EMBEDDING_MODEL=text-embedding-3-small` and
-`PICOCLAW_EMBEDDING_DIM=1024` are baked as the defaults; the schema in
+**Consequences.** `GOPOD_EMBEDDING_MODEL=text-embedding-3-small` and
+`GOPOD_EMBEDDING_DIM=1024` are baked as the defaults; the schema in
 [MEMORY.md §3](MEMORY.md) (`embedding float[1024]`) is now load-bearing.
-Operators can switch providers via `PICOCLAW_EMBEDDING_PROVIDER` but doing
+Operators can switch providers via `GOPOD_EMBEDDING_PROVIDER` but doing
 so on an existing store requires a re-embed pass. Client-side truncation is
 **banned** — if the runner ever needs a smaller vector it must request it
 from the API with a new `dimensions` value; truncating a stored vector
@@ -554,7 +554,7 @@ and use the asg017 ncruces binding for side-effect import in
 `github.com/ncruces/go-sqlite3/embed` — the asg017 init() already populates
 `sqlite3.Binary`, and the two would race.
 
-**Consequences.** picoclaw runs on a year-old SQLite WASM build until either
+**Consequences.** gopod runs on a year-old SQLite WASM build until either
 (a) asg017 publishes a binding compatible with current `ncruces/go-sqlite3`,
 or (b) we vendor our own sqlite-vec-bundled wasm. The pin is invisible to
 consumers — `sql.Open("sqlite3", …)` still works exactly as documented.
@@ -574,7 +574,7 @@ both `vec_version()` and a real KNN query against `memory_vec`).
 **Status:** Accepted
 **Refines:** [D002](#d002--go-no-typescript-in-repo), [D003](#d003--container-per-chat-long-lived-exec-per-turn), [D008](#d008--no-onecli-secrets-via-env-vars)
 
-**Context.** picoclaw needs Anthropic credentials. There are two surfaces:
+**Context.** gopod needs Anthropic credentials. There are two surfaces:
 
 1. **API key** (`ANTHROPIC_API_KEY`) — issued via console.anthropic.com,
    pay-per-token. Used by [Path A](ARCHITECTURE.md) (`anthropic-sdk-go` direct
@@ -587,12 +587,12 @@ The original roadmap (M2 → M3 → M3.5 → M3.6 → M4 → M5 → M6) put the 
 path first. Two problems showed up while planning M2:
 
 - **API key is a meaningful adoption tax.** Pro/Max subscribers should not
-  have to provision a separate billing surface to use picoclaw.
+  have to provision a separate billing surface to use gopod.
 - **Anthropic does not publish an OAuth client API for third parties.**
-  picoclaw cannot legitimately implement the Pro/Max login flow itself —
+  gopod cannot legitimately implement the Pro/Max login flow itself —
   the endpoints are an implementation detail of Claude Code, the contract
   is unstable, and reverse-engineering is fragile and ToS-grey. Whatever
-  picoclaw does about web-auth has to **proxy Claude Code's own login
+  gopod does about web-auth has to **proxy Claude Code's own login
   flow**, not replicate it.
 
 There is, however, a clean primitive available: `claude /login` running
@@ -602,14 +602,14 @@ A `/login` slash command in Telegram can spawn that flow inside the
 container, intercept the verification URL Claude prints to stdout, forward
 it to the user via the bot, wait for `claude` to report success on stdout,
 and never touch a credential value itself. The trust boundary stays at the
-container; picoclaw stays a thin orchestrator.
+container; gopod stays a thin orchestrator.
 
 **Decision.** Three coupled changes:
 
 1. **Drop M2 (Direct API agent) from the critical path.** It is downgraded
    to **optional**: if `ANTHROPIC_API_KEY` is set in the environment, the
    direct-API path is available as an opt-in mode for cheap-chat use cases.
-   If unset (the new default), picoclaw simply doesn't expose Path A and
+   If unset (the new default), gopod simply doesn't expose Path A and
    nothing fails. M2 status changes from ⬜ to ⏸️ in the roadmap.
 
 2. **Promote M5 + M6 to the critical path** as the first agent
@@ -624,7 +624,7 @@ container; picoclaw stays a thin orchestrator.
 3. **Add M6.5: Telegram-mediated `/login`.** A new milestone that wires the
    `/login` slash command to a small interactive proxy:
 
-   - User sends `/login` in their picoclaw chat.
+   - User sends `/login` in their gopod chat.
    - Bot ensures the agent container for that chat is running (boots one
      per M5 if needed).
    - Bot runs `docker exec -i <name> claude /login` and reads the CLI's
@@ -635,7 +635,7 @@ container; picoclaw stays a thin orchestrator.
      as <email>" (or whatever Claude prints) and exits the proxy.
    - Credentials live in `/home/node/.claude/` inside the container, which
      is bind-mounted from `data/sessions/<chat>/.claude/` on the host
-     ([ISOLATION.md §3](ISOLATION.md)). picoclaw never reads, parses, or
+     ([ISOLATION.md §3](ISOLATION.md)). gopod never reads, parses, or
      transmits the credential bytes.
 
    M6.5 has no host-side OAuth code, no callback listener, no public URL
@@ -646,16 +646,16 @@ container; picoclaw stays a thin orchestrator.
 **Consequences.**
 
 - **Faster time to first real agent reply.** Pro/Max users get a working
-  picoclaw the moment M6.5 lands; no API-key provisioning step.
+  gopod the moment M6.5 lands; no API-key provisioning step.
 - **CLI subcommands stay deferred.** The earlier ask "do we need a CLI
   frontend for onboarding before M3.5?" answers no — onboarding goes
   through Telegram. The CLI continues to slot in at M3.5 alongside the
   Telegram frontend, both behind the same `internal/control` Router.
-- **picoclaw never holds Pro/Max credentials in process memory.** They
+- **gopod never holds Pro/Max credentials in process memory.** They
   live exclusively in the container-mounted directory and Claude Code
   manages their lifecycle. This is strictly stronger than the API-key
   path under [D012](#d012--secrets-in-environment-variables-only-never-in-config-files):
-  there is no env var, no file picoclaw reads, no log line that could
+  there is no env var, no file gopod reads, no log line that could
   ever leak them.
 - **M3 (GroupQueue), M3.5 (Control plane), M3.6 (Observability) ship
   later than originally planned.** Tradeoffs:

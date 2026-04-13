@@ -12,7 +12,7 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
-	"github.com/spaceinvaderz/picoclaw/internal/store"
+	"github.com/spaceinvaderz/gopod/internal/store"
 )
 
 // loginHandler dispatches to the real M6.5 interactive OAuth proxy
@@ -55,7 +55,7 @@ func (b *Bot) whoamiHandler(ctx context.Context, _ *bot.Bot, update *models.Upda
 	}
 	fmt.Fprintf(&sb, "type: %s\n", m.Chat.Type)
 	if m.Chat.ID == b.ownerChatID {
-		sb.WriteString("owner_candidate: yes (matches PICOCLAW_OWNER_CHAT_ID)\n")
+		sb.WriteString("owner_candidate: yes (matches GOPOD_OWNER_CHAT_ID)\n")
 	} else {
 		sb.WriteString("owner_candidate: no\n")
 	}
@@ -144,7 +144,7 @@ func (b *Bot) registerHandler(ctx context.Context, _ *bot.Bot, update *models.Up
 // parseSlashArgs takes the raw "/cmd arg1 arg2" text and returns the
 // args after the command. Whitespace-split on runs of spaces and tabs.
 // Strips an optional `@botname` suffix from the command itself so
-// `/register@picoclawbot 123 foo` parses correctly in groups.
+// `/register@gopodbot 123 foo` parses correctly in groups.
 func parseSlashArgs(text string) []string {
 	fields := strings.Fields(text)
 	if len(fields) == 0 {

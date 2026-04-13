@@ -13,10 +13,10 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
-	"github.com/spaceinvaderz/picoclaw/internal/control"
-	"github.com/spaceinvaderz/picoclaw/internal/queue"
-	"github.com/spaceinvaderz/picoclaw/internal/runner"
-	"github.com/spaceinvaderz/picoclaw/internal/store"
+	"github.com/spaceinvaderz/gopod/internal/control"
+	"github.com/spaceinvaderz/gopod/internal/queue"
+	"github.com/spaceinvaderz/gopod/internal/runner"
+	"github.com/spaceinvaderz/gopod/internal/store"
 )
 
 // defaultHandler is invoked by go-telegram/bot for every update that no
@@ -276,7 +276,7 @@ func (b *Bot) runAgentSync(ctx context.Context, item queue.Item) {
 			slog.String("chat_folder", item.Folder),
 			slog.Any("err", err))
 		b.replyTo(ctx, item.ChatID, item.MessageID,
-			"Something went wrong. Check picoclaw logs for details.")
+			"Something went wrong. Check gopod logs for details.")
 		return
 	}
 
@@ -562,7 +562,7 @@ func (b *Bot) persistMessage(ctx context.Context, m *models.Message) {
 	)
 }
 
-// buildChatJID returns the picoclaw canonical "tg:<chat_id>" form. The
+// buildChatJID returns the gopod canonical "tg:<chat_id>" form. The
 // telegram chat ID is signed (negative for groups) and we keep that as-is
 // in the string for symmetry with NanoClaw.
 func buildChatJID(chatID int64) string {

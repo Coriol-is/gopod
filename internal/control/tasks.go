@@ -9,8 +9,8 @@ import (
 
 	"github.com/robfig/cron/v3"
 
-	"github.com/spaceinvaderz/picoclaw/internal/scheduler"
-	"github.com/spaceinvaderz/picoclaw/internal/store"
+	"github.com/spaceinvaderz/gopod/internal/scheduler"
+	"github.com/spaceinvaderz/gopod/internal/store"
 )
 
 // PromptFunc is a callback that sends a prompt to Claude and returns
@@ -33,7 +33,7 @@ type PromptFunc func(ctx context.Context, folder string, prompt string) (string,
 //	/tasks cancel <id>
 //
 // The "add" subcommand sends the user's text to Claude, which parses
-// it into a structured {type, schedule, prompt} JSON. picoclaw then
+// it into a structured {type, schedule, prompt} JSON. gopod then
 // validates the parsed values before persisting. If promptFn is nil,
 // falls back to the old manual syntax (cron/interval/once + value).
 func RegisterTaskCommands(r *Router, st *store.Store, chatFolderLookup func(chatID int64) string, promptFn PromptFunc) {

@@ -1,4 +1,4 @@
-# picoclaw — Handoff
+# gopod — Handoff
 
 **Read this first when picking up the project.** Single source of truth for
 "what is the state right now". Always update this file before you stop working.
@@ -9,7 +9,7 @@
 
 ## Current state
 
-**Phase:** Core complete. picoclaw is a working personal Telegram
+**Phase:** Core complete. gopod is a working personal Telegram
 Claude assistant with session continuity, long-term memory, voice,
 vision, scheduling, and multi-provider architecture ready for Codex.
 **Last updated:** 2026-04-13
@@ -19,7 +19,7 @@ Key work after M9:
 - M8: cursor backfill, structured SQLite logs, Docker Compose, README
 - I2/I3/I5/I1: image vision, voice+TTS, markdown formatting, reactions
 - Session continuity: `--continue` flag, session files persistent via
-  bind mount, survive container + picoclaw restarts
+  bind mount, survive container + gopod restarts
 - Session compact: /clear, /compact, auto-compact (turns/interval/daily),
   conversation_summary in memory with reserved Context Compiler slot
 - Advanced memory: extraction layer, context compiler, lifecycle
@@ -54,22 +54,22 @@ Build order:
   tests behind `//go:build docker_integration` verified end-to-end
   against Docker Desktop: EnsureRunning idempotency, Exec success +
   non-zero exit, Stop+Remove, and a mixed current-version/stale-version
-  cleanup scenario. `container/Dockerfile` builds `picoclaw-agent:latest`
+  cleanup scenario. `container/Dockerfile` builds `gopod-agent:latest`
   from node:22-slim + claude-code + git + ripgrep (Claude Code 2.1.100
-  verified inside). `cmd/picoclaw/main.go` now boots the runner
+  verified inside). `cmd/gopod/main.go` now boots the runner
   subsystem after the store, loads the mount allowlist, runs cleanup,
   and continues gracefully if Docker is unreachable.
 - ✅ **M1 — Telegram echo landed.** `internal/telegram` wraps
   `go-telegram/bot` v1.20: `Bot.New` + `Bot.Run(ctx)` with long-poll,
   `defaultHandler` storing every inbound update, `pingHandler`
-  registered via `MatchTypeCommand` (catches `/ping@picoclawbot` too)
+  registered via `MatchTypeCommand` (catches `/ping@gopodbot` too)
   that stores + replies "pong". Pure helpers (chat JID, display name,
   reply field extraction) are unit-tested. `internal/store/messages.go`
   + `chats.go` provide idempotent ingest:
   `INSERT … ON CONFLICT(chat_jid, tg_message_id) DO NOTHING` for
   re-delivered Telegram updates, and `MAX(...)` semantics on
   `last_message_time` so out-of-order arrivals don't regress it.
-  `cmd/picoclaw/main.go` boots the telegram subsystem in a goroutine
+  `cmd/gopod/main.go` boots the telegram subsystem in a goroutine
   when `TELEGRAM_BOT_TOKEN` is set; if unset it logs a warning and
   keeps running in store-only mode (preserves M0 behavior). New
   `sync.WaitGroup` drains subsystems before deferred store close.
@@ -82,7 +82,7 @@ Build order:
   (chats, messages, registered_chats, sessions, scheduled_tasks,
   task_run_logs, router_state, memories, memory_vec vec0, memory_fts5 +
   triggers), runtime check of `vec_version()`, KNN smoke test, and
-  `cmd/picoclaw/main.go` that wires slog (text|json), opens the store,
+  `cmd/gopod/main.go` that wires slog (text|json), opens the store,
   blocks on SIGINT/SIGTERM, exits cleanly. `go test ./...` is green.
 - ✅ NanoClaw architecture mapped (see [ARCHITECTURE.md §2](ARCHITECTURE.md))
 - ✅ Library research: Telegram (`go-telegram/bot`), Claude SDK
@@ -114,16 +114,16 @@ Build order:
   DECISIONS, GLOSSARY, HANDOFF}.md
 - ✅ Sanity-check pass on the doc set: stale references, env var prefixes,
   ADR consistency, SKILLS hedge wording all reconciled
-- ✅ `.gitignore` for Go + macOS + picoclaw runtime (data/, *.sqlite, .env)
+- ✅ `.gitignore` for Go + macOS + gopod runtime (data/, *.sqlite, .env)
 
 ## What's in progress
 
 **Session compact mechanism** — design approved, not yet implemented.
 
 Three trigger strategies (combinable, first-fires wins):
-- `PICOCLAW_COMPACT_AFTER=30` — compact after N turns
-- `PICOCLAW_COMPACT_INTERVAL=4h` — compact every N hours
-- `PICOCLAW_COMPACT_TIME=03:00` — compact at a specific time daily
+- `GOPOD_COMPACT_AFTER=30` — compact after N turns
+- `GOPOD_COMPACT_INTERVAL=4h` — compact every N hours
+- `GOPOD_COMPACT_TIME=03:00` — compact at a specific time daily
 
 Compact action (same for all triggers):
 1. Send summarize prompt to Claude ("summarize key decisions and
@@ -143,7 +143,7 @@ Design decisions:
 - Skip compact if turnCount==0 since last compact (no wasted LLM)
 - Per-chat mutex in Runner prevents compact during active agent turn
 - `last_compact_at` persisted in router_state so interval/daily
-  triggers survive picoclaw restarts
+  triggers survive gopod restarts
 - Each new summary supersedes the previous one (no accumulation)
 
 Potential issues identified:
@@ -170,14 +170,14 @@ currently has no API key, so this stays at ⏸️.
 
 ## Right now you can already...
 
-1. Set `TELEGRAM_BOT_TOKEN` + `PICOCLAW_OWNER_CHAT_ID` in `.env`
-2. Build the agent image: `docker build -t picoclaw-agent:latest container/`
-3. Run `go run ./cmd/picoclaw`
+1. Set `TELEGRAM_BOT_TOKEN` + `GOPOD_OWNER_CHAT_ID` in `.env`
+2. Build the agent image: `docker build -t gopod-agent:latest container/`
+3. Run `go run ./cmd/gopod`
 4. Send any text message → owner chat auto-registers, container spawns
 5. First message gets "not authenticated" reply → tap `/login`
 6. Bot sends you the OAuth URL → open it, sign in, copy the code
 7. Paste the code back in the chat → bot confirms "Logged in"
-8. Send messages → get **real Claude replies** via picoclaw Telegram bot
+8. Send messages → get **real Claude replies** via gopod Telegram bot
 
 No terminal access needed for the entire flow.
 
@@ -228,10 +228,10 @@ cleanup on restart removes all containers when running dev builds
   group-only (1-on-1 and channels are unaffected), toggled via
   `@BotFather` → `/setprivacy`, and **the bot must be removed and re-added
   to every existing group** for the toggle to take effect on those groups.
-  picoclaw setup docs (when M1 lands) will require disabling privacy mode
-  because picoclaw is supposed to see every message in its registered
+  gopod setup docs (when M1 lands) will require disabling privacy mode
+  because gopod is supposed to see every message in its registered
   chats; the usual user-privacy concern doesn't apply because privileges
-  are enforced by `PICOCLAW_OWNER_CHAT_ID`. No rate-limit penalties for
+  are enforced by `GOPOD_OWNER_CHAT_ID`. No rate-limit penalties for
   disabling; standard Bot API flood limits still apply normally.
 - ✅ **Embedding dim default.** Confirmed: OpenAI `dimensions` parameter is
   supported on `text-embedding-3-small` (and `-3-large`, but not on

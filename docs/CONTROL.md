@@ -1,9 +1,9 @@
-# picoclaw — Control plane
+# gopod — Control plane
 
 > Companion docs: [ARCHITECTURE.md](ARCHITECTURE.md) · [SKILLS.md](SKILLS.md) · [MEMORY.md](MEMORY.md) · [DECISIONS.md](DECISIONS.md)
 > Decision: [D011](DECISIONS.md)
 
-picoclaw needs a control surface — admin commands, diagnostics, scheduling
+gopod needs a control surface — admin commands, diagnostics, scheduling
 ops, skill management — that is **separate** from the data plane (user
 message → agent → reply). Without a unified control plane, slash commands
 end up scattered, authorization gets duplicated in every handler, and the
@@ -16,7 +16,7 @@ type, a single Permission model, and two thin frontends (Telegram and CLI).
 
 ## 1. Goal
 
-One package owns "what can be done with picoclaw, by whom, from where". Every
+One package owns "what can be done with gopod, by whom, from where". Every
 admin slash command, every CLI subcommand, and (later) every external RPC
 call goes through it. Adding a new command means writing one handler and
 declaring its permission level. Adding a new frontend means writing one
@@ -26,18 +26,18 @@ translator. The two never mix.
 
 ## 2. Problem statement
 
-Without `internal/control`, picoclaw would grow these failure modes:
+Without `internal/control`, gopod would grow these failure modes:
 
 1. **Auth duplication.** Every slash-command handler would re-implement
    "is this the owner chat?" in its own way. One missed check = privilege
    escalation. Authorization should be an invariant, not discipline.
-2. **Telegram/CLI drift.** `picoclaw skills list` (CLI) and `/skills list`
+2. **Telegram/CLI drift.** `gopod skills list` (CLI) and `/skills list`
    (Telegram) would be two separate code paths with two separate output
    formats and two separate sets of bugs. Already half-built into different
    docs ([SKILLS.md §5](SKILLS.md), [INTEGRATIONS.md #8](INTEGRATIONS.md)).
 3. **Untested admin paths.** Slash-command handlers tied to `go-telegram/bot`
    are awkward to test. A `Router.Dispatch(Command{...})` call is trivial.
-4. **No room to grow.** Future surfaces (web UI, picoclaw-as-MCP-server,
+4. **No room to grow.** Future surfaces (web UI, gopod-as-MCP-server,
    HTTP API for status checks) all need the same dispatch. Building them
    without a Router means rewriting handlers each time.
 
@@ -61,7 +61,7 @@ type Caller struct {
     UserID   int64  // Telegram user ID; 0 for non-Telegram
     Username string // Telegram username if available
     Source   Source // "telegram" | "cli" | "socket"
-    IsOwner  bool   // computed: Source==cli OR ChatID==PICOCLAW_OWNER_CHAT_ID
+    IsOwner  bool   // computed: Source==cli OR ChatID==GOPOD_OWNER_CHAT_ID
 }
 
 type Source string
@@ -98,7 +98,7 @@ func New(deps Deps) *Router
 
 func (r *Router) Register(name string, perm Perm, h Handler)
 func (r *Router) Dispatch(ctx context.Context, cmd Command) (Response, error)
-func (r *Router) List() []CommandInfo            // for /help, picoclaw help
+func (r *Router) List() []CommandInfo            // for /help, gopod help
 ```
 
 `Deps` carries the handles every handler needs: store, queue, runner,
@@ -121,10 +121,10 @@ one place auth lives.
 
 `IsOwner` is computed once by the frontend when constructing `Caller`:
 
-- **Telegram frontend:** `IsOwner = (ChatID == PICOCLAW_OWNER_CHAT_ID)`. Per
+- **Telegram frontend:** `IsOwner = (ChatID == GOPOD_OWNER_CHAT_ID)`. Per
   [D006](DECISIONS.md), there is exactly one owner chat.
 - **CLI frontend:** `IsOwner = true` always. Anyone with shell access to the
-  picoclaw box is implicitly owner. Document this trust assumption.
+  gopod box is implicitly owner. Document this trust assumption.
 
 If a handler with `PermOwnerOnly` is invoked from a non-owner chat, the
 Router returns a `Response{Text: "Not authorized.", Code: 1}` and **never**
@@ -142,10 +142,10 @@ group dispatches by sub-verb (e.g. `/chats list` → `chats.list`).
 
 | Telegram | CLI | Perm | What |
 |---|---|---|---|
-| `/ping` | `picoclaw ping` | Public | Liveness check, replies "pong" |
+| `/ping` | `gopod ping` | Public | Liveness check, replies "pong" |
 | `/whoami` | — | Public | Returns calling chat ID, user ID, owner status |
-| `/help` | `picoclaw help` | Public | Lists commands the caller can run |
-| `/version` | `picoclaw version` | Public | Build version, git sha, Go version |
+| `/help` | `gopod help` | Public | Lists commands the caller can run |
+| `/version` | `gopod version` | Public | Build version, git sha, Go version |
 
 ### 5.2 Chat-local
 
@@ -172,24 +172,24 @@ Cross-chat operations and global state.
 
 | Telegram (in owner chat) | CLI | Perm | What |
 |---|---|---|---|
-| `/chats list` | `picoclaw chats list` | OwnerOnly | List all registered chats |
-| `/chats register <folder> [--here]` | `picoclaw chats register <folder>` | OwnerOnly | Register a chat. `--here` uses the current chat. |
-| `/chats unregister <folder>` | `picoclaw chats unregister <folder>` | OwnerOnly | Remove a chat |
-| `/chats trigger <folder> <pattern>` | `picoclaw chats trigger ...` | OwnerOnly | Change a chat's trigger word |
-| `/container list` | `picoclaw container list` | OwnerOnly | Show running agent containers |
-| `/container restart <folder>` | `picoclaw container restart <folder>` | OwnerOnly | Restart a chat's container |
-| `/container stop <folder>` | `picoclaw container stop <folder>` | OwnerOnly | Stop a chat's container |
-| `/queue status` | `picoclaw queue status` | OwnerOnly | Show GroupQueue state across all chats |
-| `/tasks list <folder>` | `picoclaw tasks list <folder>` | OwnerOnly | Tasks for any chat |
-| `/tasks pause <id>` (cross-chat) | `picoclaw tasks pause <id>` | OwnerOnly | Pause any task |
-| `/skills install <url>` | `picoclaw skills install <url>` | OwnerOnly | Install a skill (clones git repo into `container/skills/` or `skills/mcp/`) |
-| `/skills test <name>` | `picoclaw skills test <name>` | OwnerOnly | Smoke-test an MCP skill |
-| `/memory search <query> [--chat <folder>]` | `picoclaw memory search ...` | OwnerOnly | Cross-chat memory search |
-| `/logs [folder] [--tail N] [--level X]` | `picoclaw logs ...` | OwnerOnly | Tail logs by chat and/or level |
-| `/model set <folder> <model>` | `picoclaw model set ...` | OwnerOnly | Switch model for one chat |
-| `/system health` | `picoclaw system health` | OwnerOnly | Container daemon, DB, embedder, scheduler, queue health |
-| `/system uptime` | `picoclaw system uptime` | OwnerOnly | Process uptime, last restart cause |
-| `/debug ...` | `picoclaw debug ...` | OwnerOnly | Free-form diagnostics (per-subcommand) |
+| `/chats list` | `gopod chats list` | OwnerOnly | List all registered chats |
+| `/chats register <folder> [--here]` | `gopod chats register <folder>` | OwnerOnly | Register a chat. `--here` uses the current chat. |
+| `/chats unregister <folder>` | `gopod chats unregister <folder>` | OwnerOnly | Remove a chat |
+| `/chats trigger <folder> <pattern>` | `gopod chats trigger ...` | OwnerOnly | Change a chat's trigger word |
+| `/container list` | `gopod container list` | OwnerOnly | Show running agent containers |
+| `/container restart <folder>` | `gopod container restart <folder>` | OwnerOnly | Restart a chat's container |
+| `/container stop <folder>` | `gopod container stop <folder>` | OwnerOnly | Stop a chat's container |
+| `/queue status` | `gopod queue status` | OwnerOnly | Show GroupQueue state across all chats |
+| `/tasks list <folder>` | `gopod tasks list <folder>` | OwnerOnly | Tasks for any chat |
+| `/tasks pause <id>` (cross-chat) | `gopod tasks pause <id>` | OwnerOnly | Pause any task |
+| `/skills install <url>` | `gopod skills install <url>` | OwnerOnly | Install a skill (clones git repo into `container/skills/` or `skills/mcp/`) |
+| `/skills test <name>` | `gopod skills test <name>` | OwnerOnly | Smoke-test an MCP skill |
+| `/memory search <query> [--chat <folder>]` | `gopod memory search ...` | OwnerOnly | Cross-chat memory search |
+| `/logs [folder] [--tail N] [--level X]` | `gopod logs ...` | OwnerOnly | Tail logs by chat and/or level |
+| `/model set <folder> <model>` | `gopod model set ...` | OwnerOnly | Switch model for one chat |
+| `/system health` | `gopod system health` | OwnerOnly | Container daemon, DB, embedder, scheduler, queue health |
+| `/system uptime` | `gopod system uptime` | OwnerOnly | Process uptime, last restart cause |
+| `/debug ...` | `gopod debug ...` | OwnerOnly | Free-form diagnostics (per-subcommand) |
 
 ### 5.4 Notes on the table
 
@@ -257,7 +257,7 @@ in the chat history). Storage is independent of dispatch.
 ## 7. CLI frontend
 
 ```go
-// internal/control/frontend_cli.go (called from cmd/picoclaw)
+// internal/control/frontend_cli.go (called from cmd/gopod)
 
 func RunCLI(r *Router, argv []string) int {
     name, args := parseArgv(argv)
@@ -276,16 +276,16 @@ func RunCLI(r *Router, argv []string) int {
 CLI structure:
 
 ```
-picoclaw serve              # the main daemon (replaces today's bare `picoclaw`)
-picoclaw migrate            # run pending DB migrations and exit
-picoclaw version
-picoclaw <group> <verb> ... # everything else routes through control.Router
+gopod serve              # the main daemon (replaces today's bare `gopod`)
+gopod migrate            # run pending DB migrations and exit
+gopod version
+gopod <group> <verb> ... # everything else routes through control.Router
 ```
 
 `serve` and `migrate` are reserved top-level subcommands handled before the
-Router is consulted. Everything else (`picoclaw chats list`,
-`picoclaw skills install ...`) is rewritten to a `Command` and dispatched.
-There is no `picoclaw ctl` prefix — it would be noise.
+Router is consulted. Everything else (`gopod chats list`,
+`gopod skills install ...`) is rewritten to a `Command` and dispatched.
+There is no `gopod ctl` prefix — it would be noise.
 
 `--json` is a global flag that prints `Response.Data` as JSON instead of
 `Response.Text`. Useful for scripting.
@@ -294,7 +294,7 @@ There is no `picoclaw ctl` prefix — it would be noise.
 
 ## 8. No socket / HTTP frontend
 
-Per user decision (2026-04-09): picoclaw does **not** ship a Unix-socket or
+Per user decision (2026-04-09): gopod does **not** ship a Unix-socket or
 HTTP control frontend. The Router's frontend abstraction stays minimal —
 two implementations (Telegram, CLI) — and the package layout reflects that.
 A third frontend can be added later without disturbing the Router itself,
@@ -304,7 +304,7 @@ but it is **not in scope** for v0 and there is no stub file.
 
 ## 9. Logs subsystem
 
-`/logs` and `picoclaw logs` need a backing store. We have two options:
+`/logs` and `gopod logs` need a backing store. We have two options:
 
 **Option A — File + lumberjack rotation.** Standard, fast, but querying
 ("show me errors from chat foo in the last hour") means shelling out to
@@ -314,7 +314,7 @@ grep/tail or reimplementing it.
 queryable with normal SQL, no new dependency, retention via cron-style
 delete. Slightly more write overhead.
 
-**Decision: B.** picoclaw is personal scale (~100s of log lines/min peak).
+**Decision: B.** gopod is personal scale (~100s of log lines/min peak).
 SQLite WAL handles it without buffering. The control plane gains structured
 queries for free.
 
@@ -335,7 +335,7 @@ CREATE INDEX idx_logs_source_ts ON logs(source, ts DESC);
 
 `internal/log/sqlite_handler.go` implements `slog.Handler`, fans out to both
 stderr (for live tail during dev) and the SQLite table (for `/logs`
-queries). Retention: `PICOCLAW_LOG_RETENTION_DAYS=30` (configurable, 0 =
+queries). Retention: `GOPOD_LOG_RETENTION_DAYS=30` (configurable, 0 =
 keep forever). A daily cleanup task running through the scheduler deletes
 rows older than the cutoff.
 
@@ -357,9 +357,9 @@ rows older than the cutoff.
 internal/control/
 ├── control.go              # Router, Command, Caller, Perm, Response, Deps
 ├── parse.go                # parseSlash + parseArgv
-├── help.go                 # /help and `picoclaw help` rendering
+├── help.go                 # /help and `gopod help` rendering
 ├── frontend_telegram.go    # registers Telegram handler, builds Caller
-├── frontend_cli.go         # runs from cmd/picoclaw, builds Caller
+├── frontend_cli.go         # runs from cmd/gopod, builds Caller
 ├── handlers/
 │   ├── system.go           # ping, whoami, help, version, system.*
 │   ├── chats.go            # chats.list/register/unregister/trigger
@@ -379,7 +379,7 @@ internal/log/
 └── retention.go            # daily cleanup task
 ```
 
-`cmd/picoclaw/main.go` wires everything:
+`cmd/gopod/main.go` wires everything:
 
 ```go
 func main() {
@@ -407,10 +407,10 @@ func main() {
 ## 11. Configuration
 
 ```
-PICOCLAW_OWNER_CHAT_ID=123456789      # already defined; the only auth boundary
-PICOCLAW_LOG_LEVEL=info               # debug|info|warn|error
-PICOCLAW_LOG_RETENTION_DAYS=30        # 0 = keep forever
-PICOCLAW_HELP_ALLOW_LIST_OWNER_ONLY=0 # if 1, /help only shows commands the caller can run
+GOPOD_OWNER_CHAT_ID=123456789      # already defined; the only auth boundary
+GOPOD_LOG_LEVEL=info               # debug|info|warn|error
+GOPOD_LOG_RETENTION_DAYS=30        # 0 = keep forever
+GOPOD_HELP_ALLOW_LIST_OWNER_ONLY=0 # if 1, /help only shows commands the caller can run
 ```
 
 **Secrets policy** ([D012](DECISIONS.md)): nothing in this list, in
@@ -431,9 +431,9 @@ Slot into [ROADMAP.md](../ROADMAP.md) Phase 1 as **M3.5**, between M3
 |----|------|
 | **C1** | Router scaffold: `Command`, `Caller`, `Perm`, `Response`, `Router.Register/Dispatch`, basic auth enforcement, unit tests |
 | **C2** | Telegram frontend: `RegisterTelegramHandlers`, `parseSlash`, dispatch wiring. Add `/ping`, `/whoami`, `/version`, `/help` |
-| **C3** | CLI frontend: argv parser, `serve`/`migrate` reserved subcommands, dispatch path, `--json` flag. Mirror `/ping` etc. as `picoclaw ping` |
+| **C3** | CLI frontend: argv parser, `serve`/`migrate` reserved subcommands, dispatch path, `--json` flag. Mirror `/ping` etc. as `gopod ping` |
 | **C4** | First batch of real handlers: chats, queue, container, system. Replaces ad-hoc M3 outputs with `/queue status` |
-| **C5** | Logs subsystem: `internal/log/sqlite_handler.go`, retention task, `/logs` and `picoclaw logs` handler |
+| **C5** | Logs subsystem: `internal/log/sqlite_handler.go`, retention task, `/logs` and `gopod logs` handler |
 
 After M3.5, every later milestone (M4 scheduler, M9 memory, S1–S5 skills,
 I-series integrations) registers its commands through the Router instead of
@@ -444,7 +444,7 @@ inventing local plumbing.
 ## 13. Open questions
 
 1. **Should chat-local commands be allowed in non-registered chats?** A
-   user typing `/recall foo` in a chat picoclaw doesn't know about — do we
+   user typing `/recall foo` in a chat gopod doesn't know about — do we
    silently ignore, or reply "register this chat first"? Current proposal:
    reply with a one-liner.
 

@@ -1,8 +1,8 @@
-// Package telegram is picoclaw's Telegram frontend.
+// Package telegram is gopod's Telegram frontend.
 //
 // As of M6 the default handler routes inbound text from registered
 // chats through the runner and replies with the agent's output. The
-// owner chat (PICOCLAW_OWNER_CHAT_ID) is auto-registered on first
+// owner chat (GOPOD_OWNER_CHAT_ID) is auto-registered on first
 // sight; other chats are registered explicitly via /register from
 // the owner chat.
 //
@@ -20,18 +20,18 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
-	"github.com/spaceinvaderz/picoclaw/internal/control"
-	"github.com/spaceinvaderz/picoclaw/internal/queue"
-	"github.com/spaceinvaderz/picoclaw/internal/runner"
-	"github.com/spaceinvaderz/picoclaw/internal/runner/mountsec"
-	"github.com/spaceinvaderz/picoclaw/internal/store"
+	"github.com/spaceinvaderz/gopod/internal/control"
+	"github.com/spaceinvaderz/gopod/internal/queue"
+	"github.com/spaceinvaderz/gopod/internal/runner"
+	"github.com/spaceinvaderz/gopod/internal/runner/mountsec"
+	"github.com/spaceinvaderz/gopod/internal/store"
 )
 
 // publicCommands is now built dynamically from the Router's command
 // list in publishCommands(). This global is kept as a nil-init
 // sentinel so the old compile references don't break.
 
-// Deps groups picoclaw's runtime dependencies the telegram bot needs
+// Deps groups gopod's runtime dependencies the telegram bot needs
 // at construction time. Bundling them in a struct keeps New()'s
 // signature stable as new fields land.
 type Deps struct {
@@ -58,7 +58,7 @@ type Deps struct {
 	// "no extras", which is the common case.
 	Allowlist *mountsec.Allowlist
 
-	// OwnerChatID is the Telegram chat id picoclaw treats as the
+	// OwnerChatID is the Telegram chat id gopod treats as the
 	// owner. Zero means "no owner", in which case auto-registration
 	// is disabled and /register is rejected from every chat.
 	OwnerChatID int64
@@ -67,7 +67,7 @@ type Deps struct {
 	Log *slog.Logger
 }
 
-// Bot is picoclaw's wrapper around go-telegram/bot.Bot. It owns the
+// Bot is gopod's wrapper around go-telegram/bot.Bot. It owns the
 // long-poll loop and routes incoming updates to handlers in this package.
 //
 // Construct via New, then call Run(ctx) — Run blocks until ctx is
@@ -116,7 +116,7 @@ func New(token string, deps Deps) (*Bot, error) {
 
 	// Load last processed update offset for cursor backfill (M8a).
 	// On restart, this tells Telegram to deliver any updates that
-	// arrived while picoclaw was down.
+	// arrived while gopod was down.
 	opts := []bot.Option{
 		bot.WithDefaultHandler(b.defaultHandler),
 		bot.WithMiddlewares(b.offsetMiddleware),
@@ -222,6 +222,6 @@ func (b *Bot) offsetMiddleware(next bot.HandlerFunc) bot.HandlerFunc {
 func (b *Bot) SetQueue(q *queue.Queue) { b.queue = q }
 
 // ErrEmptyToken signals that no Telegram bot token was provided. Callers
-// (typically cmd/picoclaw/main.go) check for this so they can decide
+// (typically cmd/gopod/main.go) check for this so they can decide
 // whether to skip the subsystem or fail loudly.
 var ErrEmptyToken = errors.New("telegram: empty bot token")

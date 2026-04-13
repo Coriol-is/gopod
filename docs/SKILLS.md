@@ -1,15 +1,15 @@
-# picoclaw — Skill ecosystem
+# gopod — Skill ecosystem
 
 > Companion docs: [ARCHITECTURE.md](ARCHITECTURE.md) · [MEMORY.md](MEMORY.md) · [INTEGRATIONS.md](INTEGRATIONS.md) · [DECISIONS.md](DECISIONS.md)
 > Decision: [D009](DECISIONS.md)
 
-picoclaw initially planned to drop NanoClaw's skill ecosystem entirely. After
+gopod initially planned to drop NanoClaw's skill ecosystem entirely. After
 revisiting, **we keep it** — but in a form that fits Go and the 2026 Anthropic
 ecosystem rather than NanoClaw's TypeScript-shaped four-tier system.
 
 The single discriminating principle:
 
-> **A skill never requires recompiling picoclaw.**
+> **A skill never requires recompiling gopod.**
 > If it does, it is a *feature* (a regular `internal/` package conditionally
 > enabled by env var), not a skill.
 
@@ -58,14 +58,14 @@ For multi-page PDFs, prefer page-by-page extraction with `pdfinfo` first.
 
 ### How they get loaded
 
-At chat container startup, picoclaw bind-mounts:
+At chat container startup, gopod bind-mounts:
 
 ```
 container/skills/  →  /home/node/.claude/skills/   (read-only)
 ```
 
 Claude Code's **native skill discovery** picks them up automatically — there
-is no picoclaw-specific loader code. The frontmatter `description` field is
+is no gopod-specific loader code. The frontmatter `description` field is
 how Claude decides when to invoke a skill, exactly as in standalone Claude
 Code.
 
@@ -83,19 +83,19 @@ chats/<folder>/skills.json
 }
 ```
 
-picoclaw filters the mount at container start: only allowed skill directories
+gopod filters the mount at container start: only allowed skill directories
 are bind-mounted into that chat's container.
 
 ### Source compatibility
 
 `anthropics/skills` and the broader Claude Code skill marketplace publish
-skills in this exact format. picoclaw's `container/skills/` directory can
+skills in this exact format. gopod's `container/skills/` directory can
 contain a `git submodule` of any public skill repo, no conversion needed.
 
 ### Hot reload
 
 Not in v0. Skill changes require a chat container restart (cheap — idle kill
-or `picoclaw restart-chat <folder>`). Hot reload is straightforward to add
+or `gopod restart-chat <folder>`). Hot reload is straightforward to add
 later via fsnotify if it becomes a real annoyance.
 
 ---
@@ -104,11 +104,11 @@ later via fsnotify if it becomes a real annoyance.
 
 The most powerful tier. An MCP server is a separate process that exposes
 tools to the agent via JSON-RPC over stdio. Adding a new MCP skill gives the
-agent new tools without recompiling picoclaw and without modifying any
+agent new tools without recompiling gopod and without modifying any
 existing code.
 
 This is also how the broader Claude ecosystem distributes integrations
-(GitHub MCP, Postgres MCP, Filesystem MCP, etc.). picoclaw consumes them
+(GitHub MCP, Postgres MCP, Filesystem MCP, etc.). gopod consumes them
 directly.
 
 ### Anatomy
@@ -150,10 +150,10 @@ Field reference:
 | `transport` | ✅ | `stdio` or `http` |
 | `command` / `args` | for stdio | Process to spawn |
 | `url` | for http | Base URL of an existing MCP HTTP server |
-| `env` | optional | Env vars passed to the spawned process. `${VAR}` substitutes from picoclaw's environment. |
+| `env` | optional | Env vars passed to the spawned process. `${VAR}` substitutes from gopod's environment. |
 | `scope` | ✅ | `chat` (every chat gets its own instance), `owner` (only the owner chat sees it), `global` (one instance shared by all chats) |
-| `auto_install` | optional | If set, picoclaw installs the package on first use (`npm`, `pip`, `go install`, `uvx`) — analogous to how `claude mcp add` registers servers |
-| `lifecycle` | optional | `per-chat` (spawn at chat container start, kill at idle), `daemon` (start with picoclaw, never killed) |
+| `auto_install` | optional | If set, gopod installs the package on first use (`npm`, `pip`, `go install`, `uvx`) — analogous to how `claude mcp add` registers servers |
+| `lifecycle` | optional | `per-chat` (spawn at chat container start, kill at idle), `daemon` (start with gopod, never killed) |
 
 ### How they get wired
 
@@ -173,19 +173,19 @@ Field reference:
 ### Authorization
 
 - A `chat`-scoped MCP skill is spawned per chat. The `${VAR}` placeholders
-  in its `manifest.json` `env` field are substituted from picoclaw's
+  in its `manifest.json` `env` field are substituted from gopod's
   process environment ([D012](DECISIONS.md)) — never from any committed
   config file. Owner chats see the full environment; non-owner chats see
   only the variables whose **names** appear in `chats/<folder>/secrets.allow`
   (a list of names, never values).
 - An `owner`-scoped skill is only registered for the owner chat. Even if a
-  non-owner chat enables it via `skills.json`, picoclaw refuses.
+  non-owner chat enables it via `skills.json`, gopod refuses.
 - A `global`-scoped skill runs once and is shared. Use sparingly — its tool
   outputs cross chat boundaries.
 
 ### Provenance
 
-picoclaw treats `auto_install` packages with the same trust as any other
+gopod treats `auto_install` packages with the same trust as any other
 `npm`/`pip` install: it does it, it logs it, it doesn't sandbox it. Skills
 that need sandboxing should run inside the per-chat container the host
 already isolates. Document this expectation in `skills/mcp/README.md`.
@@ -204,11 +204,11 @@ Anything in the public MCP server registry is one manifest away.
 
 ---
 
-## 3. Type 3 — Dev skills (Claude Code skills for picoclaw maintainers)
+## 3. Type 3 — Dev skills (Claude Code skills for gopod maintainers)
 
 The smallest tier. Pure Claude Code slash commands for the *developer*
-working on picoclaw via Claude Code in this repo. Not loaded at runtime by
-picoclaw itself — they live in `.claude/skills/` and exist only for the
+working on gopod via Claude Code in this repo. Not loaded at runtime by
+gopod itself — they live in `.claude/skills/` and exist only for the
 human + Claude pair-programming session.
 
 ### Examples
@@ -232,7 +232,7 @@ the repo so every contributor's Claude session has them.
 
 The four NanoClaw skill types collapse:
 
-| NanoClaw type | NanoClaw mechanism | picoclaw equivalent |
+| NanoClaw type | NanoClaw mechanism | gopod equivalent |
 |---|---|---|
 | **Feature skill** (e.g. `add-whatsapp`) | Merge a `skill/*` git branch that adds source code | **Not a skill.** Becomes a regular `internal/` package, conditionally enabled by env var. The boundary is sharp: anything that needs `go build` is a feature. |
 | **Utility skill** (e.g. `claw` CLI) | Code files alongside SKILL.md, runs on dev machine | **Dev skill** (Type 3) if it's a dev tool, or a small standalone Go binary in `cmd/` |
@@ -240,8 +240,8 @@ The four NanoClaw skill types collapse:
 | **Container skill** (e.g. browser tools) | `container/skills/` mounted into the agent container | **Container skill** (Type 1), mechanism unchanged |
 
 NanoClaw's biggest source of complexity — the `skill/*` branch merge model
-with external git remotes — does **not** exist in picoclaw. Adding a feature
-to picoclaw means writing Go code in a feature branch and merging a normal
+with external git remotes — does **not** exist in gopod. Adding a feature
+to gopod means writing Go code in a feature branch and merging a normal
 PR. Skills are reserved for things you can install without touching the Go
 source.
 
@@ -250,15 +250,15 @@ source.
 ## 5. CLI surface
 
 The skill commands are part of the unified control plane
-([CONTROL.md](CONTROL.md)) — `picoclaw skills *` and `/skills *` (Telegram)
+([CONTROL.md](CONTROL.md)) — `gopod skills *` and `/skills *` (Telegram)
 share the same handlers and the same auth model.
 
 ```
-picoclaw skills list                    # list all installed skills
-picoclaw skills enable <name> [--chat <folder>]
-picoclaw skills disable <name> [--chat <folder>]
-picoclaw skills test <name>             # spawn the MCP server, list its tools, exit
-picoclaw skills install <git-url>       # git clone into container/skills/ or skills/mcp/
+gopod skills list                    # list all installed skills
+gopod skills enable <name> [--chat <folder>]
+gopod skills disable <name> [--chat <folder>]
+gopod skills test <name>             # spawn the MCP server, list its tools, exit
+gopod skills install <git-url>       # git clone into container/skills/ or skills/mcp/
 ```
 
 `install` detects the type from the directory contents:
@@ -272,12 +272,12 @@ picoclaw skills install <git-url>       # git clone into container/skills/ or sk
 ## 6. Discovery & registry
 
 v0: no managed registry. Users install skills by `git clone` or
-`picoclaw skills install <url>`. The format is the standard Claude Code
+`gopod skills install <url>`. The format is the standard Claude Code
 SKILL.md and the standard MCP manifest, so anything in
 `anthropics/skills` or the broader MCP server lists works without
 conversion.
 
-v1+ (deferred): a small `picoclaw skills search <query>` that hits a
+v1+ (deferred): a small `gopod skills search <query>` that hits a
 known list of registries (`anthropics/skills`, MCP server registry).
 Not before the core works.
 
@@ -293,7 +293,7 @@ internal/skills/
 ├── mcp_stdio.go         # stdio transport: spawn/attach/teardown
 ├── mcp_http.go          # http transport
 ├── registry.go          # In-memory map of loaded skills per chat
-├── cli.go               # picoclaw skills * command implementations
+├── cli.go               # gopod skills * command implementations
 └── skills_test.go
 ```
 
@@ -313,7 +313,7 @@ This is a **design**, not implementation. Tracked as Phase 3 in
 | S1 | Container skills: bind-mount + per-chat filter |
 | S2 | MCP skills: manifest parser, stdio transport, lifecycle, env substitution |
 | S3 | MCP skills: per-chat allow/deny + scope enforcement |
-| S4 | `picoclaw skills` CLI subcommand |
+| S4 | `gopod skills` CLI subcommand |
 | S5 | Dev-time skills: `.claude/skills/{release, check, add-mcp-skill, add-container-skill, handoff, migrate-schema}` |
 
 Phase 3 is **independent of Phase 2 (integrations)**. Some Tier-1

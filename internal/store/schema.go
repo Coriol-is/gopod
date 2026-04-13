@@ -7,7 +7,7 @@ import (
 )
 
 // schemaStatements is the set of CREATE TABLE / CREATE INDEX /
-// CREATE VIRTUAL TABLE / CREATE TRIGGER statements that picoclaw needs.
+// CREATE VIRTUAL TABLE / CREATE TRIGGER statements that gopod needs.
 //
 // All statements use IF NOT EXISTS so applySchema is idempotent. The
 // schema mirrors:
@@ -22,7 +22,7 @@ import (
 // row in router_state and a migrations runner here. For now everything
 // is additive and IF NOT EXISTS keeps re-runs safe.
 var schemaStatements = []string{
-	// --- Telegram chats: every chat picoclaw has ever heard from.
+	// --- Telegram chats: every chat gopod has ever heard from.
 	`CREATE TABLE IF NOT EXISTS chats (
 	  jid TEXT PRIMARY KEY,
 	  name TEXT,
@@ -49,7 +49,7 @@ var schemaStatements = []string{
 	`CREATE INDEX IF NOT EXISTS idx_messages_chat_ts
 	   ON messages(chat_jid, timestamp)`,
 
-	// --- Chats explicitly registered with picoclaw (have a chat folder).
+	// --- Chats explicitly registered with gopod (have a chat folder).
 	`CREATE TABLE IF NOT EXISTS registered_chats (
 	  jid TEXT PRIMARY KEY,
 	  name TEXT,

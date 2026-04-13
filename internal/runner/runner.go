@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/spaceinvaderz/picoclaw/internal/runner/mountsec"
+	"github.com/spaceinvaderz/gopod/internal/runner/mountsec"
 )
 
 // Runner is the high-level facade telegram (and any future control
@@ -20,7 +20,7 @@ import (
 // allowlist) so callers don't have to thread eight things through
 // every call site.
 //
-// One Runner per picoclaw process. Safe for concurrent use across
+// One Runner per gopod process. Safe for concurrent use across
 // chats; per-chat serialization is intentionally NOT here yet — that
 // is the job of M3 GroupQueue. Until then a small per-chat sync.Mutex
 // inside lastTouchMu serializes EnsureRunning calls for the same chat.
@@ -87,9 +87,9 @@ type SpawnDefaults struct {
 	PidsLimit   int64
 }
 
-// New constructs a Runner. Pass the Paths struct picoclaw computed at
+// New constructs a Runner. Pass the Paths struct gopod computed at
 // config-load time, the SpawnDefaults, the env-var allowlist, and the
-// build version (used as the picoclaw.version label on every spawned
+// build version (used as the gopod.version label on every spawned
 // container so CleanupLeftovers can age them out across upgrades).
 func New(
 	d *Docker,
@@ -480,7 +480,7 @@ func (r *Runner) LastActivity(chatFolder string) time.Time {
 }
 
 // ActiveChats returns the set of chat folders that have been touched
-// at least once in this picoclaw process. Used by the idle watcher
+// at least once in this gopod process. Used by the idle watcher
 // at each tick.
 func (r *Runner) ActiveChats() []string {
 	r.activityMu.Lock()

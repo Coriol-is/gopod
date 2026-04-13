@@ -23,12 +23,12 @@ var chatFolderRegex = regexp.MustCompile(chatFolderPattern)
 
 // Load reads the allowlist file at path, validates it, and returns the
 // parsed Allowlist. A missing file is NOT an error: callers get back an
-// EmptyAllowlist() and the rest of picoclaw runs with no extras.
+// EmptyAllowlist() and the rest of gopod runs with no extras.
 //
-// Errors from Load are intentionally fatal — picoclaw refuses to start
+// Errors from Load are intentionally fatal — gopod refuses to start
 // if the file is present but malformed, has wider-than-0600 permissions,
 // references blocked paths, or contains traversal. The operator must fix
-// the file before picoclaw will boot.
+// the file before gopod will boot.
 func Load(path string) (*Allowlist, error) {
 	info, err := os.Stat(path)
 	if err != nil {

@@ -1,4 +1,4 @@
-// Package config loads picoclaw runtime configuration from environment
+// Package config loads gopod runtime configuration from environment
 // variables, with optional .env file support for local development.
 //
 // Per D012, environment is the only source of truth for secret values; .env
@@ -18,14 +18,14 @@ import (
 	"github.com/joho/godotenv"
 )
 
-// Config holds the resolved runtime settings for picoclaw.
+// Config holds the resolved runtime settings for gopod.
 //
 // Only fields needed by M0 (skeleton) are populated here. Later milestones
 // extend this struct with their own fields (Telegram token, container image,
 // observability endpoints, etc.) — they live next to the subsystems that own
 // them, gathered into Config at Load time.
 type Config struct {
-	// DataDir is the picoclaw runtime state directory. The SQLite store
+	// DataDir is the gopod runtime state directory. The SQLite store
 	// lives at ${DataDir}/store.sqlite, IPC dirs at ${DataDir}/ipc/<chat>/,
 	// session dirs at ${DataDir}/sessions/<chat>/.
 	DataDir string
@@ -38,7 +38,7 @@ type Config struct {
 	LogLevel slog.Level
 
 	// LogFormat is "text" or "json". Defaults to text for development;
-	// production deployments set PICOCLAW_LOG_FORMAT=json.
+	// production deployments set GOPOD_LOG_FORMAT=json.
 	LogFormat string
 
 	// OwnerChatID is the Telegram chat ID of the owner. Optional in M0
@@ -65,7 +65,7 @@ type Config struct {
 	// TelegramBotToken is the Bot API token from @BotFather.
 	//
 	// Optional at config level: if empty, the telegram subsystem refuses
-	// to start (with a warning log) and the rest of picoclaw still runs.
+	// to start (with a warning log) and the rest of gopod still runs.
 	// This keeps the M0-style "binary that just opens the store" mode
 	// available for diagnostics and tests.
 	//
@@ -74,15 +74,15 @@ type Config struct {
 
 	// --- Runner / container runtime (M5+) ---------------------------
 
-	// ContainerEnabled is true unless PICOCLAW_NO_CONTAINER=1.
+	// ContainerEnabled is true unless GOPOD_NO_CONTAINER=1.
 	//
-	// When false, picoclaw skips the Docker subsystem entirely (no
+	// When false, gopod skips the Docker subsystem entirely (no
 	// client open, no leftover cleanup). This is a dev-only escape
 	// hatch; there is no working host-subprocess agent path yet
 	// (see docs/ROADMAP.md notes on the NO_CONTAINER stub).
 	ContainerEnabled bool
 
-	// RepoRoot is the absolute path to the picoclaw checkout. The
+	// RepoRoot is the absolute path to the gopod checkout. The
 	// runner mounts it RO inside the owner chat's agent container per
 	// ISOLATION.md §3.1. Defaults to os.Getwd() if unset.
 	RepoRoot string
@@ -98,7 +98,7 @@ type Config struct {
 
 	// MountAllowlistPath is the operator-managed extras allowlist.
 	// Defaults to ${DataDir}/mount-allowlist.json. Missing file is
-	// not an error — picoclaw runs with only the standard mounts.
+	// not an error — gopod runs with only the standard mounts.
 	MountAllowlistPath string
 
 	// EmptyFile masks ${REPO_ROOT}/.env inside the owner agent
@@ -110,7 +110,7 @@ type Config struct {
 	ContainerImage string
 
 	// LeftoverCleanupEnabled controls the boot-time cleanup pass in
-	// lifecycle.go. Default true; set PICOCLAW_LEFTOVER_CLEANUP=0 to
+	// lifecycle.go. Default true; set GOPOD_LEFTOVER_CLEANUP=0 to
 	// disable (debug only).
 	LeftoverCleanupEnabled bool
 }
@@ -128,34 +128,34 @@ func Load(loadDotenv bool) (Config, error) {
 	}
 
 	compactAfter := 30
-	if v := os.Getenv("PICOCLAW_COMPACT_AFTER"); v != "" {
+	if v := os.Getenv("GOPOD_COMPACT_AFTER"); v != "" {
 		fmt.Sscanf(v, "%d", &compactAfter)
 	}
 
 	cfg := Config{
-		DataDir:                getenvDefault("PICOCLAW_DATA_DIR", "./data"),
-		LogLevel:               parseLevel(getenvDefault("PICOCLAW_LOG_LEVEL", "info")),
-		LogFormat:              strings.ToLower(getenvDefault("PICOCLAW_LOG_FORMAT", "text")),
+		DataDir:                getenvDefault("GOPOD_DATA_DIR", "./data"),
+		LogLevel:               parseLevel(getenvDefault("GOPOD_LOG_LEVEL", "info")),
+		LogFormat:              strings.ToLower(getenvDefault("GOPOD_LOG_FORMAT", "text")),
 		TelegramBotToken:       os.Getenv("TELEGRAM_BOT_TOKEN"),
-		ContainerEnabled:       !envFlag("PICOCLAW_NO_CONTAINER"),
-		RepoRoot:               os.Getenv("PICOCLAW_REPO_ROOT"),
-		ContainerImage:         getenvDefault("PICOCLAW_CONTAINER_IMAGE", "picoclaw-agent:latest"),
-		LeftoverCleanupEnabled: !envFlag("PICOCLAW_LEFTOVER_CLEANUP_DISABLED"),
+		ContainerEnabled:       !envFlag("GOPOD_NO_CONTAINER"),
+		RepoRoot:               os.Getenv("GOPOD_REPO_ROOT"),
+		ContainerImage:         getenvDefault("GOPOD_CONTAINER_IMAGE", "gopod-agent:latest"),
+		LeftoverCleanupEnabled: !envFlag("GOPOD_LEFTOVER_CLEANUP_DISABLED"),
 		CompactAfter:           compactAfter,
-		CompactInterval:        os.Getenv("PICOCLAW_COMPACT_INTERVAL"),
-		CompactTime:            os.Getenv("PICOCLAW_COMPACT_TIME"),
-		ObsidianVault:          os.Getenv("PICOCLAW_OBSIDIAN_VAULT"),
+		CompactInterval:        os.Getenv("GOPOD_COMPACT_INTERVAL"),
+		CompactTime:            os.Getenv("GOPOD_COMPACT_TIME"),
+		ObsidianVault:          os.Getenv("GOPOD_OBSIDIAN_VAULT"),
 	}
 
 	abs, err := filepath.Abs(cfg.DataDir)
 	if err != nil {
-		return Config{}, fmt.Errorf("resolving PICOCLAW_DATA_DIR=%q: %w", cfg.DataDir, err)
+		return Config{}, fmt.Errorf("resolving GOPOD_DATA_DIR=%q: %w", cfg.DataDir, err)
 	}
 	cfg.DataDir = abs
 	cfg.StorePath = filepath.Join(cfg.DataDir, "store.sqlite")
 
 	// Runner/container path defaults. RepoRoot falls back to cwd so
-	// `go run ./cmd/picoclaw` from the project root does the right
+	// `go run ./cmd/gopod` from the project root does the right
 	// thing without extra configuration.
 	if cfg.RepoRoot == "" {
 		wd, err := os.Getwd()
@@ -166,7 +166,7 @@ func Load(loadDotenv bool) (Config, error) {
 	}
 	cfg.RepoRoot, err = filepath.Abs(cfg.RepoRoot)
 	if err != nil {
-		return Config{}, fmt.Errorf("resolving PICOCLAW_REPO_ROOT=%q: %w", cfg.RepoRoot, err)
+		return Config{}, fmt.Errorf("resolving GOPOD_REPO_ROOT=%q: %w", cfg.RepoRoot, err)
 	}
 	if cfg.ChatsDir == "" {
 		cfg.ChatsDir = filepath.Join(cfg.RepoRoot, "chats")
@@ -181,16 +181,16 @@ func Load(loadDotenv bool) (Config, error) {
 		cfg.EmptyFile = filepath.Join(cfg.DataDir, "empty-env")
 	}
 
-	if v := os.Getenv("PICOCLAW_OWNER_CHAT_ID"); v != "" {
+	if v := os.Getenv("GOPOD_OWNER_CHAT_ID"); v != "" {
 		id, err := strconv.ParseInt(v, 10, 64)
 		if err != nil {
-			return Config{}, fmt.Errorf("parsing PICOCLAW_OWNER_CHAT_ID=%q: %w", v, err)
+			return Config{}, fmt.Errorf("parsing GOPOD_OWNER_CHAT_ID=%q: %w", v, err)
 		}
 		cfg.OwnerChatID = id
 	}
 
 	if cfg.LogFormat != "text" && cfg.LogFormat != "json" {
-		return Config{}, fmt.Errorf("PICOCLAW_LOG_FORMAT=%q: must be text or json", cfg.LogFormat)
+		return Config{}, fmt.Errorf("GOPOD_LOG_FORMAT=%q: must be text or json", cfg.LogFormat)
 	}
 
 	if err := cfg.validate(); err != nil {
@@ -199,13 +199,13 @@ func Load(loadDotenv bool) (Config, error) {
 	return cfg, nil
 }
 
-// validate enforces invariants that must hold for picoclaw to start.
+// validate enforces invariants that must hold for gopod to start.
 // M0 is permissive — only DataDir is required to be non-empty after
 // resolution. Future milestones tighten this (e.g. M1 will require
 // TELEGRAM_BOT_TOKEN, M2 will require ANTHROPIC_API_KEY).
 func (c Config) validate() error {
 	if c.DataDir == "" {
-		return errors.New("PICOCLAW_DATA_DIR resolved to empty path")
+		return errors.New("GOPOD_DATA_DIR resolved to empty path")
 	}
 	return nil
 }
@@ -218,7 +218,7 @@ func getenvDefault(key, def string) string {
 }
 
 // envFlag parses an env var as a boolean with the "anything truthy
-// means true" convention used across picoclaw. Accepts 1, true, yes,
+// means true" convention used across gopod. Accepts 1, true, yes,
 // on (case-insensitive). Unset or unrecognised value is false.
 func envFlag(key string) bool {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {

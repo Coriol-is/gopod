@@ -1,5 +1,5 @@
 // Package log provides a slog.Handler that writes structured log
-// entries to picoclaw's SQLite logs table alongside stderr output.
+// entries to gopod's SQLite logs table alongside stderr output.
 //
 // Design: docs/CONTROL.md §9
 package log

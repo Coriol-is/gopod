@@ -16,7 +16,7 @@ const DefaultStopGrace = 5 * time.Second
 // DefaultIdleTimeout is how long a per-chat container can sit
 // without any agent activity before the idle watcher stops and
 // removes it. Matches docs/ISOLATION.md §7.2 and the
-// PICOCLAW_IDLE_TIMEOUT default.
+// GOPOD_IDLE_TIMEOUT default.
 const DefaultIdleTimeout = 30 * time.Minute
 
 // idleTickInterval is how often the idle watcher checks every chat's
@@ -24,27 +24,27 @@ const DefaultIdleTimeout = 30 * time.Minute
 // promptly after a chat goes idle.
 const idleTickInterval = 1 * time.Minute
 
-// CleanupLeftovers walks every container with the picoclaw.chat label
-// and decides what to do with each one. Called once at picoclaw
+// CleanupLeftovers walks every container with the gopod.chat label
+// and decides what to do with each one. Called once at gopod
 // startup before the runner starts spawning new containers for this
 // process.
 //
 // Rules:
 //
-//   - currentVersion == "dev": EVERY picoclaw container is removed,
+//   - currentVersion == "dev": EVERY gopod container is removed,
 //     running or not. Dev builds (`go run` and untagged `go build`)
 //     all share version=dev, so version comparison is useless for
-//     them — picoclaw cannot tell whether a leftover is from a build
+//     them — gopod cannot tell whether a leftover is from a build
 //     with the same source as the current one. Removing all of them
-//     is the only safe option, and it lets `picoclaw restart` pick
+//     is the only safe option, and it lets `gopod restart` pick
 //     up code changes without an explicit `docker rm` step.
-//   - Any picoclaw container tagged with a version label OTHER than
-//     currentVersion is considered stale. New picoclaw build should not
+//   - Any gopod container tagged with a version label OTHER than
+//     currentVersion is considered stale. New gopod build should not
 //     trust state from the old one; stop and remove.
-//   - Any picoclaw container whose state is already Exited or Dead is
+//   - Any gopod container whose state is already Exited or Dead is
 //     removed regardless of version.
 //   - A running container tagged with currentVersion (and currentVersion
-//     is not "dev") is LEFT ALONE — the new picoclaw process re-attaches
+//     is not "dev") is LEFT ALONE — the new gopod process re-attaches
 //     to it as-is. This supports hot-restarting a tagged release build
 //     without interrupting in-flight agent turns.
 //
@@ -67,7 +67,7 @@ func (d *Docker) CleanupLeftovers(ctx context.Context, currentVersion string) (i
 		exited := !running
 
 		// Running container at the current TAGGED version is kept so a
-		// hot-restart of picoclaw doesn't interrupt in-flight agent
+		// hot-restart of gopod doesn't interrupt in-flight agent
 		// turns. Dev builds skip this branch — see the package comment.
 		if running && !stale && !devMode {
 			d.log.Info("leftover container kept (current version, running)",
@@ -118,7 +118,7 @@ func (d *Docker) CleanupLeftovers(ctx context.Context, currentVersion string) (i
 // stopped, removed, and dropped from the activity map.
 //
 // The watcher exits when ctx is cancelled. Caller is responsible for
-// draining the goroutine via ctx — picoclaw's main.go does this by
+// draining the goroutine via ctx — gopod's main.go does this by
 // passing the SIGINT-aware context.
 //
 // One watcher per Runner is sufficient: the per-chat per-tick scan is
@@ -206,7 +206,7 @@ func (r *Runner) killIdleChat(ctx context.Context, chatFolder string) {
 	}
 	if id == "" {
 		// Container is already gone (operator killed it manually,
-		// previous picoclaw run cleaned it up, etc). Just forget.
+		// previous gopod run cleaned it up, etc). Just forget.
 		r.forgetChat(chatFolder)
 		return
 	}

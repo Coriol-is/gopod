@@ -1,4 +1,4 @@
-# picoclaw — Glossary
+# gopod — Glossary
 
 Project-specific vocabulary. When you find yourself defining a term in another
 doc, add it here instead and link.
@@ -9,15 +9,15 @@ doc, add it here instead and link.
 [DECISIONS.md](DECISIONS.md). Append-only.
 
 **Agent runner** — In NanoClaw, a TypeScript program inside the container
-that wraps the Claude SDK. picoclaw **does not** have one — the host Go
+that wraps the Claude SDK. gopod **does not** have one — the host Go
 runner talks to the `claude` CLI directly via `docker exec`. See [D002](DECISIONS.md).
 
 **Anthropic Memory Tool** — A native Anthropic tool (public beta, 2026) that
 gives the agent a virtual filesystem for cross-session scratchpad memory.
-picoclaw backs it with `chats/<folder>/memory/`. Layer 2 of the memory model.
+gopod backs it with `chats/<folder>/memory/`. Layer 2 of the memory model.
 See [MEMORY.md §1](MEMORY.md).
 
-**Authorization by path** — picoclaw never trusts authorization data the LLM
+**Authorization by path** — gopod never trusts authorization data the LLM
 emits. The chat that owns an action is determined by the filesystem path the
 request came from. See [D007](DECISIONS.md).
 
@@ -48,25 +48,25 @@ picks it up. Zero Go code, no recompile. See [SKILLS.md §1](SKILLS.md).
 ## D
 
 **Dev skill** — A Claude Code slash command in `.claude/skills/<name>/` for
-picoclaw maintainers (e.g. `/release`). Not loaded at runtime. See
+gopod maintainers (e.g. `/release`). Not loaded at runtime. See
 [SKILLS.md §3](SKILLS.md).
 
 ## F
 
-**Feature** (vs skill) — Anything that requires recompiling picoclaw. Lives
+**Feature** (vs skill) — Anything that requires recompiling gopod. Lives
 in an `internal/` package, conditionally enabled by env var. The boundary is
 sharp: skill = no rebuild, feature = rebuild. See [D009](DECISIONS.md).
 
 ## G
 
-**GroupQueue** — picoclaw's per-chat serialization + global concurrency cap
+**GroupQueue** — gopod's per-chat serialization + global concurrency cap
 mechanism. Inherited from NanoClaw's `src/group-queue.ts`. Lives in
 `internal/queue`. See [ARCHITECTURE.md §5.5](ARCHITECTURE.md).
 
 ## H
 
 **Honcho** — A managed memory framework (plastic-labs) that does identity
-reasoning over time. Designed-in as picoclaw memory Layer 5 but **deferred**
+reasoning over time. Designed-in as gopod memory Layer 5 but **deferred**
 in v0. See [MEMORY.md §8](MEMORY.md), [D005](DECISIONS.md).
 
 ## I
@@ -85,7 +85,7 @@ identity / `CLAUDE.md` (1), Anthropic scratchpad (2), semantic
 ## M
 
 **MCP skill** — A skill type: a directory under `skills/mcp/<name>/` with
-a `manifest.json` (command, args, env, scope). picoclaw spawns the MCP
+a `manifest.json` (command, args, env, scope). gopod spawns the MCP
 server and registers its tools with the agent SDK at chat startup. The main
 extension mechanism for adding new agent capabilities without recompiling.
 See [SKILLS.md §2](SKILLS.md).
@@ -94,14 +94,14 @@ See [SKILLS.md §2](SKILLS.md).
 
 ## N
 
-**NanoClaw** — The TypeScript predecessor to picoclaw, at
+**NanoClaw** — The TypeScript predecessor to gopod, at
 `/Users/<user>/_code/gh-public/nanoclaw`. The reference implementation
 for architecture; the source of architectural ideas; **not** the source of
 code. See [ARCHITECTURE.md §2](ARCHITECTURE.md).
 
 ## O
 
-**Owner chat** — The single chat ID set in `PICOCLAW_OWNER_CHAT_ID`. Replaces
+**Owner chat** — The single chat ID set in `GOPOD_OWNER_CHAT_ID`. Replaces
 NanoClaw's per-group `is_main` flag. The only chat allowed to register new
 chats, schedule tasks for others, mount the SQLite store RW, see the project
 root. See [D006](DECISIONS.md).
@@ -134,7 +134,7 @@ Frontends set this on the `Caller` they construct.
 **Semantic memory** — Layer 3 of memory: `sqlite-vec` rows queried by
 embedding similarity (and FTS5 for lexical). See [MEMORY.md §1](MEMORY.md).
 
-**Skill** — Anything that extends picoclaw without recompiling it. Three
+**Skill** — Anything that extends gopod without recompiling it. Three
 types: container skills, MCP skills, dev skills. See [SKILLS.md](SKILLS.md).
 
 **`sqlite-vec`** — Vector search SQLite extension by Alex Garcia. Successor
@@ -143,7 +143,7 @@ to `sqlite-vss`. Used through `ncruces/go-sqlite3`'s WASM build. See
 
 ## T
 
-**Trigger pattern** — A regex (default `@picoclaw`) that messages must match
+**Trigger pattern** — A regex (default `@gopod`) that messages must match
 to wake the agent in a non-owner chat. Per-chat configurable.
 
 ## W

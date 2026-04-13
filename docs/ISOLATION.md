@@ -1,15 +1,15 @@
-# picoclaw — Container isolation policy
+# gopod — Container isolation policy
 
 > Companion docs: [ARCHITECTURE.md](ARCHITECTURE.md) · [DECISIONS.md](DECISIONS.md) · [SKILLS.md](SKILLS.md)
 > Decision: [D013](DECISIONS.md)
 
-picoclaw runs one Docker container per chat. The agent inside that container
+gopod runs one Docker container per chat. The agent inside that container
 has tool access to the filesystem (Read/Write/Bash/Edit) and the network. The
 container is therefore the **trust boundary**: anything the agent should not
 be able to touch must be on the other side of the mount and capability set.
 
 This document mirrors NanoClaw's `src/mount-security.ts` and
-`src/container-runner.ts`, adapted to Go and to picoclaw's flat owner-vs-rest
+`src/container-runner.ts`, adapted to Go and to gopod's flat owner-vs-rest
 permission model.
 
 ---
@@ -27,12 +27,12 @@ permission model.
 - Path-traversal in user-supplied mount specifications (`../../etc/shadow`)
 - Symlink games inside the host workspace (a symlink to `/etc` mounted into
   the container)
-- Forgotten leftover containers from a previous picoclaw run holding stale
+- Forgotten leftover containers from a previous gopod run holding stale
   filesystem state
 
 **Out of scope** (acknowledged, not defended against):
 
-- A malicious *operator* who has shell access to the picoclaw host. The
+- A malicious *operator* who has shell access to the gopod host. The
   operator is trusted; D012 already says "shell access = owner".
 - Side-channel attacks against the Docker daemon itself
 - Zero-days in `docker exec` stdio multiplexing
@@ -46,9 +46,9 @@ permission model.
 
 | Tier | Examples | Mounts |
 |---|---|---|
-| **Owner chat** | `PICOCLAW_OWNER_CHAT_ID` | Full set: project root (RO), `data/store.sqlite` (RW), own chat folder (RW), shared scratchpad (RW), all configured extra mounts |
+| **Owner chat** | `GOPOD_OWNER_CHAT_ID` | Full set: project root (RO), `data/store.sqlite` (RW), own chat folder (RW), shared scratchpad (RW), all configured extra mounts |
 | **Registered non-owner chat** | Any other registered chat | Own chat folder (RW), own memory dir (RW), own IPC namespace (RW), own session dir (RW), filtered container skills (RO), allowlisted extras (RO unless explicitly RW) |
-| **Unregistered chat** | A Telegram chat picoclaw has not been told about | No container at all. Messages are stored, control plane responds to `/whoami` and `/help`, agent never runs. |
+| **Unregistered chat** | A Telegram chat gopod has not been told about | No container at all. Messages are stored, control plane responds to `/whoami` and `/help`, agent never runs. |
 
 There are exactly these three tiers. The "main group is privileged" idea
 from NanoClaw collapses to **owner chat = tier 1, all other registered chats
@@ -89,9 +89,9 @@ no allowlist consultation needed.
 - `${REPO_ROOT}` (project root) — not even RO
 - `${DATA_DIR}/store.sqlite` — the agent has no SQL handle on cross-chat data
 - `${REPO_ROOT}/.env`
-- `${REPO_ROOT}/.claude/skills` (those are dev skills for picoclaw maintainers)
+- `${REPO_ROOT}/.claude/skills` (those are dev skills for gopod maintainers)
 - Any other chat's folder, memory, ipc, or session directory
-- `~/.config/picoclaw/`
+- `~/.config/gopod/`
 - `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.docker`
 
 ---
@@ -110,8 +110,8 @@ ${DATA_DIR}/mount-allowlist.json
 ```
 
 (per user decision 2026-04-09; lives next to `store.sqlite` so backup is
-still one-directory). The file is `chmod 0600`, owned by the picoclaw
-process user. picoclaw refuses to start if permissions are wider.
+still one-directory). The file is `chmod 0600`, owned by the gopod
+process user. gopod refuses to start if permissions are wider.
 
 ### 4.2 Schema
 
@@ -151,7 +151,7 @@ process user. picoclaw refuses to start if permissions are wider.
 ### 4.3 Validation rules
 
 `internal/runner/mountsec/mountsec.go` runs all of these on every entry,
-**every time** picoclaw starts and **every time** the file changes:
+**every time** gopod starts and **every time** the file changes:
 
 1. **Schema valid.** JSON parses, all required fields present, types match.
 2. **`host_path` is absolute** (`filepath.IsAbs`) and contains no `..` after
@@ -165,7 +165,7 @@ process user. picoclaw refuses to start if permissions are wider.
 7. **`allowed_chats`** entries are valid chat folder names (regex
    `^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`) or the literal `"*"`.
 
-picoclaw refuses to start if any entry fails. The error message names the
+gopod refuses to start if any entry fails. The error message names the
 entry and the rule.
 
 ### 4.4 Per-chat mount construction
@@ -202,8 +202,8 @@ Glob semantics: `**` matches any number of path segments.
 **/.docker/**
 **/.docker
 
-# picoclaw's own config & secrets surface
-**/.config/picoclaw/**
+# gopod's own config & secrets surface
+**/.config/gopod/**
 
 # Generic secret-shaped files
 **/credentials
@@ -237,16 +237,16 @@ attack.
 
 ## 6. Container spawn flags
 
-Constructed in `internal/runner/docker.go`. Applied to **every** picoclaw
+Constructed in `internal/runner/docker.go`. Applied to **every** gopod
 container, owner or not.
 
 ### 6.1 Always-on
 
 | Flag | Value | Purpose |
 |---|---|---|
-| `--name` | `picoclaw-<folder>` | Predictable name for `docker exec` and cleanup |
-| `--label` | `picoclaw.chat=<folder>` | Cleanup discriminator |
-| `--label` | `picoclaw.version=<version>` | Detect version mismatches at boot |
+| `--name` | `gopod-<folder>` | Predictable name for `docker exec` and cleanup |
+| `--label` | `gopod.chat=<folder>` | Cleanup discriminator |
+| `--label` | `gopod.version=<version>` | Detect version mismatches at boot |
 | `--user` | `<uid>:<gid>` | Host user, not root — required for bind-mount writes to be readable on the host |
 | `--read-only` | (set) | Root filesystem RO; agent writes only to mounted volumes |
 | `--tmpfs` | `/tmp:rw,size=512m,mode=1777` | Working scratch space |
@@ -256,21 +256,21 @@ container, owner or not.
 | `--security-opt` | `no-new-privileges:true` | setuid binaries can't gain privileges |
 | `--security-opt` | `seccomp=default` | Default seccomp profile |
 | `--pids-limit` | `1024` | Fork-bomb protection |
-| `--memory` | `${PICOCLAW_CONTAINER_MEM}` (default `4g`) | Per-chat RAM cap |
-| `--cpus` | `${PICOCLAW_CONTAINER_CPUS}` (default `2`) | Per-chat CPU cap |
-| `--restart` | `no` | picoclaw decides restart policy, not Docker |
+| `--memory` | `${GOPOD_CONTAINER_MEM}` (default `4g`) | Per-chat RAM cap |
+| `--cpus` | `${GOPOD_CONTAINER_CPUS}` (default `2`) | Per-chat CPU cap |
+| `--restart` | `no` | gopod decides restart policy, not Docker |
 
 ### 6.2 Linux-only
 
 | Flag | Value | Purpose |
 |---|---|---|
-| `--add-host` | `host.docker.internal:host-gateway` | Reach picoclaw on the host (e.g. for Ollama, MCP HTTP frontends). macOS Docker Desktop provides this automatically. |
+| `--add-host` | `host.docker.internal:host-gateway` | Reach gopod on the host (e.g. for Ollama, MCP HTTP frontends). macOS Docker Desktop provides this automatically. |
 
 ### 6.3 Conditional
 
 | When | Flag |
 |---|---|
-| Network policy = isolated (future) | `--network=picoclaw-isolated` (a per-chat user-defined bridge) |
+| Network policy = isolated (future) | `--network=gopod-isolated` (a per-chat user-defined bridge) |
 | GPU access requested via allowlist | `--gpus=all` (owner-chat extras only) |
 | Profiling builds | `--cap-add=SYS_PTRACE` (debug only, never default) |
 
@@ -286,10 +286,10 @@ needs one of these, it goes through an ADR, not a code change.
 
 ### 7.1 Boot-time leftover cleanup
 
-When picoclaw starts:
+When gopod starts:
 
 1. `client.ContainerList(ctx, types.ContainerListOptions{All: true,
-   Filters: filters.NewArgs(filters.Arg("label", "picoclaw.chat"))})`
+   Filters: filters.NewArgs(filters.Arg("label", "gopod.chat"))})`
 2. For each container found:
    - Log `chat`, `version`, `state`, `started_at`
    - If state is running: `ContainerStop` with 5s timeout, then
@@ -297,13 +297,13 @@ When picoclaw starts:
    - If state is exited: `ContainerRemove`
 3. Log the final count: `cleaned N leftover containers`
 
-This handles the case where picoclaw was killed mid-run and Docker is still
+This handles the case where gopod was killed mid-run and Docker is still
 holding the previous container.
 
 ### 7.2 Idle kill
 
 For every chat with a running container, a watcher goroutine compares
-`time.Since(lastActivity)` against `PICOCLAW_IDLE_TIMEOUT` (default `30m`).
+`time.Since(lastActivity)` against `GOPOD_IDLE_TIMEOUT` (default `30m`).
 On timeout:
 
 1. Send `_close` sentinel into the chat's IPC `input/` directory
@@ -316,17 +316,17 @@ On timeout:
 
 A crashed container (exit code != 0) is logged at `error` level with the
 chat folder, the last 50 lines from the `logs` SQLite table for that chat,
-and a `picoclaw.container.crashes_total` counter increment. The next
-incoming message for that chat triggers a fresh container — picoclaw does
+and a `gopod.container.crashes_total` counter increment. The next
+incoming message for that chat triggers a fresh container — gopod does
 **not** auto-restart on its own, because crash loops should be visible.
 
 ### 7.4 Update path
 
-When a new picoclaw version is deployed:
+When a new gopod version is deployed:
 
-1. Boot reads the `picoclaw.version` label on existing leftover containers
+1. Boot reads the `gopod.version` label on existing leftover containers
 2. If the version mismatches the current build, the leftover is removed
-   even if it's running (the new picoclaw can't trust state from the old
+   even if it's running (the new gopod can't trust state from the old
    one)
 3. The first message after restart spawns a fresh container with the new
    version label
@@ -340,7 +340,7 @@ internal/runner/
 ├── runner.go                # Run(chat, prompt) → reply
 ├── docker.go                # Docker SDK spawn + attach + demux
 ├── docker_args.go           # Construct ContainerCreate args (all the flags from §6)
-├── subprocess.go            # PICOCLAW_NO_CONTAINER fallback (lab only)
+├── subprocess.go            # GOPOD_NO_CONTAINER fallback (lab only)
 ├── markers.go               # OUTPUT_START/OUTPUT_END parsing
 ├── mounts.go                # Construct per-chat mounts (calls mountsec for extras)
 ├── lifecycle.go             # Idle watcher, leftover cleanup, crash logging
@@ -362,14 +362,14 @@ filesystem-state dependencies in the test suite (it uses `t.TempDir` and
 ## 9. Configuration
 
 ```
-PICOCLAW_DATA_DIR=./data
-PICOCLAW_REPO_ROOT=                            # auto-detected from binary location
-PICOCLAW_MOUNT_ALLOWLIST=                      # default: ${PICOCLAW_DATA_DIR}/mount-allowlist.json
-PICOCLAW_CONTAINER_IMAGE=picoclaw-agent:latest
-PICOCLAW_CONTAINER_MEM=4g
-PICOCLAW_CONTAINER_CPUS=2
-PICOCLAW_IDLE_TIMEOUT=30m
-PICOCLAW_LEFTOVER_CLEANUP=1                    # set to 0 to disable boot cleanup (debug only)
+GOPOD_DATA_DIR=./data
+GOPOD_REPO_ROOT=                            # auto-detected from binary location
+GOPOD_MOUNT_ALLOWLIST=                      # default: ${GOPOD_DATA_DIR}/mount-allowlist.json
+GOPOD_CONTAINER_IMAGE=gopod-agent:latest
+GOPOD_CONTAINER_MEM=4g
+GOPOD_CONTAINER_CPUS=2
+GOPOD_IDLE_TIMEOUT=30m
+GOPOD_LEFTOVER_CLEANUP=1                    # set to 0 to disable boot cleanup (debug only)
 ```
 
 ---

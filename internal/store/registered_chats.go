@@ -15,8 +15,8 @@ import (
 var folderPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
 
 // RegisteredChat is one row in the registered_chats table — a chat
-// picoclaw has a workspace folder for and is willing to spawn an agent
-// container for. Chats picoclaw has merely *seen* (chats table) are
+// gopod has a workspace folder for and is willing to spawn an agent
+// container for. Chats gopod has merely *seen* (chats table) are
 // not the same thing as chats it is *registered* with.
 type RegisteredChat struct {
 	JID             string

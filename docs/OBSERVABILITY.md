@@ -1,9 +1,9 @@
-# picoclaw — Observability
+# gopod — Observability
 
 > Companion docs: [ARCHITECTURE.md](ARCHITECTURE.md) · [CONTROL.md](CONTROL.md) · [DECISIONS.md](DECISIONS.md)
 > Decision: [D014](DECISIONS.md)
 
-picoclaw needs three observability surfaces: structured logs, metrics, and
+gopod needs three observability surfaces: structured logs, metrics, and
 distributed traces. All three are **opt-in via environment variables** and
 **off by default** so a fresh install does not open any new ports or send
 data anywhere unexpected.
@@ -11,8 +11,8 @@ data anywhere unexpected.
 | Signal | Backend | Default | How to enable |
 |---|---|---|---|
 | **Logs** | SQLite (`logs` table) + stderr | **on** | always on; [CONTROL.md §9](CONTROL.md) |
-| **Metrics** | Prometheus pull (`/metrics` HTTP endpoint) | **off** | `PICOCLAW_METRICS_ADDR=127.0.0.1:9090` |
-| **Traces** | OpenTelemetry OTLP push | **off** | `PICOCLAW_OTLP_ENDPOINT=...` |
+| **Metrics** | Prometheus pull (`/metrics` HTTP endpoint) | **off** | `GOPOD_METRICS_ADDR=127.0.0.1:9090` |
+| **Traces** | OpenTelemetry OTLP push | **off** | `GOPOD_OTLP_ENDPOINT=...` |
 
 Logs are covered by [CONTROL.md §9](CONTROL.md) (the `internal/log` SQLite
 slog handler, the `/logs` control command, the daily retention task). This
@@ -33,8 +33,8 @@ posture in a personal-use binary should be **silent**. Both subsystems
 initialize as no-ops if their env vars are unset. Setting an env var is the
 single switch.
 
-This also means picoclaw does not depend on a running collector or
-Prometheus instance to function. If `PICOCLAW_OTLP_ENDPOINT` points to an
+This also means gopod does not depend on a running collector or
+Prometheus instance to function. If `GOPOD_OTLP_ENDPOINT` points to an
 unreachable collector, traces silently drop after the configured retry
 budget; the data plane is unaffected.
 
@@ -49,10 +49,10 @@ Standard, stable, ~zero overhead when not scraped.
 
 ### 2.2 HTTP listener
 
-When `PICOCLAW_METRICS_ADDR` is non-empty, picoclaw starts a tiny HTTP
+When `GOPOD_METRICS_ADDR` is non-empty, gopod starts a tiny HTTP
 server on that address that serves exactly two endpoints:
 
-- `GET ${PICOCLAW_METRICS_PATH}` (default `/metrics`) — Prometheus exposition
+- `GET ${GOPOD_METRICS_PATH}` (default `/metrics`) — Prometheus exposition
 - `GET /healthz` — returns `200 OK` with body `ok`, for liveness probes
 
 The listener has **no other handlers**. It is not the control plane (the
@@ -65,7 +65,7 @@ shut down on SIGTERM with a 5-second grace period.
 
 ### 2.3 Metric catalog
 
-Names follow Prometheus conventions: `picoclaw_<subsystem>_<name>_<unit>`.
+Names follow Prometheus conventions: `gopod_<subsystem>_<name>_<unit>`.
 All metrics are registered with the default registry plus a process
 collector for Go runtime stats.
 
@@ -73,31 +73,31 @@ collector for Go runtime stats.
 
 | Name | Labels | Increment when |
 |---|---|---|
-| `picoclaw_messages_received_total` | `chat`, `direction` (`in` only here) | Telegram update stored in `messages` |
-| `picoclaw_messages_sent_total` | `chat` | `telegram.Send` succeeds |
-| `picoclaw_agent_invocations_total` | `chat`, `mode`, `provider`, `model`, `result` (`success`/`error`) | `runner.Run` returns |
-| `picoclaw_agent_errors_total` | `chat`, `kind` (`spawn`/`exec`/`timeout`/`output_parse`/`provider`/`other`) | Any agent error |
-| `picoclaw_memory_ops_total` | `chat`, `op` (`add`/`search`/`get`/`list`/`update`/`delete`) | Memory tool handler runs |
-| `picoclaw_scheduled_task_runs_total` | `chat`, `status` (`success`/`error`/`skipped`) | Scheduler executes a task |
-| `picoclaw_skill_invocations_total` | `skill`, `tool`, `result` | An MCP tool from a skill is called |
-| `picoclaw_control_commands_total` | `name`, `perm`, `result` | `Router.Dispatch` returns |
-| `picoclaw_container_starts_total` | `chat` | Container spawn |
-| `picoclaw_container_crashes_total` | `chat` | Container exited non-zero |
-| `picoclaw_container_idle_kills_total` | `chat` | Idle watcher killed a container |
-| `picoclaw_container_leftover_cleaned_total` | (none) | Boot-time cleanup count |
-| `picoclaw_llm_tokens_total` | `chat`, `provider`, `model`, `kind` (`input`/`output`) | After every LLM call (when usage is reported) |
+| `gopod_messages_received_total` | `chat`, `direction` (`in` only here) | Telegram update stored in `messages` |
+| `gopod_messages_sent_total` | `chat` | `telegram.Send` succeeds |
+| `gopod_agent_invocations_total` | `chat`, `mode`, `provider`, `model`, `result` (`success`/`error`) | `runner.Run` returns |
+| `gopod_agent_errors_total` | `chat`, `kind` (`spawn`/`exec`/`timeout`/`output_parse`/`provider`/`other`) | Any agent error |
+| `gopod_memory_ops_total` | `chat`, `op` (`add`/`search`/`get`/`list`/`update`/`delete`) | Memory tool handler runs |
+| `gopod_scheduled_task_runs_total` | `chat`, `status` (`success`/`error`/`skipped`) | Scheduler executes a task |
+| `gopod_skill_invocations_total` | `skill`, `tool`, `result` | An MCP tool from a skill is called |
+| `gopod_control_commands_total` | `name`, `perm`, `result` | `Router.Dispatch` returns |
+| `gopod_container_starts_total` | `chat` | Container spawn |
+| `gopod_container_crashes_total` | `chat` | Container exited non-zero |
+| `gopod_container_idle_kills_total` | `chat` | Idle watcher killed a container |
+| `gopod_container_leftover_cleaned_total` | (none) | Boot-time cleanup count |
+| `gopod_llm_tokens_total` | `chat`, `provider`, `model`, `kind` (`input`/`output`) | After every LLM call (when usage is reported) |
 
 #### Gauges
 
 | Name | Labels | What |
 |---|---|---|
-| `picoclaw_active_containers` | (none) | Currently running picoclaw containers |
-| `picoclaw_queue_pending` | (none) | Total messages awaiting processing across all chats |
-| `picoclaw_queue_pending_per_chat` | `chat` | Per-chat backlog |
-| `picoclaw_queue_active_chats` | (none) | Chats currently holding a worker slot |
-| `picoclaw_memory_items` | `chat` | Row count in `memories` for this chat |
-| `picoclaw_uptime_seconds` | (none) | `time.Since(startTime)` |
-| `picoclaw_build_info` | `version`, `sha`, `go_version` | Constant 1 — labelset carries the build info |
+| `gopod_active_containers` | (none) | Currently running gopod containers |
+| `gopod_queue_pending` | (none) | Total messages awaiting processing across all chats |
+| `gopod_queue_pending_per_chat` | `chat` | Per-chat backlog |
+| `gopod_queue_active_chats` | (none) | Chats currently holding a worker slot |
+| `gopod_memory_items` | `chat` | Row count in `memories` for this chat |
+| `gopod_uptime_seconds` | (none) | `time.Since(startTime)` |
+| `gopod_build_info` | `version`, `sha`, `go_version` | Constant 1 — labelset carries the build info |
 
 #### Histograms
 
@@ -107,20 +107,20 @@ agent run.
 
 | Name | Labels | Observes |
 |---|---|---|
-| `picoclaw_agent_duration_seconds` | `chat`, `mode`, `provider`, `model` | Wall time of one `runner.Run` |
-| `picoclaw_message_to_reply_seconds` | `chat` | End-to-end: Telegram in → Telegram out |
-| `picoclaw_embedding_duration_seconds` | `provider`, `model`, `batch_size` | One embedder call |
-| `picoclaw_memory_search_duration_seconds` | `chat` | One hybrid (vec0+fts5) search |
-| `picoclaw_telegram_send_duration_seconds` | `chat` | One `bot.SendMessage` |
-| `picoclaw_docker_exec_duration_seconds` | `chat` | One `ContainerExecAttach` cycle |
-| `picoclaw_skill_tool_duration_seconds` | `skill`, `tool` | One MCP tool round-trip |
-| `picoclaw_control_dispatch_duration_seconds` | `name` | One `Router.Dispatch` |
+| `gopod_agent_duration_seconds` | `chat`, `mode`, `provider`, `model` | Wall time of one `runner.Run` |
+| `gopod_message_to_reply_seconds` | `chat` | End-to-end: Telegram in → Telegram out |
+| `gopod_embedding_duration_seconds` | `provider`, `model`, `batch_size` | One embedder call |
+| `gopod_memory_search_duration_seconds` | `chat` | One hybrid (vec0+fts5) search |
+| `gopod_telegram_send_duration_seconds` | `chat` | One `bot.SendMessage` |
+| `gopod_docker_exec_duration_seconds` | `chat` | One `ContainerExecAttach` cycle |
+| `gopod_skill_tool_duration_seconds` | `skill`, `tool` | One MCP tool round-trip |
+| `gopod_control_dispatch_duration_seconds` | `name` | One `Router.Dispatch` |
 
 ### 2.4 Cardinality discipline
 
 `chat` is the only high-cardinality label. For a personal assistant with
 ≤50 chats this is fine. For users with many chats, set
-`PICOCLAW_METRICS_DROP_CHAT_LABEL=1` to omit the `chat` label from all
+`GOPOD_METRICS_DROP_CHAT_LABEL=1` to omit the `chat` label from all
 metrics — gives aggregate-only data but bounds cardinality.
 
 `provider` and `model` come from a closed set (4 providers, ~10 models),
@@ -134,9 +134,9 @@ custom prompt text). Slog is the place for that.
 ### 2.5 Configuration
 
 ```
-PICOCLAW_METRICS_ADDR=                          # empty = disabled. e.g. 127.0.0.1:9090
-PICOCLAW_METRICS_PATH=/metrics                  # default
-PICOCLAW_METRICS_DROP_CHAT_LABEL=0              # set to 1 to bound cardinality
+GOPOD_METRICS_ADDR=                          # empty = disabled. e.g. 127.0.0.1:9090
+GOPOD_METRICS_PATH=/metrics                  # default
+GOPOD_METRICS_DROP_CHAT_LABEL=0              # set to 1 to bound cardinality
 ```
 
 ---
@@ -171,9 +171,9 @@ func InitTracing(cfg Config) (shutdown func(context.Context) error, err error) {
 
     res, _ := resource.New(ctx,
         resource.WithAttributes(
-            semconv.ServiceName("picoclaw"),
+            semconv.ServiceName("gopod"),
             semconv.ServiceVersion(cfg.Version),
-            attribute.String("picoclaw.owner_chat_redacted", "yes"),
+            attribute.String("gopod.owner_chat_redacted", "yes"),
         ))
 
     tp := trace.NewTracerProvider(
@@ -187,18 +187,18 @@ func InitTracing(cfg Config) (shutdown func(context.Context) error, err error) {
 }
 ```
 
-When `PICOCLAW_OTLP_ENDPOINT` is empty the tracer provider is the no-op
+When `GOPOD_OTLP_ENDPOINT` is empty the tracer provider is the no-op
 implementation — every `tracer.Start` call is free, every span attribute
 write is dropped, every exporter call is skipped. This is the default state.
 
 ### 3.3 Span hierarchy
 
-picoclaw produces three trace flows:
+gopod produces three trace flows:
 
 #### Inbound message flow
 
 ```
-picoclaw.message.process              (root)
+gopod.message.process              (root)
 ├── store.save_message
 ├── trigger.match
 ├── queue.enqueue
@@ -221,38 +221,38 @@ picoclaw.message.process              (root)
 #### Scheduled task flow
 
 ```
-picoclaw.task.run                      (root, started by scheduler)
+gopod.task.run                      (root, started by scheduler)
 └── runner.run                         (same subtree as above)
 ```
 
 #### Control command flow
 
 ```
-picoclaw.control.dispatch              (root)
+gopod.control.dispatch              (root)
 ├── control.auth_check
 └── control.handler.<name>             (e.g. control.handler.chats.list)
 ```
 
 ### 3.4 Standard attributes
 
-Every span sets `picoclaw.chat=<folder>` if applicable. Other standard keys:
+Every span sets `gopod.chat=<folder>` if applicable. Other standard keys:
 
 | Key | Where |
 |---|---|
-| `picoclaw.chat` | Anything chat-scoped |
-| `picoclaw.mode` | `runner.run` (`claude_container` or `direct_api`) |
-| `picoclaw.provider` | `runner.run`, `llm.call`, `memory.search` (embedder) |
-| `picoclaw.model` | `runner.run`, `llm.call` |
-| `picoclaw.tokens.input` | `llm.call` |
-| `picoclaw.tokens.output` | `llm.call` |
-| `picoclaw.tools.allowed` | `runner.run` (count of tools registered) |
-| `picoclaw.skill` | `skills.*` and `skill_tool.*` |
-| `picoclaw.command` | `control.*` |
-| `picoclaw.command.perm` | `control.auth_check` |
+| `gopod.chat` | Anything chat-scoped |
+| `gopod.mode` | `runner.run` (`claude_container` or `direct_api`) |
+| `gopod.provider` | `runner.run`, `llm.call`, `memory.search` (embedder) |
+| `gopod.model` | `runner.run`, `llm.call` |
+| `gopod.tokens.input` | `llm.call` |
+| `gopod.tokens.output` | `llm.call` |
+| `gopod.tools.allowed` | `runner.run` (count of tools registered) |
+| `gopod.skill` | `skills.*` and `skill_tool.*` |
+| `gopod.command` | `control.*` |
+| `gopod.command.perm` | `control.auth_check` |
 
 ### 3.5 Trace context propagation across containers
 
-picoclaw passes the W3C `traceparent` (and `tracestate`) into the agent
+gopod passes the W3C `traceparent` (and `tracestate`) into the agent
 container as environment variables on each `docker exec`:
 
 ```
@@ -263,7 +263,7 @@ TRACESTATE=...
 The current Claude Code CLI does **not** consume these — that's fine. They
 are present so:
 
-1. MCP skill processes spawned by picoclaw can pick them up via OTel's
+1. MCP skill processes spawned by gopod can pick them up via OTel's
    environment-based propagator
 2. Future Claude Code versions or agent harnesses with OTel support can
    join the trace automatically
@@ -277,7 +277,7 @@ The same env vars are also passed to MCP server processes at spawn time
 
 D012 says secrets only live in env. The OTel SDK has no automatic
 redaction — anything we pass via `SetAttributes` is exported as-is.
-picoclaw applies the same redaction allowlist used by `internal/log`:
+gopod applies the same redaction allowlist used by `internal/log`:
 attribute keys matching `(?i)token|key|secret|password|cookie|auth` get
 their values replaced with `<redacted>` before being added to a span.
 
@@ -295,22 +295,22 @@ func SetAttr(span trace.Span, k string, v any) {
 }
 ```
 
-Use `obs.SetAttr` instead of `span.SetAttributes` everywhere in picoclaw
+Use `obs.SetAttr` instead of `span.SetAttributes` everywhere in gopod
 code. Linted via a small `go vet` analyzer in `tools/linters/` (post-v0).
 
 ### 3.7 Configuration
 
 ```
-PICOCLAW_OTLP_ENDPOINT=                         # empty = disabled. e.g. https://api.honeycomb.io:443 or http://localhost:4317
-PICOCLAW_OTLP_PROTOCOL=grpc                     # grpc | http (auto-derived from URL scheme if empty)
-PICOCLAW_OTLP_HEADERS=                          # comma-separated, e.g. x-honeycomb-team=<KEY>,x-other=val. Values are secret material — set via env, never via committed file (D012). Logged with redaction.
-PICOCLAW_OTLP_INSECURE=0                        # 1 to skip TLS verification (local collector only)
-PICOCLAW_TRACE_SAMPLE_RATE=1.0                  # 0.0..1.0
-PICOCLAW_SERVICE_NAME=picoclaw                  # in case you run multiple picoclaw instances
-PICOCLAW_SERVICE_VERSION=                       # baked at build time normally
+GOPOD_OTLP_ENDPOINT=                         # empty = disabled. e.g. https://api.honeycomb.io:443 or http://localhost:4317
+GOPOD_OTLP_PROTOCOL=grpc                     # grpc | http (auto-derived from URL scheme if empty)
+GOPOD_OTLP_HEADERS=                          # comma-separated, e.g. x-honeycomb-team=<KEY>,x-other=val. Values are secret material — set via env, never via committed file (D012). Logged with redaction.
+GOPOD_OTLP_INSECURE=0                        # 1 to skip TLS verification (local collector only)
+GOPOD_TRACE_SAMPLE_RATE=1.0                  # 0.0..1.0
+GOPOD_SERVICE_NAME=gopod                  # in case you run multiple gopod instances
+GOPOD_SERVICE_VERSION=                       # baked at build time normally
 ```
 
-`PICOCLAW_OTLP_HEADERS` is the one observability env var that may carry a
+`GOPOD_OTLP_HEADERS` is the one observability env var that may carry a
 secret value (vendor API key). It is read into memory at process start, used
 to construct exporter headers, and never logged or exported as a metric
 label. The key/value pairs go through the same redaction matcher: a header
@@ -334,11 +334,11 @@ internal/observability/
 └── observability_test.go
 ```
 
-`Init` is called once from `cmd/picoclaw/main.go` immediately after config
+`Init` is called once from `cmd/gopod/main.go` immediately after config
 load and before any subsystem that wants to emit signals. It returns a
 single `shutdown(ctx)` that flushes both subsystems with a 5-second grace
 period. Subsystems do not import `internal/observability` directly — they
-use the global tracer (`otel.Tracer("picoclaw/runner")`) and the metric
+use the global tracer (`otel.Tracer("gopod/runner")`) and the metric
 package functions exported by `internal/observability/metrics.go`.
 
 ---
@@ -347,15 +347,15 @@ package functions exported by `internal/observability/metrics.go`.
 
 | Feature | Metrics added | Trace spans added |
 |---|---|---|
-| `internal/store` | `picoclaw_messages_received_total`, query histogram (optional later) | `store.*` spans on hot paths |
-| `internal/queue` | `picoclaw_queue_*` gauges | `queue.enqueue`, `queue.work` |
-| `internal/runner` | `picoclaw_agent_*`, `picoclaw_container_*`, `picoclaw_docker_exec_duration_seconds` | `runner.run` and children |
-| `internal/scheduler` | `picoclaw_scheduled_task_runs_total` | `picoclaw.task.run` root span |
-| `internal/memory` | `picoclaw_memory_ops_total`, `picoclaw_memory_search_duration_seconds`, `picoclaw_memory_items` | `memory.search`, `memory.add`, embedder spans |
-| `internal/skills` | `picoclaw_skill_invocations_total`, `picoclaw_skill_tool_duration_seconds` | `skills.*`, `skill_tool.*` |
-| `internal/control` | `picoclaw_control_commands_total`, `picoclaw_control_dispatch_duration_seconds` | `picoclaw.control.dispatch` root span |
-| `internal/llm` | `picoclaw_llm_tokens_total` | `llm.call` |
-| `internal/telegram` | `picoclaw_messages_sent_total`, `picoclaw_telegram_send_duration_seconds` | `telegram.send` |
+| `internal/store` | `gopod_messages_received_total`, query histogram (optional later) | `store.*` spans on hot paths |
+| `internal/queue` | `gopod_queue_*` gauges | `queue.enqueue`, `queue.work` |
+| `internal/runner` | `gopod_agent_*`, `gopod_container_*`, `gopod_docker_exec_duration_seconds` | `runner.run` and children |
+| `internal/scheduler` | `gopod_scheduled_task_runs_total` | `gopod.task.run` root span |
+| `internal/memory` | `gopod_memory_ops_total`, `gopod_memory_search_duration_seconds`, `gopod_memory_items` | `memory.search`, `memory.add`, embedder spans |
+| `internal/skills` | `gopod_skill_invocations_total`, `gopod_skill_tool_duration_seconds` | `skills.*`, `skill_tool.*` |
+| `internal/control` | `gopod_control_commands_total`, `gopod_control_dispatch_duration_seconds` | `gopod.control.dispatch` root span |
+| `internal/llm` | `gopod_llm_tokens_total` | `llm.call` |
+| `internal/telegram` | `gopod_messages_sent_total`, `gopod_telegram_send_duration_seconds` | `telegram.send` |
 
 Every increment / observation lives in the package that owns the operation.
 There is no central "log this thing" indirection.
@@ -371,7 +371,7 @@ two opt-in subsystems.
 | ID | Step |
 |----|------|
 | **O1** | `internal/observability` scaffold: `Init`, no-op providers, config loader, shutdown |
-| **O2** | Metric definitions in one place, registry, the `127.0.0.1:9090/metrics` listener gated by `PICOCLAW_METRICS_ADDR` |
+| **O2** | Metric definitions in one place, registry, the `127.0.0.1:9090/metrics` listener gated by `GOPOD_METRICS_ADDR` |
 | **O3** | Wire counters/gauges/histograms into `store`, `queue`, `runner`, `telegram`, `control` (the existing-by-then packages) |
 | **O4** | OTel scaffold: `Init`, no-op tracer when env unset, exporter selection, redaction wrapper |
 | **O5** | `runner.run` root span tree + propagation env vars on `docker exec` + MCP spawn |
@@ -380,7 +380,7 @@ two opt-in subsystems.
 Later milestones (M4 scheduler, M9 memory, S* skills) add their own spans
 and counters as part of their normal implementation, using the helpers
 from M3.6. This means M3.6 is the **only** place where adding observability
-to picoclaw requires touching `internal/observability` itself.
+to gopod requires touching `internal/observability` itself.
 
 ---
 
@@ -389,9 +389,9 @@ to picoclaw requires touching `internal/observability` itself.
 ### 7.1 Local-only Prometheus + Grafana stack
 
 ```bash
-PICOCLAW_METRICS_ADDR=127.0.0.1:9090 picoclaw serve
+GOPOD_METRICS_ADDR=127.0.0.1:9090 gopod serve
 # Then Prometheus scrape config:
-#   - job_name: picoclaw
+#   - job_name: gopod
 #     static_configs:
 #       - targets: ['127.0.0.1:9090']
 ```
@@ -399,28 +399,28 @@ PICOCLAW_METRICS_ADDR=127.0.0.1:9090 picoclaw serve
 ### 7.2 OTel local collector
 
 ```bash
-PICOCLAW_OTLP_ENDPOINT=http://127.0.0.1:4317 \
-PICOCLAW_OTLP_INSECURE=1 \
-picoclaw serve
+GOPOD_OTLP_ENDPOINT=http://127.0.0.1:4317 \
+GOPOD_OTLP_INSECURE=1 \
+gopod serve
 ```
 
 ### 7.3 Honeycomb (or any SaaS)
 
 ```bash
-PICOCLAW_OTLP_ENDPOINT=https://api.honeycomb.io:443 \
-PICOCLAW_OTLP_PROTOCOL=grpc \
-PICOCLAW_OTLP_HEADERS="x-honeycomb-team=$HONEYCOMB_API_KEY" \
-picoclaw serve
+GOPOD_OTLP_ENDPOINT=https://api.honeycomb.io:443 \
+GOPOD_OTLP_PROTOCOL=grpc \
+GOPOD_OTLP_HEADERS="x-honeycomb-team=$HONEYCOMB_API_KEY" \
+gopod serve
 ```
 
 The API key is read from the operator's environment; it never lives in any
-picoclaw config file.
+gopod config file.
 
 ### 7.4 Disable everything
 
 ```bash
-unset PICOCLAW_METRICS_ADDR PICOCLAW_OTLP_ENDPOINT
-picoclaw serve
+unset GOPOD_METRICS_ADDR GOPOD_OTLP_ENDPOINT
+gopod serve
 ```
 
 This is the default. Logs still go to stderr and to the SQLite `logs` table.

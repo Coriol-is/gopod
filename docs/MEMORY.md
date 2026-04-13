@@ -1,4 +1,4 @@
-# picoclaw — Memory architecture
+# gopod — Memory architecture
 
 > Companion docs: [ARCHITECTURE.md](ARCHITECTURE.md) · [INTEGRATIONS.md](INTEGRATIONS.md) · [DECISIONS.md](DECISIONS.md) · [GLOSSARY.md](GLOSSARY.md)
 
@@ -23,7 +23,7 @@ read/write patterns:
 
 Trying to collapse these into one store is what makes most "memory libraries"
 either too slow (vector search on every turn) or too lossy (chat history
-getting truncated into one summary). picoclaw keeps them separate and lets the
+getting truncated into one summary). gopod keeps them separate and lets the
 agent route between them through tools.
 
 A fifth layer — **identity reasoning** (Honcho-style "what does this user
@@ -39,7 +39,7 @@ care about over time?") — is designed-in but **not implemented in v0**. See §
 - **What:** raw Telegram messages, timestamped, per chat.
 - **How agent sees it:** as the formatted `<messages>` envelope at the top of
   every prompt (last `MAX_MESSAGES_PER_PROMPT`, default 10).
-- **Lifecycle:** never deleted by picoclaw. Optional retention policy later
+- **Lifecycle:** never deleted by gopod. Optional retention policy later
   (e.g. drop > 1 year old) but not in v0.
 - **Code:** `internal/store/messages.go` (already in M0).
 
@@ -61,7 +61,7 @@ care about over time?") — is designed-in but **not implemented in v0**. See §
 ### Layer 2 — Scratchpad (Anthropic native Memory Tool)
 
 Anthropic released a **native Memory Tool** (public beta, 2026) plus context
-editing. Combined they give +39% on long-running tasks. picoclaw uses it.
+editing. Combined they give +39% on long-running tasks. gopod uses it.
 
 - **Where:** `chats/<folder>/memory/` on the host, mounted RW into the
   container at `/workspace/memory/`.
@@ -194,11 +194,11 @@ Three implementations in v0:
 | **Voyage** | `voyage-3-lite` | 512 | $0.02/M tok | Anthropic-recommended for Claude pairings. Requires `VOYAGE_API_KEY`. |
 | **Ollama** | `nomic-embed-text` (768) or `bge-m3` (1024) | varies | free | Fully offline. Requires Ollama running locally. |
 
-Selection via `PICOCLAW_EMBEDDING_PROVIDER=openai|voyage|ollama` and
-`PICOCLAW_EMBEDDING_MODEL=...`. Default: OpenAI `text-embedding-3-small` at
+Selection via `GOPOD_EMBEDDING_PROVIDER=openai|voyage|ollama` and
+`GOPOD_EMBEDDING_MODEL=...`. Default: OpenAI `text-embedding-3-small` at
 1024 dim (using `dimensions` truncation, supported by the API).
 
-Switching providers later: `picoclaw memory reembed` rebuilds the `memory_vec`
+Switching providers later: `gopod memory reembed` rebuilds the `memory_vec`
 table from existing `memories.content` rows. Cheap on personal scale.
 
 ---
@@ -246,7 +246,7 @@ Three triggers, all opt-in via config:
 
 ### 4.1 Every N messages (default ON)
 
-`PICOCLAW_AUTO_SUMMARIZE_EVERY=20` (default).
+`GOPOD_AUTO_SUMMARIZE_EVERY=20` (default).
 
 After every 20 new user messages in a chat, the runner schedules a low-priority
 follow-up: it asks Claude to produce a short summary of those messages plus the
@@ -254,7 +254,7 @@ previous summary, and stores it as `kind='conversation_summary'`. This rolls
 up working memory into searchable long-term memory automatically.
 
 The summary prompt is small and runs on the cheap model
-(`PICOCLAW_SUMMARIZE_MODEL=claude-haiku-4-5`) to keep cost minimal.
+(`GOPOD_SUMMARIZE_MODEL=claude-haiku-4-5`) to keep cost minimal.
 
 ### 4.2 On `/compact` (default ON)
 
@@ -287,9 +287,9 @@ Two modes:
 The agent has `memory_search` in its tool list and decides when to call it.
 This is the cleanest model: the LLM knows when it needs to remember.
 
-### Mode B — Pre-prompt injection (opt-in via `PICOCLAW_AUTO_RECALL=1`)
+### Mode B — Pre-prompt injection (opt-in via `GOPOD_AUTO_RECALL=1`)
 
-Before sending a turn, picoclaw runs `memory_search(last_user_msg, k=3,
+Before sending a turn, gopod runs `memory_search(last_user_msg, k=3,
 scope='all')` and injects the results into the system prompt as
 `<recalled_memories>...</recalled_memories>`. Cheap insurance for chats where
 the agent forgets to call the tool. Costs an embedding call per turn.
@@ -326,16 +326,16 @@ agent invocation.
 
 ```
 # Memory
-PICOCLAW_MEMORY_ENABLED=1
-PICOCLAW_EMBEDDING_PROVIDER=openai            # openai|voyage|ollama
-PICOCLAW_EMBEDDING_MODEL=text-embedding-3-small
-PICOCLAW_EMBEDDING_DIM=1024                   # frozen after first run
-PICOCLAW_AUTO_SUMMARIZE_EVERY=20              # 0 = off
-PICOCLAW_SUMMARIZE_MODEL=claude-haiku-4-5
-PICOCLAW_AUTO_RECALL=0                        # Mode B
-PICOCLAW_AUTO_RECALL_K=3
-PICOCLAW_GLOBAL_SCORE_BOOST=0.05              # tiny bump for _global hits
-PICOCLAW_MEMORY_RETENTION_DAYS=0              # 0 = keep forever
+GOPOD_MEMORY_ENABLED=1
+GOPOD_EMBEDDING_PROVIDER=openai            # openai|voyage|ollama
+GOPOD_EMBEDDING_MODEL=text-embedding-3-small
+GOPOD_EMBEDDING_DIM=1024                   # frozen after first run
+GOPOD_AUTO_SUMMARIZE_EVERY=20              # 0 = off
+GOPOD_SUMMARIZE_MODEL=claude-haiku-4-5
+GOPOD_AUTO_RECALL=0                        # Mode B
+GOPOD_AUTO_RECALL_K=3
+GOPOD_GLOBAL_SCORE_BOOST=0.05              # tiny bump for _global hits
+GOPOD_MEMORY_RETENTION_DAYS=0              # 0 = keep forever
 ```
 
 ---
@@ -344,7 +344,7 @@ PICOCLAW_MEMORY_RETENTION_DAYS=0              # 0 = keep forever
 
 Honcho is a strong product (Honcho 3, $2/M tokens, peer/session/message model,
 tiered reasoning levels). It excels at **identity reasoning** — modeling what
-a user cares about over time across many sessions. picoclaw's layered model
+a user cares about over time across many sessions. gopod's layered model
 gives us:
 
 - **Working memory** (Layer 0)
@@ -353,7 +353,7 @@ gives us:
 - **Lexical + semantic recall** (Layer 3)
 
 …but **does not** do background reasoning over the user's identity. Honcho
-would slot in as Layer 5 if/when picoclaw needs it:
+would slot in as Layer 5 if/when gopod needs it:
 
 - New tools `honcho_query(question)` and `honcho_observe(text)`.
 - Auto-observe: pipe every user message to Honcho in the background, get
@@ -372,7 +372,7 @@ assistant, and we can layer Honcho in later behind a single env var
 
 ## 9. What we get vs NanoClaw today
 
-| Capability | NanoClaw | picoclaw with this design |
+| Capability | NanoClaw | gopod with this design |
 |---|---|---|
 | Last N messages | ✅ | ✅ (same) |
 | Per-chat persona file | ✅ (`groups/X/CLAUDE.md`) | ✅ (`chats/X/CLAUDE.md`) |
@@ -395,9 +395,9 @@ assistant, and we can layer Honcho in later behind a single env var
 | **M9.5** | Anthropic Memory Tool wired to `chats/<X>/memory/` | The Layer-2 scratchpad |
 | **M9.6** | Auto-summarize every N messages | Opt-in via env, cheap model |
 | **M9.7** | `/remember`, `/recall` slash commands | Human entry points |
-| **M9.8** | Voyage + Ollama embedders | Behind `PICOCLAW_EMBEDDING_PROVIDER` |
-| **M9.9** | `picoclaw memory reembed` admin command | For provider switches |
-| **M9.10** | Optional Mode B pre-prompt recall | `PICOCLAW_AUTO_RECALL=1` |
+| **M9.8** | Voyage + Ollama embedders | Behind `GOPOD_EMBEDDING_PROVIDER` |
+| **M9.9** | `gopod memory reembed` admin command | For provider switches |
+| **M9.10** | Optional Mode B pre-prompt recall | `GOPOD_AUTO_RECALL=1` |
 
 Honcho integration is a separate post-v0 milestone.
 

@@ -7,4 +7,4 @@ chats/
 *.sqlite-shm
 .env
 .env.local
-picoclaw
+gopod

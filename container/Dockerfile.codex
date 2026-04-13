@@ -1,4 +1,4 @@
-# picoclaw agent container — Codex CLI variant
+# gopod agent container — Codex CLI variant
 #
 # Same structure as the Claude Dockerfile but with OpenAI Codex CLI
 # instead of Claude Code CLI.

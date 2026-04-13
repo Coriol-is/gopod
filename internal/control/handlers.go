@@ -25,7 +25,7 @@ func helpHandler(r *Router) Handler {
 	return func(ctx context.Context, cmd Command) (Response, error) {
 		cmds := r.List()
 		var sb strings.Builder
-		sb.WriteString("**picoclaw commands**\n\n")
+		sb.WriteString("**gopod commands**\n\n")
 		for _, c := range cmds {
 			if c.Perm == PermOwnerOnly && !cmd.Caller.IsOwner {
 				continue
@@ -96,7 +96,7 @@ func RegisterSessionCommands(r *Router, compactFn CompactFunc, chatFolderLookup 
 }
 
 func RegisterLogsCommand(r *Router, queryFn func(level, subsystem string, limit int) (string, error)) {
-	r.Register("logs", "logs", "(owner) show recent picoclaw logs", PermOwnerOnly,
+	r.Register("logs", "logs", "(owner) show recent gopod logs", PermOwnerOnly,
 		func(ctx context.Context, cmd Command) (Response, error) {
 			level := ""
 			subsys := ""
@@ -186,7 +186,7 @@ func versionHandler(_ context.Context, _ Command) (Response, error) {
 			}
 		}
 	}
-	text := fmt.Sprintf("picoclaw %s (go %s)", ver, runtime.Version())
+	text := fmt.Sprintf("gopod %s (go %s)", ver, runtime.Version())
 	return Response{
 		Text: text,
 		Data: map[string]any{"version": ver, "go": runtime.Version()},

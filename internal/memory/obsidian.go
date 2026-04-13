@@ -2,7 +2,7 @@
 // chunks them by heading sections, embeds, and stores in memory
 // with kind="document" and source="obsidian:<path>".
 //
-// Config: PICOCLAW_OBSIDIAN_VAULT=/path/to/vault
+// Config: GOPOD_OBSIDIAN_VAULT=/path/to/vault
 //
 // On startup: full scan (only new/modified files since last scan).
 // Optionally: fsnotify watcher for live updates.

@@ -1,7 +1,7 @@
 package runner
 
 // AgentProvider abstracts the CLI agent runtime (Claude Code, Codex,
-// etc.) so picoclaw can manage different agent backends through the
+// etc.) so gopod can manage different agent backends through the
 // same Runner interface.
 //
 // Each provider knows how to build the right CLI commands for its
@@ -16,7 +16,7 @@ type AgentProvider interface {
 	Name() string
 
 	// Image returns the Docker image tag for this provider's agent
-	// container (e.g. "picoclaw-agent-claude:latest").
+	// container (e.g. "gopod-agent-claude:latest").
 	Image() string
 
 	// HomeDir returns the HOME path inside the container.

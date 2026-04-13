@@ -1,6 +1,6 @@
-# picoclaw — agent instructions
+# gopod — agent instructions
 
-You are working on **picoclaw**, a Go reimplementation of NanoClaw with reduced
+You are working on **gopod**, a Go reimplementation of NanoClaw with reduced
 scope. This file is loaded into your context on every session. Treat it as the
 source of truth for *how* to work in this repo. The *what* lives in `docs/`.
 
@@ -22,7 +22,7 @@ one language, per-chat container isolation, native sqlite-vec memory.
 
 A focused descendant of [NanoClaw](https://github.com/spaceinvaderz/nanoclaw)
 (see `/Users/<user>/_code/gh-public/nanoclaw` if you need the reference
-implementation). picoclaw cherry-picks the architectural ideas that matter and
+implementation). gopod cherry-picks the architectural ideas that matter and
 drops everything else.
 
 ## Hard constraints (don't break these without an ADR)
@@ -35,14 +35,14 @@ drops everything else.
 - **One channel: Telegram.** Library: [`go-telegram/bot`](https://github.com/go-telegram/bot).
   No channel registry. No abstraction over messaging providers.
 - **One runtime: Docker** via the official `docker/docker/client` Go SDK,
-  with a `PICOCLAW_NO_CONTAINER=1` subprocess fallback for dev only.
+  with a `GOPOD_NO_CONTAINER=1` subprocess fallback for dev only.
 - **Single SQLite file** for everything: chats, messages, tasks, sessions,
   state, memories, vectors. `data/store.sqlite`.
 - **Per-chat isolation by path.** Authorization is enforced from the path of
   the file/folder/IPC namespace, never from data the LLM produced. If you need
   authorization, look up which chat folder the request came from and use that.
 - **Owner chat is the only privileged chat.** Identified by
-  `PICOCLAW_OWNER_CHAT_ID`. There is no `groups/main` analogue.
+  `GOPOD_OWNER_CHAT_ID`. There is no `groups/main` analogue.
 - **All admin/diagnostic commands go through `internal/control`.** Both
   Telegram slash commands and CLI subcommands. Authorization is enforced
   by the Router via `Perm` (`Public`/`ChatLocal`/`OwnerOnly`), never inside
@@ -52,7 +52,7 @@ drops everything else.
   `.env.example`, nowhere. `os.Getenv` is the only source of truth. The
   slog redactor strips anything matching `(?i)token|key|secret|password|cookie|auth`
   from logs. See [D012](docs/DECISIONS.md).
-- **Skills exist, but they never require recompiling picoclaw.** Three
+- **Skills exist, but they never require recompiling gopod.** Three
   types: container skills (`container/skills/<name>/SKILL.md`), MCP skills
   (`skills/mcp/<name>/manifest.json`), dev skills (`.claude/skills/<name>/`).
   Anything that requires `go build` is a *feature*, not a skill — it goes
@@ -109,7 +109,7 @@ Anything ADR-worthy goes into `docs/DECISIONS.md` as `D{NNN}: <title>`.
 
 The reference implementation is at `/Users/<user>/_code/gh-public/nanoclaw`.
 Read its source before guessing — it's the closest thing to authoritative
-prior art for the architecture. Map TS files to picoclaw's Go packages using
+prior art for the architecture. Map TS files to gopod's Go packages using
 the table in [docs/ARCHITECTURE.md §2](docs/ARCHITECTURE.md).
 
 ## What to never do

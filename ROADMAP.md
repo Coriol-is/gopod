@@ -1,4 +1,4 @@
-# picoclaw — Roadmap
+# gopod — Roadmap
 
 Live milestone tracker. Update the **Status** column whenever you change reality.
 For the *why* behind each milestone, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md);
@@ -19,7 +19,7 @@ right now" view, see [docs/HANDOFF.md](docs/HANDOFF.md).
 ## Build order (reordered by [D018](docs/DECISIONS.md))
 
 The numerical IDs below are stable identifiers cited from many places —
-**they do not encode build order**. Per [D018](docs/DECISIONS.md), picoclaw
+**they do not encode build order**. Per [D018](docs/DECISIONS.md), gopod
 is built in this sequence so that the first end-to-end agent reply uses
 Claude Code's web-auth (Pro/Max) inside a container, not a paid API key:
 
@@ -32,14 +32,14 @@ if `ANTHROPIC_API_KEY` is set in the environment.
 
 | ID | Milestone | Status | Notes |
 |----|-----------|--------|-------|
-| M0 | Skeleton: `go.mod`, `cmd/picoclaw/main.go`, `internal/config`, `internal/store` schema, slog wiring | ✅ | sqlite-vec verified at startup (`vec_version=v0.1.6`); ncruces pinned to v0.20.0 per [D017](docs/DECISIONS.md) |
+| M0 | Skeleton: `go.mod`, `cmd/gopod/main.go`, `internal/config`, `internal/store` schema, slog wiring | ✅ | sqlite-vec verified at startup (`vec_version=v0.1.6`); ncruces pinned to v0.20.0 per [D017](docs/DECISIONS.md) |
 | M1 | Telegram echo: long-poll, default handler stores every message, `/ping` replies | ✅ | `internal/telegram` wraps `go-telegram/bot`; `internal/store/messages.go` + `chats.go` ingest. End-to-end with a real bot token works without an agent |
 | M2 | Direct API agent (no container): `anthropic-sdk-go`, single chat, trigger pattern, per-chat session | ⏸️ | **Optional, off the critical path per [D018](docs/DECISIONS.md).** Auto-enabled if `ANTHROPIC_API_KEY` is set; otherwise skipped silently |
 | M3 | GroupQueue: per-chat serialization + global concurrency cap + backoff | ✅ | `internal/queue` with per-chat worker, buffered-chan cap (default 3), coalescing, exponential backoff (5s→80s, 5 retries). Telegram default handler enqueues; queue worker runs agent async |
 | M3.5 | **Control plane** (`internal/control` Router + Telegram frontend). C1 (Router scaffold) + C2 (fold handlers) done. C3 (CLI frontend), C4 (extended handlers), C5 (logs subsystem) deferred. | ✅ | Router with auth enforcement, all slash commands dispatch through it, setMyCommands built from Router.List(). /login stays as Telegram-side special case (stateful) |
 | M3.6 | **Observability** (`internal/observability`: opt-in Prometheus `/metrics` + opt-in OTel OTLP traces; logs are already covered by M3.5/C5). Sub-steps O1–O6 below. See [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) and [D014](docs/DECISIONS.md). | ⬜ | Deprioritized to end of backlog — personal bot doesn't need metrics/traces yet |
 | M4 | Scheduler: cron/interval/once via `robfig/cron/v3`, `/tasks` commands via Router, poller goroutine | ✅ | store CRUD, 60s poller, /tasks add/list/pause/resume/cancel, tasks push through queue same as messages |
-| M5 | Container runtime: Docker SDK, mounts, exec attach, idle kill, label-based recovery | ✅ | `internal/runner` has `mountsec` subpackage, three-tier `BuildMounts`, full `BuildContainerArgs` flag assembly, Docker client with `EnsureRunning`/`Exec`/`Stop`/`Remove`/`CleanupLeftovers`, plus the `picoclaw-agent:latest` image (node:22-slim + claude-code 2.1.100 + git + ripgrep). Integration tests behind `//go:build docker_integration` verified end-to-end. Idle watcher intentionally deferred to M6 wiring |
+| M5 | Container runtime: Docker SDK, mounts, exec attach, idle kill, label-based recovery | ✅ | `internal/runner` has `mountsec` subpackage, three-tier `BuildMounts`, full `BuildContainerArgs` flag assembly, Docker client with `EnsureRunning`/`Exec`/`Stop`/`Remove`/`CleanupLeftovers`, plus the `gopod-agent:latest` image (node:22-slim + claude-code 2.1.100 + git + ripgrep). Integration tests behind `//go:build docker_integration` verified end-to-end. Idle watcher intentionally deferred to M6 wiring |
 | M6 | Agent SDK in container: synchronous `claude -p` via `docker exec`, registered_chats CRUD, /register + /whoami slash commands, owner auto-register, auth detection, idle watcher | ✅ | Verified end-to-end: real Pro/Max reply on Telegram. SDK migration (per [D015](docs/DECISIONS.md) wrapper script) deferred until streaming/tools/MCP land. Three runtime fixes: drop bogus `seccomp=default` SecurityOpt, add /home/node tmpfs + HOME env, skip .env mask when RepoRoot/.env absent |
 | M6.5 | **Telegram-mediated `/login`.** Interactive OAuth proxy: spawns `claude auth login` with PTY+stdin via Docker SDK, captures URL from stdout, forwards to Telegram, intercepts user's next message as the OAuth code, pipes it to claude's stdin, confirms. Session-expired vs never-logged-in distinction in error replies. 10-min timeout with auto-cleanup. | ✅ | Full onboarding fits inside Telegram — no terminal access needed |
 | M7 | IPC: filesystem watcher, container → host messages, task ops, owner gating | ⬜ | |
@@ -54,14 +54,14 @@ if `ANTHROPIC_API_KEY` is set in the environment.
 | C2 | Telegram frontend: `parseSlash`, dispatch wiring, `/ping`, `/whoami`, `/version`, `/help` | ⬜ |
 | C3 | CLI frontend: argv parser, `serve`/`migrate` reserved subcommands, `--json`, mirror of public commands | ⬜ |
 | C4 | First batch of real handlers: chats, queue, container, system | ⬜ |
-| C5 | Logs subsystem: `internal/log/sqlite_handler.go`, retention task, `/logs` and `picoclaw logs` | ⬜ |
+| C5 | Logs subsystem: `internal/log/sqlite_handler.go`, retention task, `/logs` and `gopod logs` | ⬜ |
 
 ### M3.6 sub-steps (observability)
 
 | ID | Step | Status |
 |----|------|--------|
 | O1 | `internal/observability` scaffold: `Init`, no-op providers, config loader, shutdown | ⬜ |
-| O2 | Metric definitions in one place, registry, `127.0.0.1:9090/metrics` listener gated by `PICOCLAW_METRICS_ADDR` | ⬜ |
+| O2 | Metric definitions in one place, registry, `127.0.0.1:9090/metrics` listener gated by `GOPOD_METRICS_ADDR` | ⬜ |
 | O3 | Wire counters/gauges/histograms into `store`, `queue`, `runner`, `telegram`, `control` | ⬜ |
 | O4 | OTel scaffold: `Init`, no-op tracer when env unset, exporter selection, redaction wrapper | ⬜ |
 | O5 | `runner.run` root span tree + propagation env vars on `docker exec` + MCP spawn | ⬜ |
@@ -97,10 +97,10 @@ Tracked as its own phase because the milestones are orthogonal to core work.
 | ID | Step | Status |
 |----|------|--------|
 | S1 | Container-skills directory + mount into agent container | ✅ | Mechanism works: `container/skills/memory/SKILL.md` mounted. Per-chat `skills.json` filter deferred |
-| S2 | MCP tool server: picoclaw as MCP stdio server proxying memory/tasks/control HTTP APIs → natively registered Claude tools via `--mcp-config`. Agent sees tools as first-class (no curl). Hybrid approach: HTTP API as backend, thin MCP wrapper as frontend. | ⬜ | |
+| S2 | MCP tool server: gopod as MCP stdio server proxying memory/tasks/control HTTP APIs → natively registered Claude tools via `--mcp-config`. Agent sees tools as first-class (no curl). Hybrid approach: HTTP API as backend, thin MCP wrapper as frontend. | ⬜ | |
 | S3 | Skill manifest format + validation | ⬜ | |
 | S4 | Per-chat skill enable/disable (`/skills enable/disable`) | ⬜ | |
-| S5 | Dev-time Claude Code skills in `.claude/skills/` for picoclaw maintainers | ⬜ | |
+| S5 | Dev-time Claude Code skills in `.claude/skills/` for gopod maintainers | ⬜ | |
 
 ---
 
@@ -111,7 +111,7 @@ Tracked as its own phase because the milestones are orthogonal to core work.
 | P1 | AgentProvider interface: refactor runner to call provider methods instead of hardcoded `claude` commands | ⬜ |
 | P2 | Claude provider: extract current claude-specific code into provider implementation | ⬜ |
 | P3 | Codex provider: OpenAI Codex CLI support (separate Docker image, codex-specific flags/auth/sessions) | ⬜ |
-| P4 | Per-chat provider config: `/provider claude\|codex` command + `PICOCLAW_DEFAULT_PROVIDER` env var | ⬜ |
+| P4 | Per-chat provider config: `/provider claude\|codex` command + `GOPOD_DEFAULT_PROVIDER` env var | ⬜ |
 | P5 | Gemini CLI provider: `gemini -p` with Google OAuth (browser link auth like Claude), `--resume latest` for sessions, `~/.gemini/` persisted via bind mount | ⬜ |
 | P6 | Goose provider: `goose run -t` — model-agnostic (15+ providers via env), MCP extensible, Rust binary, named sessions | ⬜ |
 | P7 | Cline CLI provider: `cline -y` — multi-provider (Anthropic/OpenAI/Google/Bedrock/Azure), gRPC API, standalone since 2.0 | ⬜ |

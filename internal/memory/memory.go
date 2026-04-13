@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spaceinvaderz/picoclaw/internal/store"
+	"github.com/spaceinvaderz/gopod/internal/store"
 )
 
-// Memory is the high-level facade for picoclaw's long-term memory
+// Memory is the high-level facade for gopod's long-term memory
 // layer. It combines the relational store (memories table), the
 // vector index (memory_vec), the FTS5 index (memory_fts), and the
 // embedder into a single API.

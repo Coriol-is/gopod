@@ -1,4 +1,4 @@
-// Package control is picoclaw's unified command dispatch layer.
+// Package control is gopod's unified command dispatch layer.
 //
 // Every admin/diagnostic command — whether invoked from Telegram,
 // the CLI, or a future web/MCP frontend — goes through the Router.
@@ -77,7 +77,7 @@ type CommandInfo struct {
 	SlashName   string // Telegram slash form, e.g. "ping", "register"
 }
 
-// Router is the central dispatch table. One per picoclaw process.
+// Router is the central dispatch table. One per gopod process.
 type Router struct {
 	log *slog.Logger
 

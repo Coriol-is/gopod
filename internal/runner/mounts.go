@@ -1,4 +1,4 @@
-// Package runner is picoclaw's container lifecycle and agent runtime.
+// Package runner is gopod's container lifecycle and agent runtime.
 //
 // The package is split along security-critical boundaries:
 //
@@ -7,7 +7,7 @@
 //     is motivated by a threat in docs/ISOLATION.md §1.
 //   - runner/mounts.go — per-chat mount construction from the three
 //     trust tiers in docs/ISOLATION.md §3, consuming a
-//     mountsec.Allowlist for operator-added extras. Returns picoclaw's
+//     mountsec.Allowlist for operator-added extras. Returns gopod's
 //     local Mount spec; the Docker SDK layer converts at spawn time.
 //   - runner/docker_args.go — ContainerCreate argument assembly from
 //     docs/ISOLATION.md §6 (RO root, dropped caps, non-root uid, pids
@@ -25,8 +25,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/spaceinvaderz/picoclaw/internal/runner/chattmpl"
-	"github.com/spaceinvaderz/picoclaw/internal/runner/mountsec"
+	"github.com/spaceinvaderz/gopod/internal/runner/chattmpl"
+	"github.com/spaceinvaderz/gopod/internal/runner/mountsec"
 )
 
 // Tier is the trust tier of a chat per docs/ISOLATION.md §2.
@@ -36,7 +36,7 @@ import (
 type Tier int
 
 const (
-	// TierOwner is the PICOCLAW_OWNER_CHAT_ID chat. Gets project root
+	// TierOwner is the GOPOD_OWNER_CHAT_ID chat. Gets project root
 	// (RO), store.sqlite (RW), and the full extras allowlist at the
 	// operator's declared mode.
 	TierOwner Tier = iota
@@ -47,7 +47,7 @@ const (
 	TierRegistered
 )
 
-// Mount is picoclaw's internal bind-mount spec. It describes one
+// Mount is gopod's internal bind-mount spec. It describes one
 // host-to-container path mapping. The Docker SDK layer in docker_args.go
 // converts this slice to []*mount.Mount at spawn time so that
 // internal/runner/mountsec and this file can stay Docker-SDK-free for
@@ -61,7 +61,7 @@ type Mount struct {
 	ReadOnly bool
 }
 
-// Paths groups the host-side path roots picoclaw uses when constructing
+// Paths groups the host-side path roots gopod uses when constructing
 // mounts. All fields must be absolute.
 //
 // Why these five and no more: every per-chat target (chat workspace,
@@ -70,15 +70,15 @@ type Mount struct {
 // store.sqlite, container skills) derives from RepoRoot, DataDir, or
 // ContainerSkillsDir. Five roots are sufficient.
 type Paths struct {
-	RepoRoot           string // picoclaw checkout root
-	DataDir            string // ${PICOCLAW_DATA_DIR}
+	RepoRoot           string // gopod checkout root
+	DataDir            string // ${GOPOD_DATA_DIR}
 	ChatsDir           string // typically ${RepoRoot}/chats
 	ContainerSkillsDir string // typically ${RepoRoot}/container/skills
 	// ObsidianVault is the host path to the Obsidian vault. If non-empty,
 	// mounted at /workspace/vault inside the container. RW for owner.
 	ObsidianVault string
 	// EmptyFile is an absolute path to an empty, operator-writable file
-	// picoclaw uses to mask ${REPO_ROOT}/.env inside the owner's project
+	// gopod uses to mask ${REPO_ROOT}/.env inside the owner's project
 	// mount. EnsureChatDirs creates it at bootstrap.
 	EmptyFile string
 }
@@ -156,7 +156,7 @@ func standardMounts(p Paths, chatFolder string, tier Tier) []Mount {
 
 	if tier == TierOwner {
 		// Project root for self-modification (/release, debugging). RO
-		// so the agent cannot corrupt the picoclaw checkout directly —
+		// so the agent cannot corrupt the gopod checkout directly —
 		// writes go through IPC.
 		out = append(out, Mount{
 			Source:   p.RepoRoot,
@@ -167,7 +167,7 @@ func standardMounts(p Paths, chatFolder string, tier Tier) []Mount {
 		// stat call is the one filesystem hit BuildMounts performs;
 		// it stays "pure-ish" (deterministic given the host fs state)
 		// and the alternative is a hard spawn failure for any
-		// operator who runs picoclaw out of a checkout without .env.
+		// operator who runs gopod out of a checkout without .env.
 		if envExists(filepath.Join(p.RepoRoot, ".env")) {
 			out = append(out, Mount{
 				Source:   p.EmptyFile,
@@ -255,7 +255,7 @@ func chatMatches(chatFolder string, allowed []string) bool {
 // creation — never overwritten). This is the one side-effecting
 // function in mounts.go; callers run it once before BuildMounts when
 // onboarding a chat or before spawning a container for the first time
-// after picoclaw restart.
+// after gopod restart.
 //
 // isOwner toggles the owner-specific blurb in the seeded CLAUDE.md.
 //

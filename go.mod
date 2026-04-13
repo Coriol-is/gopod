@@ -1,4 +1,4 @@
-module github.com/spaceinvaderz/picoclaw
+module github.com/spaceinvaderz/gopod
 
 go 1.25.0
 

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spaceinvaderz/picoclaw/internal/store"
+	"github.com/spaceinvaderz/gopod/internal/store"
 )
 
 func TestComputeNextRunCron(t *testing.T) {

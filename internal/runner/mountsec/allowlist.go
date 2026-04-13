@@ -1,8 +1,8 @@
-// Package mountsec validates the picoclaw mount allowlist file and the
+// Package mountsec validates the gopod mount allowlist file and the
 // extra mounts it contains.
 //
 // This is the security boundary between "what the operator wrote in JSON"
-// and "what picoclaw passes to docker run". Every rule in this package is
+// and "what gopod passes to docker run". Every rule in this package is
 // motivated by a threat in docs/ISOLATION.md §1, and every rejection here
 // is preferable to a runtime container compromise.
 //
@@ -11,10 +11,10 @@
 // using t.TempDir + os.Symlink.
 package mountsec
 
-// Allowlist is the on-disk schema of ${PICOCLAW_DATA_DIR}/mount-allowlist.json.
+// Allowlist is the on-disk schema of ${GOPOD_DATA_DIR}/mount-allowlist.json.
 //
 // Version is the schema version. v1 is the only version this build
-// understands; loading a newer version is a hard error so picoclaw never
+// understands; loading a newer version is a hard error so gopod never
 // silently ignores fields a future version added.
 type Allowlist struct {
 	Version     int          `json:"version"`
@@ -64,7 +64,7 @@ func (m ExtraMount) EffectiveNonOwnerReadOnly() bool {
 
 // EmptyAllowlist returns an Allowlist with no extra mounts. Used by Load
 // when the file does not exist on disk — no allowlist is a valid state,
-// it just means picoclaw will only construct standard mounts and never
+// it just means gopod will only construct standard mounts and never
 // any extras.
 func EmptyAllowlist() *Allowlist {
 	return &Allowlist{Version: SupportedVersion, ExtraMounts: nil}

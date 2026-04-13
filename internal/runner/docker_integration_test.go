@@ -84,7 +84,7 @@ func TestIntegrationEnsureRunningExecStopRemove(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	name := "picoclaw-inttest-ensure"
+	name := "gopod-inttest-ensure"
 	// Pre-clean in case a previous failed run left it around.
 	if id, _ := d.inspectByName(ctx, name); id != "" {
 		_ = d.Remove(ctx, id)
@@ -139,22 +139,22 @@ func TestIntegrationEnsureRunningExecStopRemove(t *testing.T) {
 func TestIntegrationCheckAuthOnAgentImage(t *testing.T) {
 	d := mkDocker(t)
 
-	// This test depends on picoclaw-agent:latest being built locally.
+	// This test depends on gopod-agent:latest being built locally.
 	// We do NOT pull it (it is not on Docker Hub) — if it is missing,
 	// skip rather than fail.
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	if _, _, err := d.cli.ImageInspectWithRaw(ctx, "picoclaw-agent:latest"); err != nil {
-		t.Skipf("picoclaw-agent:latest not built locally (run `docker build -t picoclaw-agent:latest container/`): %v", err)
+	if _, _, err := d.cli.ImageInspectWithRaw(ctx, "gopod-agent:latest"); err != nil {
+		t.Skipf("gopod-agent:latest not built locally (run `docker build -t gopod-agent:latest container/`): %v", err)
 	}
 
-	name := "picoclaw-inttest-auth"
+	name := "gopod-inttest-auth"
 	if id, _ := d.inspectByName(ctx, name); id != "" {
 		_ = d.Remove(ctx, id)
 	}
 
 	cfg := &container.Config{
-		Image:  "picoclaw-agent:latest",
+		Image:  "gopod-agent:latest",
 		Cmd:    strslice.StrSlice{"sleep", "3600"},
 		Labels: map[string]string{LabelChat: "inttest-auth", LabelVersion: "integration-test"},
 	}
@@ -171,7 +171,7 @@ func TestIntegrationCheckAuthOnAgentImage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CheckAuth: %v", err)
 	}
-	// A vanilla picoclaw-agent:latest with no mounted credentials is
+	// A vanilla gopod-agent:latest with no mounted credentials is
 	// definitely not logged in. We assert that exact state because if
 	// it ever returns LoggedIn=true on a stock image, our auth gate
 	// is broken.
@@ -193,23 +193,23 @@ func TestIntegrationCheckAuthOnAgentImage(t *testing.T) {
 
 // TestIntegrationBuildContainerArgsAgainstAgentImage exercises the
 // full BuildContainerArgs → ContainerCreate → ContainerStart → Exec
-// pipeline against picoclaw-agent:latest. This is the regression
+// pipeline against gopod-agent:latest. This is the regression
 // test that would have caught the seccomp=default and the HOME=/
 // bugs that the M6d end-to-end testing surfaced — both lived in
 // flag assembly that the older alpine-based tests bypassed.
 //
-// Skipped if picoclaw-agent:latest is not built locally.
+// Skipped if gopod-agent:latest is not built locally.
 func TestIntegrationBuildContainerArgsAgainstAgentImage(t *testing.T) {
 	d := mkDocker(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	if _, _, err := d.cli.ImageInspectWithRaw(ctx, "picoclaw-agent:latest"); err != nil {
-		t.Skipf("picoclaw-agent:latest not built locally: %v", err)
+	if _, _, err := d.cli.ImageInspectWithRaw(ctx, "gopod-agent:latest"); err != nil {
+		t.Skipf("gopod-agent:latest not built locally: %v", err)
 	}
 
 	// Tear down any leftover from previous runs.
-	name := "picoclaw-inttest-buildargs"
+	name := "gopod-inttest-buildargs"
 	if id, _ := d.inspectByName(ctx, name); id != "" {
 		_ = d.Remove(ctx, id)
 	}
@@ -236,7 +236,7 @@ func TestIntegrationBuildContainerArgsAgainstAgentImage(t *testing.T) {
 	// The owner-tier .env mask mount overlays EmptyFile onto
 	// /workspace/project/.env. Docker cannot create the in-container
 	// mountpoint inside a RO bind mount, so the target file must
-	// already exist on the host inside RepoRoot. Production picoclaw
+	// already exist on the host inside RepoRoot. Production gopod
 	// runs out of a real checkout where .env actually exists; the
 	// test fixture has to recreate that.
 	if err := os.WriteFile(paths.RepoRoot+"/.env", []byte("# placeholder for .env mask test\n"), 0o600); err != nil {
@@ -252,7 +252,7 @@ func TestIntegrationBuildContainerArgsAgainstAgentImage(t *testing.T) {
 	}
 
 	cfg, host, _, err := BuildContainerArgs(SpawnConfig{
-		Image:       "picoclaw-agent:latest",
+		Image:       "gopod-agent:latest",
 		ChatFolder:  "inttest-buildargs",
 		Version:     "integration-test",
 		Mounts:      mounts,
@@ -327,10 +327,10 @@ func TestIntegrationCleanupLeftovers(t *testing.T) {
 		cfg, host := alpineSpec(name)
 		cfg.Labels[LabelVersion] = version
 		// Pre-clean by name.
-		if id, _ := d.inspectByName(ctx, "picoclaw-"+name); id != "" {
+		if id, _ := d.inspectByName(ctx, "gopod-"+name); id != "" {
 			_ = d.Remove(ctx, id)
 		}
-		created, err := d.cli.ContainerCreate(ctx, cfg, host, nil, nil, "picoclaw-"+name)
+		created, err := d.cli.ContainerCreate(ctx, cfg, host, nil, nil, "gopod-"+name)
 		if err != nil {
 			t.Fatalf("create %s: %v", name, err)
 		}
@@ -354,7 +354,7 @@ func TestIntegrationCleanupLeftovers(t *testing.T) {
 	}
 	// Stale container should be cleaned; keep container should not. But
 	// depending on leftover state from other tests there may be more
-	// picoclaw-prefixed containers around — we assert AT LEAST 1.
+	// gopod-prefixed containers around — we assert AT LEAST 1.
 	if cleaned < 1 {
 		t.Errorf("cleaned = %d, want >= 1", cleaned)
 	}

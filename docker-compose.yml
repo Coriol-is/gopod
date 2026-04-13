@@ -1,53 +1,53 @@
-# picoclaw production deployment.
+# gopod production deployment.
 #
 # Usage:
 #   docker compose build
 #   docker compose up -d
 #
-# The picoclaw service runs the Go binary inside a container.
+# The gopod service runs the Go binary inside a container.
 # It manages agent containers as SIBLINGS on the same Docker daemon
 # via the mounted docker.sock (not docker-in-docker — the daemon is
 # shared with the host).
 #
-# IMPORTANT: PICOCLAW_HOST_DATA_DIR must be set to the ABSOLUTE HOST
-# path where picoclaw data lives. Agent containers are created by
+# IMPORTANT: GOPOD_HOST_DATA_DIR must be set to the ABSOLUTE HOST
+# path where gopod data lives. Agent containers are created by
 # the Docker daemon which resolves bind-mount paths on the HOST, not
 # inside this compose container. The data dir is mounted at the SAME
-# path inside this container so picoclaw's internal path references
+# path inside this container so gopod's internal path references
 # match what the Docker daemon sees.
 #
 # Example .env:
 #   TELEGRAM_BOT_TOKEN=...
-#   PICOCLAW_OWNER_CHAT_ID=123456789
+#   GOPOD_OWNER_CHAT_ID=123456789
 #   OPENAI_API_KEY=...
-#   PICOCLAW_HOST_DATA_DIR=/opt/picoclaw/data
-#   PICOCLAW_HOST_REPO_DIR=/opt/picoclaw/repo
+#   GOPOD_HOST_DATA_DIR=/opt/gopod/data
+#   GOPOD_HOST_REPO_DIR=/opt/gopod/repo
 
 services:
-  picoclaw:
+  gopod:
     build:
       context: .
       dockerfile: Dockerfile
       args:
-        VERSION: ${PICOCLAW_VERSION:-dev}
+        VERSION: ${GOPOD_VERSION:-dev}
     restart: unless-stopped
     env_file: .env
     environment:
       # Data dir MUST match the host path so agent container bind
       # mounts resolve correctly on the Docker daemon.
-      PICOCLAW_DATA_DIR: ${PICOCLAW_HOST_DATA_DIR:-/opt/picoclaw/data}
-      PICOCLAW_REPO_ROOT: ${PICOCLAW_HOST_REPO_DIR:-/opt/picoclaw/repo}
+      GOPOD_DATA_DIR: ${GOPOD_HOST_DATA_DIR:-/opt/gopod/data}
+      GOPOD_REPO_ROOT: ${GOPOD_HOST_REPO_DIR:-/opt/gopod/repo}
     volumes:
       # Docker socket for managing agent containers.
       - /var/run/docker.sock:/var/run/docker.sock
       # Data directory at the SAME path as on the host.
-      - ${PICOCLAW_HOST_DATA_DIR:-/opt/picoclaw/data}:${PICOCLAW_HOST_DATA_DIR:-/opt/picoclaw/data}
+      - ${GOPOD_HOST_DATA_DIR:-/opt/gopod/data}:${GOPOD_HOST_DATA_DIR:-/opt/gopod/data}
       # Repo directory (for owner chat's /workspace/project mount).
-      - ${PICOCLAW_HOST_REPO_DIR:-/opt/picoclaw/repo}:${PICOCLAW_HOST_REPO_DIR:-/opt/picoclaw/repo}
+      - ${GOPOD_HOST_REPO_DIR:-/opt/gopod/repo}:${GOPOD_HOST_REPO_DIR:-/opt/gopod/repo}
       # Chats directory (for agent workspaces).
-      - ${PICOCLAW_HOST_REPO_DIR:-/opt/picoclaw/repo}/chats:${PICOCLAW_HOST_REPO_DIR:-/opt/picoclaw/repo}/chats
+      - ${GOPOD_HOST_REPO_DIR:-/opt/gopod/repo}/chats:${GOPOD_HOST_REPO_DIR:-/opt/gopod/repo}/chats
       # Container skills.
-      - ${PICOCLAW_HOST_REPO_DIR:-/opt/picoclaw/repo}/container/skills:${PICOCLAW_HOST_REPO_DIR:-/opt/picoclaw/repo}/container/skills:ro
-    # picoclaw needs to create files as the host user so bind-mount
+      - ${GOPOD_HOST_REPO_DIR:-/opt/gopod/repo}/container/skills:${GOPOD_HOST_REPO_DIR:-/opt/gopod/repo}/container/skills:ro
+    # gopod needs to create files as the host user so bind-mount
     # permissions work. Override with your host uid:gid.
-    user: "${PICOCLAW_UID:-1000}:${PICOCLAW_GID:-1000}"
+    user: "${GOPOD_UID:-1000}:${GOPOD_GID:-1000}"

@@ -1,4 +1,4 @@
-// Package memory provides picoclaw's long-term memory layer: a hybrid
+// Package memory provides gopod's long-term memory layer: a hybrid
 // FTS5 + sqlite-vec store backed by OpenAI embeddings.
 //
 // Design: docs/MEMORY.md
