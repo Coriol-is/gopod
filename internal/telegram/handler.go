@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"os"
 	"sync"
 	"strconv"
 	"strings"
@@ -289,25 +288,10 @@ func (b *Bot) runAgentSync(ctx context.Context, item queue.Item) {
 		reply = "(empty reply)"
 	}
 
-	// Determine reply mode: voice+text, text-only, or voice-only.
+	// Voice reply if applicable.
+	b.maybeVoiceReply(ctx, item, reply)
+
 	mode := b.getReplyMode(item.ChatID, item.IsVoice)
-
-	if mode == "voice" || mode == "voice+text" {
-		apiKey := os.Getenv("OPENAI_API_KEY")
-		if apiKey != "" {
-			audioData, err := textToSpeech(ctx, apiKey, reply)
-			if err != nil {
-				b.log.Warn("TTS failed, falling back to text",
-					slog.Any("err", err))
-			} else {
-				if err := b.sendVoiceReply(ctx, item.ChatID, item.MessageID, audioData); err != nil {
-					b.log.Warn("send voice reply failed",
-						slog.Any("err", err))
-				}
-			}
-		}
-	}
-
 	if mode != "voice" {
 		b.replyTo(ctx, item.ChatID, item.MessageID, reply)
 	}
@@ -329,11 +313,15 @@ func (b *Bot) NewAgentHandler() queue.Handler {
 		}
 		// Use the last item — the most recent user message.
 		item := items[len(items)-1]
-		b.runAgentSync(ctx, item)
-		// runAgentSync logs and replies on error but always returns
-		// nil so the queue does not retry user-visible failures
-		// (auth errors, agent crashes). Only infrastructure failures
-		// (Docker unreachable, container won't start) should be retried.
+		if b.streamEnabled {
+			b.runAgentStreaming(ctx, item)
+		} else {
+			b.runAgentSync(ctx, item)
+		}
+		// Both paths log and reply on error but always return nil so
+		// the queue does not retry user-visible failures (auth errors,
+		// agent crashes). Only infrastructure failures (Docker
+		// unreachable, container won't start) should be retried.
 		return nil
 	}
 }

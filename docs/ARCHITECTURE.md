@@ -1,6 +1,6 @@
 # gopod — Architecture
 
-> Companion docs: [MEMORY.md](MEMORY.md) · [INTEGRATIONS.md](INTEGRATIONS.md) · [SKILLS.md](SKILLS.md) · [CONTROL.md](CONTROL.md) · [DECISIONS.md](DECISIONS.md) · [GLOSSARY.md](GLOSSARY.md)
+> Companion docs: [MEMORY.md](MEMORY.md) · [INTEGRATIONS.md](INTEGRATIONS.md) · [SKILLS.md](SKILLS.md) · [CONTROL.md](CONTROL.md) · [GATEWAY.md](GATEWAY.md) · [DECISIONS.md](DECISIONS.md) · [GLOSSARY.md](GLOSSARY.md)
 > Status & next steps: [HANDOFF.md](HANDOFF.md) · [../ROADMAP.md](../ROADMAP.md)
 
 A Go reimplementation of [NanoClaw](https://github.com/spaceinvaderz/nanoclaw) with reduced scope:
@@ -69,7 +69,7 @@ host parses, strips `<internal>`, sends back via channel.
 | Container-per-chat runtime                            | OneCLI gateway                        | Env vars from `.env` / keychain, injected only into agent process    |
 | Trigger pattern (`@assistant`)                        | XML envelope (optional, can simplify) | Plain text or minimal JSON envelope                                  |
 | Scheduled tasks (cron/interval/once)                  | Apple Container, multi-runtime        | Docker SDK only, with subprocess fallback                            |
-| GroupQueue concurrency model                          | Mount allowlist outside repo          | Compile-time path policy + a small `mount.json` next to binary       |
+| GroupQueue concurrency model                          | Mount allowlist outside repo          | `${DATA_DIR}/mount-allowlist.json` + compiled-in blocked patterns (see [ISOLATION.md](ISOLATION.md)) |
 | Filesystem IPC for container → host (messages/tasks)  | "groups/main" privileged group        | All chats are equal; "owner chat ID" in config gates admin operations |
 | Crash recovery via cursors (`last_agent_timestamp`)   | Pre-compact transcript archiving      | Optional, behind a flag                                              |
 

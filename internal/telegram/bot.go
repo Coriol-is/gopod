@@ -65,6 +65,10 @@ type Deps struct {
 
 	// Log is the slog logger; defaults to slog.Default if nil.
 	Log *slog.Logger
+
+	// StreamEnabled enables real-time streaming of agent output to
+	// Telegram. Default: true when field is set; false uses buffered path.
+	StreamEnabled bool
 }
 
 // Bot is gopod's wrapper around go-telegram/bot.Bot. It owns the
@@ -74,15 +78,16 @@ type Deps struct {
 // cancelled (typically by SIGINT/SIGTERM in main). One Bot instance
 // corresponds to one Telegram bot token.
 type Bot struct {
-	api         *bot.Bot
-	store       *store.Store
-	runner      *runner.Runner
-	queue       *queue.Queue
-	router      *control.Router
-	allowlist   *mountsec.Allowlist
-	ownerChatID int64
-	log         *slog.Logger
-	logins      *loginSessions
+	api           *bot.Bot
+	store         *store.Store
+	runner        *runner.Runner
+	queue         *queue.Queue
+	router        *control.Router
+	allowlist     *mountsec.Allowlist
+	ownerChatID   int64
+	log           *slog.Logger
+	logins        *loginSessions
+	streamEnabled bool
 }
 
 // New constructs a Bot. The token must be a valid @BotFather token; an
@@ -104,14 +109,15 @@ func New(token string, deps Deps) (*Bot, error) {
 	}
 
 	b := &Bot{
-		store:       deps.Store,
-		runner:      deps.Runner,
-		queue:       deps.Queue,
-		router:      deps.Router,
-		allowlist:   deps.Allowlist,
-		ownerChatID: deps.OwnerChatID,
-		log:         deps.Log,
-		logins:      newLoginSessions(),
+		store:         deps.Store,
+		runner:        deps.Runner,
+		queue:         deps.Queue,
+		router:        deps.Router,
+		allowlist:     deps.Allowlist,
+		ownerChatID:   deps.OwnerChatID,
+		log:           deps.Log,
+		logins:        newLoginSessions(),
+		streamEnabled: deps.StreamEnabled,
 	}
 
 	// Load last processed update offset for cursor backfill (M8a).

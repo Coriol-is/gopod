@@ -32,7 +32,17 @@ Key work after M9:
   seccomp, HOME/tmpfs, .claude.json restore, reaction emoji
 
 Build order:
-`M0 ✅ → M1 ✅ → M5 ✅ → M6 ✅ → M6.5 ✅ → M3 ✅ → M3.5 ✅ → M4 ✅ → M9 ✅ → M8 ✅ → P1+P2 ✅`
+`M0 ✅ → M1 ✅ → M5 ✅ → M6 ✅ → M6.5 ✅ → M3 ✅ → M3.5 ✅ → M4 ✅ → M9 ✅ → M8 ✅ → P1+P2 ✅ → ST1–ST5 ✅ → M7 → M3.6`
+
+Additional completed work (post-milestone):
+- Session compact: /clear, /compact, auto-compact (turns/interval/daily),
+  conversation_summary in memory with reserved Context Compiler slot
+- Memory HTTP API (`internal/memory/api.go`) + container skill
+- Context compiler (`internal/memory/compiler.go`): structured budget
+  with 6 slots (summary, pinned, decisions, preferences, facts, fallback)
+- Memory extraction layer (`internal/memory/extract.go`)
+- AgentProvider interface (`internal/runner/provider.go`) with Claude
+  (`provider_claude.go`) and Codex (`provider_codex.go`) implementations
 
 ## What's done
 
@@ -118,51 +128,37 @@ Build order:
 
 ## What's in progress
 
-**Session compact mechanism** — design approved, not yet implemented.
+**Phase 7 — Streaming output** ([STREAMING.md](STREAMING.md)). ✅ **Done.**
 
-Three trigger strategies (combinable, first-fires wins):
-- `GOPOD_COMPACT_AFTER=30` — compact after N turns
-- `GOPOD_COMPACT_INTERVAL=4h` — compact every N hours
-- `GOPOD_COMPACT_TIME=03:00` — compact at a specific time daily
+Real-time agent output to Telegram via message editing (~1s updates).
+All 5 sub-steps (ST1–ST5) implemented:
+- `Docker.ExecStream` + `StreamHandle` (`internal/runner/docker.go`)
+- `Runner.RunStream` + `AgentStream`/`RunResult` (`internal/runner/runner.go`)
+- Telegram helpers: `sendPlaceholder`/`editMessage`/`editMessageHTML` (`internal/telegram/streaming.go`)
+- `runAgentStreaming` with 1s ticker, overflow >4000, fallback to sync (`internal/telegram/streaming.go`)
+- Config: `GOPOD_STREAM_DISABLED=1` to disable. Default: streaming on.
+- `maybeVoiceReply` extracted for reuse across sync/streaming paths.
 
-Compact action (same for all triggers):
-1. Send summarize prompt to Claude ("summarize key decisions and
-   context, preserve any in-progress tasks")
-2. Store result as `kind=conversation_summary`, superseding any
-   previous summary for this chat
-3. Clear session files (`/home/node/.claude/projects/*`)
-4. Reset turn counter + last_compact_at timestamp
-5. Next turn starts fresh; Context Compiler injects summary
+**Phase 6 — Secret gateway** ([D019](DECISIONS.md), [GATEWAY.md](GATEWAY.md)).
+Design complete. Implementation not started. Second priority.
 
-Manual triggers: `/clear` (compact without summary), `/compact`
-(compact with summary + shows it to user).
-
-Design decisions:
-- conversation_summary gets a **reserved slot** in Context Compiler
-  budget (1 slot guaranteed, not competing with other memories)
-- Skip compact if turnCount==0 since last compact (no wasted LLM)
-- Per-chat mutex in Runner prevents compact during active agent turn
-- `last_compact_at` persisted in router_state so interval/daily
-  triggers survive gopod restarts
-- Each new summary supersedes the previous one (no accumulation)
-
-Potential issues identified:
-1. Race: compact must go through Runner's per-chat lock
-2. Mid-task context loss: summary prompt asks to preserve in-progress state
-3. Empty session: skip if 0 turns
-4. Summary accumulation: supersede old summaries
-5. Budget competition: reserved slot for conversation_summary
-6. Restart timer reset: persist last_compact_at in store
-7. Double trigger: idempotent (skip if already compacted)
+MITM HTTP CONNECT proxy embedded in gopod + HashiCorp Vault backend.
+Replaces env var secret injection — agents never see real keys.
+8 sub-steps (G1–G8), G1∥G2 can start in parallel.
+See [GATEWAY.md](GATEWAY.md) for full architecture.
 
 ## What's next (in order — per [D018](DECISIONS.md))
 
 1. ~~M3 — GroupQueue.~~ ✅ Done.
 2. ~~M3.5 — Control plane (C1+C2).~~ ✅ Done. C3/C4/C5 deferred.
-3. **M3.6 — Observability** (opt-in Prometheus + OTel). Adds metrics
-   and spans to every subsystem.
-4. ~~M4 — Scheduler.~~ ✅ Done.
-5. (continue with M7 IPC, M8 Recovery, M9 Memory per ROADMAP)
+3. ~~M4 — Scheduler.~~ ✅ Done.
+4. ~~M8 — Recovery & polish.~~ ✅ Done.
+5. ~~M9 — Native memory.~~ ✅ Done.
+6. ~~P1+P2 — AgentProvider + Claude/Codex providers.~~ ✅ Done.
+7. ~~ST1–ST5 — Streaming output (real-time Telegram edits).~~ ✅ Done.
+8. **M7 — IPC** (filesystem watcher, container → host messages).
+9. **M3.6 — Observability** (opt-in Prometheus + OTel). Deprioritized —
+   personal bot doesn't need metrics/traces yet.
 
 **Optional, off the critical path:** **M2 (Direct API)** auto-enabled
 if `ANTHROPIC_API_KEY` is set. Skipped silently otherwise. Operator
@@ -202,11 +198,8 @@ cleanup on restart removes all containers when running dev builds
   chat-local commands in unregistered chats (silent ignore vs reply),
   `/help` rendering across permission levels, rate-limiting (probably no),
   inline-keyboard confirmations for destructive ops (probably defer).
-- **ARCHITECTURE.md drift on mount allowlist location.** §3 still says
-  "compile-time path policy + a small `mount.json` next to binary". D013 /
-  ISOLATION.md superseded that with `${DATA_DIR}/mount-allowlist.json`.
-  Reword §3 the next time you touch ARCHITECTURE.md (low priority — the
-  authoritative location is ISOLATION.md).
+- ~~**ARCHITECTURE.md drift on mount allowlist location.**~~ Fixed — §3
+  now references `${DATA_DIR}/mount-allowlist.json` per ISOLATION.md.
 - **`ncruces/go-sqlite3` upgrade path.** Currently pinned to v0.20.0 per
   [D017](DECISIONS.md) because the asg017 sqlite-vec binding hasn't kept
   up with upstream. Watch for either a new asg017 release or a vendored

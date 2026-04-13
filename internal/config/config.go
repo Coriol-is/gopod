@@ -113,6 +113,12 @@ type Config struct {
 	// lifecycle.go. Default true; set GOPOD_LEFTOVER_CLEANUP=0 to
 	// disable (debug only).
 	LeftoverCleanupEnabled bool
+
+	// StreamEnabled enables real-time streaming of agent output to
+	// Telegram via message editing. When false, falls back to the
+	// buffered path (wait for full response, then send).
+	// Default: true. Set GOPOD_STREAM_ENABLED=false to disable.
+	StreamEnabled bool
 }
 
 // Load reads environment, applies defaults, validates, and returns a
@@ -141,6 +147,7 @@ func Load(loadDotenv bool) (Config, error) {
 		RepoRoot:               os.Getenv("GOPOD_REPO_ROOT"),
 		ContainerImage:         getenvDefault("GOPOD_CONTAINER_IMAGE", "gopod-agent:latest"),
 		LeftoverCleanupEnabled: !envFlag("GOPOD_LEFTOVER_CLEANUP_DISABLED"),
+		StreamEnabled:          !envFlag("GOPOD_STREAM_DISABLED"),
 		CompactAfter:           compactAfter,
 		CompactInterval:        os.Getenv("GOPOD_COMPACT_INTERVAL"),
 		CompactTime:            os.Getenv("GOPOD_COMPACT_TIME"),

@@ -696,6 +696,66 @@ container; gopod stays a thin orchestrator.
 
 ---
 
+## D019 — Secret gateway: MITM proxy + HashiCorp Vault replaces env var injection
+
+**Date:** 2026-04-13
+**Status:** Accepted
+**Supersedes:** [D008](#d008--no-onecli-secrets-via-env-vars) (partial — env var
+fallback preserved as backwards-compatible mode)
+**Refines:** [D012](#d012--secrets-in-environment-variables-only-never-in-config-files)
+
+**Context.** [D008](#d008--no-onecli-secrets-via-env-vars) decided to drop OneCLI
+and pass API keys as container environment variables. This was an acceptable
+trade-off for v0 personal use. Now that the multi-provider architecture is in
+place (P1+P2), containers may need credentials for multiple services
+(Anthropic, OpenAI, GitHub, Google, Slack) and the env var approach has real
+weaknesses: secrets are visible to any process inside the container via
+`/proc/1/environ`, there is no per-service scoping, no rotation without
+restart, and no audit trail. OneCLI
+(`/Users/<user>/_code/gh-public/onecli`) demonstrated that an HTTP
+CONNECT proxy with MITM TLS interception solves all of these. gopod adopts
+the same architecture, reimplemented in Go with HashiCorp Vault as the secret
+backend instead of PostgreSQL+Bitwarden.
+
+**Decision.** Add an embedded HTTP CONNECT proxy (`internal/gateway`) that:
+
+1. Listens on `GOPOD_GATEWAY_ADDR` (default `127.0.0.1:10255`).
+2. Authenticates agent containers via a per-chat `agent_token` in the
+   Proxy-Authorization header.
+3. Resolves injection rules from HashiCorp Vault (KV v2): per-chat secrets
+   shadow shared secrets, matched by host+path pattern.
+4. For hosts with injection rules: MITM-terminates TLS (self-signed CA
+   trusted by the container), injects credentials into request headers,
+   forwards upstream.
+5. For hosts without rules: plain TCP tunnel (no interception).
+6. Containers receive only `GOPOD_AGENT_TOKEN` + `HTTP_PROXY`/`HTTPS_PROXY`
+   + the CA certificate. No real API keys in the container environment.
+
+Three deployment modes: full Vault (recommended), SQLite + Vault Transit
+(lightweight), SQLite + local AES key (dev-only). Env var passthrough
+(D008 behavior) remains as backwards-compatible fallback when no gateway is
+configured.
+
+Full design in [GATEWAY.md](GATEWAY.md).
+
+**Consequences.**
+- Agents never see real credentials — strongest isolation short of hardware
+  enclaves.
+- Per-service scoping: an agent calling `api.anthropic.com` cannot
+  exfiltrate the GitHub token.
+- Key rotation is instant (Vault update + cache flush, no container restart).
+- Audit log in `gateway_log` table.
+- New external dependency: HashiCorp Vault (can be a dev server in Docker,
+  HCP Cloud, or any Vault deployment).
+- MITM adds latency (~1–5ms per request for cert generation + TLS
+  re-termination). Acceptable for LLM API calls that take seconds.
+- D012's "source of truth = process environment" still applies to
+  *gopod itself* (Vault token, gateway config). The change is that agent
+  containers no longer receive secret env vars — the gateway is their
+  source of truth.
+
+---
+
 ## Template for new ADRs
 
 ```

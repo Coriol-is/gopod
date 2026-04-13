@@ -227,6 +227,128 @@ func (d *Docker) Exec(
 	}, nil
 }
 
+// ExecError is returned (via the Done channel) when a docker exec
+// process exits with a non-zero status.
+type ExecError struct {
+	Code int
+}
+
+func (e *ExecError) Error() string {
+	return fmt.Sprintf("docker: exec exited %d", e.Code)
+}
+
+// StreamHandle provides streaming access to a running docker exec.
+// The caller reads stdout/stderr via io.Reader; the demuxer runs
+// in a background goroutine. The caller MUST call Close() when done
+// (or on error) to release the exec resources.
+type StreamHandle struct {
+	Stdout io.ReadCloser // demuxed stdout stream
+	Stderr io.ReadCloser // demuxed stderr stream
+	Done   <-chan error   // closed when exec finishes (nil = success)
+	cancel context.CancelFunc
+}
+
+// Close cancels the exec context and closes the stdout/stderr pipes.
+// Safe to call multiple times.
+func (h *StreamHandle) Close() {
+	if h.cancel != nil {
+		h.cancel()
+	}
+	if h.Stdout != nil {
+		h.Stdout.Close()
+	}
+	if h.Stderr != nil {
+		h.Stderr.Close()
+	}
+}
+
+// ExecStream runs cmd inside the container and returns a StreamHandle
+// for reading output as it arrives. Unlike Exec, it does not buffer
+// the entire output — data flows through io.Pipe as Docker flushes
+// each frame (typically 1–8 KB).
+//
+// The caller reads from Stdout in a loop; when Read returns io.EOF
+// the exec has finished writing. Then read Done for the exit status.
+func (d *Docker) ExecStream(
+	ctx context.Context,
+	containerID string,
+	cmd []string,
+	env []string,
+) (*StreamHandle, error) {
+	if len(cmd) == 0 {
+		return nil, errors.New("docker: ExecStream: empty cmd")
+	}
+
+	execCtx, cancel := context.WithCancel(ctx)
+
+	created, err := d.cli.ContainerExecCreate(execCtx, containerID, container.ExecOptions{
+		Cmd:          cmd,
+		Env:          env,
+		AttachStdout: true,
+		AttachStderr: true,
+	})
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("docker: exec create: %w", err)
+	}
+
+	resp, err := d.cli.ContainerExecAttach(execCtx, created.ID, container.ExecAttachOptions{})
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("docker: exec attach: %w", err)
+	}
+
+	stdoutR, stdoutW := io.Pipe()
+	stderrR, stderrW := io.Pipe()
+	done := make(chan error, 1)
+
+	go func() {
+		defer resp.Close()
+		defer stdoutW.Close()
+		defer stderrW.Close()
+
+		// stdcopy.StdCopy demuxes Docker's multiplexed stream.
+		// As Docker flushes frames, data flows to the pipes immediately.
+		if _, err := stdcopy.StdCopy(stdoutW, stderrW, resp.Reader); err != nil && !errors.Is(err, io.EOF) {
+			done <- fmt.Errorf("docker: exec demux: %w", err)
+		}
+
+		// Wait for exit code.
+		for {
+			info, inspErr := d.cli.ContainerExecInspect(execCtx, created.ID)
+			if inspErr != nil {
+				// Context cancelled (e.g. StreamHandle.Close) is normal.
+				if execCtx.Err() != nil {
+					close(done)
+					return
+				}
+				done <- fmt.Errorf("docker: exec inspect: %w", inspErr)
+				return
+			}
+			if !info.Running {
+				if info.ExitCode != 0 {
+					done <- &ExecError{Code: info.ExitCode}
+				}
+				close(done)
+				return
+			}
+			select {
+			case <-execCtx.Done():
+				close(done)
+				return
+			case <-time.After(50 * time.Millisecond):
+			}
+		}
+	}()
+
+	return &StreamHandle{
+		Stdout: stdoutR,
+		Stderr: stderrR,
+		Done:   done,
+		cancel: cancel,
+	}, nil
+}
+
 // Stop gracefully stops a container. Waits up to grace for the
 // container's main process to exit, then sends SIGKILL.
 func (d *Docker) Stop(ctx context.Context, containerID string, grace time.Duration) error {

@@ -29,11 +29,12 @@ go run ./cmd/gopod
 ## What it does
 
 - **Telegram bot** — long-polls your bot, stores every message in SQLite
-- **Claude agent per chat** — spawns a Docker container with Claude Code CLI, runs `claude -p` per message
-- **Per-chat isolation** — each chat gets its own container, filesystem, memory, and session
-- **Long-term memory** — hybrid FTS5 + sqlite-vec search, auto-extraction of facts from conversations, policy-driven context injection
+- **Multi-provider agents** — pluggable AgentProvider interface; Claude and Codex supported, switch per chat with `/provider`
+- **Per-chat isolation** — each chat gets its own Docker container, filesystem, memory, and session
+- **Long-term memory** — hybrid FTS5 + sqlite-vec search, auto-extraction of facts from conversations, context compiler with budget-based prompt injection, memory HTTP API for container agents
+- **Session compact** — `/clear` (wipe context), `/compact` (summarize + wipe), auto-compact by turns/interval/daily schedule
 - **Voice** — Whisper transcription for voice input, TTS for voice output (auto-mirrors input modality)
-- **Image vision** — send photos/documents, Claude analyzes them
+- **Image vision** — send photos/documents, agent analyzes them
 - **Scheduled tasks** — cron/interval/once via natural language (`/tasks add check weather every morning at 9`)
 - **Markdown formatting** — Claude's markdown renders as bold, italic, code blocks in Telegram
 - **Reactions** — 👀 processing, 👍 success, 👎 error
@@ -53,7 +54,11 @@ go run ./cmd/gopod
 | `/tasks pause/resume/cancel <id>` | manage tasks |
 | `/remember <fact>` | save to long-term memory |
 | `/recall <query>` | search memories |
+| `/memory gc\|stats` | memory lifecycle management |
 | `/voice <mode>` | set reply mode: auto, voice, text, voice+text |
+| `/clear` | clear conversation context (memory preserved) |
+| `/compact` | summarize conversation + clear context |
+| `/provider <name>` | switch agent provider (claude, codex) |
 | `/logs` | (owner) show recent gopod logs |
 | `/version` | build info |
 
@@ -63,8 +68,12 @@ go run ./cmd/gopod
 gopod (Go, host)
 ├── Telegram long-poll
 ├── Queue (per-chat serialization, global cap)
-├── Runner (Docker SDK, container lifecycle)
+├── Runner (Docker SDK, container lifecycle, session compact)
+│   └── AgentProvider (claude, codex — pluggable per chat)
 ├── Memory (sqlite-vec + FTS5, OpenAI embeddings)
+│   ├── Context compiler (budget-based prompt injection)
+│   ├── Extraction layer (auto-extract facts from conversations)
+│   └── HTTP API (search/add/list for container agents)
 ├── Scheduler (cron/interval/once, robfig/cron/v3)
 ├── Control plane (Router + slash commands)
 └── SQLite store (messages, chats, tasks, memories, logs)
@@ -105,7 +114,7 @@ gopod/
 │   │   ├── mountsec/       mount allowlist validation
 │   │   └── chattmpl/       chat workspace templates
 │   ├── queue/              per-chat serialization + global cap
-│   ├── memory/             embedder + hybrid search + extraction
+│   ├── memory/             embedder + hybrid search + extraction + context compiler + HTTP API
 │   ├── scheduler/          cron/interval/once poller
 │   ├── control/            Router + slash commands
 │   └── log/                SQLite slog handler
@@ -124,6 +133,7 @@ gopod/
 |---|---|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System architecture, package layout, message flow |
 | [docs/MEMORY.md](docs/MEMORY.md) | 5-layer memory model with hybrid search |
+| [docs/GATEWAY.md](docs/GATEWAY.md) | Secret gateway (MITM proxy + Vault) |
 | [docs/ISOLATION.md](docs/ISOLATION.md) | Container security policy |
 | [docs/CONTROL.md](docs/CONTROL.md) | Control plane Router design |
 | [docs/SKILLS.md](docs/SKILLS.md) | Skill ecosystem |

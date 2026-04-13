@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"strings"
 	"sync"
@@ -252,6 +253,135 @@ func (r *Runner) Run(
 	return reply, nil
 }
 
+// RunResult is the final outcome of a streaming agent run. Sent on
+// AgentStream.Result after the exec finishes.
+type RunResult struct {
+	FullText string // complete stdout (trimmed)
+	Stderr   string
+	Err      error
+}
+
+// AgentStream is the handle callers use to consume streaming output.
+// Read Chunks in a loop for partial text; when Chunks closes, read
+// Result for the final outcome.
+type AgentStream struct {
+	Chunks <-chan string    // text chunks as they arrive
+	Result <-chan RunResult // final result after agent exits
+}
+
+// RunStream is the streaming variant of Run. It ensures the container,
+// starts the agent, and returns an AgentStream immediately. The caller
+// reads from Chunks in a loop, then reads Result for the final outcome.
+//
+// Post-run work (extraction, auto-compact) runs in background
+// goroutines, same as Run.
+func (r *Runner) RunStream(
+	ctx context.Context,
+	chatFolder string,
+	tier Tier,
+	allowlist *mountsec.Allowlist,
+	prompt string,
+) (*AgentStream, error) {
+	id, err := r.Ensure(ctx, chatFolder, tier, allowlist)
+	if err != nil {
+		return nil, fmt.Errorf("runner: ensure %q: %w", chatFolder, err)
+	}
+	r.touch(chatFolder)
+
+	// Build memory context (same as Run).
+	var systemPrompt string
+	if r.memory != nil {
+		compiled := r.memory.CompileContext(ctx, chatFolder, prompt)
+		if compiled != "" {
+			systemPrompt = compiled
+			r.log.Debug("injecting compiled memory context (stream)",
+				slog.String("chat", chatFolder),
+				slog.Int("len", len(compiled)))
+		}
+	}
+
+	prov := r.ProviderForChat(chatFolder)
+
+	// Restore config from backup if needed.
+	if restoreCmd := prov.RestoreConfigCmd(); restoreCmd != nil {
+		r.d.Exec(ctx, id, restoreCmd, nil)
+	}
+
+	cmd := prov.RunCmd(prompt, systemPrompt)
+	handle, err := r.d.ExecStream(ctx, id, cmd, nil)
+	if err != nil {
+		return nil, fmt.Errorf("runner: exec stream: %w", err)
+	}
+
+	chunks := make(chan string, 32)
+	result := make(chan RunResult, 1)
+
+	go func() {
+		defer close(chunks)
+		defer close(result)
+		defer handle.Close()
+
+		var full strings.Builder
+		buf := make([]byte, 4096)
+
+		for {
+			n, readErr := handle.Stdout.Read(buf)
+			if n > 0 {
+				text := string(buf[:n])
+				full.WriteString(text)
+				chunks <- text
+			}
+			if readErr != nil {
+				break // EOF or error
+			}
+		}
+
+		// Drain stderr.
+		stderrBytes, _ := io.ReadAll(handle.Stderr)
+		stderr := strings.TrimSpace(string(stderrBytes))
+
+		// Wait for exit.
+		var execErr error
+		if err := <-handle.Done; err != nil {
+			execErr = err
+		}
+
+		r.touch(chatFolder)
+		fullText := strings.TrimSpace(full.String())
+
+		// Classify auth/exit errors.
+		if execErr != nil {
+			if ee, ok := execErr.(*ExecError); ok && ee.Code != 0 {
+				if prov.IsNotLoggedInError(stderr, fullText) {
+					result <- RunResult{Err: r.classifyAuthError(ctx, id)}
+					return
+				}
+				result <- RunResult{
+					Err:    fmt.Errorf("runner: agent exited %d", ee.Code),
+					Stderr: stderr,
+				}
+				return
+			}
+		}
+
+		result <- RunResult{FullText: fullText, Stderr: stderr}
+
+		// Post-run: extraction, auto-compact (same as Run).
+		if r.memory != nil && r.extractFn != nil && fullText != "" {
+			go r.extractAndIngest(context.Background(), chatFolder, prompt, fullText)
+		}
+		turns := r.incrementTurnCount(chatFolder)
+		if r.compactAfter > 0 && turns >= r.compactAfter {
+			r.resetTurnCount(chatFolder)
+			r.log.Info("auto-compact triggered (stream)",
+				slog.String("chat", chatFolder),
+				slog.Int("turns", turns))
+			go r.CompactSession(context.Background(), chatFolder, tier, allowlist)
+		}
+	}()
+
+	return &AgentStream{Chunks: chunks, Result: result}, nil
+}
 
 // RunFresh is like Run but without session continuity. For system
 // prompts that should not pollute conversation history.

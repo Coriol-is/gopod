@@ -435,12 +435,13 @@ func run() error {
 		tgLog := logger.With(slog.String("subsys", "telegram"))
 
 		tgBot, err := telegram.New(cfg.TelegramBotToken, telegram.Deps{
-			Store:       st,
-			Runner:      agentRunner,
-			Router:      router,
-			Allowlist:   allowlist,
-			OwnerChatID: cfg.OwnerChatID,
-			Log:         tgLog,
+			Store:         st,
+			Runner:        agentRunner,
+			Router:        router,
+			Allowlist:     allowlist,
+			OwnerChatID:   cfg.OwnerChatID,
+			Log:           tgLog,
+			StreamEnabled: cfg.StreamEnabled,
 		})
 		if err != nil {
 			return fmt.Errorf("init telegram: %w", err)

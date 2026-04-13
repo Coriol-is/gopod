@@ -23,7 +23,7 @@ The numerical IDs below are stable identifiers cited from many places —
 is built in this sequence so that the first end-to-end agent reply uses
 Claude Code's web-auth (Pro/Max) inside a container, not a paid API key:
 
-`M0 ✅ → M1 ✅ → M5 ✅ → M6 ✅ → M6.5 ✅ → M3 ✅ → M3.5 ✅ → M4 ✅ → M9 ✅ → M8 ✅ → M7 → M3.6`
+`M0 ✅ → M1 ✅ → M5 ✅ → M6 ✅ → M6.5 ✅ → M3 ✅ → M3.5 ✅ → M4 ✅ → M9 ✅ → M8 ✅ → P1+P2 ✅ → ST1–ST5 ✅ → M7 → M3.6`
 
 M2 (Direct API) is no longer on the critical path; it is opt-in if and only
 if `ANTHROPIC_API_KEY` is set in the environment.
@@ -50,11 +50,11 @@ if `ANTHROPIC_API_KEY` is set in the environment.
 
 | ID | Step | Status |
 |----|------|--------|
-| C1 | Router scaffold: `Command`, `Caller`, `Perm`, `Response`, `Router.Register/Dispatch`, auth enforcement, unit tests | ⬜ |
-| C2 | Telegram frontend: `parseSlash`, dispatch wiring, `/ping`, `/whoami`, `/version`, `/help` | ⬜ |
-| C3 | CLI frontend: argv parser, `serve`/`migrate` reserved subcommands, `--json`, mirror of public commands | ⬜ |
-| C4 | First batch of real handlers: chats, queue, container, system | ⬜ |
-| C5 | Logs subsystem: `internal/log/sqlite_handler.go`, retention task, `/logs` and `gopod logs` | ⬜ |
+| C1 | Router scaffold: `Command`, `Caller`, `Perm`, `Response`, `Router.Register/Dispatch`, auth enforcement, unit tests | ✅ |
+| C2 | Telegram frontend: `parseSlash`, dispatch wiring, `/ping`, `/whoami`, `/version`, `/help` | ✅ |
+| C3 | CLI frontend: argv parser, `serve`/`migrate` reserved subcommands, `--json`, mirror of public commands | ⬜ | Deferred |
+| C4 | First batch of real handlers: chats, queue, container, system | ⬜ | Deferred |
+| C5 | Logs subsystem: `internal/log/sqlite_handler.go`, retention task, `/logs` and `gopod logs` | ✅ | SQLite slog handler with D012 redaction landed in M8 |
 
 ### M3.6 sub-steps (observability)
 
@@ -108,8 +108,8 @@ Tracked as its own phase because the milestones are orthogonal to core work.
 
 | ID | Step | Status |
 |----|------|--------|
-| P1 | AgentProvider interface: refactor runner to call provider methods instead of hardcoded `claude` commands | ⬜ |
-| P2 | Claude provider: extract current claude-specific code into provider implementation | ⬜ |
+| P1 | AgentProvider interface: refactor runner to call provider methods instead of hardcoded `claude` commands | ✅ | `internal/runner/provider.go` — stateless interface with Name/Image/RunCmd/LoginCmd/etc. Runner calls provider methods everywhere |
+| P2 | Claude provider: extract current claude-specific code into provider implementation | ✅ | `internal/runner/provider_claude.go` — `--continue`/`--no-session-persistence`, `.claude.json` restore, auth parsing. Codex provider also landed (`provider_codex.go`) |
 | P3 | Codex provider: OpenAI Codex CLI support (separate Docker image, codex-specific flags/auth/sessions) | ⬜ |
 | P4 | Per-chat provider config: `/provider claude\|codex` command + `GOPOD_DEFAULT_PROVIDER` env var | ⬜ |
 | P5 | Gemini CLI provider: `gemini -p` with Google OAuth (browser link auth like Claude), `--resume latest` for sessions, `~/.gemini/` persisted via bind mount | ⬜ |
@@ -117,6 +117,49 @@ Tracked as its own phase because the milestones are orthogonal to core work.
 | P7 | Cline CLI provider: `cline -y` — multi-provider (Anthropic/OpenAI/Google/Bedrock/Azure), gRPC API, standalone since 2.0 | ⬜ |
 | P8 | Aider provider: `aider --message --yes` — code editing specialist, 20+ models, official Docker image | ⬜ |
 | P9 | API providers (Tier 2): OpenAI API / Ollama / any OpenAI-compatible — same interface, no container, HTTP calls | ⬜ |
+
+## Phase 7 — Streaming output
+
+Real-time agent output to Telegram. Replaces buffered wait-then-wall-of-text.
+See [docs/STREAMING.md](docs/STREAMING.md) for full design.
+
+| ID | Step | Status | Notes |
+|----|------|--------|-------|
+| ST1 | `Docker.ExecStream` — streaming exec with `io.Pipe` + `stdcopy` demux, `StreamHandle` struct | ✅ | `internal/runner/docker.go` |
+| ST2 | `Runner.RunStream` — streaming run with `AgentStream` (chunks channel + result channel) | ✅ | `internal/runner/runner.go` |
+| ST3 | Telegram helpers — `sendPlaceholder`, `editMessage`, `editMessageHTML` | ✅ | `internal/telegram/streaming.go` |
+| ST4 | `runAgentStreaming` — streaming handler loop with 1s ticker, overflow, fallback | ✅ | `internal/telegram/streaming.go` |
+| ST5 | Wire into queue handler, config flag (`GOPOD_STREAM_DISABLED`), `maybeVoiceReply` extracted | ✅ | `cmd/gopod/main.go`, `internal/config/config.go` |
+
+**Build order:** ST1 ∥ ST3 → ST2 → ST4 → ST5
+
+ST1 and ST3 are independent and can be built in parallel.
+
+---
+
+## Phase 6 — Secret gateway ([D019](docs/DECISIONS.md))
+
+MITM HTTP proxy + HashiCorp Vault. Agents never see real keys.
+See [docs/GATEWAY.md](docs/GATEWAY.md) for full design.
+
+| ID | Step | Status | Notes |
+|----|------|--------|-------|
+| G1 | `internal/vault` — Vault client: KV v2 read/write, AppRole auth, in-memory cache with TTL, connection health check | ⬜ | Pure Go, no CGO. Uses `hashicorp/vault/api` SDK. Path convention: `secret/data/gopod/{shared,<chat>}/<name>` |
+| G2 | `internal/gateway/ca` — Certificate authority: self-signed root CA generation + per-host leaf certs (ECDSA P-256), cert cache (24h TTL), root CA persisted to `${DATA_DIR}/gateway/` | ⬜ | `crypto/x509` + `crypto/ecdsa`, no CGO. CA cert mounted into containers for trust |
+| G3 | `internal/gateway` scaffold — HTTP CONNECT proxy: TCP listener, Proxy-Authorization Basic extraction, agent_token lookup, plain TCP tunnel for unknown hosts. No MITM yet | ⬜ | Depends on G1 for token→chat resolution. Test: proxy curl through it, verify tunnel works |
+| G4 | MITM TLS interception + header injection — terminate agent TLS with leaf cert from G2, parse HTTP request, apply injection rules (SetHeader/ReplaceHeader by host+path pattern), forward to upstream over fresh TLS, stream response back | ⬜ | Depends on G2+G3. Core of the gateway. Test: inject a fake header, verify upstream receives it |
+| G5 | Container wiring — `agent_token` column on `registered_chats`, `ProxyEnvVars()` on AgentProvider, CA cert bind mount, `update-ca-certificates` / `NODE_EXTRA_CA_CERTS` in Dockerfile, remove secret env vars when gateway active | ⬜ | Depends on G4. Modifies `docker_args.go`, `mounts.go`, `container/Dockerfile` |
+| G6 | `internal/gateway/policy` — scoped secret resolution: per-chat overrides shadow shared secrets, resolution cache (60s TTL), rate limiting (optional token bucket per agent+host), block rules | ⬜ | Depends on G4. Test: per-chat override shadows shared, unknown host tunnels |
+| G7 | Control plane — `/secrets list\|add\|remove\|rotate-token\|test\|status` commands via Router, all OwnerOnly. `/secrets add` prompts for value interactively (like /login flow) | ⬜ | Depends on G5+G6. Telegram-mediated secret management |
+| G8 | SQLite fallback backends — Vault Transit encryption (Vault provides encrypt/decrypt, SQLite stores ciphertext), local AES-256-GCM fallback (dev only, key from `GOPOD_SECRET_KEY`). `secrets` table in schema | ⬜ | Depends on G6. For deployments where full Vault KV is overkill |
+
+**Build order:** G1 ∥ G2 → G3 → G4 → G5 ∥ G6 → G7 → G8
+
+G1 and G2 are independent and can be built in parallel.
+G5 and G6 are independent once G4 lands.
+G8 is optional — full Vault mode (G1–G7) is the primary path.
+
+---
 
 ## Deferred
 
