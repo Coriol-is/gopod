@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/spaceinvaderz/gopod/internal/runner/mountsec"
+	"github.com/Coriol-is/gopod/internal/runner/mountsec"
 )
 
 // Runner is the high-level facade telegram (and any future control

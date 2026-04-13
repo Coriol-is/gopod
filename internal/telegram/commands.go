@@ -12,7 +12,7 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
-	"github.com/spaceinvaderz/gopod/internal/store"
+	"github.com/Coriol-is/gopod/internal/store"
 )
 
 // loginHandler dispatches to the real M6.5 interactive OAuth proxy

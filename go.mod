@@ -1,4 +1,4 @@
-module github.com/spaceinvaderz/gopod
+module github.com/Coriol-is/gopod
 
 go 1.25.0
 

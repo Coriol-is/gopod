@@ -25,8 +25,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/spaceinvaderz/gopod/internal/runner/chattmpl"
-	"github.com/spaceinvaderz/gopod/internal/runner/mountsec"
+	"github.com/Coriol-is/gopod/internal/runner/chattmpl"
+	"github.com/Coriol-is/gopod/internal/runner/mountsec"
 )
 
 // Tier is the trust tier of a chat per docs/ISOLATION.md §2.

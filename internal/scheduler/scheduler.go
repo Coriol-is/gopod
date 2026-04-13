@@ -20,8 +20,8 @@ import (
 
 	"github.com/robfig/cron/v3"
 
-	"github.com/spaceinvaderz/gopod/internal/queue"
-	"github.com/spaceinvaderz/gopod/internal/store"
+	"github.com/Coriol-is/gopod/internal/queue"
+	"github.com/Coriol-is/gopod/internal/store"
 )
 
 // PollInterval is how often the scheduler checks the store for due

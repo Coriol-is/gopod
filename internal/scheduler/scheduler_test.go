@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spaceinvaderz/gopod/internal/store"
+	"github.com/Coriol-is/gopod/internal/store"
 )
 
 func TestComputeNextRunCron(t *testing.T) {

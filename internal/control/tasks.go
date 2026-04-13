@@ -9,8 +9,8 @@ import (
 
 	"github.com/robfig/cron/v3"
 
-	"github.com/spaceinvaderz/gopod/internal/scheduler"
-	"github.com/spaceinvaderz/gopod/internal/store"
+	"github.com/Coriol-is/gopod/internal/scheduler"
+	"github.com/Coriol-is/gopod/internal/store"
 )
 
 // PromptFunc is a callback that sends a prompt to Claude and returns

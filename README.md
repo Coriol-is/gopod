@@ -11,7 +11,7 @@ A focused descendant of [NanoClaw](https://github.com/spaceinvaderz/nanoclaw):
 
 ```sh
 # 1. Clone and build the agent image
-git clone https://github.com/spaceinvaderz/gopod
+git clone https://github.com/Coriol-is/gopod
 cd gopod
 docker build -t gopod-agent:latest container/
 

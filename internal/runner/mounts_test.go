@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/spaceinvaderz/gopod/internal/runner/mountsec"
+	"github.com/Coriol-is/gopod/internal/runner/mountsec"
 )
 
 // mkPaths builds a fully-validated Paths struct with every directory

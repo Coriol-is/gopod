@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/spaceinvaderz/gopod/internal/runner/mountsec"
+	"github.com/Coriol-is/gopod/internal/runner/mountsec"
 )
 
 // CompactConfig holds the three compact trigger strategies.

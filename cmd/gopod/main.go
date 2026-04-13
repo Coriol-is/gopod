@@ -32,16 +32,16 @@ import (
 	"sync"
 	"syscall"
 
-	picoclog "github.com/spaceinvaderz/gopod/internal/log"
-	"github.com/spaceinvaderz/gopod/internal/config"
-	"github.com/spaceinvaderz/gopod/internal/control"
-	"github.com/spaceinvaderz/gopod/internal/memory"
-	"github.com/spaceinvaderz/gopod/internal/queue"
-	"github.com/spaceinvaderz/gopod/internal/runner"
-	"github.com/spaceinvaderz/gopod/internal/runner/mountsec"
-	"github.com/spaceinvaderz/gopod/internal/scheduler"
-	"github.com/spaceinvaderz/gopod/internal/store"
-	"github.com/spaceinvaderz/gopod/internal/telegram"
+	picoclog "github.com/Coriol-is/gopod/internal/log"
+	"github.com/Coriol-is/gopod/internal/config"
+	"github.com/Coriol-is/gopod/internal/control"
+	"github.com/Coriol-is/gopod/internal/memory"
+	"github.com/Coriol-is/gopod/internal/queue"
+	"github.com/Coriol-is/gopod/internal/runner"
+	"github.com/Coriol-is/gopod/internal/runner/mountsec"
+	"github.com/Coriol-is/gopod/internal/scheduler"
+	"github.com/Coriol-is/gopod/internal/store"
+	"github.com/Coriol-is/gopod/internal/telegram"
 )
 
 // version is overridden at link time via -ldflags "-X main.version=...".

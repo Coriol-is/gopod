@@ -20,11 +20,11 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
-	"github.com/spaceinvaderz/gopod/internal/control"
-	"github.com/spaceinvaderz/gopod/internal/queue"
-	"github.com/spaceinvaderz/gopod/internal/runner"
-	"github.com/spaceinvaderz/gopod/internal/runner/mountsec"
-	"github.com/spaceinvaderz/gopod/internal/store"
+	"github.com/Coriol-is/gopod/internal/control"
+	"github.com/Coriol-is/gopod/internal/queue"
+	"github.com/Coriol-is/gopod/internal/runner"
+	"github.com/Coriol-is/gopod/internal/runner/mountsec"
+	"github.com/Coriol-is/gopod/internal/store"
 )
 
 // publicCommands is now built dynamically from the Router's command

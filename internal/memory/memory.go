@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spaceinvaderz/gopod/internal/store"
+	"github.com/Coriol-is/gopod/internal/store"
 )
 
 // Memory is the high-level facade for gopod's long-term memory

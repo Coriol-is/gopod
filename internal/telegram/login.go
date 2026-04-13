@@ -12,7 +12,7 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
-	"github.com/spaceinvaderz/gopod/internal/runner"
+	"github.com/Coriol-is/gopod/internal/runner"
 )
 
 // loginTimeout is how long a /login session stays open waiting for
