@@ -27,10 +27,8 @@ func (p *ClaudeProvider) RequiredEnvVars() []string {
 	return []string{"ANTHROPIC_API_KEY"}
 }
 
-const claudeAllowedTools = "Bash,Read,Write,Edit,Grep,Glob,WebSearch,WebFetch"
-
 func (p *ClaudeProvider) RunCmd(prompt, systemPrompt string) []string {
-	cmd := []string{"claude", "--continue", "--allowedTools", claudeAllowedTools}
+	cmd := []string{"claude", "--continue", "--dangerously-skip-permissions"}
 	if systemPrompt != "" {
 		cmd = append(cmd, "--append-system-prompt", systemPrompt)
 	}
@@ -41,7 +39,7 @@ func (p *ClaudeProvider) RunCmd(prompt, systemPrompt string) []string {
 func (p *ClaudeProvider) RunFreshCmd(prompt string) []string {
 	// --no-session-persistence prevents RunFresh from creating session
 	// files that would confuse --continue in the user's conversation.
-	return []string{"claude", "--no-session-persistence", "--allowedTools", claudeAllowedTools, "-p", prompt}
+	return []string{"claude", "--no-session-persistence", "--dangerously-skip-permissions", "-p", prompt}
 }
 
 func (p *ClaudeProvider) RestoreConfigCmd() []string {
