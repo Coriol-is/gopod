@@ -1,0 +1,3 @@
+[submodule "skills/frf-tui"]
+	path = skills/frf-tui
+	url = /Users/<user>/_code/coriolis/frf-tui

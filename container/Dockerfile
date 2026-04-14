@@ -29,6 +29,13 @@
 #     to massage. If bootstrapping gets complicated later, a real
 #     entrypoint.sh can land next to this Dockerfile.
 
+# --- Stage 1: build frf CLI from source ---
+FROM golang:1.24-bookworm AS frf-builder
+WORKDIR /src
+COPY skills/frf-tui/ .
+RUN go build -trimpath -o /frf ./cmd/frf
+
+# --- Stage 2: runtime image ---
 FROM node:22-slim
 
 # Install runtime dependencies. `--no-install-recommends` keeps the
@@ -41,6 +48,9 @@ RUN apt-get update \
       git \
       ripgrep \
  && rm -rf /var/lib/apt/lists/*
+
+# frf — FreeFeed CLI (built in stage 1).
+COPY --from=frf-builder /frf /usr/local/bin/frf
 
 # Install the Claude Code CLI globally. Pinning is left to the apt/npm
 # default for M5e; a pinned version is a future ADR-worthy decision

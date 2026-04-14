@@ -162,7 +162,7 @@ func run() error {
 			agentProvider := runner.NewClaudeProvider(cfg.ContainerImage)
 
 			// Additional env vars beyond what the provider requires.
-			envAllow := []string{"OPENAI_API_KEY"}
+			envAllow := []string{"OPENAI_API_KEY", "FREEFEED_BASE_URL", "FREEFEED_USERNAME", "FREEFEED_PASSWORD"}
 			r, err := runner.New(d, agentProvider, runner.Paths{
 				RepoRoot:           cfg.RepoRoot,
 				DataDir:            cfg.DataDir,
