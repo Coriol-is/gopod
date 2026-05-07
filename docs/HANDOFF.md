@@ -32,7 +32,7 @@ Key work after M9:
   seccomp, HOME/tmpfs, .claude.json restore, reaction emoji
 
 Build order:
-`M0 ✅ → M1 ✅ → M5 ✅ → M6 ✅ → M6.5 ✅ → M3 ✅ → M3.5 ✅ → M4 ✅ → M9 ✅ → M8 ✅ → P1+P2 ✅ → ST1–ST5 ✅ → M7 → M3.6`
+`M0 ✅ → M1 ✅ → M5 ✅ → M6 ✅ → M6.5 ✅ → M3 ✅ → M3.5 ✅ → M4 ✅ → M9 ✅ → M8 ✅ → P1+P2 ✅ → ST1–ST5 ✅ → M7 ✅ → M3.6`
 
 Additional completed work (post-milestone):
 - Session compact: /clear, /compact, auto-compact (turns/interval/daily),
@@ -46,6 +46,9 @@ Additional completed work (post-milestone):
 
 ## What's done
 
+- ✅ **M7 — IPC.** internal/ipc package; agent → telegram + scheduler via
+  data/ipc/<chat>/{messages,tasks}/. 1s ticker, 3-retry → .failed/,
+  retention 200/dir. Spec: docs/superpowers/specs/2026-05-07-m7-ipc-design.md.
 - ✅ **M5 — Container runtime landed.** `internal/runner/mountsec`
   subpackage does pure allowlist validation: JSON schema, compiled-in
   blocked patterns (SSH/GPG/AWS/Docker/.env/id_rsa/etc), symlink
@@ -156,7 +159,7 @@ See [GATEWAY.md](GATEWAY.md) for full architecture.
 5. ~~M9 — Native memory.~~ ✅ Done.
 6. ~~P1+P2 — AgentProvider + Claude/Codex providers.~~ ✅ Done.
 7. ~~ST1–ST5 — Streaming output (real-time Telegram edits).~~ ✅ Done.
-8. **M7 — IPC** (filesystem watcher, container → host messages).
+8. ~~**M7 — IPC** (filesystem watcher, container → host messages).~~ ✅ Done.
 9. **M3.6 — Observability** (opt-in Prometheus + OTel). Deprioritized —
    personal bot doesn't need metrics/traces yet.
 
