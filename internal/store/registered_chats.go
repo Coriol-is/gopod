@@ -116,6 +116,32 @@ func (s *Store) IsRegistered(ctx context.Context, jid string) (bool, error) {
 	return true, nil
 }
 
+// GetByFolder returns the registered chat with the given folder name.
+// Returns ErrChatNotRegistered if no chat owns this folder.
+func (s *Store) GetByFolder(ctx context.Context, folder string) (RegisteredChat, error) {
+	const q = `
+		SELECT jid, IFNULL(name, ''), folder, IFNULL(trigger_pattern, ''),
+		       requires_trigger, is_owner, added_at
+		  FROM registered_chats
+		 WHERE folder = ?`
+
+	var c RegisteredChat
+	var requiresTrigger, isOwner int
+	err := s.db.QueryRowContext(ctx, q, folder).Scan(
+		&c.JID, &c.Name, &c.Folder, &c.TriggerPattern,
+		&requiresTrigger, &isOwner, &c.AddedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return RegisteredChat{}, ErrChatNotRegistered
+	}
+	if err != nil {
+		return RegisteredChat{}, fmt.Errorf("store: GetByFolder: %w", err)
+	}
+	c.RequiresTrigger = requiresTrigger != 0
+	c.IsOwner = isOwner != 0
+	return c, nil
+}
+
 // ListRegistered returns every registered chat ordered by added_at
 // (oldest first). Cheap on personal-assistant scale; if it ever needs
 // pagination it's a self-contained refactor.

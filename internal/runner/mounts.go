@@ -278,10 +278,16 @@ func EnsureChatDirs(p Paths, chatFolder string, isOwner bool, log *slog.Logger) 
 	chatDir := filepath.Join(p.ChatsDir, chatFolder)
 	memoryDir := filepath.Join(chatDir, "memory")
 
+	ipcDir := filepath.Join(p.DataDir, "ipc", chatFolder)
 	dirs := []string{
 		chatDir,
 		memoryDir,
-		filepath.Join(p.DataDir, "ipc", chatFolder),
+		ipcDir,
+		filepath.Join(ipcDir, "messages"),
+		filepath.Join(ipcDir, "tasks"),
+		filepath.Join(ipcDir, "input"),
+		filepath.Join(ipcDir, ".processed"),
+		filepath.Join(ipcDir, ".failed"),
 		filepath.Join(p.DataDir, "sessions", chatFolder, ".claude"),
 	}
 	for _, d := range dirs {

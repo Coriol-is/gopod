@@ -144,3 +144,32 @@ func TestRegisterChatRejectsEmptyJID(t *testing.T) {
 		t.Error("empty JID was accepted")
 	}
 }
+
+func TestGetByFolder(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+
+	if err := st.RegisterChat(ctx, RegisteredChat{
+		JID:     "1001",
+		Name:    "Owner",
+		Folder:  "owner",
+		AddedAt: 1700000000000,
+	}); err != nil {
+		t.Fatalf("RegisterChat: %v", err)
+	}
+
+	got, err := st.GetByFolder(ctx, "owner")
+	if err != nil {
+		t.Fatalf("GetByFolder: %v", err)
+	}
+	if got.JID != "1001" {
+		t.Errorf("JID = %q, want 1001", got.JID)
+	}
+	if got.Folder != "owner" {
+		t.Errorf("Folder = %q, want owner", got.Folder)
+	}
+
+	if _, err := st.GetByFolder(ctx, "missing"); err != ErrChatNotRegistered {
+		t.Errorf("missing folder: err = %v, want ErrChatNotRegistered", err)
+	}
+}

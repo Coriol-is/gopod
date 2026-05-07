@@ -81,6 +81,31 @@ func TestEnsureChatDirsIdempotent(t *testing.T) {
 	}
 }
 
+func TestEnsureChatDirsCreatesIPCSubdirs(t *testing.T) {
+	p := mkPaths(t)
+	if err := EnsureChatDirs(p, "alice", false, nil); err != nil {
+		t.Fatalf("EnsureChatDirs: %v", err)
+	}
+	ipcRoot := filepath.Join(p.DataDir, "ipc", "alice")
+	want := []string{
+		filepath.Join(ipcRoot, "messages"),
+		filepath.Join(ipcRoot, "tasks"),
+		filepath.Join(ipcRoot, "input"),
+		filepath.Join(ipcRoot, ".processed"),
+		filepath.Join(ipcRoot, ".failed"),
+	}
+	for _, d := range want {
+		fi, err := os.Stat(d)
+		if err != nil {
+			t.Errorf("stat %q: %v", d, err)
+			continue
+		}
+		if !fi.IsDir() {
+			t.Errorf("%q is not a directory", d)
+		}
+	}
+}
+
 func TestEnsureChatDirsRejectsEmptyChat(t *testing.T) {
 	p := mkPaths(t)
 	if err := EnsureChatDirs(p, "", false, nil); err == nil {
