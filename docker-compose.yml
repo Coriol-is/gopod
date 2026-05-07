@@ -55,3 +55,14 @@ services:
     # talk to the host Docker daemon.
     group_add:
       - "${DOCKER_GID:-985}"
+    # Memory API. Spawned agent containers reach gopod via
+    # `host.docker.internal:9876`, which on Linux maps to the host's
+    # docker-bridge IP (e.g. 172.17.0.1). Publishing 9876 makes the
+    # server's port reachable from that bridge. Binding to 0.0.0.0 is
+    # required so the docker0 IP is among the listening interfaces;
+    # 127.0.0.1 alone is unreachable from sibling containers. Operators
+    # who don't trust their LAN should add a host firewall rule
+    # (e.g. ufw deny in 9876) — Docker's `iptables -I DOCKER` chain
+    # bypasses ufw, so the firewall must target the bridge interface.
+    ports:
+      - "9876:9876"
