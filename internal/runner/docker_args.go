@@ -226,6 +226,17 @@ func BuildContainerArgs(cfg SpawnConfig) (*container.Config, *container.HostConf
 
 		// Bind mounts from BuildMounts.
 		Mounts: toDockerMounts(cfg.Mounts),
+
+		// host.docker.internal → host gateway. Required for the agent
+		// to reach gopod's host-side services (e.g. the Memory API on
+		// :9876). Docker Desktop on macOS/Windows provides this alias
+		// automatically; Linux daemons do not, so we inject it
+		// explicitly. The "host-gateway" magic value is resolved by
+		// the daemon (Docker 20.10+) and is a no-op on Desktop where
+		// the alias already exists.
+		ExtraHosts: []string{
+			"host.docker.internal:host-gateway",
+		},
 	}
 
 	return conf, host, ContainerName(cfg.ChatFolder), nil

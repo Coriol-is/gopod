@@ -105,6 +105,17 @@ func TestBuildContainerArgsFlags(t *testing.T) {
 	if host.RestartPolicy.Name != "no" {
 		t.Errorf("RestartPolicy = %q, want no", host.RestartPolicy.Name)
 	}
+	wantHost := "host.docker.internal:host-gateway"
+	var gotHostGateway bool
+	for _, h := range host.ExtraHosts {
+		if h == wantHost {
+			gotHostGateway = true
+			break
+		}
+	}
+	if !gotHostGateway {
+		t.Errorf("ExtraHosts = %v, want it to contain %q", host.ExtraHosts, wantHost)
+	}
 	if host.Resources.Memory != 4<<30 {
 		t.Errorf("Memory = %d, want %d", host.Resources.Memory, int64(4<<30))
 	}
