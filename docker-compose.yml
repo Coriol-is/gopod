@@ -51,3 +51,7 @@ services:
     # gopod needs to create files as the host user so bind-mount
     # permissions work. Override with your host uid:gid.
     user: "${GOPOD_UID:-1000}:${GOPOD_GID:-1000}"
+    # Add the host docker.sock group so the in-container process can
+    # talk to the host Docker daemon.
+    group_add:
+      - "${DOCKER_GID:-985}"
