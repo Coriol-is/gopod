@@ -372,10 +372,10 @@ func (d *Docker) Remove(ctx context.Context, containerID string) error {
 	return nil
 }
 
-// ListPicoclawContainers returns every container on the daemon that
+// ListGopodContainers returns every container on the daemon that
 // carries the gopod.chat label, running or not. Used by
 // CleanupLeftovers at boot.
-func (d *Docker) ListPicoclawContainers(ctx context.Context) ([]container.Summary, error) {
+func (d *Docker) ListGopodContainers(ctx context.Context) ([]container.Summary, error) {
 	list, err := d.cli.ContainerList(ctx, container.ListOptions{
 		All: true,
 		Filters: filters.NewArgs(

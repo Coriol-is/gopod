@@ -50,7 +50,7 @@ const idleTickInterval = 1 * time.Minute
 //
 // Returns the number of containers cleaned up (stopped + removed).
 func (d *Docker) CleanupLeftovers(ctx context.Context, currentVersion string) (int, error) {
-	list, err := d.ListPicoclawContainers(ctx)
+	list, err := d.ListGopodContainers(ctx)
 	if err != nil {
 		return 0, err
 	}

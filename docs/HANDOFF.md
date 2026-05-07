@@ -58,7 +58,7 @@ Additional completed work (post-milestone):
   flag: ReadonlyRootfs, CapDrop=ALL, no-new-privileges, seccomp=default,
   non-root uid, tmpfs trio, resource caps, labels, env allowlist via
   `os.LookupEnv` (D012). `internal/runner/docker.go` wraps the Docker
-  SDK with `EnsureRunning`/`Exec`/`Stop`/`Remove`/`ListPicoclawContainers`
+  SDK with `EnsureRunning`/`Exec`/`Stop`/`Remove`/`ListGopodContainers`
   plus `CleanupLeftovers` in `lifecycle.go` (keeps running containers
   at the current version, stops+removes everything else). Integration
   tests behind `//go:build docker_integration` verified end-to-end
