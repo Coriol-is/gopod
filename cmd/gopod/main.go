@@ -35,6 +35,7 @@ import (
 	picoclog "github.com/Coriol-is/gopod/internal/log"
 	"github.com/Coriol-is/gopod/internal/config"
 	"github.com/Coriol-is/gopod/internal/control"
+	"github.com/Coriol-is/gopod/internal/ipc"
 	"github.com/Coriol-is/gopod/internal/memory"
 	"github.com/Coriol-is/gopod/internal/queue"
 	"github.com/Coriol-is/gopod/internal/runner"
@@ -469,6 +470,41 @@ func run() error {
 				sched.Start(ctx)
 			}()
 		}
+
+		// IPC watcher (M7). Reads agent-authored JSON files under
+		// data/ipc/<chat>/{messages,tasks} and dispatches them into
+		// telegram + scheduler. See
+		// docs/superpowers/specs/2026-05-07-m7-ipc-design.md.
+		ipcLog := logger.With(slog.String("subsys", "ipc"))
+		ownerFolder := "owner"
+		if cfg.OwnerChatID != 0 {
+			if rc, err := st.GetRegistered(ctx, fmt.Sprint(cfg.OwnerChatID)); err == nil {
+				ownerFolder = rc.Folder
+			}
+		}
+		ipcMsgs := telegram.NewIPCSink(tgBot)
+		ipcTasks := scheduler.NewIPCSink(st)
+		ipcWatcher := ipc.New(ipc.Config{
+			DataDir:     cfg.DataDir,
+			OwnerFolder: ownerFolder,
+		}, ipcMsgs, ipcTasks, ipcLog,
+			func(folder string) (string, bool) {
+				c, err := st.GetByFolder(ctx, folder)
+				if err != nil {
+					return "", false
+				}
+				return c.JID, true
+			})
+		subsystems.Add(1)
+		go func() {
+			defer subsystems.Done()
+			if err := ipcWatcher.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+				ipcLog.Error("ipc watcher", slog.Any("err", err))
+			}
+		}()
+		ipcLog.Info("ipc watcher running",
+			slog.String("data_dir", cfg.DataDir),
+			slog.String("owner_folder", ownerFolder))
 
 		subsystems.Add(1)
 		go func() {
