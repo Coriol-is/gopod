@@ -167,7 +167,7 @@ currently has no API key, so this stays at ⏸️.
 ## Right now you can already...
 
 1. Set `TELEGRAM_BOT_TOKEN` + `GOPOD_OWNER_CHAT_ID` in `.env`
-2. Build the agent image: `docker build -t gopod-agent:latest container/`
+2. Build the agent image: `docker build -t gopod-agent:latest -f container/Dockerfile .` (run from repo root; needs submodule `skills/frf-tui` checked out)
 3. Run `go run ./cmd/gopod`
 4. Send any text message → owner chat auto-registers, container spawns
 5. First message gets "not authenticated" reply → tap `/login`

@@ -6,9 +6,21 @@ The image gopod spawns per registered chat. See
 
 ## Build
 
+Build context is the repo root, not `container/`, because stage 1
+of the Dockerfile builds the `frf` CLI from the `skills/frf-tui/`
+git submodule. Run from repo root:
+
 ```sh
-docker build -t gopod-agent:latest container/
+# Claude (default)
+docker build -t gopod-agent:latest -f container/Dockerfile .
+
+# Codex variant (optional)
+docker build -t gopod-agent-codex:latest -f container/Dockerfile.codex .
 ```
+
+If the submodule was not pulled at clone time, run
+`git submodule update --init --recursive` first — otherwise stage 1
+fails with `"/skills/frf-tui": not found`.
 
 The resulting image runs as the non-root `node` user inside, but
 gopod overrides this at spawn time with `--user <host_uid>:<host_gid>`
