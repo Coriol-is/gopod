@@ -60,3 +60,8 @@ Temporary Items
 
 # ---- remember plugin ----
 .remember/
+
+# ---- Claude Code ----
+# Per-machine settings only; .claude/settings.json and .claude/skills/
+# stay tracked so shared config can be committed later.
+.claude/settings.local.json
