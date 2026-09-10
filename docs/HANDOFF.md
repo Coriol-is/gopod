@@ -12,8 +12,17 @@
 **Phase:** Core complete. gopod is a working personal Telegram
 Claude assistant with session continuity, long-term memory, voice,
 vision, scheduling, and multi-provider architecture ready for Codex.
-**Last updated:** 2026-04-13
-**Last working session:** Massive session — 56 commits in one day.
+**Last updated:** 2026-09-10
+**Last working session:** /login OAuth URL bugfix (see below).
+
+Latest fix (2026-09-10): /login URL arrived mangled in Telegram.
+Two causes: (1) claude CLI ≥2.1.267 wraps the URL in an OSC-8
+hyperlink; extractors now strip CSI+OSC via shared
+`internal/runner/ansi.go:stripTerminalEscapes` and cut the URL at the
+first whitespace. (2) `markdownToTelegramHTML` italic pass ate
+underscores in query params; inline-code spans are now cut out before
+emphasis passes, and login messages wrap the URL in backticks
+(copyable code entity).
 
 Key work after M9:
 - M8: cursor backfill, structured SQLite logs, Docker Compose, README

@@ -182,15 +182,18 @@ func (b *Bot) loginHandlerReal(ctx context.Context, _ *bot.Bot, update *models.U
 	}
 	b.logins.set(m.Chat.ID, session)
 
+	// Backticks make the URL an inline-code entity in Telegram:
+	// copyable, and the markdown pass can't eat the underscores in
+	// its query parameters (client_id, code_challenge, ...).
 	var loginMsg string
 	if deviceCode != "" {
 		// Device auth flow (Codex): URL + one-time code.
-		loginMsg = "Open this URL:\n\n" + url +
+		loginMsg = "Open this URL:\n\n`" + url + "`" +
 			"\n\nEnter this code:\n\n**" + deviceCode + "**" +
 			"\n\nAfter signing in, the bot will detect it automatically."
 	} else {
 		// OAuth code flow (Claude): URL + paste code back.
-		loginMsg = "Open this URL to sign in:\n\n" + url +
+		loginMsg = "Open this URL to sign in:\n\n`" + url + "`" +
 			"\n\nAfter signing in, copy the authorization code from the " +
 			"success page and send it here as your next message."
 	}

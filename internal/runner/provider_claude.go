@@ -76,13 +76,16 @@ func (p *ClaudeProvider) LoginCmd() []string {
 }
 
 func (p *ClaudeProvider) ExtractLoginURL(line string) string {
-	const prefix = "visit: "
-	idx := strings.Index(strings.ToLower(line), prefix)
-	if idx >= 0 {
-		return strings.TrimSpace(line[idx+len(prefix):])
-	}
-	if i := strings.Index(line, "https://"); i >= 0 {
-		return strings.TrimRight(line[i:], " \t\r\n")
+	// The CLI may wrap the URL in an OSC-8 hyperlink whose parameters
+	// duplicate the visible URL — strip escapes before matching, and
+	// cut at the first whitespace, not the end of line.
+	cleaned := stripTerminalEscapes(line)
+	if i := strings.Index(cleaned, "https://"); i >= 0 {
+		url := cleaned[i:]
+		if j := strings.IndexAny(url, " \t\r\n"); j >= 0 {
+			url = url[:j]
+		}
+		return url
 	}
 	return ""
 }

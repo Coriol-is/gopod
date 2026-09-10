@@ -19,6 +19,21 @@ func TestMarkdownToTelegramHTML(t *testing.T) {
 		{"multiple bold", "**a** and **b**", "<b>a</b> and <b>b</b>"},
 		{"no markdown", "just plain", "just plain"},
 		{"empty", "", ""},
+		{
+			"oauth url with underscores in backticks",
+			"Open this URL to sign in:\n\n`https://claude.ai/oauth/authorize?client_id=abc_def&response_type=code&code_challenge=x_y_z`",
+			"Open this URL to sign in:\n\n<code>https://claude.ai/oauth/authorize?client_id=abc_def&amp;response_type=code&amp;code_challenge=x_y_z</code>",
+		},
+		{
+			"emphasis outside code span still works",
+			"_hi_ `a_b` _yo_",
+			"<i>hi</i> <code>a_b</code> <i>yo</i>",
+		},
+		{
+			"asterisks inside code span survive",
+			"`a * b * c`",
+			"<code>a * b * c</code>",
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

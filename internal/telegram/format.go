@@ -69,27 +69,47 @@ func markdownToTelegramHTML(md string) string {
 }
 
 // processInlineMarkdown handles inline formatting on a single
-// HTML-escaped line.
+// HTML-escaped line. Inline code spans are cut out first so the
+// emphasis passes can't mangle their contents (URLs with underscores,
+// literal asterisks, etc.).
 func processInlineMarkdown(line string) string {
-	// Order matters: process backtick code first (to protect content
-	// inside), then bold, then italic, then links.
+	var result strings.Builder
+	for {
+		start := strings.Index(line, "`")
+		if start < 0 {
+			break
+		}
+		end := strings.Index(line[start+1:], "`")
+		if end < 0 {
+			break
+		}
+		end += start + 1
+		result.WriteString(applyEmphasis(line[:start]))
+		result.WriteString("<code>")
+		result.WriteString(line[start+1 : end])
+		result.WriteString("</code>")
+		line = line[end+1:]
+	}
+	result.WriteString(applyEmphasis(line))
+	return result.String()
+}
 
-	// Inline code: `code` → <code>code</code>
-	line = replaceDelimited(line, "`", "<code>", "</code>")
-
+// applyEmphasis converts bold/italic markers on a segment that is
+// guaranteed to contain no inline code spans.
+func applyEmphasis(s string) string {
 	// Bold: **text** → <b>text</b>
-	line = replaceDelimited(line, "**", "<b>", "</b>")
+	s = replaceDelimited(s, "**", "<b>", "</b>")
 
 	// Bold alt: __text__ → <b>text</b>
-	line = replaceDelimited(line, "__", "<b>", "</b>")
+	s = replaceDelimited(s, "__", "<b>", "</b>")
 
 	// Italic: *text* → <i>text</i> (but not inside ** which is already processed)
-	line = replaceDelimited(line, "*", "<i>", "</i>")
+	s = replaceDelimited(s, "*", "<i>", "</i>")
 
 	// Italic alt: _text_ → <i>text</i>
-	line = replaceDelimited(line, "_", "<i>", "</i>")
+	s = replaceDelimited(s, "_", "<i>", "</i>")
 
-	return line
+	return s
 }
 
 // replaceDelimited finds pairs of delimiter and wraps the content

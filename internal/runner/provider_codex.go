@@ -93,9 +93,13 @@ func (p *CodexProvider) ExtractLoginURL(line string) string {
 	//   URL: https://auth.openai.com/codex/device
 	//   Code: XXXX-XXXXX
 	// We capture both — the login handler forwards both to Telegram.
-	cleaned := stripANSICodex(line)
+	cleaned := stripTerminalEscapes(line)
 	if i := strings.Index(cleaned, "https://"); i >= 0 {
-		return strings.TrimSpace(cleaned[i:])
+		url := cleaned[i:]
+		if j := strings.IndexAny(url, " \t\r\n"); j >= 0 {
+			url = url[:j]
+		}
+		return url
 	}
 	// Also match the device code line.
 	cleaned = strings.TrimSpace(cleaned)
@@ -104,28 +108,6 @@ func (p *CodexProvider) ExtractLoginURL(line string) string {
 		return "CODE:" + cleaned
 	}
 	return ""
-}
-
-func stripANSICodex(s string) string {
-	// Strip ANSI escape codes (same logic as telegram's stripANSI).
-	var b strings.Builder
-	i := 0
-	for i < len(s) {
-		if s[i] == '\x1b' && i+1 < len(s) && s[i+1] == '[' {
-			j := i + 2
-			for j < len(s) && !((s[j] >= 'A' && s[j] <= 'Z') || (s[j] >= 'a' && s[j] <= 'z')) {
-				j++
-			}
-			if j < len(s) {
-				j++
-			}
-			i = j
-			continue
-		}
-		b.WriteByte(s[i])
-		i++
-	}
-	return b.String()
 }
 
 func (p *CodexProvider) ClearSessionCmd() []string {
