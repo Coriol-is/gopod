@@ -13,7 +13,7 @@
 Claude assistant with session continuity, long-term memory, voice,
 vision, scheduling, and multi-provider architecture ready for Codex.
 **Last updated:** 2026-09-10
-**Last working session:** /login OAuth URL bugfix (see below).
+**Last working session:** /login OAuth URL bugfix, then handoff tooling.
 
 Latest fix (2026-09-10): /login URL arrived mangled in Telegram.
 Two causes: (1) claude CLI ≥2.1.267 wraps the URL in an OSC-8
@@ -22,7 +22,17 @@ hyperlink; extractors now strip CSI+OSC via shared
 first whitespace. (2) `markdownToTelegramHTML` italic pass ate
 underscores in query params; inline-code spans are now cut out before
 emphasis passes, and login messages wrap the URL in backticks
-(copyable code entity).
+(copyable code entity). Deployed to pi as `cb902bd`.
+
+Handoff process is now enforced, not just documented (2026-09-10).
+`.claude/hooks/handoff-status.sh` runs on SessionStart via
+`.claude/settings.json` and reports how many commits this file is
+behind HEAD (plus a warning when the `Last updated` stamp disagrees
+with the file's real last commit date). `/handoff`
+(`.claude/skills/handoff/SKILL.md`) is the write-side procedure.
+Motivation: this file's stamp sat at 2026-04-13 while 18 commits
+landed on top of it, so the convention in CLAUDE.md alone was not
+holding.
 
 Key work after M9:
 - M8: cursor backfill, structured SQLite logs, Docker Compose, README
@@ -257,8 +267,17 @@ None.
 (Things you bumped into and want to revisit later — write them here so they
 don't get lost.)
 
-_None at the moment. The two big "noted" items (observability, isolation)
-both landed as full design docs and ADRs._
+- **ROADMAP drift found and corrected 2026-09-10.** P3 (Codex provider) and
+  P4 (`/provider` command) were listed as ⬜ while both were fully
+  implemented — `provider_codex.go` + `container/Dockerfile.codex`, and
+  `RegisterProviderCommand` wired in `cmd/gopod/main.go` with the choice
+  persisted in `router_state`. Statuses flipped to ✅. Codex is still
+  unverified end-to-end against a real login, and `GOPOD_DEFAULT_PROVIDER`
+  (named in the original P4 row) does not exist — the default provider comes
+  from `GOPOD_CONTAINER_IMAGE`.
+- **S5 (dev-time Claude Code skills) is now partially real** — `.claude/`
+  holds one skill (`handoff`) and one hook. Left at ⬜ in ROADMAP because
+  the milestone means a maintainer skill set, not a single skill.
 
 ## How to update this file
 

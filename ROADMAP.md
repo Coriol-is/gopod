@@ -110,8 +110,8 @@ Tracked as its own phase because the milestones are orthogonal to core work.
 |----|------|--------|
 | P1 | AgentProvider interface: refactor runner to call provider methods instead of hardcoded `claude` commands | ✅ | `internal/runner/provider.go` — stateless interface with Name/Image/RunCmd/LoginCmd/etc. Runner calls provider methods everywhere |
 | P2 | Claude provider: extract current claude-specific code into provider implementation | ✅ | `internal/runner/provider_claude.go` — `--continue`/`--no-session-persistence`, `.claude.json` restore, auth parsing. Codex provider also landed (`provider_codex.go`) |
-| P3 | Codex provider: OpenAI Codex CLI support (separate Docker image, codex-specific flags/auth/sessions) | ⬜ |
-| P4 | Per-chat provider config: `/provider claude\|codex` command + `GOPOD_DEFAULT_PROVIDER` env var | ⬜ |
+| P3 | Codex provider: OpenAI Codex CLI support (separate Docker image, codex-specific flags/auth/sessions) | ✅ | `internal/runner/provider_codex.go` (`codex exec resume --last --full-auto`, device-auth login, plain-text auth status) + `container/Dockerfile.codex` (`@openai/codex`, image `gopod-agent-codex:latest`). Not yet verified end-to-end against a real Codex login |
+| P4 | Per-chat provider config: `/provider claude\|codex` command | ✅ | `Runner.SetChatProvider`/`ProviderForChat` + `control.RegisterProviderCommand`, wired in `cmd/gopod/main.go`. Choice persisted in `router_state` as `provider:<folder>` and restored at boot; switching kills the container and clears the session. `GOPOD_DEFAULT_PROVIDER` not implemented — default is Claude via `GOPOD_CONTAINER_IMAGE` |
 | P5 | Gemini CLI provider: `gemini -p` with Google OAuth (browser link auth like Claude), `--resume latest` for sessions, `~/.gemini/` persisted via bind mount | ⬜ |
 | P6 | Goose provider: `goose run -t` — model-agnostic (15+ providers via env), MCP extensible, Rust binary, named sessions | ⬜ |
 | P7 | Cline CLI provider: `cline -y` — multi-provider (Anthropic/OpenAI/Google/Bedrock/Azure), gRPC API, standalone since 2.0 | ⬜ |

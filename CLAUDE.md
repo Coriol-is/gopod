@@ -8,7 +8,11 @@ source of truth for *how* to work in this repo. The *what* lives in `docs/`.
 
 1. **[docs/HANDOFF.md](docs/HANDOFF.md)** — current state, what's in flight,
    what's blocked, what to pick up next. **Always read this before doing
-   anything else.** Update it before you stop working.
+   anything else.** Update it before you stop working — run `/handoff`
+   (`.claude/skills/handoff/`) for the procedure. A SessionStart hook
+   (`.claude/hooks/handoff-status.sh`) reports at startup how many commits
+   the file is behind HEAD; if it says the gap is large, trust ROADMAP.md
+   and the git log over HANDOFF until you have reconciled them.
 2. **[ROADMAP.md](ROADMAP.md)** — milestone status. Cross-check what HANDOFF
    says against the milestone you're touching.
 3. **[docs/DECISIONS.md](docs/DECISIONS.md)** — already-decided questions.
@@ -97,9 +101,9 @@ Anything ADR-worthy goes into `docs/DECISIONS.md` as `D{NNN}: <title>`.
   of the code you're about to touch.
 - **While doing work:** keep the change focused. If you hit something out of
   scope, write it down in HANDOFF.md as "noted" and keep moving.
-- **After non-trivial changes:** update HANDOFF.md (state) and, if applicable,
-  ROADMAP.md (milestone status). If you made a real architectural choice,
-  append an ADR to DECISIONS.md.
+- **After non-trivial changes:** run `/handoff` — it updates HANDOFF.md
+  (state) and, if applicable, ROADMAP.md (milestone status), and prompts for
+  an ADR in DECISIONS.md when you made a real architectural choice.
 - **Never commit unless the user explicitly asks.** This applies even if a
   task feels "complete".
 - **Don't add features the user didn't ask for.** This project's discipline is
