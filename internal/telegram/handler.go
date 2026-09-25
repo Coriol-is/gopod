@@ -108,7 +108,7 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 	// it and pipe it to claude's stdin instead of sending it to the
 	// agent. Slash commands are NOT intercepted — the user might type
 	// /help mid-login and that should still work.
-	if !strings.HasPrefix(text, "/") && b.logins.get(m.Chat.ID) != nil {
+	if b.logins.awaitingCode(m.Chat.ID, text) != nil {
 		b.handleLoginCode(ctx, m.Chat.ID, text)
 		return
 	}

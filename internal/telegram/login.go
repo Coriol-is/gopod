@@ -23,9 +23,16 @@ const loginTimeout = 10 * time.Minute
 // loginSession holds the state for one in-progress /login flow.
 type loginSession struct {
 	exec   *runner.InteractiveExec
+	ctx    context.Context
 	cancel context.CancelFunc
 	chatID int64
 	folder string
+
+	// awaitsCode is true for the OAuth code flow (Claude), where the
+	// user pastes a code back as their next message. The device flow
+	// (Codex) completes in the browser and never reads a code, so its
+	// session must not swallow the next message.
+	awaitsCode bool
 }
 
 // loginSessions tracks per-chat login sessions. Protected by loginMu.
@@ -50,6 +57,21 @@ func (ls *loginSessions) set(chatID int64, s *loginSession) {
 	ls.mu.Lock()
 	defer ls.mu.Unlock()
 	ls.sessions[chatID] = s
+}
+
+// awaitingCode returns the chat's login session if the given message
+// should be treated as the pasted OAuth code, or nil if it should go
+// through normal handling. Slash commands are never intercepted, so
+// the user can still type /help mid-login.
+func (ls *loginSessions) awaitingCode(chatID int64, text string) *loginSession {
+	if strings.HasPrefix(text, "/") {
+		return nil
+	}
+	s := ls.get(chatID)
+	if s == nil || !s.awaitsCode {
+		return nil
+	}
+	return s
 }
 
 func (ls *loginSessions) remove(chatID int64) {
@@ -175,10 +197,12 @@ func (b *Bot) loginHandlerReal(ctx context.Context, _ *bot.Bot, update *models.U
 
 	// Store the session.
 	session := &loginSession{
-		exec:   exec,
-		cancel: loginCancel,
-		chatID: m.Chat.ID,
-		folder: rc.Folder,
+		exec:       exec,
+		ctx:        loginCtx,
+		cancel:     loginCancel,
+		chatID:     m.Chat.ID,
+		folder:     rc.Folder,
+		awaitsCode: deviceCode == "",
 	}
 	b.logins.set(m.Chat.ID, session)
 
@@ -198,6 +222,13 @@ func (b *Bot) loginHandlerReal(ctx context.Context, _ *bot.Bot, update *models.U
 			"success page and send it here as your next message."
 	}
 	b.replyText(ctx, m.Chat.ID, loginMsg)
+
+	// Device flow: the CLI finishes on its own once the user signs in
+	// in the browser. Wait for it in the background instead of leaving
+	// the session open for the next message to fall into.
+	if !session.awaitsCode {
+		go b.finishLogin(ctx, m.Chat.ID, session)
+	}
 
 	// Background cleanup goroutine: if the timeout fires before
 	// the user pastes the code, tear down the session.
@@ -235,6 +266,12 @@ func (b *Bot) handleLoginCode(ctx context.Context, chatID int64, code string) {
 		return
 	}
 
+	b.finishLogin(ctx, chatID, session)
+}
+
+// finishLogin reads the login CLI's output until it reports success or
+// failure (or exits), tears the session down, and tells the user.
+func (b *Bot) finishLogin(ctx context.Context, chatID int64, session *loginSession) {
 	// Read lines looking for success or error indication.
 	var resultLines []string
 	for i := 0; i < 30; i++ {
@@ -265,15 +302,20 @@ func (b *Bot) handleLoginCode(ctx context.Context, chatID int64, code string) {
 		}
 	}
 
+	// Timed out: the timeout goroutine owns the user-facing message.
+	if session.ctx != nil && session.ctx.Err() == context.DeadlineExceeded {
+		return
+	}
 	b.cleanupLoginSession(chatID, session)
+
+	provName := "the agent"
+	if b.runner != nil {
+		provName = b.runner.ProviderForChat(session.folder).Name()
+	}
 
 	if len(resultLines) == 0 {
 		// Check auth status as fallback.
 		if b.checkAuthAfterLogin(ctx, session) {
-			provName := "the agent"
-			if b.runner != nil {
-				provName = b.runner.ProviderForChat(session.folder).Name()
-			}
 			b.replyText(ctx, chatID, "Logged in successfully! Send a message to start chatting with "+provName+".")
 		} else {
 			b.replyText(ctx, chatID,
@@ -288,7 +330,7 @@ func (b *Bot) handleLoginCode(ctx context.Context, chatID int64, code string) {
 	if strings.Contains(lower, "logged in") ||
 		strings.Contains(lower, "authenticated") ||
 		strings.Contains(lower, "success") {
-		b.replyText(ctx, chatID, result+"\n\nSend a message to start chatting with Claude.")
+		b.replyText(ctx, chatID, result+"\n\nSend a message to start chatting with "+provName+".")
 	} else {
 		b.replyText(ctx, chatID, "Login result:\n\n"+result)
 	}
