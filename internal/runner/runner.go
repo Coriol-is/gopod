@@ -321,24 +321,8 @@ func (r *Runner) RunStream(
 		defer close(result)
 		defer handle.Close()
 
-		var full strings.Builder
-		buf := make([]byte, 4096)
-
-		for {
-			n, readErr := handle.Stdout.Read(buf)
-			if n > 0 {
-				text := string(buf[:n])
-				full.WriteString(text)
-				chunks <- text
-			}
-			if readErr != nil {
-				break // EOF or error
-			}
-		}
-
-		// Drain stderr.
-		stderrBytes, _ := io.ReadAll(handle.Stderr)
-		stderr := strings.TrimSpace(string(stderrBytes))
+		fullOut, stderr := readExecStream(handle.Stdout, handle.Stderr, func(s string) { chunks <- s })
+		stderr = strings.TrimSpace(stderr)
 
 		// Wait for exit.
 		var execErr error
@@ -347,7 +331,7 @@ func (r *Runner) RunStream(
 		}
 
 		r.touch(chatFolder)
-		fullText := strings.TrimSpace(full.String())
+		fullText := strings.TrimSpace(fullOut)
 
 		// Classify auth/exit errors.
 		if execErr != nil {
@@ -381,6 +365,37 @@ func (r *Runner) RunStream(
 	}()
 
 	return &AgentStream{Chunks: chunks, Result: result}, nil
+}
+
+// readExecStream reads an exec's demuxed stdout to EOF, passing each
+// chunk to onChunk, and returns the full stdout and stderr text.
+//
+// Stderr is drained concurrently. ExecStream demuxes both streams from
+// a single goroutine into unbuffered pipes, so leaving stderr unread
+// until stdout hits EOF deadlocks the first time the agent writes to
+// stderr — codex exec logs its progress there, and the chat hung on
+// "typing..." forever.
+func readExecStream(stdout, stderr io.Reader, onChunk func(string)) (string, string) {
+	stderrCh := make(chan string, 1)
+	go func() {
+		b, _ := io.ReadAll(stderr)
+		stderrCh <- string(b)
+	}()
+
+	var full strings.Builder
+	buf := make([]byte, 4096)
+	for {
+		n, readErr := stdout.Read(buf)
+		if n > 0 {
+			text := string(buf[:n])
+			full.WriteString(text)
+			onChunk(text)
+		}
+		if readErr != nil {
+			break // EOF or error
+		}
+	}
+	return full.String(), <-stderrCh
 }
 
 // RunFresh is like Run but without session continuity. For system
