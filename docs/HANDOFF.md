@@ -12,8 +12,51 @@
 **Phase:** Core complete. gopod is a working personal Telegram
 Claude assistant with session continuity, long-term memory, voice,
 vision, scheduling, and multi-provider architecture ready for Codex.
-**Last updated:** 2026-09-10
-**Last working session:** /login OAuth URL bugfix, then handoff tooling.
+**Last updated:** 2026-10-03
+**Last working session:** public-release prep (2026-10-03, uncommitted):
+added MIT `LICENSE`, README "Security notes" section, replaced every
+`/Users/<name>/...` path in CLAUDE.md/ARCHITECTURE/GLOSSARY/GATEWAY/
+DECISIONS/m7 plan with GitHub URLs (NanoClaw canonical is now
+`nanocoai/nanoclaw`), scrubbed the deploy host name, LAN IP and ssh
+user from docs, untracked `chats/owner/` (runtime state, seeded from
+`internal/runner/chattmpl`; `/chats/*` now gitignored, `chats/.gitkeep`
+kept for the compose bind mount). Before that: codex streaming deadlock
++ device-flow /login fixes (committed), `/register` moved into
+`internal/control` (uncommitted, tests green).
+
+**Blocking public flip, needs operator action:** git history still
+contains the 16 MB `picoclaw` binary (added `0de4c58`, removed
+`4aedfe5`, blob `cd046c42…`, full of `/Users/<name>/go/pkg/mod` paths)
+and the LAN IP + ssh user line (commit `6c4ce9c`). Only a history
+rewrite (`git filter-repo`) removes them; not done, destructive, wait
+for explicit go-ahead.
+
+Uncommitted on the working tree (2026-09-25): `/register` now lives in
+`internal/control/chats.go` as `RegisterChatCommands(router, store,
+ownerChatID)` registering `chats.register` with `PermOwnerOnly`. The
+old Telegram-side `registerHandler` and the placeholder Router stub in
+`cmd/gopod/main.go` ("register via Router not yet wired") are deleted,
+so `/register` finally dispatches through the Router like every other
+slash command (closes the last D011 exception besides `/login`). Tests
+in `internal/control/chats_test.go` cover success, all argument
+rejections, owner self-register refusal, bad folder name via
+`store.RegisterChat`, and non-owner denial with no DB write. `go build
+./... && go vet ./... && go test ./...` all pass. Not yet deployed to the production host.
+
+Fixes committed 2026-09-25:
+- `c362dc7` runner: `RunStream` read stderr only after stdout EOF while
+  `ExecStream` demuxes both from one goroutine into unbuffered pipes,
+  so the first stderr write blocked the demuxer and the turn hung
+  forever ("typing...", queue stalled). Only codex triggered it
+  (`codex exec` logs progress to stderr). Read loop extracted to
+  `readExecStream`, stderr drained in its own goroutine; regression
+  test `internal/runner/stream_read_test.go`.
+- `25a1543` telegram: device-flow (codex) `/login` left the login
+  session registered, so the next ordinary message was piped to
+  `codex login` as an OAuth code and got no reply. Sessions now record
+  whether they expect a pasted code (OAuth only); device-flow logins
+  complete in the background; completion reply names the chat's
+  provider.
 
 Latest fix (2026-09-10): /login URL arrived mangled in Telegram.
 Two causes: (1) claude CLI ≥2.1.267 wraps the URL in an OSC-8
@@ -22,7 +65,7 @@ hyperlink; extractors now strip CSI+OSC via shared
 first whitespace. (2) `markdownToTelegramHTML` italic pass ate
 underscores in query params; inline-code spans are now cut out before
 emphasis passes, and login messages wrap the URL in backticks
-(copyable code entity). Deployed to pi as `cb902bd`.
+(copyable code entity). Deployed to production as `cb902bd`.
 
 Handoff process is now enforced, not just documented (2026-09-10).
 `.claude/hooks/handoff-status.sh` runs on SessionStart via
@@ -65,6 +108,12 @@ Additional completed work (post-milestone):
 
 ## What's done
 
+- ✅ **`/register` through the control Router** (2026-09-25, uncommitted).
+  `internal/control/chats.go:RegisterChatCommands` + `chats_test.go`.
+  `telegram/commands.go` keeps only `/whoami`; `parseSlashArgs` and
+  `registerHandler` removed. Docs/CONTROL.md §176 still describes the
+  aspirational `/chats register <folder> [--here]` syntax; actual syntax
+  is `/register <chat_id> <folder>`.
 - ✅ **M7 — IPC.** internal/ipc package; agent → telegram + scheduler via
   data/ipc/<chat>/{messages,tasks}/. 1s ticker, 3-retry → .failed/,
   retention 200/dir. Spec: docs/superpowers/specs/2026-05-07-m7-ipc-design.md.
@@ -183,8 +232,8 @@ See [GATEWAY.md](GATEWAY.md) for full architecture.
    personal bot doesn't need metrics/traces yet.
 
 **Optional, off the critical path:** **M2 (Direct API)** auto-enabled
-if `ANTHROPIC_API_KEY` is set. Skipped silently otherwise. Operator
-currently has no API key, so this stays at ⏸️.
+if `ANTHROPIC_API_KEY` is set. Skipped silently otherwise. Not
+configured in the reference deployment, so this stays at ⏸️.
 
 ## Right now you can already...
 
@@ -201,7 +250,8 @@ No terminal access needed for the entire flow.
 
 Slash commands: `/help` (list all), `/ping` (liveness), `/whoami`
 (chat id + registration state), `/login` (interactive OAuth),
-`/register <chat_id> <folder>` (owner-only).
+`/register <chat_id> <folder>` (owner-only, via Router since 2026-09-25),
+`/provider claude|codex`, `/clear`, `/compact`.
 
 Session management: expired tokens produce "session expired, /login
 to re-authenticate" instead of the cold-start message. /login is
@@ -275,6 +325,23 @@ don't get lost.)
   unverified end-to-end against a real login, and `GOPOD_DEFAULT_PROVIDER`
   (named in the original P4 row) does not exist — the default provider comes
   from `GOPOD_CONTAINER_IMAGE`.
+- **CONTROL.md command table is stale for `/register`.** It documents
+  `/chats register <folder> [--here]` and a `gopod chats register` CLI
+  form; neither exists. Real command is `/register <chat_id> <folder>`,
+  Telegram only (C3 CLI frontend still deferred). Fix the table when
+  touching CONTROL.md next.
+- **Memory API has no authorization (found 2026-10-03 during release
+  audit).** `internal/memory/api.go` binds `0.0.0.0:9876`, compose
+  publishes the port, and handlers take `chat` from the query string.
+  Any sibling container or LAN host can read/write any chat's memory,
+  including the owner's. Violates the "authorization from path, never
+  from LLM data" rule in CLAUDE.md. Documented in README Security notes;
+  real fix (per-chat token or bridge-only bind + source-IP → chat map)
+  not started.
+- **FreeFeed env mismatch.** `cmd/gopod/main.go:166` forwards
+  `FREEFEED_BASE_URL/USERNAME/PASSWORD` into every agent container;
+  `container/skills/freefeed/SKILL.md` documents `FREEFEED_APP_TOKEN`.
+  Neither is in `.env.example`. Password also reaches non-owner chats.
 - **S5 (dev-time Claude Code skills) is now partially real** — `.claude/`
   holds one skill (`handoff`) and one hook. Left at ⬜ in ROADMAP because
   the milestone means a maintainer skill set, not a single skill.

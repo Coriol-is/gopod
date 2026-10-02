@@ -95,7 +95,7 @@ See [SKILLS.md §2](SKILLS.md).
 ## N
 
 **NanoClaw** — The TypeScript predecessor to gopod, at
-`/Users/<user>/_code/gh-public/nanoclaw`. The reference implementation
+[https://github.com/nanocoai/nanoclaw](https://github.com/nanocoai/nanoclaw). The reference implementation
 for architecture; the source of architectural ideas; **not** the source of
 code. See [ARCHITECTURE.md §2](ARCHITECTURE.md).
 

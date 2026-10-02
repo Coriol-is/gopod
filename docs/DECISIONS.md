@@ -712,7 +712,7 @@ place (P1+P2), containers may need credentials for multiple services
 weaknesses: secrets are visible to any process inside the container via
 `/proc/1/environ`, there is no per-service scoping, no rotation without
 restart, and no audit trail. OneCLI
-(`/Users/<user>/_code/gh-public/onecli`) demonstrated that an HTTP
+(an earlier, unpublished project) demonstrated that an HTTP
 CONNECT proxy with MITM TLS interception solves all of these. gopod adopts
 the same architecture, reimplemented in Go with HashiCorp Vault as the secret
 backend instead of PostgreSQL+Bitwarden.

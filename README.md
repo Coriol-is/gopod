@@ -4,7 +4,7 @@ A personal Claude assistant on Telegram, written in Go. One channel,
 one language, per-chat container isolation, native long-term memory
 with hybrid search, voice support, and scheduled tasks.
 
-A focused descendant of [NanoClaw](https://github.com/spaceinvaderz/nanoclaw):
+A focused descendant of [NanoClaw](https://github.com/nanocoai/nanoclaw):
 ~10% of the surface area, ~90% of the day-to-day value.
 
 ## Quick start
@@ -103,6 +103,30 @@ docker compose up -d
 gopod runs inside a container managing agent containers as siblings
 on the same Docker daemon (docker.sock mount, not docker-in-docker).
 
+## Security notes
+
+Read these before exposing a deployment to anything but yourself.
+
+- **Docker socket.** gopod needs `/var/run/docker.sock` to spawn
+  per-chat agent containers. Whoever controls the gopod process
+  effectively controls the host Docker daemon.
+- **Agents run unattended.** Inside the container the CLI runs with
+  permission prompts disabled (`claude --dangerously-skip-permissions`,
+  `codex --full-auto`). Isolation comes from the container, not from
+  the CLI: read-only rootfs, dropped capabilities, non-root uid,
+  allowlisted mounts. See [docs/ISOLATION.md](docs/ISOLATION.md).
+- **Memory API has no authentication.** It listens on `0.0.0.0:9876`
+  so sibling containers can reach it via `host.docker.internal`, and
+  the compose file publishes that port. Anything on the same network
+  can read and write chat memories. Firewall the port or bind it to
+  the Docker bridge interface only. Docker's `iptables` rules bypass
+  `ufw`, so the rule must target the bridge interface.
+- **Owner chat mounts the store read-write.** The owner's agent can
+  edit `store.sqlite` directly. Only register chats you trust.
+- **Secrets are env vars.** Forwarded API keys are visible inside the
+  agent container's environment. The planned secret gateway
+  ([docs/GATEWAY.md](docs/GATEWAY.md)) removes this; it is not built yet.
+
 ## Layout
 
 ```
@@ -146,4 +170,4 @@ gopod/
 
 ## License
 
-TBD.
+MIT — see [LICENSE](LICENSE).

@@ -2,7 +2,7 @@
 
 > Companion docs: [ARCHITECTURE.md](ARCHITECTURE.md) · [ISOLATION.md](ISOLATION.md) · [DECISIONS.md](DECISIONS.md)
 > Status & next steps: [HANDOFF.md](HANDOFF.md) · [../ROADMAP.md](../ROADMAP.md)
-> Reference implementation: `/Users/<user>/_code/gh-public/onecli`
+> Prior art: OneCLI, an earlier unpublished project by the same author
 
 An HTTP CONNECT proxy embedded in gopod that intercepts agent HTTPS
 requests, resolves credentials from HashiCorp Vault, and injects them
@@ -30,7 +30,7 @@ has weaknesses:
 5. **No external vault.** Secrets live in `.env` on disk or in
    systemd `EnvironmentFile`. No integration with a secret manager.
 
-OneCLI (`/Users/<user>/_code/gh-public/onecli`) solves this
+OneCLI (an earlier, unpublished project) solves this
 with a Rust+Next.js MITM proxy backed by PostgreSQL and Bitwarden.
 gopod adopts the same architecture, simplified for Go + Vault.
 

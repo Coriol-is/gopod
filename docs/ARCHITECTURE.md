@@ -3,7 +3,7 @@
 > Companion docs: [MEMORY.md](MEMORY.md) · [INTEGRATIONS.md](INTEGRATIONS.md) · [SKILLS.md](SKILLS.md) · [CONTROL.md](CONTROL.md) · [GATEWAY.md](GATEWAY.md) · [DECISIONS.md](DECISIONS.md) · [GLOSSARY.md](GLOSSARY.md)
 > Status & next steps: [HANDOFF.md](HANDOFF.md) · [../ROADMAP.md](../ROADMAP.md)
 
-A Go reimplementation of [NanoClaw](https://github.com/spaceinvaderz/nanoclaw) with reduced scope:
+A Go reimplementation of [NanoClaw](https://github.com/nanocoai/nanoclaw) with reduced scope:
 **Telegram only**, **no multi-channel registry**, **no OneCLI gateway**, plus a
 **simplified skill ecosystem** (container skills + MCP, no branch-merge — see
 [SKILLS.md](SKILLS.md)).
@@ -37,7 +37,7 @@ Non-goals (vs NanoClaw):
 
 ## 2. NanoClaw recap (what we are cloning)
 
-Source: `/Users/<user>/_code/gh-public/nanoclaw`. Key components:
+Source: [nanocoai/nanoclaw](https://github.com/nanocoai/nanoclaw). Key components:
 
 | NanoClaw component                  | Role                                                          |
 | ----------------------------------- | ------------------------------------------------------------- |
@@ -767,4 +767,4 @@ want to know before writing code in the relevant package.
 
 - [Go Docker SDK raw stdio handling — addshore](https://addshore.com/2021/01/go-docker-sdk-raw-terminal-ctrlc-handling/)
 - [Telegram Bot API — bots/features (privacy mode)](https://core.telegram.org/bots/features)
-- NanoClaw source: `/Users/<user>/_code/gh-public/nanoclaw` (`src/index.ts`, `src/channels/registry.ts`, `src/router.ts`, `src/ipc.ts`, `src/group-queue.ts`, `src/container-runner.ts`, `src/mount-security.ts`, `src/task-scheduler.ts`, `src/db.ts`, `container/agent-runner/`)
+- NanoClaw source: https://github.com/nanocoai/nanoclaw (`src/index.ts`, `src/channels/registry.ts`, `src/router.ts`, `src/ipc.ts`, `src/group-queue.ts`, `src/container-runner.ts`, `src/mount-security.ts`, `src/task-scheduler.ts`, `src/db.ts`, `container/agent-runner/`)

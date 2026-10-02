@@ -24,8 +24,8 @@ source of truth for *how* to work in this repo. The *what* lives in `docs/`.
 A small personal Claude assistant on Telegram, written in Go. One channel,
 one language, per-chat container isolation, native sqlite-vec memory.
 
-A focused descendant of [NanoClaw](https://github.com/spaceinvaderz/nanoclaw)
-(see `/Users/<user>/_code/gh-public/nanoclaw` if you need the reference
+A focused descendant of [NanoClaw](https://github.com/nanocoai/nanoclaw)
+(clone it locally if you need the reference
 implementation). gopod cherry-picks the architectural ideas that matter and
 drops everything else.
 
@@ -111,7 +111,7 @@ Anything ADR-worthy goes into `docs/DECISIONS.md` as `D{NNN}: <title>`.
 
 ## When you're stuck
 
-The reference implementation is at `/Users/<user>/_code/gh-public/nanoclaw`.
+The reference implementation is [NanoClaw](https://github.com/nanocoai/nanoclaw); clone it locally.
 Read its source before guessing — it's the closest thing to authoritative
 prior art for the architecture. Map TS files to gopod's Go packages using
 the table in [docs/ARCHITECTURE.md §2](docs/ARCHITECTURE.md).

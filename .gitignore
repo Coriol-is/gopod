@@ -65,3 +65,7 @@ Temporary Items
 # Per-machine settings only; .claude/settings.json and .claude/skills/
 # stay tracked so shared config can be committed later.
 .claude/settings.local.json
+
+# Per-chat workspaces are runtime state (seeded from internal/runner/chattmpl).
+/chats/*
+!/chats/.gitkeep
