@@ -24,12 +24,10 @@ kept for the compose bind mount). Before that: codex streaming deadlock
 + device-flow /login fixes (committed), `/register` moved into
 `internal/control` (uncommitted, tests green).
 
-**Blocking public flip, needs operator action:** git history still
-contains the 16 MB `picoclaw` binary (added `0de4c58`, removed
-`4aedfe5`, blob `cd046c42…`, full of `/Users/<name>/go/pkg/mod` paths)
-and the LAN IP + ssh user line (commit `6c4ce9c`). Only a history
-rewrite (`git filter-repo`) removes them; not done, destructive, wait
-for explicit go-ahead.
+History was rewritten with `git filter-repo` on 2026-10-03 (a stray
+compiled binary and local machine details removed) and force-pushed.
+Any clone made before that date shares no ancestry with `main` and must
+be re-cloned rather than pulled.
 
 Uncommitted on the working tree (2026-09-25): `/register` now lives in
 `internal/control/chats.go` as `RegisterChatCommands(router, store,
