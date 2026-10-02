@@ -412,23 +412,7 @@ func run() error {
 			return control.Response{Text: "Use /login directly (interactive OAuth flow)."}, nil
 		})
 	// /register: owner-only command to register other chats.
-	router.Register("chats.register", "register", "(owner) register a chat for agent access",
-		control.PermOwnerOnly, func(ctx context.Context, cmd control.Command) (control.Response, error) {
-			// Delegate to telegram's registerHandler logic via a thin
-			// wrapper. For now this returns usage hint; the real register
-			// logic stays in commands.go until the store dep is plumbed
-			// into control handlers via Deps.
-			if len(cmd.Args) != 2 {
-				return control.Response{
-					Text: "Usage: /register <chat_id> <folder>",
-					Code: 1,
-				}, nil
-			}
-			return control.Response{
-				Text: fmt.Sprintf("register via Router not yet wired (args: %v). Use /register from Telegram directly for now.", cmd.Args),
-				Code: 1,
-			}, nil
-		})
+	control.RegisterChatCommands(router, st, cfg.OwnerChatID)
 
 	if cfg.TelegramBotToken == "" {
 		logger.Warn("telegram subsystem skipped: TELEGRAM_BOT_TOKEN is unset (store-only mode)")
