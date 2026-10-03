@@ -121,3 +121,27 @@ func TestDeleteTask(t *testing.T) {
 		t.Errorf("after delete, GetTask: %v, want ErrTaskNotFound", err)
 	}
 }
+
+func TestTaskRunLifecycle(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	if err := s.LogTaskRun(ctx, TaskRunLog{TaskID: "t1", RunAt: 1000, Status: "running"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetTaskRunTurn(ctx, "t1", 1000, 55); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.FinishTaskRun(ctx, "t1", 1000, "success", 1234, ""); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetTaskRun(ctx, "t1", 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.TurnID != 55 || got.Status != "success" || got.DurationMs != 1234 {
+		t.Errorf("run = %+v", got)
+	}
+	if err := s.FinishTaskRun(ctx, "nope", 1, "error", 0, "x"); !errors.Is(err, ErrTaskRunNotFound) {
+		t.Errorf("unknown run err = %v, want ErrTaskRunNotFound", err)
+	}
+}
