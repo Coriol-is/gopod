@@ -13,7 +13,20 @@
 Claude assistant with session continuity, long-term memory, voice,
 vision, scheduling, and multi-provider architecture ready for Codex.
 **Last updated:** 2026-10-03
-**Last working session:** public-release prep (2026-10-03, uncommitted):
+**Last working session:** M3.6/O2 (2026-10-03, branch
+`factory/20261003-gopod-b375`): `internal/observability` now has the
+full §2.3 metric catalog in `metrics.go` (exported `Counter`/`Gauge`/
+`Histogram` wrappers, no-op until bound, `GOPOD_METRICS_DROP_CHAT_LABEL=1`
+strips `chat` via one `labelSet` helper), a private Prometheus registry
+with Go + process collectors, `gopod_build_info` and `gopod_uptime_seconds`,
+and the §2.2 listener in `metrics_handler.go` (GET `<GOPOD_METRICS_PATH>`
++ GET `/healthz`, everything else 404, 5s shutdown grace). `Init` is now
+wired from `cmd/gopod/main.go` right after config load (fatal on bind
+failure) with a deferred 5s `Shutdown`. ROADMAP O2 ✅, M3.6 still ⬜; O3
+(instrumenting subsystems) is next. The factory sandbox could not run
+`go`, so `go.sum` still needs `go mod tidy` and the build/vet/test run
+is unverified — do that first. Before that: public-release prep
+(2026-10-03, uncommitted):
 added MIT `LICENSE`, README "Security notes" section, replaced every
 `/Users/<name>/...` path in CLAUDE.md/ARCHITECTURE/GLOSSARY/GATEWAY/
 DECISIONS/m7 plan with GitHub URLs (NanoClaw canonical is now
@@ -32,8 +45,8 @@ TracerProvider plus a no-op metrics facade, `Provider.Shutdown(ctx)`.
 No ports, no exporters, no Prometheus registry; a set env var only
 logs that the real provider lands in O2/O4. `go.mod` promotes
 `go.opentelemetry.io/otel` and `/trace` to direct (already present
-as indirect via the Docker SDK). **Not yet wired from
-`cmd/gopod/main.go`** — that is O2. ROADMAP O1 row ✅, M3.6 still ⬜.
+as indirect via the Docker SDK). Wiring from `cmd/gopod/main.go`
+landed with O2 (see Last working session). ROADMAP O1 row ✅, M3.6 still ⬜.
 
 History was rewritten with `git filter-repo` on 2026-10-03 (a stray
 compiled binary and local machine details removed) and force-pushed.

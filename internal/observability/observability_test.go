@@ -8,18 +8,18 @@ import (
 	"go.opentelemetry.io/otel/trace/noop"
 )
 
-// envCases enumerates the four combinations of the two switches. Every test
-// below iterates over them because O1 must behave identically (no-op, no
-// ports, no errors) in all four.
+// envCases enumerates the four combinations of the two switches. Metrics
+// use port 0 so an enabled case binds an ephemeral loopback port instead
+// of colliding with a real 9090.
 var envCases = []struct {
 	name         string
 	metricsAddr  string
 	otlpEndpoint string
 }{
 	{name: "both unset"},
-	{name: "metrics only", metricsAddr: "127.0.0.1:9090"},
+	{name: "metrics only", metricsAddr: "127.0.0.1:0"},
 	{name: "otlp only", otlpEndpoint: "http://127.0.0.1:4317"},
-	{name: "both set", metricsAddr: "127.0.0.1:9090", otlpEndpoint: "http://127.0.0.1:4317"},
+	{name: "both set", metricsAddr: "127.0.0.1:0", otlpEndpoint: "http://127.0.0.1:4317"},
 }
 
 func TestLoadConfig(t *testing.T) {
@@ -27,6 +27,8 @@ func TestLoadConfig(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv(EnvMetricsAddr, tc.metricsAddr)
 			t.Setenv(EnvOTLPEndpoint, tc.otlpEndpoint)
+			t.Setenv(EnvMetricsPath, "")
+			t.Setenv(EnvMetricsDropChatLabel, "")
 
 			cfg := LoadConfig()
 
@@ -42,11 +44,55 @@ func TestLoadConfig(t *testing.T) {
 			if got, want := cfg.TracingEnabled(), tc.otlpEndpoint != ""; got != want {
 				t.Errorf("TracingEnabled() = %v, want %v", got, want)
 			}
+			if cfg.MetricsPath != DefaultMetricsPath {
+				t.Errorf("MetricsPath = %q, want default %q", cfg.MetricsPath, DefaultMetricsPath)
+			}
+			if cfg.DropChatLabel {
+				t.Error("DropChatLabel = true with env unset, want false")
+			}
+			if cfg.Version != "" {
+				t.Errorf("Version = %q from env, want empty (set by main, not env)", cfg.Version)
+			}
 		})
 	}
 }
 
-func TestInitAndShutdownNoop(t *testing.T) {
+func TestLoadConfigMetricsKnobs(t *testing.T) {
+	cases := []struct {
+		name     string
+		path     string
+		drop     string
+		wantPath string
+		wantDrop bool
+	}{
+		{name: "defaults", wantPath: DefaultMetricsPath},
+		{name: "custom path", path: "/prom", wantPath: "/prom"},
+		{name: "drop=1", drop: "1", wantPath: DefaultMetricsPath, wantDrop: true},
+		{name: "drop=true is not 1", drop: "true", wantPath: DefaultMetricsPath},
+		{name: "drop=0", drop: "0", wantPath: DefaultMetricsPath},
+		{name: "drop=yes is not 1", drop: "yes", wantPath: DefaultMetricsPath},
+		{name: "drop= 1 with space is not 1", drop: " 1", wantPath: DefaultMetricsPath},
+		{name: "both", path: "/m", drop: "1", wantPath: "/m", wantDrop: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(EnvMetricsAddr, "")
+			t.Setenv(EnvOTLPEndpoint, "")
+			t.Setenv(EnvMetricsPath, tc.path)
+			t.Setenv(EnvMetricsDropChatLabel, tc.drop)
+
+			cfg := LoadConfig()
+			if cfg.MetricsPath != tc.wantPath {
+				t.Errorf("MetricsPath = %q, want %q", cfg.MetricsPath, tc.wantPath)
+			}
+			if cfg.DropChatLabel != tc.wantDrop {
+				t.Errorf("DropChatLabel = %v, want %v", cfg.DropChatLabel, tc.wantDrop)
+			}
+		})
+	}
+}
+
+func TestInitAndShutdown(t *testing.T) {
 	for _, tc := range envCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv(EnvMetricsAddr, tc.metricsAddr)
@@ -59,8 +105,11 @@ func TestInitAndShutdownNoop(t *testing.T) {
 			if p.Config().MetricsAddr != tc.metricsAddr || p.Config().OTLPEndpoint != tc.otlpEndpoint {
 				t.Errorf("Config() = %+v, want addr=%q endpoint=%q", p.Config(), tc.metricsAddr, tc.otlpEndpoint)
 			}
+			if got, want := p.MetricsAddr() != "", tc.metricsAddr != ""; got != want {
+				t.Errorf("MetricsAddr() = %q, want bound=%v", p.MetricsAddr(), want)
+			}
 
-			// O1 installs the otel no-op provider in every configuration.
+			// Tracing is still the otel no-op provider in every configuration.
 			if _, ok := otel.GetTracerProvider().(noop.TracerProvider); !ok {
 				t.Errorf("global TracerProvider = %T, want noop.TracerProvider", otel.GetTracerProvider())
 			}
