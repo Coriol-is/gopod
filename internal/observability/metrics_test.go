@@ -218,11 +218,12 @@ func TestLabelSetHelper(t *testing.T) {
 		wantName []string
 		wantKeep []bool
 	}{
-		{[]string{"chat", "direction"}, false, []string{"chat", "direction"}, []bool{true, true}},
+		// keep is nil whenever nothing was dropped (allocation-free hot path).
+		{[]string{"chat", "direction"}, false, []string{"chat", "direction"}, nil},
 		{[]string{"chat", "direction"}, true, []string{"direction"}, []bool{false, true}},
 		{[]string{"chat"}, true, []string{}, []bool{false}},
-		{[]string{"name"}, true, []string{"name"}, []bool{true}},
-		{nil, true, []string{}, []bool{}},
+		{[]string{"name"}, true, []string{"name"}, nil},
+		{nil, true, []string{}, nil},
 	}
 	for _, tc := range cases {
 		names, keep := labelSet(tc.labels, tc.drop)

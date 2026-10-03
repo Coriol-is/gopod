@@ -22,11 +22,11 @@ with Go + process collectors, `gopod_build_info` and `gopod_uptime_seconds`,
 and the §2.2 listener in `metrics_handler.go` (GET `<GOPOD_METRICS_PATH>`
 + GET `/healthz`, everything else 404, 5s shutdown grace). `Init` is now
 wired from `cmd/gopod/main.go` right after config load (fatal on bind
-failure) with a deferred 5s `Shutdown`. ROADMAP O2 ✅, M3.6 still ⬜; O3
-(instrumenting subsystems) is next. The factory sandbox could not run
-`go`, so `go.sum` still needs `go mod tidy` and the build/vet/test run
-is unverified — do that first. Before that: public-release prep
-(2026-10-03, uncommitted):
+failure) with a deferred 5s `Shutdown`. `go mod tidy` done; `go build
+./... && go vet ./... && go test ./...` green. ROADMAP O2 ✅, M3.6 still
+⬜; O3 (instrumenting subsystems) is next.
+
+Before that: public-release prep (2026-10-03, committed as `0832ebd`):
 added MIT `LICENSE`, README "Security notes" section, replaced every
 `/Users/<name>/...` path in CLAUDE.md/ARCHITECTURE/GLOSSARY/GATEWAY/
 DECISIONS/m7 plan with GitHub URLs (NanoClaw canonical is now
@@ -35,7 +35,7 @@ user from docs, untracked `chats/owner/` (runtime state, seeded from
 `internal/runner/chattmpl`; `/chats/*` now gitignored, `chats/.gitkeep`
 kept for the compose bind mount). Before that: codex streaming deadlock
 + device-flow /login fixes (committed), `/register` moved into
-`internal/control` (uncommitted, tests green).
+`internal/control` (committed).
 
 **M3.6/O1 landed (2026-10-03, committed on branch `factory/20261003-gopod-5ab2`, PR #1):**
 `internal/observability` scaffold — `Config`/`LoadConfig()` reading

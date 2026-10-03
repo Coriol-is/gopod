@@ -40,6 +40,9 @@ type Provider struct {
 // a private registry and the /metrics + /healthz listener starts on
 // cfg.MetricsAddr; a bind failure is returned as an error. When disabled no
 // port is opened and the catalog stays a no-op.
+//
+// Init must run before any instrumented goroutine starts: binding the
+// catalog mutates package-level metric wrappers without locking.
 func Init(cfg Config) (Provider, error) {
 	log := slog.Default()
 	p := Provider{cfg: cfg}

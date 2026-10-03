@@ -80,13 +80,20 @@ type metricDef struct {
 // keep mask so values can be filtered the same way at call time.
 func labelSet(labels []string, drop bool) (names []string, keep []bool) {
 	names = make([]string, 0, len(labels))
+	dropped := false
 	keep = make([]bool, len(labels))
 	for i, l := range labels {
 		if drop && l == chatLabel {
+			dropped = true
 			continue
 		}
 		names = append(names, l)
 		keep[i] = true
+	}
+	if !dropped {
+		// Nothing filtered: a nil mask lets values() return vals as-is, so
+		// the Inc/Observe hot path stays allocation-free.
+		return names, nil
 	}
 	return names, keep
 }
@@ -294,6 +301,10 @@ func newRegistry(cfg Config) (*prometheus.Registry, error) {
 
 // bindCatalog (re)creates every catalog vec against reg. A nil reg unbinds
 // the catalog, returning every wrapper to its no-op state.
+//
+// It mutates package-level wrappers without synchronization: Init (and
+// therefore bindCatalog) must run strictly before any instrumented goroutine
+// starts. O3 must keep calling Init from main before subsystems boot.
 func bindCatalog(reg *prometheus.Registry, drop bool) error {
 	for _, c := range allCounters {
 		c.vec, c.keep = nil, nil
