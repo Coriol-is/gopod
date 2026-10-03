@@ -432,12 +432,21 @@ func run() error {
 			return fmt.Errorf("init telegram: %w", err)
 		}
 
-		// Wire the GroupQueue if the runner is available.
+		// Wire the GroupQueue if the runner is available. Turns are
+		// persisted in the store so a restart can recover them.
 		var agentQueue *queue.Queue
 		if agentRunner != nil {
 			queueLog := logger.With(slog.String("subsys", "queue"))
-			agentQueue = queue.New(ctx, tgBot.NewAgentHandler(), queue.DefaultMaxConcurrent, nil, queueLog)
+			agentQueue = queue.New(ctx, tgBot.NewAgentHandler(), queue.DefaultMaxConcurrent,
+				turnStoreAdapter{st: st}, queueLog)
 			tgBot.SetQueue(agentQueue)
+			agentQueue.OnDone(tgBot.NewDoneHook())
+			subsystems.Add(1)
+			go func() {
+				defer subsystems.Done()
+				<-ctx.Done()
+				agentQueue.Close()
+			}()
 			queueLog.Info("queue ready",
 				slog.Int("max_concurrent", queue.DefaultMaxConcurrent))
 		}
@@ -453,6 +462,17 @@ func run() error {
 				defer subsystems.Done()
 				sched.Start(ctx)
 			}()
+		}
+
+		// Recover turns left unfinished by a crash/shutdown. Must run after
+		// the scheduler hook is registered and before the bot polls.
+		if agentQueue != nil {
+			n, err := agentQueue.Recover(ctx)
+			if err != nil {
+				logger.Error("queue: recover unfinished turns", slog.Any("err", err))
+			} else if n > 0 {
+				logger.Info("queue: recovered unfinished turns", slog.Int("count", n))
+			}
 		}
 
 		// IPC watcher (M7). Reads agent-authored JSON files under
@@ -575,4 +595,56 @@ func buildVersion() string {
 		}
 	}
 	return "dev"
+}
+
+// turnStoreAdapter maps queue.Item <-> store.Turn so the queue package
+// can persist turns without importing store (and vice versa).
+type turnStoreAdapter struct{ st *store.Store }
+
+func (a turnStoreAdapter) InsertTurn(ctx context.Context, it queue.Item) (int64, bool, error) {
+	return a.st.InsertTurn(ctx, store.Turn{
+		Source:      it.Source,
+		SourceID:    it.SourceID,
+		ChatFolder:  it.Folder,
+		ChatID:      it.ChatID,
+		TGMessageID: int64(it.MessageID),
+		IsOwner:     it.IsOwner,
+		IsVoice:     it.IsVoice,
+		Text:        it.Text,
+		FilePath:    it.FilePath,
+	})
+}
+
+func (a turnStoreAdapter) MarkRunning(ctx context.Context, id int64) error {
+	return a.st.MarkTurnRunning(ctx, id)
+}
+
+func (a turnStoreAdapter) MarkFinished(ctx context.Context, id int64, status, errText string) error {
+	return a.st.MarkTurnFinished(ctx, id, status, errText)
+}
+
+func (a turnStoreAdapter) LoadUnfinished(ctx context.Context) ([]queue.Item, error) {
+	turns, err := a.st.ListUnfinishedTurns(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]queue.Item, 0, len(turns))
+	for _, t := range turns {
+		out = append(out, queue.Item{
+			ID:               t.ID,
+			Source:           t.Source,
+			SourceID:         t.SourceID,
+			Attempts:         t.Attempts,
+			PlaceholderMsgID: t.PlaceholderMsgID,
+			ReplyMsgID:       t.ReplyMsgID,
+			ChatID:           t.ChatID,
+			MessageID:        int(t.TGMessageID),
+			Folder:           t.ChatFolder,
+			IsOwner:          t.IsOwner,
+			Text:             t.Text,
+			FilePath:         t.FilePath,
+			IsVoice:          t.IsVoice,
+		})
+	}
+	return out, nil
 }
