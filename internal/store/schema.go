@@ -109,6 +109,33 @@ var schemaStatements = []string{
 	  value TEXT NOT NULL
 	)`,
 
+	// --- Durable agent turns (docs/superpowers/specs/2026-10-03-durable-turns-design.md).
+	// source_id is the per-source dedup key: "<tg_chat_id>:<tg_message_id>"
+	// for telegram (message ids are unique only within a chat),
+	// "<task_id>:<next_run>" for task.
+	`CREATE TABLE IF NOT EXISTS turns (
+	  id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+	  source             TEXT NOT NULL,
+	  source_id          TEXT NOT NULL,
+	  chat_folder        TEXT NOT NULL,
+	  chat_id            INTEGER NOT NULL,
+	  tg_message_id      INTEGER NOT NULL DEFAULT 0,
+	  is_owner           INTEGER NOT NULL DEFAULT 0,
+	  is_voice           INTEGER NOT NULL DEFAULT 0,
+	  text               TEXT NOT NULL,
+	  file_path          TEXT,
+	  status             TEXT NOT NULL,
+	  attempts           INTEGER NOT NULL DEFAULT 0,
+	  placeholder_msg_id INTEGER NOT NULL DEFAULT 0,
+	  reply_msg_id       INTEGER NOT NULL DEFAULT 0,
+	  error              TEXT,
+	  created_at         INTEGER NOT NULL,
+	  started_at         INTEGER,
+	  finished_at        INTEGER,
+	  UNIQUE(source, source_id)
+	)`,
+	`CREATE INDEX IF NOT EXISTS idx_turns_status ON turns(status)`,
+
 	// --- Memory layer 3: relational metadata.
 	`CREATE TABLE IF NOT EXISTS memories (
 	  id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -163,6 +190,8 @@ var migrations = []string{
 	`ALTER TABLE memories ADD COLUMN status TEXT DEFAULT 'active'`,
 	`ALTER TABLE memories ADD COLUMN superseded_by INTEGER`,
 	`ALTER TABLE memories ADD COLUMN last_retrieved_at INTEGER`,
+	// Durable turns: link task run logs to the turn that ran them.
+	`ALTER TABLE task_run_logs ADD COLUMN turn_id INTEGER`,
 }
 
 // applySchema runs every statement in schemaStatements in order. Idempotent.

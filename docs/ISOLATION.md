@@ -72,6 +72,7 @@ no allowlist consultation needed.
 | `${CHATS_DIR}/<folder>/memory` | `/workspace/memory` | RW | Anthropic Memory Tool scratchpad (Layer 2) |
 | `${DATA_DIR}/ipc/<folder>` | `/workspace/ipc` | RW | IPC namespace for this chat |
 | `${DATA_DIR}/sessions/<folder>/.claude` | `/home/node/.claude` | RW | Claude CLI session state (`*.jsonl`, `settings.json`) |
+| `${DATA_DIR}/sessions/<folder>/.codex` | `/home/node/.codex` | RW | Codex CLI session state (rollouts, `auth.json`); mounted for every chat regardless of provider |
 | `${REPO_ROOT}/container/skills` (filtered by `skills.json`) | `/home/node/.claude/skills` | RO | Container skills, filtered by per-chat allow/deny ([SKILLS.md](SKILLS.md)) |
 
 ### 3.2 Non-owner registered chat
@@ -82,6 +83,7 @@ no allowlist consultation needed.
 | `${CHATS_DIR}/<folder>/memory` | `/workspace/memory` | RW | Memory scratchpad |
 | `${DATA_DIR}/ipc/<folder>` | `/workspace/ipc` | RW | IPC namespace |
 | `${DATA_DIR}/sessions/<folder>/.claude` | `/home/node/.claude` | RW | Session state |
+| `${DATA_DIR}/sessions/<folder>/.codex` | `/home/node/.codex` | RW | Codex session state |
 | `${REPO_ROOT}/container/skills` (filtered) | `/home/node/.claude/skills` | RO | Container skills filtered by `skills.json` |
 
 **Never** mounted for non-owner chats:

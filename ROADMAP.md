@@ -161,6 +161,14 @@ G8 is optional — full Vault mode (G1–G7) is the primary path.
 
 ---
 
+## Post-milestone work
+
+| ID | Step | Status | Notes |
+|----|------|--------|-------|
+| DT | Durable turns — every agent run persisted in `turns`, recovered at boot | ✅ | [D020](docs/DECISIONS.md), spec `docs/superpowers/specs/2026-10-03-durable-turns-design.md`; manual `kill -9` test pending |
+
+---
+
 ## Deferred
 
 | Topic | Why deferred | Revisit when |

@@ -220,8 +220,32 @@ CREATE TABLE task_run_logs (
   duration_ms INTEGER,
   status TEXT NOT NULL,
   result TEXT,
-  error TEXT
+  error TEXT,
+  turn_id INTEGER                   -- turns.id of the run that executed it
 );
+
+CREATE TABLE turns (
+  id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+  source             TEXT NOT NULL,
+  source_id          TEXT NOT NULL,
+  chat_folder        TEXT NOT NULL,
+  chat_id            INTEGER NOT NULL,
+  tg_message_id      INTEGER NOT NULL DEFAULT 0,
+  is_owner           INTEGER NOT NULL DEFAULT 0,
+  is_voice           INTEGER NOT NULL DEFAULT 0,
+  text               TEXT NOT NULL,
+  file_path          TEXT,
+  status             TEXT NOT NULL,
+  attempts           INTEGER NOT NULL DEFAULT 0,
+  placeholder_msg_id INTEGER NOT NULL DEFAULT 0,
+  reply_msg_id       INTEGER NOT NULL DEFAULT 0,
+  error              TEXT,
+  created_at         INTEGER NOT NULL,
+  started_at         INTEGER,
+  finished_at        INTEGER,
+  UNIQUE(source, source_id)
+);
+CREATE INDEX idx_turns_status ON turns(status);
 
 CREATE TABLE router_state (
   key TEXT PRIMARY KEY,
@@ -229,6 +253,8 @@ CREATE TABLE router_state (
 );
 -- keys: 'last_timestamp', 'last_agent_ts:<chat_jid>'
 ```
+
+`turns` is the durable queue: one row per requested agent run, written before dispatch and finalized after. `UNIQUE(source, source_id)` deduplicates Telegram redeliveries (`source_id` is `"<chat_id>:<message_id>"`, since message ids are unique only within a chat) and re-fired scheduler slots (`"<task_id>:<next_run>"`). Boot recovery replays `pending`, `running` and `interrupted` rows; see `docs/superpowers/specs/2026-10-03-durable-turns-design.md`.
 
 Plus the memory tables (`memories`, `memory_vec` virtual table backed by
 `sqlite-vec`, `memory_fts` for hybrid lexical search) — see
@@ -614,7 +640,7 @@ On startup:
 | IPC namespace         | `data/ipc/<folder>/`                         |
 | Conversation archives | `chats/<folder>/conversations/` (optional)   |
 | Container             | `gopod-<folder>` (label: gopod.chat=…) |
-| Mounts inside         | `/workspace/chat` (RW), `/workspace/ipc` (RW), `/home/node/.claude` (RW). Owner chat additionally gets `/workspace/store` (RW for SQLite) and project root RO. |
+| Mounts inside         | `/workspace/chat` (RW), `/workspace/ipc` (RW), `/home/node/.claude` (RW), `/home/node/.codex` (RW). Owner chat additionally gets `/workspace/store` (RW for SQLite) and project root RO. |
 
 Folder name validation: `^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`, plus a reserved set
 (`global`, `system`, `..`, etc.). Same as NanoClaw `src/group-folder.ts`.

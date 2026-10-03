@@ -151,6 +151,13 @@ func standardMounts(p Paths, chatFolder string, tier Tier) []Mount {
 	memoryDir := filepath.Join(chatDir, "memory")
 	ipcDir := filepath.Join(p.DataDir, "ipc", chatFolder)
 	sessionDir := filepath.Join(p.DataDir, "sessions", chatFolder, ".claude")
+	// Codex keeps its rollouts, thread index and auth.json under
+	// ~/.codex. Without a bind mount that lands on the /home/node
+	// tmpfs and `codex exec resume` starts from scratch every time the
+	// container is recycled (idle kill, restart, /provider switch).
+	// Mounted for every chat regardless of provider: an empty dir is
+	// free for Claude and avoids provider-conditional mount sets.
+	codexDir := filepath.Join(p.DataDir, "sessions", chatFolder, ".codex")
 
 	var out []Mount
 
@@ -202,6 +209,7 @@ func standardMounts(p Paths, chatFolder string, tier Tier) []Mount {
 		Mount{Source: ipcDir, Target: "/workspace/ipc", ReadOnly: false},
 		Mount{Source: sessionDir, Target: "/home/node/.claude", ReadOnly: false},
 		Mount{Source: p.ContainerSkillsDir, Target: "/home/node/.claude/skills", ReadOnly: true},
+		Mount{Source: codexDir, Target: "/home/node/.codex", ReadOnly: false},
 	)
 
 	return out
@@ -289,6 +297,7 @@ func EnsureChatDirs(p Paths, chatFolder string, isOwner bool, log *slog.Logger) 
 		filepath.Join(ipcDir, ".processed"),
 		filepath.Join(ipcDir, ".failed"),
 		filepath.Join(p.DataDir, "sessions", chatFolder, ".claude"),
+		filepath.Join(p.DataDir, "sessions", chatFolder, ".codex"),
 	}
 	for _, d := range dirs {
 		if err := os.MkdirAll(d, 0o755); err != nil {

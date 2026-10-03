@@ -32,10 +32,15 @@ type TaskRunLog struct {
 	Status     string // "success", "error"
 	Result     string
 	Error      string
+	TurnID     int64
 }
 
 // ErrTaskNotFound is returned when a task ID doesn't exist.
 var ErrTaskNotFound = errors.New("store: task not found")
+
+// ErrTaskRunNotFound is returned when no task_run_logs row matches
+// (task_id, run_at).
+var ErrTaskRunNotFound = errors.New("store: task run not found")
 
 // CreateTask inserts a new scheduled task and returns its generated ID.
 func (s *Store) CreateTask(ctx context.Context, t TaskRecord) (string, error) {
@@ -156,6 +161,67 @@ func (s *Store) LogTaskRun(ctx context.Context, log TaskRunLog) error {
 		return fmt.Errorf("store: LogTaskRun: %w", err)
 	}
 	return nil
+}
+
+// SetTaskRunTurn links a task_run_logs row to the turn that executes it.
+// Rows are addressed by (task_id, run_at), unique per scheduled slot.
+func (s *Store) SetTaskRunTurn(ctx context.Context, taskID string, runAt, turnID int64) error {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE task_run_logs SET turn_id = ? WHERE task_id = ? AND run_at = ?`,
+		turnID, taskID, runAt)
+	if err != nil {
+		return fmt.Errorf("store: SetTaskRunTurn: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("store: SetTaskRunTurn rows affected: %w", err)
+	}
+	if n == 0 {
+		return ErrTaskRunNotFound
+	}
+	return nil
+}
+
+// FinishTaskRun records the outcome of a task run that was logged as
+// "running" when it was enqueued.
+func (s *Store) FinishTaskRun(ctx context.Context, taskID string, runAt int64, status string, durationMs int64, errText string) error {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE task_run_logs SET status = ?, duration_ms = ?, error = ?
+		  WHERE task_id = ? AND run_at = ?`,
+		status, durationMs, nullableString(errText), taskID, runAt)
+	if err != nil {
+		return fmt.Errorf("store: FinishTaskRun: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("store: FinishTaskRun rows affected: %w", err)
+	}
+	if n == 0 {
+		return ErrTaskRunNotFound
+	}
+	return nil
+}
+
+// GetTaskRun returns one task_run_logs row by (task_id, run_at).
+func (s *Store) GetTaskRun(ctx context.Context, taskID string, runAt int64) (TaskRunLog, error) {
+	var l TaskRunLog
+	var dur, turnID sql.NullInt64
+	var result, errText sql.NullString
+	err := s.db.QueryRowContext(ctx,
+		`SELECT task_id, run_at, duration_ms, status, result, error, turn_id
+		   FROM task_run_logs WHERE task_id = ? AND run_at = ?`, taskID, runAt).
+		Scan(&l.TaskID, &l.RunAt, &dur, &l.Status, &result, &errText, &turnID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return TaskRunLog{}, ErrTaskRunNotFound
+	}
+	if err != nil {
+		return TaskRunLog{}, fmt.Errorf("store: GetTaskRun: %w", err)
+	}
+	l.DurationMs = dur.Int64
+	l.Result = result.String
+	l.Error = errText.String
+	l.TurnID = turnID.Int64
+	return l, nil
 }
 
 // DeleteTask removes a task. No error if it doesn't exist.

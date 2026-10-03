@@ -62,6 +62,7 @@ func TestEnsureChatDirsIdempotent(t *testing.T) {
 		filepath.Join(p.ChatsDir, "alice", "memory"),
 		filepath.Join(p.DataDir, "ipc", "alice"),
 		filepath.Join(p.DataDir, "sessions", "alice", ".claude"),
+		filepath.Join(p.DataDir, "sessions", "alice", ".codex"),
 	} {
 		info, err := os.Stat(d)
 		if err != nil {
@@ -145,23 +146,24 @@ func TestBuildMountsOwner(t *testing.T) {
 		t.Fatalf("BuildMounts: %v", err)
 	}
 
-	// Owner should have 3 owner-only mounts + 5 baseline = 8.
-	if len(ms) != 8 {
-		t.Errorf("len(mounts) = %d, want 8\n%#v", len(ms), ms)
+	// Owner should have 3 owner-only mounts + 6 baseline = 9.
+	if len(ms) != 9 {
+		t.Errorf("len(mounts) = %d, want 9\n%#v", len(ms), ms)
 	}
 
 	want := map[string]struct {
 		source   string // substring match; full path is temp-dir dependent
 		readOnly bool
 	}{
-		"/workspace/project":              {source: "repo", readOnly: true},
-		"/workspace/project/.env":         {source: "empty-env", readOnly: true},
-		"/workspace/store/store.sqlite":   {source: "store.sqlite", readOnly: false},
-		"/workspace/chat":                 {source: "chats/owner", readOnly: false},
-		"/workspace/memory":               {source: "memory", readOnly: false},
-		"/workspace/ipc":                  {source: "ipc/owner", readOnly: false},
-		"/home/node/.claude":              {source: "sessions/owner/.claude", readOnly: false},
-		"/home/node/.claude/skills":       {source: "container/skills", readOnly: true},
+		"/workspace/project":            {source: "repo", readOnly: true},
+		"/workspace/project/.env":       {source: "empty-env", readOnly: true},
+		"/workspace/store/store.sqlite": {source: "store.sqlite", readOnly: false},
+		"/workspace/chat":               {source: "chats/owner", readOnly: false},
+		"/workspace/memory":             {source: "memory", readOnly: false},
+		"/workspace/ipc":                {source: "ipc/owner", readOnly: false},
+		"/home/node/.claude":            {source: "sessions/owner/.claude", readOnly: false},
+		"/home/node/.claude/skills":     {source: "container/skills", readOnly: true},
+		"/home/node/.codex":             {source: "sessions/owner/.codex", readOnly: false},
 	}
 	seen := make(map[string]bool)
 	for _, m := range ms {
@@ -197,9 +199,9 @@ func TestBuildMountsOwnerSkipsEnvMaskWhenAbsent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildMounts: %v", err)
 	}
-	// 8 - 1 (no mask) = 7 mounts.
-	if len(ms) != 7 {
-		t.Errorf("len(mounts) = %d, want 7 (.env mask should have been skipped)", len(ms))
+	// 9 - 1 (no mask) = 8 mounts.
+	if len(ms) != 8 {
+		t.Errorf("len(mounts) = %d, want 8 (.env mask should have been skipped)", len(ms))
 	}
 	for _, m := range ms {
 		if m.Target == "/workspace/project/.env" {
@@ -218,14 +220,24 @@ func TestBuildMountsRegistered(t *testing.T) {
 		t.Fatalf("BuildMounts: %v", err)
 	}
 
-	// Registered (non-owner) = 5 baseline mounts, no project/.env/store.
-	if len(ms) != 5 {
-		t.Errorf("len(mounts) = %d, want 5\n%#v", len(ms), ms)
+	// Registered (non-owner) = 6 baseline mounts, no project/.env/store.
+	if len(ms) != 6 {
+		t.Errorf("len(mounts) = %d, want 6\n%#v", len(ms), ms)
 	}
+	sawCodex := false
 	for _, m := range ms {
 		if m.Target == "/workspace/project" || m.Target == "/workspace/store/store.sqlite" || m.Target == "/workspace/project/.env" {
 			t.Errorf("non-owner chat must not see owner-only target %q", m.Target)
 		}
+		if m.Target == "/home/node/.codex" {
+			sawCodex = true
+			if m.ReadOnly || !contains(m.Source, "sessions/alice/.codex") {
+				t.Errorf("codex session mount = %+v, want RW from sessions/alice/.codex", m)
+			}
+		}
+	}
+	if !sawCodex {
+		t.Error("missing /home/node/.codex mount: codex sessions and login would die with the container")
 	}
 }
 
