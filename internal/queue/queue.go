@@ -227,9 +227,11 @@ func (q *Queue) schedule(item Item) {
 		return // worker already running, it will drain pending
 	}
 	cs.active = true
+	// Add under the same lock hold as the closed check so Close wg.Wait
+	// cannot see a zero counter before this worker is counted.
+	q.wg.Add(1)
 	q.mu.Unlock()
 
-	q.wg.Add(1)
 	go func() {
 		defer q.wg.Done()
 		q.worker(q.ctx, item.Folder)
