@@ -756,6 +756,57 @@ Full design in [GATEWAY.md](GATEWAY.md).
 
 ---
 
+## D020 — Durable turns: the queue persists every agent run
+
+**Date:** 2026-10-03
+**Status:** Accepted
+**Refines:** M3 GroupQueue design (ROADMAP.md, no ADR)
+
+**Context.** The GroupQueue mirrored NanoClaw: in memory, workers on
+`context.Background()`. A crash mid-turn lost the user's message, the
+pending backlog, and left the streaming placeholder dangling. The
+scheduler logged `success` at enqueue time, so a crash could mark a
+task done that never ran. Pi Durable's checkpoint model (every
+submission is a row before it runs; idempotent request ids; the model
+is told when its turn was interrupted) fits gopod's single-SQLite rule.
+
+**Decision.** `internal/queue` owns durability through a consumer-side
+`TurnStore` interface backed by a `turns` table. `Enqueue` inserts
+first; workers mark `running`/`done`/`failed`/`interrupted`; `Recover`
+replays unfinished rows at boot with `Resumed=true`. The Telegram
+message id is the request id. Resumed turns are not re-run blindly and
+not dropped: the session continues with an interruption notice and the
+agent decides what to redo, because gopod does not own the tool set and
+cannot classify side effects. Placeholder and reply message ids are
+memoized on the row (first write wins) so recovery never double-replies.
+The scheduler finalizes `task_run_logs` through a queue completion hook;
+its idempotency key is the task's scheduled slot (`next_run`), used both
+as `task_run_logs.run_at` and in `SourceID = "<task_id>:<next_run>"`, and a
+duplicate slot still advances `next_run`. Max attempts across restarts is
+a constant, 3. When a batch exhausts its in-process retries the queue keeps
+the pending items (in memory and as `pending` rows) rather than dropping
+them; the next `Enqueue` for that chat, or `Recover`, picks them up.
+`Queue.Close` refuses new work and marks in-flight batches `interrupted`;
+items still waiting on the concurrency semaphore stay `pending` and fire
+no completion hook.
+
+**Rejected.** DB-as-queue polling (rewrites M3, adds latency, needs row
+locking); per-producer outboxes (recovery logic in two places, scheduler
+still blind to completion); conversation forks, multiplayer and tool
+replay flags from Pi (no second user, no owned tools).
+
+**Consequences.** `queue.New` takes the app context and a store; the
+`GOPOD_NO_CONTAINER` dev path passes nil and keeps memory-only
+behaviour. Outbound bot replies are now persisted to `messages`. First
+schema migration via the existing `migrations` list
+(`task_run_logs.turn_id`). Known gaps: voice-only reply mode records no
+reply id, so a crash right after a voice-only reply replays the turn once;
+`Queue.Close` has no timeout, so a handler that ignores its context can
+hang shutdown. Spec:
+[superpowers/specs/2026-10-03-durable-turns-design.md](superpowers/specs/2026-10-03-durable-turns-design.md).
+
+---
+
 ## Template for new ADRs
 
 ```

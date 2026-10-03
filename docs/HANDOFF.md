@@ -13,7 +13,17 @@
 Claude assistant with session continuity, long-term memory, voice,
 vision, scheduling, and multi-provider architecture ready for Codex.
 **Last updated:** 2026-10-03
-**Last working session:** public-release prep (2026-10-03, uncommitted):
+**Last working session:** durable turns (2026-10-03, branch
+`worktree-durable-turns`, not yet merged to `main`). Every agent run is now
+a row in `turns` before it runs and survives a crash: `internal/queue`
+persists through a `TurnStore`, `Recover` replays unfinished rows at boot,
+and resumed turns continue the session with an interruption notice.
+Design: [D020](DECISIONS.md#d020--durable-turns-the-queue-persists-every-agent-run),
+spec `docs/superpowers/specs/2026-10-03-durable-turns-design.md`, plan
+`docs/superpowers/plans/2026-10-03-durable-turns-plan.md`. Unit tests and
+`go build ./...` are green; the manual `kill -9` recovery test (plan Task 8
+step 5) has **not been run yet** (see "What's next").
+**Previous session:** public-release prep (2026-10-03, uncommitted):
 added MIT `LICENSE`, README "Security notes" section, replaced every
 `/Users/<name>/...` path in CLAUDE.md/ARCHITECTURE/GLOSSARY/GATEWAY/
 DECISIONS/m7 plan with GitHub URLs (NanoClaw canonical is now
@@ -105,6 +115,24 @@ Additional completed work (post-milestone):
   (`provider_claude.go`) and Codex (`provider_codex.go`) implementations
 
 ## What's done
+
+- ✅ **Durable turns (DT, D020)** (2026-10-03, branch `worktree-durable-turns`).
+  `turns` table + `migrations` entry `task_run_logs.turn_id`
+  (`internal/store/schema.go`); `internal/queue` takes `New(ctx, handler, n,
+  store, log)`, inserts before dispatch, marks `running/done/failed/
+  interrupted`, `Recover` replays unfinished rows with `Resumed=true`
+  (attempts cap 3, `ErrCrashLoop`); `internal/telegram` builds the resume
+  prompt, reuses the placeholder and memoizes placeholder/reply ids (first
+  write wins) and persists outbound replies to `messages`; scheduler
+  checkpoints runs through the queue and finalizes `task_run_logs` via the
+  queue completion hook, keyed on the scheduled slot (`next_run` as
+  `run_at` and `SourceID="<task_id>:<next_run>"`; a duplicate slot still
+  advances `next_run`); `cmd/gopod/main.go` calls `Recover` at boot and
+  waits on shutdown. On max retries the queue keeps pending items (memory
+  and DB) for the next `Enqueue`/`Recover`. `Queue.Close` refuses new work
+  and marks in-flight batches `interrupted`; items waiting on the semaphore
+  stay `pending`, no hook. `GOPOD_NO_CONTAINER` passes a nil store and
+  stays memory-only. Not yet verified by a real crash (see next).
 
 - ✅ **`/register` through the control Router** (2026-09-25, uncommitted).
   `internal/control/chats.go:RegisterChatCommands` + `chats_test.go`.
@@ -218,6 +246,16 @@ See [GATEWAY.md](GATEWAY.md) for full architecture.
 
 ## What's next (in order — per [D018](DECISIONS.md))
 
+0. **Run the manual crash-recovery test for durable turns** (plan Task 8
+   step 5, not yet run): start gopod with a real bot; send a message that
+   triggers a slow agent turn; `kill -9` gopod while the streaming
+   placeholder is showing; restart; confirm the same placeholder is edited
+   (no second reply), the agent mentions the interruption, the `turns` row
+   ends `done` with `placeholder_msg_id`/`reply_msg_id` set, and a restart
+   with no unfinished rows replays nothing. Optional variant: delete the
+   placeholder in Telegram before restarting (checks the `reusePlaceholder`
+   fallback). Then merge the branch.
+
 1. ~~M3 — GroupQueue.~~ ✅ Done.
 2. ~~M3.5 — Control plane (C1+C2).~~ ✅ Done. C3/C4/C5 deferred.
 3. ~~M4 — Scheduler.~~ ✅ Done.
@@ -315,6 +353,17 @@ None.
 (Things you bumped into and want to revisit later — write them here so they
 don't get lost.)
 
+- **Durable-turns known gaps (D020).** Voice-only reply mode records no
+  reply id, so a crash right after a voice-only reply replays the turn once.
+  `Queue.Close` has no timeout: a handler that ignores its context would hang
+  shutdown.
+- **Codex sessions are lost whenever the container dies.** Codex sessions and
+  login live in `~/.codex` on the `/home/node` tmpfs; only `~/.claude` is
+  bind-mounted to `data/sessions/<chat>/.claude` (`internal/runner/mounts.go`),
+  so `codex exec resume --last` loses its session on the 30 min idle kill, a
+  restart, or a `/provider` switch. Fix candidate: bind-mount
+  `data/sessions/<chat>/.codex` to `/home/node/.codex` next to the `.claude`
+  mount.
 - **ROADMAP drift found and corrected 2026-09-10.** P3 (Codex provider) and
   P4 (`/provider` command) were listed as ⬜ while both were fully
   implemented — `provider_codex.go` + `container/Dockerfile.codex`, and
