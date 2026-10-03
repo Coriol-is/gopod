@@ -357,13 +357,15 @@ don't get lost.)
   reply id, so a crash right after a voice-only reply replays the turn once.
   `Queue.Close` has no timeout: a handler that ignores its context would hang
   shutdown.
-- **Codex sessions are lost whenever the container dies.** Codex sessions and
-  login live in `~/.codex` on the `/home/node` tmpfs; only `~/.claude` is
-  bind-mounted to `data/sessions/<chat>/.claude` (`internal/runner/mounts.go`),
-  so `codex exec resume --last` loses its session on the 30 min idle kill, a
-  restart, or a `/provider` switch. Fix candidate: bind-mount
-  `data/sessions/<chat>/.codex` to `/home/node/.codex` next to the `.claude`
-  mount.
+- ~~**Codex sessions are lost whenever the container dies.**~~ Fixed
+  2026-10-03 on this branch: `data/sessions/<chat>/.codex` is now
+  bind-mounted RW to `/home/node/.codex` for every chat
+  (`internal/runner/mounts.go`, `standardMounts` + `EnsureChatDirs`), so
+  Codex rollouts and `auth.json` survive idle kill, restart and
+  `/provider` switches. Not yet verified against a real Codex login;
+  `codex exec resume --last` still picks "most recent" rather than a
+  stored thread id (follow-up: persist the Codex thread id per chat in
+  `sessions` and resume by id).
 - **ROADMAP drift found and corrected 2026-09-10.** P3 (Codex provider) and
   P4 (`/provider` command) were listed as ⬜ while both were fully
   implemented — `provider_codex.go` + `container/Dockerfile.codex`, and

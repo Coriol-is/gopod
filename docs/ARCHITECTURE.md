@@ -640,7 +640,7 @@ On startup:
 | IPC namespace         | `data/ipc/<folder>/`                         |
 | Conversation archives | `chats/<folder>/conversations/` (optional)   |
 | Container             | `gopod-<folder>` (label: gopod.chat=…) |
-| Mounts inside         | `/workspace/chat` (RW), `/workspace/ipc` (RW), `/home/node/.claude` (RW). Owner chat additionally gets `/workspace/store` (RW for SQLite) and project root RO. |
+| Mounts inside         | `/workspace/chat` (RW), `/workspace/ipc` (RW), `/home/node/.claude` (RW), `/home/node/.codex` (RW). Owner chat additionally gets `/workspace/store` (RW for SQLite) and project root RO. |
 
 Folder name validation: `^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`, plus a reserved set
 (`global`, `system`, `..`, etc.). Same as NanoClaw `src/group-folder.ts`.

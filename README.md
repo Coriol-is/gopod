@@ -83,8 +83,9 @@ gopod (Go, host)
 Agent containers (node + Claude Code CLI)
 ├── /workspace/chat (RW, per-chat)
 ├── /workspace/memory (RW, Anthropic Memory Tool)
-├── /home/node/.claude (RW, session state)
-└── /home/node/.claude/skills (RO, container skills)
+├── /home/node/.claude (RW, Claude session state)
+├── /home/node/.claude/skills (RO, container skills)
+└── /home/node/.codex (RW, Codex session state)
 ```
 
 ## Production deployment (Docker Compose)
