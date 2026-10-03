@@ -172,7 +172,11 @@ func (s *Store) SetTaskRunTurn(ctx context.Context, taskID string, runAt, turnID
 	if err != nil {
 		return fmt.Errorf("store: SetTaskRunTurn: %w", err)
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("store: SetTaskRunTurn rows affected: %w", err)
+	}
+	if n == 0 {
 		return ErrTaskRunNotFound
 	}
 	return nil
@@ -188,7 +192,11 @@ func (s *Store) FinishTaskRun(ctx context.Context, taskID string, runAt int64, s
 	if err != nil {
 		return fmt.Errorf("store: FinishTaskRun: %w", err)
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("store: FinishTaskRun rows affected: %w", err)
+	}
+	if n == 0 {
 		return ErrTaskRunNotFound
 	}
 	return nil
