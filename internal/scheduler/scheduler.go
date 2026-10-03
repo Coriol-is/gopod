@@ -63,7 +63,7 @@ func (s *Scheduler) onTurnDone(it queue.Item, err error) {
 	}
 	taskID, runAt, ok := parseTaskSourceID(it.SourceID)
 	if !ok {
-		s.log.Error("scheduler: bad task source id", slog.String("source_id", it.SourceID))
+		s.log.Error("scheduler: bad task source id", slog.String("source_id", it.SourceID), slog.Int64("turn", it.ID))
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -74,7 +74,11 @@ func (s *Scheduler) onTurnDone(it queue.Item, err error) {
 	}
 	var durationMs int64
 	if it.ID != 0 {
-		if turn, terr := s.store.GetTurn(ctx, it.ID); terr == nil && turn.StartedAt > 0 && turn.FinishedAt >= turn.StartedAt {
+		turn, terr := s.store.GetTurn(ctx, it.ID)
+		switch {
+		case terr != nil:
+			s.log.Warn("scheduler: GetTurn for duration", slog.Int64("turn", it.ID), slog.Any("err", terr))
+		case turn.StartedAt > 0 && turn.FinishedAt >= turn.StartedAt:
 			durationMs = turn.FinishedAt - turn.StartedAt
 		}
 	}
@@ -122,32 +126,37 @@ func (s *Scheduler) poll(ctx context.Context) {
 }
 
 func (s *Scheduler) runTask(ctx context.Context, t store.TaskRecord, now int64) {
+	// slot is the task's scheduled time. It is stable across polls and
+	// crashes, unlike now, so it keys both the log row and the queue
+	// dedup. GetDueTasks only returns tasks with next_run set.
+	slot := t.NextRun
+
 	// 1. Log the run as running before anything can go wrong. A row
 	// already present for this slot belongs to a live or earlier turn;
 	// leave it alone.
-	if _, err := s.store.GetTaskRun(ctx, t.ID, now); errors.Is(err, store.ErrTaskRunNotFound) {
-		if err := s.store.LogTaskRun(ctx, store.TaskRunLog{TaskID: t.ID, RunAt: now, Status: "running"}); err != nil {
+	if _, err := s.store.GetTaskRun(ctx, t.ID, slot); errors.Is(err, store.ErrTaskRunNotFound) {
+		if err := s.store.LogTaskRun(ctx, store.TaskRunLog{TaskID: t.ID, RunAt: slot, Status: "running"}); err != nil {
 			s.log.Error("scheduler: LogTaskRun", slog.String("task", t.ID), slog.Any("err", err))
 		}
+	} else if err != nil {
+		s.log.Error("scheduler: GetTaskRun", slog.String("task", t.ID), slog.Any("err", err))
 	}
 
 	// 2. Push the prompt through the queue as if it were a Telegram
 	// message. Source/SourceID make a re-fired slot a no-op.
 	turnID, dup := s.queue.Enqueue(ctx, queue.Item{
 		Source:   "task",
-		SourceID: taskSourceID(t.ID, now),
+		SourceID: taskSourceID(t.ID, slot),
 		ChatID:   0, // no Telegram reply; tasks run silently for now
 		Folder:   t.ChatFolder,
 		IsOwner:  false, // tasks run as non-owner tier (conservative)
 		Text:     t.Prompt,
 	})
 	if dup {
-		s.log.Warn("scheduler: slot already enqueued, skipping",
-			slog.String("task", t.ID), slog.Int64("run_at", now))
-		return
-	}
-	if turnID != 0 {
-		if err := s.store.SetTaskRunTurn(ctx, t.ID, now, turnID); err != nil {
+		s.log.Warn("scheduler: slot already enqueued, advancing",
+			slog.String("task", t.ID), slog.Int64("slot", slot))
+	} else if turnID != 0 {
+		if err := s.store.SetTaskRunTurn(ctx, t.ID, slot, turnID); err != nil {
 			s.log.Error("scheduler: SetTaskRunTurn", slog.String("task", t.ID), slog.Any("err", err))
 		}
 	}

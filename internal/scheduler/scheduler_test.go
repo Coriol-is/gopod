@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -75,8 +76,13 @@ func TestTaskSourceIDRoundTrip(t *testing.T) {
 	if !ok || id != "abc-123" || runAt != 1700000000000 {
 		t.Errorf("parse(%q) = (%q, %d, %v)", sid, id, runAt, ok)
 	}
-	if _, _, ok := parseTaskSourceID("garbage"); ok {
-		t.Error("garbage parsed as ok")
+	for _, bad := range []string{"garbage", ":1", "a:", "a:x"} {
+		if _, _, ok := parseTaskSourceID(bad); ok {
+			t.Errorf("%q parsed as ok", bad)
+		}
+	}
+	if id, runAt, ok := parseTaskSourceID("a:b:5"); !ok || id != "a:b" || runAt != 5 {
+		t.Errorf("a:b:5 = (%q, %d, %v)", id, runAt, ok)
 	}
 }
 
@@ -109,32 +115,43 @@ func (a storeAdapter) MarkFinished(ctx context.Context, id int64, status, e stri
 }
 func (a storeAdapter) LoadUnfinished(ctx context.Context) ([]queue.Item, error) { return nil, nil }
 
+func discardLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
+
 func TestRunTaskLogsRunningThenFinishes(t *testing.T) {
 	st := newSchedulerTestStore(t)
 	ctx := context.Background()
-	taskID, err := st.CreateTask(ctx, store.TaskRecord{ChatFolder: "owner", ChatJID: "tg:1", Prompt: "do it", ScheduleType: "once", ScheduleValue: "2020-01-01T00:00:00Z", NextRun: 1})
+	const slot = int64(1)
+	taskID, err := st.CreateTask(ctx, store.TaskRecord{ChatFolder: "owner", ChatJID: "tg:1", Prompt: "do it", ScheduleType: "once", ScheduleValue: "2020-01-01T00:00:00Z", NextRun: slot})
 	if err != nil {
 		t.Fatal(err)
 	}
+	release := make(chan struct{})
 	finished := make(chan struct{})
-	handler := func(ctx context.Context, items []queue.Item) error { return nil }
-	q := queue.New(ctx, handler, 1, storeAdapter{st}, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	s := New(st, q, nil)
+	handler := func(ctx context.Context, items []queue.Item) error { <-release; return nil }
+	q := queue.New(ctx, handler, 1, storeAdapter{st}, discardLogger())
+	t.Cleanup(q.Close)
+	s := New(st, q, discardLogger())
 	q.OnDone(func(it queue.Item, err error) { close(finished) })
 
 	task, _ := st.GetTask(ctx, taskID)
-	now := int64(5000)
-	s.runTask(ctx, task, now)
+	s.runTask(ctx, task, 5000)
 
-	<-finished
-	// Give the scheduler's own OnDone hook (registered first in New)
-	// time to write; it runs before ours, so the row is final here.
-	run, err := st.GetTaskRun(ctx, taskID, now)
+	run, err := st.GetTaskRun(ctx, taskID, slot)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if run.Status != "success" || run.TurnID == 0 {
-		t.Errorf("run = %+v, want success with turn_id", run)
+	if run.Status != "running" || run.TurnID == 0 {
+		t.Errorf("before finish: run = %+v, want running with turn_id", run)
+	}
+
+	close(release)
+	<-finished // scheduler's hook was registered first, so the row is final
+	run, err = st.GetTaskRun(ctx, taskID, slot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Status != "success" {
+		t.Errorf("after finish: run = %+v, want success", run)
 	}
 	turn, _ := st.GetTurn(ctx, run.TurnID)
 	if turn.Source != "task" || turn.Status != store.TurnDone || turn.ChatID != 0 {
@@ -142,25 +159,59 @@ func TestRunTaskLogsRunningThenFinishes(t *testing.T) {
 	}
 }
 
-func TestRunTaskDupMarksSkipped(t *testing.T) {
+func TestRunTaskDupSlotRunsOnce(t *testing.T) {
 	st := newSchedulerTestStore(t)
 	ctx := context.Background()
-	taskID, _ := st.CreateTask(ctx, store.TaskRecord{ChatFolder: "owner", ChatJID: "tg:1", Prompt: "p", ScheduleType: "once", ScheduleValue: "2020-01-01T00:00:00Z", NextRun: 1})
+	const slot = int64(1)
+	taskID, _ := st.CreateTask(ctx, store.TaskRecord{ChatFolder: "owner", ChatJID: "tg:1", Prompt: "p", ScheduleType: "once", ScheduleValue: "2020-01-01T00:00:00Z", NextRun: slot})
 	task, _ := st.GetTask(ctx, taskID)
-	block := make(chan struct{})
-	handler := func(ctx context.Context, items []queue.Item) error { <-block; return nil }
-	q := queue.New(ctx, handler, 1, storeAdapter{st}, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	s := New(st, q, nil)
+	release := make(chan struct{})
+	finished := make(chan struct{}, 2)
+	var calls atomic.Int32
+	handler := func(ctx context.Context, items []queue.Item) error {
+		calls.Add(1)
+		<-release
+		return nil
+	}
+	q := queue.New(ctx, handler, 1, storeAdapter{st}, discardLogger())
+	t.Cleanup(q.Close)
+	s := New(st, q, discardLogger())
+	q.OnDone(func(it queue.Item, err error) { finished <- struct{}{} })
+
 	s.runTask(ctx, task, 5000)
-	s.runTask(ctx, task, 5000) // same slot again, as after a crash mid-poll
-	close(block)
-	// The second log row would collide on (task_id, run_at); runTask
-	// must not insert a second one, and must leave the first intact.
-	run, err := st.GetTaskRun(ctx, taskID, 5000)
+	first, err := st.GetTaskRun(ctx, taskID, slot)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if run.Status == "skipped" {
-		t.Error("first run row overwritten by the duplicate")
+	// Same slot again with a later poll time, as after a crash between
+	// Enqueue and UpdateTaskStatus: the stale pre-crash record is re-run.
+	s.runTask(ctx, task, 65000)
+
+	again, err := st.GetTaskRun(ctx, taskID, slot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.TurnID != first.TurnID || again.Status != "running" {
+		t.Errorf("dup disturbed the row: first %+v, after %+v", first, again)
+	}
+	if got, _ := st.GetTask(ctx, taskID); got.Status != "done" {
+		t.Errorf("task status = %q after dup, want done (advanced)", got.Status)
+	}
+
+	close(release)
+	select {
+	case <-finished:
+	case <-time.After(5 * time.Second):
+		t.Fatal("turn never finished")
+	}
+	if n := calls.Load(); n != 1 {
+		t.Errorf("handler calls = %d, want 1", n)
+	}
+	final, err := st.GetTaskRun(ctx, taskID, slot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if final.TurnID == 0 || final.Status != "success" {
+		t.Errorf("final row = %+v, want success with turn_id", final)
 	}
 }
