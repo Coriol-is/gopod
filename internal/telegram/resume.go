@@ -110,3 +110,25 @@ func (b *Bot) reusePlaceholder(ctx context.Context, item queue.Item) int {
 	}
 	return item.PlaceholderMsgID
 }
+
+// pickBatchItem returns the item the agent runs for: the last one in
+// the batch (the most recent user message). When Recover re-enqueued an
+// interrupted turn and newer messages coalesced behind it, the resume
+// state lives on an earlier item, so it is carried onto the pick: the
+// interruption notice and the stale streaming placeholder. Earlier
+// items that already have a reply finished their turn and contribute
+// nothing; their ReplyMsgID is never carried, because it answers that
+// earlier message, not the one being run.
+func pickBatchItem(items []queue.Item) queue.Item {
+	item := items[len(items)-1]
+	for _, it := range items[:len(items)-1] {
+		if !it.Resumed || it.ReplyMsgID != 0 {
+			continue
+		}
+		item.Resumed = true
+		if item.PlaceholderMsgID == 0 && it.PlaceholderMsgID != 0 {
+			item.PlaceholderMsgID = it.PlaceholderMsgID
+		}
+	}
+	return item
+}

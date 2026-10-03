@@ -26,7 +26,7 @@ var ErrTurnNotFound = errors.New("store: turn not found")
 type Turn struct {
 	ID               int64
 	Source           string // "telegram" | "task"
-	SourceID         string // tg message id | "<task_id>:<next_run>"
+	SourceID         string // "<tg_chat_id>:<tg_message_id>" | "<task_id>:<next_run>"
 	ChatFolder       string
 	ChatID           int64 // Telegram chat id, 0 for tasks
 	TGMessageID      int64

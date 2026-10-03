@@ -110,6 +110,9 @@ var schemaStatements = []string{
 	)`,
 
 	// --- Durable agent turns (docs/superpowers/specs/2026-10-03-durable-turns-design.md).
+	// source_id is the per-source dedup key: "<tg_chat_id>:<tg_message_id>"
+	// for telegram (message ids are unique only within a chat),
+	// "<task_id>:<next_run>" for task.
 	`CREATE TABLE IF NOT EXISTS turns (
 	  id                 INTEGER PRIMARY KEY AUTOINCREMENT,
 	  source             TEXT NOT NULL,

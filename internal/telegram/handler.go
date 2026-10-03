@@ -140,11 +140,14 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 		FilePath:  filePath,
 		IsVoice:   isVoice,
 		Source:    "telegram",
-		SourceID:  strconv.Itoa(m.ID),
+		// Telegram message ids are unique only within a chat.
+		SourceID: strconv.FormatInt(m.Chat.ID, 10) + ":" + strconv.Itoa(m.ID),
 	}
 
 	if b.queue != nil {
-		b.queue.Enqueue(ctx, item)
+		// WithoutCancel: a shutdown mid-handler must still persist the
+		// turn row so Recover picks it up, not drop the message.
+		b.queue.Enqueue(context.WithoutCancel(ctx), item)
 		return
 	}
 	// Sync fallback (no queue).
@@ -318,8 +321,9 @@ func (b *Bot) NewAgentHandler() queue.Handler {
 		if len(items) == 0 {
 			return nil
 		}
-		// Use the last item — the most recent user message.
-		item := items[len(items)-1]
+		// Use the last item — the most recent user message — carrying
+		// any resume state from earlier items in the batch.
+		item := pickBatchItem(items)
 		if item.Resumed && item.ReplyMsgID != 0 {
 			// The crash hit between sending the reply and marking the
 			// turn done. The user already has the answer.
@@ -332,6 +336,11 @@ func (b *Bot) NewAgentHandler() queue.Handler {
 			b.runAgentStreaming(ctx, item)
 		} else {
 			b.runAgentSync(ctx, item)
+		}
+		if err := ctx.Err(); err != nil {
+			// Shutdown cut the run short: report it so the queue marks
+			// the turn interrupted rather than done.
+			return err
 		}
 		// Both paths log and reply on error but always return nil so
 		// the queue does not retry user-visible failures (auth errors,

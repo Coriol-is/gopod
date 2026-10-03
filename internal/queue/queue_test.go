@@ -416,6 +416,33 @@ func TestCloseInterruptsInFlightTurn(t *testing.T) {
 	}
 }
 
+// TestCloseInterruptsTurnWhoseHandlerReturnsNil covers the production
+// Telegram handler, which swallows cancellation and returns nil: the
+// turn must still be marked interrupted, never done.
+func TestCloseInterruptsTurnWhoseHandlerReturnsNil(t *testing.T) {
+	fs := newFakeStore()
+	started := make(chan struct{})
+	handler := func(ctx context.Context, items []Item) error {
+		close(started)
+		<-ctx.Done()
+		return nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	q := New(ctx, handler, 1, fs, silentLog())
+	q.Enqueue(context.Background(), Item{Folder: "a", Source: "telegram", SourceID: "1"})
+	<-started
+	cancel()
+	q.Close()
+	calls := fs.snapshot()
+	if !contains(calls, "finished:1:interrupted") {
+		t.Errorf("calls = %v, want finished:1:interrupted", calls)
+	}
+	if contains(calls, "finished:1:done") {
+		t.Errorf("calls = %v, must not contain finished:1:done", calls)
+	}
+}
+
 func TestNilStoreKeepsMemoryOnlyBehaviour(t *testing.T) {
 	done := make(chan struct{})
 	handler := func(ctx context.Context, items []Item) error { close(done); return nil }

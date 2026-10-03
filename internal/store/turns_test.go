@@ -2,10 +2,66 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"path/filepath"
 	"testing"
 )
+
+// TestMigrationAddsTurnIDToExistingTaskRunLogs opens a database whose
+// task_run_logs predates the turn_id column (spec §10): Open must
+// migrate it, keep the old row readable with TurnID 0, and stay
+// idempotent on a second Open.
+func TestMigrationAddsTurnIDToExistingTaskRunLogs(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "store.sqlite")
+
+	raw, err := sql.Open("sqlite3", "file:"+path)
+	if err != nil {
+		t.Fatalf("raw sql.Open: %v", err)
+	}
+	if _, err := raw.ExecContext(ctx, `CREATE TABLE task_run_logs (
+	  task_id TEXT NOT NULL,
+	  run_at INTEGER NOT NULL,
+	  duration_ms INTEGER,
+	  status TEXT NOT NULL,
+	  result TEXT,
+	  error TEXT
+	)`); err != nil {
+		t.Fatalf("create pre-migration table: %v", err)
+	}
+	if _, err := raw.ExecContext(ctx,
+		`INSERT INTO task_run_logs (task_id, run_at, duration_ms, status, result, error)
+		 VALUES ('t1', 1000, 5, 'success', 'ok', NULL)`); err != nil {
+		t.Fatalf("insert pre-migration row: %v", err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatalf("raw close: %v", err)
+	}
+
+	s, err := Open(ctx, path, silentLogger())
+	if err != nil {
+		t.Fatalf("Open on pre-migration db: %v", err)
+	}
+	got, err := s.GetTaskRun(ctx, "t1", 1000)
+	if err != nil {
+		t.Fatalf("GetTaskRun: %v", err)
+	}
+	if got.Status != "success" || got.DurationMs != 5 || got.TurnID != 0 {
+		t.Errorf("GetTaskRun = %+v, want status success, duration 5, TurnID 0", got)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	s2, err := Open(ctx, path, silentLogger())
+	if err != nil {
+		t.Fatalf("second Open: %v", err)
+	}
+	if err := s2.Close(); err != nil {
+		t.Fatalf("second Close: %v", err)
+	}
+}
 
 func openTestStore(t *testing.T) *Store {
 	t.Helper()

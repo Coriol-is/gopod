@@ -774,7 +774,7 @@ is told when its turn was interrupted) fits gopod's single-SQLite rule.
 `TurnStore` interface backed by a `turns` table. `Enqueue` inserts
 first; workers mark `running`/`done`/`failed`/`interrupted`; `Recover`
 replays unfinished rows at boot with `Resumed=true`. The Telegram
-message id is the request id. Resumed turns are not re-run blindly and
+chat id + message id (`"<chat_id>:<message_id>"`) is the request id. Resumed turns are not re-run blindly and
 not dropped: the session continues with an interruption notice and the
 agent decides what to redo, because gopod does not own the tool set and
 cannot classify side effects. Placeholder and reply message ids are

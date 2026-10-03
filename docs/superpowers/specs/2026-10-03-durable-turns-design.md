@@ -60,7 +60,7 @@ New table, applied by `applySchema` like the others:
 CREATE TABLE IF NOT EXISTS turns (
   id                 INTEGER PRIMARY KEY AUTOINCREMENT,
   source             TEXT NOT NULL,                 -- 'telegram' | 'task'
-  source_id          TEXT NOT NULL,                 -- tg_message_id | "<task_id>:<next_run>"
+  source_id          TEXT NOT NULL,                 -- "<tg_chat_id>:<tg_message_id>" | "<task_id>:<next_run>"
   chat_folder        TEXT NOT NULL,
   chat_id            INTEGER NOT NULL,              -- Telegram chat id, 0 for task
   tg_message_id      INTEGER NOT NULL DEFAULT 0,
@@ -84,7 +84,8 @@ CREATE INDEX IF NOT EXISTS idx_turns_status ON turns(status);
 `UNIQUE(source, source_id)` makes enqueue idempotent. Telegram
 re-delivers updates whose offset was never acknowledged; the scheduler
 can fire the same slot twice after a restart. Both collapse on insert.
-The Telegram message id is the request id, no new id scheme.
+The Telegram chat id + message id is the request id (message ids are
+unique only within a chat), no new id scheme.
 
 `task_run_logs` gains `turn_id INTEGER`. First schema change that is
 not `CREATE ... IF NOT EXISTS`; done as a guarded
@@ -298,7 +299,7 @@ observable.
   gopod cannot classify tool safety; the model with its transcript can.
 - Reply memo on the turn row, not a separate table.
 - Max attempts is a constant (3), not an env var.
-- Telegram message id is the request id. No UUIDs.
+- Telegram chat id + message id is the request id. No UUIDs.
 - All four features (turn log, memo + outbound, scheduler checkpoint,
   graceful shutdown) in one spec; split into DT1–DT6 for execution.
 

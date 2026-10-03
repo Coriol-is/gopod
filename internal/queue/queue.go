@@ -35,7 +35,7 @@ type Item struct {
 	// Durability fields. Zero when the queue has no TurnStore.
 	ID               int64  // turns.id
 	Source           string // "telegram" | "task"
-	SourceID         string // tg message id | "<task_id>:<next_run>"
+	SourceID         string // "<tg_chat_id>:<tg_message_id>" | "<task_id>:<next_run>"
 	Resumed          bool   // set by Recover: this turn was running/interrupted when gopod died
 	Attempts         int    // from the row, for the crash-loop cap
 	PlaceholderMsgID int    // streaming placeholder recorded by a previous attempt
@@ -346,18 +346,25 @@ func (q *Queue) worker(ctx context.Context, folder string) {
 		for {
 			q.markRunning(ctx, items)
 			err := q.handler(ctx, items)
-			if err == nil {
-				q.resetRetries(folder)
-				q.finish(items, StatusDone, nil)
-				break // success → drain more pending in outer loop
-			}
 			if ctx.Err() != nil {
-				// Shutdown, not a failure: leave the rows for Recover.
+				// Shutdown, not a failure. Checked before err == nil
+				// because a handler may swallow the cancellation and
+				// return nil. Mark the batch interrupted so Recover
+				// resumes it; a handler that already replied set
+				// reply_msg_id, so the resumed turn short-circuits.
+				if err == nil {
+					err = ctx.Err()
+				}
 				q.log.Info("queue: turn interrupted by shutdown",
 					slog.String("folder", folder))
 				q.finish(items, StatusInterrupted, err)
 				q.deactivate(folder)
 				return
+			}
+			if err == nil {
+				q.resetRetries(folder)
+				q.finish(items, StatusDone, nil)
+				break // success → drain more pending in outer loop
 			}
 
 			retries := q.incrementRetries(folder)

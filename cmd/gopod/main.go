@@ -454,14 +454,12 @@ func run() error {
 		// Scheduler (M4): polls store for due tasks and pushes them
 		// through the same queue as Telegram messages. Only starts
 		// if both the queue and the store are available.
+		// New registers the scheduler's OnDone hook; it must exist
+		// before Recover so recovered task turns finalize their logs.
+		var sched *scheduler.Scheduler
 		if agentQueue != nil {
 			schedLog := logger.With(slog.String("subsys", "scheduler"))
-			sched := scheduler.New(st, agentQueue, schedLog)
-			subsystems.Add(1)
-			go func() {
-				defer subsystems.Done()
-				sched.Start(ctx)
-			}()
+			sched = scheduler.New(st, agentQueue, schedLog)
 		}
 
 		// Recover turns left unfinished by a crash/shutdown. Must run after
@@ -473,6 +471,16 @@ func run() error {
 			} else if n > 0 {
 				logger.Info("queue: recovered unfinished turns", slog.Int("count", n))
 			}
+		}
+
+		// Start polling only after Recover, so the first poll cannot
+		// race the replay of an interrupted task turn for the same slot.
+		if sched != nil {
+			subsystems.Add(1)
+			go func() {
+				defer subsystems.Done()
+				sched.Start(ctx)
+			}()
 		}
 
 		// IPC watcher (M7). Reads agent-authored JSON files under

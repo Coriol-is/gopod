@@ -152,12 +152,25 @@ func (s *Scheduler) runTask(ctx context.Context, t store.TaskRecord, now int64) 
 		IsOwner:  false, // tasks run as non-owner tier (conservative)
 		Text:     t.Prompt,
 	})
-	if dup {
+	outcome := "task enqueued"
+	switch {
+	case dup:
+		outcome = "task slot already enqueued"
 		s.log.Warn("scheduler: slot already enqueued, advancing",
 			slog.String("task", t.ID), slog.Int64("slot", slot))
-	} else if turnID != 0 {
+	case turnID != 0:
 		if err := s.store.SetTaskRunTurn(ctx, t.ID, slot, turnID); err != nil {
 			s.log.Error("scheduler: SetTaskRunTurn", slog.String("task", t.ID), slog.Any("err", err))
+		}
+	default:
+		// The queue could not persist the turn, so no completion hook
+		// will ever finalize the log row: close it here. The slot is
+		// still advanced below, as a failed run would be.
+		outcome = "task enqueue failed"
+		s.log.Error("scheduler: enqueue failed, slot skipped",
+			slog.String("task", t.ID), slog.Int64("slot", slot))
+		if err := s.store.FinishTaskRun(ctx, t.ID, slot, "error", 0, "enqueue failed"); err != nil {
+			s.log.Error("scheduler: FinishTaskRun", slog.String("task", t.ID), slog.Any("err", err))
 		}
 	}
 
@@ -167,7 +180,7 @@ func (s *Scheduler) runTask(ctx context.Context, t store.TaskRecord, now int64) 
 		s.log.Error("scheduler: UpdateTaskStatus", slog.String("task", t.ID), slog.Any("err", err))
 	}
 
-	s.log.Info("scheduler: task enqueued",
+	s.log.Info("scheduler: "+outcome,
 		slog.String("task", t.ID),
 		slog.String("type", t.ScheduleType),
 		slog.String("folder", t.ChatFolder),

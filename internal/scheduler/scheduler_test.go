@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"path/filepath"
@@ -213,5 +214,45 @@ func TestRunTaskDupSlotRunsOnce(t *testing.T) {
 	}
 	if final.TurnID == 0 || final.Status != "success" {
 		t.Errorf("final row = %+v, want success with turn_id", final)
+	}
+}
+
+// failingInsertStore is a queue.TurnStore whose InsertTurn always
+// fails, so Enqueue returns (0, false).
+type failingInsertStore struct{ storeAdapter }
+
+func (failingInsertStore) InsertTurn(context.Context, queue.Item) (int64, bool, error) {
+	return 0, false, errors.New("disk full")
+}
+
+func TestRunTaskEnqueueFailureFinalizesLogRow(t *testing.T) {
+	st := newSchedulerTestStore(t)
+	ctx := context.Background()
+	const slot = int64(1)
+	taskID, err := st.CreateTask(ctx, store.TaskRecord{ChatFolder: "owner", ChatJID: "tg:1", Prompt: "p", ScheduleType: "once", ScheduleValue: "2020-01-01T00:00:00Z", NextRun: slot})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int32
+	handler := func(ctx context.Context, items []queue.Item) error { calls.Add(1); return nil }
+	q := queue.New(ctx, handler, 1, failingInsertStore{storeAdapter{st}}, discardLogger())
+	t.Cleanup(q.Close)
+	s := New(st, q, discardLogger())
+
+	task, _ := st.GetTask(ctx, taskID)
+	s.runTask(ctx, task, 5000)
+
+	run, err := st.GetTaskRun(ctx, taskID, slot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Status != "error" || run.Error != "enqueue failed" || run.TurnID != 0 {
+		t.Errorf("run = %+v, want error/enqueue failed with no turn", run)
+	}
+	if got, _ := st.GetTask(ctx, taskID); got.Status != "done" {
+		t.Errorf("task status = %q, want done (slot advanced)", got.Status)
+	}
+	if n := calls.Load(); n != 0 {
+		t.Errorf("handler calls = %d, want 0", n)
 	}
 }

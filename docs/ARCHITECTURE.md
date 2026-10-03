@@ -254,7 +254,7 @@ CREATE TABLE router_state (
 -- keys: 'last_timestamp', 'last_agent_ts:<chat_jid>'
 ```
 
-`turns` is the durable queue: one row per requested agent run, written before dispatch and finalized after. `UNIQUE(source, source_id)` deduplicates Telegram redeliveries and re-fired scheduler slots. Boot recovery replays `pending`, `running` and `interrupted` rows; see `docs/superpowers/specs/2026-10-03-durable-turns-design.md`.
+`turns` is the durable queue: one row per requested agent run, written before dispatch and finalized after. `UNIQUE(source, source_id)` deduplicates Telegram redeliveries (`source_id` is `"<chat_id>:<message_id>"`, since message ids are unique only within a chat) and re-fired scheduler slots (`"<task_id>:<next_run>"`). Boot recovery replays `pending`, `running` and `interrupted` rows; see `docs/superpowers/specs/2026-10-03-durable-turns-design.md`.
 
 Plus the memory tables (`memories`, `memory_vec` virtual table backed by
 `sqlite-vec`, `memory_fts` for hybrid lexical search) — see

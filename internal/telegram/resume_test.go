@@ -45,3 +45,65 @@ func TestDoneHookIgnoresNonCrashLoop(t *testing.T) {
 	hook(queue.Item{ID: 2, ChatID: 5, MessageID: 6}, errors.New("infra"))
 	// Reaching here without a nil-pointer panic is the assertion.
 }
+
+func TestPickBatchItemCarriesResumeState(t *testing.T) {
+	cases := []struct {
+		name            string
+		items           []queue.Item
+		wantID          int64
+		wantResumed     bool
+		wantPlaceholder int
+		wantReply       int
+	}{
+		{
+			name:   "single item unchanged",
+			items:  []queue.Item{{ID: 1, PlaceholderMsgID: 5}},
+			wantID: 1, wantPlaceholder: 5,
+		},
+		{
+			name: "earlier resumed item marks the pick resumed and lends its placeholder",
+			items: []queue.Item{
+				{ID: 1, Resumed: true, PlaceholderMsgID: 40},
+				{ID: 2},
+			},
+			wantID: 2, wantResumed: true, wantPlaceholder: 40,
+		},
+		{
+			name: "own placeholder wins over an earlier one",
+			items: []queue.Item{
+				{ID: 1, Resumed: true, PlaceholderMsgID: 40},
+				{ID: 2, Resumed: true, PlaceholderMsgID: 41},
+			},
+			wantID: 2, wantResumed: true, wantPlaceholder: 41,
+		},
+		{
+			name: "earliest non-zero placeholder is carried",
+			items: []queue.Item{
+				{ID: 1, Resumed: true},
+				{ID: 2, Resumed: true, PlaceholderMsgID: 50},
+				{ID: 3, Resumed: true, PlaceholderMsgID: 51},
+				{ID: 4},
+			},
+			wantID: 4, wantResumed: true, wantPlaceholder: 50,
+		},
+		{
+			name: "earlier item that already replied contributes nothing",
+			items: []queue.Item{
+				{ID: 1, Resumed: true, PlaceholderMsgID: 60, ReplyMsgID: 60},
+				{ID: 2},
+			},
+			wantID: 2,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := pickBatchItem(tc.items)
+			if got.ID != tc.wantID || got.Resumed != tc.wantResumed ||
+				got.PlaceholderMsgID != tc.wantPlaceholder || got.ReplyMsgID != tc.wantReply {
+				t.Errorf("pickBatchItem = {ID:%d Resumed:%v Placeholder:%d Reply:%d}, want {ID:%d Resumed:%v Placeholder:%d Reply:%d}",
+					got.ID, got.Resumed, got.PlaceholderMsgID, got.ReplyMsgID,
+					tc.wantID, tc.wantResumed, tc.wantPlaceholder, tc.wantReply)
+			}
+		})
+	}
+}
