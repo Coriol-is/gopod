@@ -60,7 +60,7 @@ if `ANTHROPIC_API_KEY` is set in the environment.
 
 | ID | Step | Status |
 |----|------|--------|
-| O1 | `internal/observability` scaffold: `Init`, no-op providers, config loader, shutdown | ⬜ |
+| O1 | `internal/observability` scaffold: `Init`, no-op providers, config loader, shutdown | ✅ |
 | O2 | Metric definitions in one place, registry, `127.0.0.1:9090/metrics` listener gated by `GOPOD_METRICS_ADDR` | ⬜ |
 | O3 | Wire counters/gauges/histograms into `store`, `queue`, `runner`, `telegram`, `control` | ⬜ |
 | O4 | OTel scaffold: `Init`, no-op tracer when env unset, exporter selection, redaction wrapper | ⬜ |
