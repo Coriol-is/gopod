@@ -139,6 +139,8 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 		Text:      text,
 		FilePath:  filePath,
 		IsVoice:   isVoice,
+		Source:    "telegram",
+		SourceID:  strconv.Itoa(m.ID),
 	}
 
 	if b.queue != nil {
@@ -254,7 +256,11 @@ func (b *Bot) runAgentSync(ctx context.Context, item queue.Item) {
 	stopTyping := b.startTyping(ctx, item.ChatID)
 	defer stopTyping()
 
-	reply, err := b.runner.Run(ctx, item.Folder, tier, b.allowlist, item.Text)
+	prompt := item.Text
+	if item.Resumed {
+		prompt = resumePrompt(item.Text)
+	}
+	reply, err := b.runner.Run(ctx, item.Folder, tier, b.allowlist, prompt)
 	if err != nil {
 		// ❌ reaction on error
 		if item.MessageID > 0 {
@@ -293,7 +299,8 @@ func (b *Bot) runAgentSync(ctx context.Context, item queue.Item) {
 
 	mode := b.getReplyMode(item.ChatID, item.IsVoice)
 	if mode != "voice" {
-		b.replyTo(ctx, item.ChatID, item.MessageID, reply)
+		sent := b.replyTo(ctx, item.ChatID, item.MessageID, reply)
+		b.recordReply(ctx, item, sent, reply)
 	}
 }
 
@@ -416,18 +423,19 @@ func (b *Bot) startTyping(ctx context.Context, chatID int64) func() {
 // replyTo sends a message as a reply to a specific message, with
 // markdown → HTML conversion and smart chunking. Falls back to plain
 // text if HTML send fails.
-func (b *Bot) replyTo(ctx context.Context, chatID int64, replyToMsgID int, text string) {
-	b.sendFormatted(ctx, chatID, replyToMsgID, text)
+func (b *Bot) replyTo(ctx context.Context, chatID int64, replyToMsgID int, text string) int {
+	return b.sendFormatted(ctx, chatID, replyToMsgID, text)
 }
 
 // replyText sends a message without reply threading. Used by
 // commands and system messages.
 func (b *Bot) replyText(ctx context.Context, chatID int64, text string) {
-	b.sendFormatted(ctx, chatID, 0, text)
+	_ = b.sendFormatted(ctx, chatID, 0, text)
 }
 
-func (b *Bot) sendFormatted(ctx context.Context, chatID int64, replyToMsgID int, text string) {
+func (b *Bot) sendFormatted(ctx context.Context, chatID int64, replyToMsgID int, text string) int {
 	const maxLen = 4000
+	last := 0
 	htmlText := markdownToTelegramHTML(text)
 	chunks := chunkString(htmlText, maxLen)
 
@@ -445,7 +453,10 @@ func (b *Bot) sendFormatted(ctx context.Context, chatID int64, replyToMsgID int,
 			}
 		}
 
-		_, err := b.api.SendMessage(ctx, params)
+		sent, err := b.api.SendMessage(ctx, params)
+		if err == nil && sent != nil {
+			last = sent.ID
+		}
 		if err != nil {
 			// Fallback: send as plain text.
 			b.log.Debug("HTML send failed, falling back to plain text",
@@ -453,19 +464,24 @@ func (b *Bot) sendFormatted(ctx context.Context, chatID int64, replyToMsgID int,
 				slog.Any("err", err))
 			plainChunks := chunkString(text, maxLen)
 			for _, pc := range plainChunks {
-				if _, err := b.api.SendMessage(ctx, &bot.SendMessageParams{
+				sent, err := b.api.SendMessage(ctx, &bot.SendMessageParams{
 					ChatID: chatID,
 					Text:   pc,
-				}); err != nil {
+				})
+				if err != nil {
 					b.log.Error("SendMessage failed",
 						slog.Int64("chat_id", chatID),
 						slog.Any("err", err))
-					return
+					return last
+				}
+				if sent != nil {
+					last = sent.ID
 				}
 			}
-			return
+			return last
 		}
 	}
+	return last
 }
 
 // chunkString splits s into pieces of at most n bytes. Prefers

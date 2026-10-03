@@ -102,7 +102,11 @@ func (b *Bot) runAgentStreaming(ctx context.Context, item queue.Item) {
 	stopTyping := b.startTyping(ctx, item.ChatID)
 	defer stopTyping()
 
-	stream, err := b.runner.RunStream(ctx, item.Folder, tier, b.allowlist, item.Text)
+	prompt := item.Text
+	if item.Resumed {
+		prompt = resumePrompt(item.Text)
+	}
+	stream, err := b.runner.RunStream(ctx, item.Folder, tier, b.allowlist, prompt)
 	if err != nil {
 		// Fallback: if streaming setup fails, try sync path.
 		b.log.Warn("RunStream failed, falling back to sync",
@@ -113,12 +117,17 @@ func (b *Bot) runAgentStreaming(ctx context.Context, item queue.Item) {
 	}
 
 	// Send placeholder message -> get its message_id for editing.
-	placeholder := b.sendPlaceholder(ctx, item.ChatID, item.MessageID)
+	// Reuse the placeholder left by an interrupted attempt, else send one.
+	placeholder := b.reusePlaceholder(ctx, item)
+	if placeholder == 0 {
+		placeholder = b.sendPlaceholder(ctx, item.ChatID, item.MessageID)
+	}
 	if placeholder == 0 {
 		// Fallback: drain stream, send as buffered.
 		b.drainAndSend(ctx, item, stream)
 		return
 	}
+	b.recordPlaceholder(ctx, item, placeholder)
 
 	var accumulated strings.Builder
 	ticker := time.NewTicker(1 * time.Second)
@@ -150,6 +159,7 @@ func (b *Bot) runAgentStreaming(ctx context.Context, item queue.Item) {
 					b.drainAndSend(ctx, item, stream)
 					return
 				}
+				b.recordPlaceholder(ctx, item, placeholder)
 				accumulated.Reset()
 				dirty = false
 			}
@@ -185,6 +195,7 @@ done:
 		// Simple case: everything fits in one message.
 		html := markdownToTelegramHTML(finalText)
 		b.editMessageHTML(ctx, item.ChatID, placeholder, html)
+		b.recordReply(ctx, item, placeholder, finalText)
 	} else {
 		// Overflow: finalize last placeholder with remaining text,
 		// then send the full formatted response as a new reply.
@@ -192,7 +203,8 @@ done:
 			b.editMessage(ctx, item.ChatID, placeholder,
 				accumulated.String())
 		}
-		b.replyTo(ctx, item.ChatID, item.MessageID, finalText)
+		sent := b.replyTo(ctx, item.ChatID, item.MessageID, finalText)
+		b.recordReply(ctx, item, sent, finalText)
 	}
 
 	if item.MessageID > 0 {
@@ -246,7 +258,8 @@ func (b *Bot) drainAndSend(ctx context.Context, item queue.Item, stream *runner.
 	if item.MessageID > 0 {
 		b.react(ctx, item.ChatID, item.MessageID, emojiDone)
 	}
-	b.replyTo(ctx, item.ChatID, item.MessageID, text)
+	sent := b.replyTo(ctx, item.ChatID, item.MessageID, text)
+	b.recordReply(ctx, item, sent, text)
 	b.maybeVoiceReply(ctx, item, text)
 }
 
