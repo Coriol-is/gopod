@@ -23,6 +23,8 @@ package queue
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -236,6 +238,47 @@ func (q *Queue) schedule(item Item) {
 		defer q.wg.Done()
 		q.worker(q.ctx, item.Folder)
 	}()
+}
+
+// ErrCrashLoop is passed to OnDone hooks for a turn that Recover
+// refused to replay because it already reached MaxAttempts.
+var ErrCrashLoop = errors.New("queue: turn exceeded max attempts across restarts")
+
+// Recover loads every unfinished turn from the store and schedules it.
+// Rows that were running or interrupted when the previous process died
+// are re-enqueued with Resumed=true so the handler can tell the agent
+// its last turn was cut off. Rows that already reached MaxAttempts are
+// marked failed and reported through OnDone instead of being replayed.
+//
+// Call once at boot, after producers and hooks are wired and before
+// Telegram starts polling. Returns the number of turns scheduled.
+func (q *Queue) Recover(ctx context.Context) (int, error) {
+	if q.store == nil {
+		return 0, nil
+	}
+	items, err := q.store.LoadUnfinished(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("queue: load unfinished turns: %w", err)
+	}
+	n := 0
+	for _, it := range items {
+		if it.Attempts >= MaxAttempts {
+			q.log.Error("queue: turn exceeded max attempts, giving up",
+				slog.Int64("turn", it.ID),
+				slog.String("folder", it.Folder),
+				slog.Int("attempts", it.Attempts))
+			q.finish([]Item{it}, StatusFailed, ErrCrashLoop)
+			continue
+		}
+		it.Resumed = it.Attempts > 0 // running/interrupted rows were started at least once
+		q.log.Info("queue: recovering turn",
+			slog.Int64("turn", it.ID),
+			slog.String("folder", it.Folder),
+			slog.Bool("resumed", it.Resumed))
+		q.schedule(it)
+		n++
+	}
+	return n, nil
 }
 
 // Pending returns the number of items waiting across all chats. For

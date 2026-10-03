@@ -470,3 +470,102 @@ func count(ss []string, s string) int {
 	}
 	return n
 }
+
+func TestRecoverReenqueuesUnfinishedAsResumed(t *testing.T) {
+	fs := newFakeStore()
+	fs.unfinished = []Item{
+		{ID: 1, Folder: "a", Source: "telegram", SourceID: "1", Attempts: 1, Text: "running one"},
+		{ID: 2, Folder: "b", Source: "telegram", SourceID: "2", Attempts: 0, Text: "pending one"},
+	}
+	got := make(chan Item, 2)
+	handler := func(ctx context.Context, items []Item) error {
+		for _, it := range items {
+			got <- it
+		}
+		return nil
+	}
+	q := New(context.Background(), handler, 2, fs, silentLog())
+	n, err := q.Recover(context.Background())
+	if err != nil || n != 2 {
+		t.Fatalf("Recover = (%d, %v), want (2, nil)", n, err)
+	}
+	seen := map[int64]Item{}
+	for i := 0; i < 2; i++ {
+		select {
+		case it := <-got:
+			seen[it.ID] = it
+		case <-time.After(2 * time.Second):
+			t.Fatal("timeout")
+		}
+	}
+	if !seen[1].Resumed {
+		t.Error("turn 1 (was running) not marked Resumed")
+	}
+	if seen[2].Resumed {
+		t.Error("turn 2 (was pending) wrongly marked Resumed")
+	}
+	if contains(fs.snapshot(), "insert:1") || contains(fs.snapshot(), "insert:2") {
+		t.Error("Recover must not re-insert rows")
+	}
+}
+
+func TestRecoverPreservesOrderPerChat(t *testing.T) {
+	fs := newFakeStore()
+	fs.unfinished = []Item{
+		{ID: 1, Folder: "a", Source: "telegram", SourceID: "1", Attempts: 1},
+		{ID: 2, Folder: "a", Source: "telegram", SourceID: "2"},
+	}
+	var order []int64
+	var mu sync.Mutex
+	done := make(chan struct{}, 2)
+	handler := func(ctx context.Context, items []Item) error {
+		mu.Lock()
+		for _, it := range items {
+			order = append(order, it.ID)
+		}
+		mu.Unlock()
+		done <- struct{}{}
+		return nil
+	}
+	q := New(context.Background(), handler, 1, fs, silentLog())
+	q.Recover(context.Background())
+	<-done
+	// Second item may have coalesced into the first batch or run alone.
+	time.Sleep(50 * time.Millisecond)
+	mu.Lock()
+	defer mu.Unlock()
+	if len(order) < 2 || order[0] != 1 || order[1] != 2 {
+		t.Errorf("order = %v, want [1 2 ...]", order)
+	}
+}
+
+func TestRecoverCrashLoopIsFailedWithoutRunning(t *testing.T) {
+	fs := newFakeStore()
+	fs.unfinished = []Item{
+		{ID: 9, Folder: "a", Source: "telegram", SourceID: "9", Attempts: MaxAttempts},
+	}
+	handler := func(ctx context.Context, items []Item) error {
+		t.Error("handler must not run for a crash-looping turn")
+		return nil
+	}
+	q := New(context.Background(), handler, 1, fs, silentLog())
+	var hookErr error
+	q.OnDone(func(it Item, err error) { hookErr = err })
+	n, _ := q.Recover(context.Background())
+	if n != 0 {
+		t.Errorf("Recover re-enqueued %d, want 0", n)
+	}
+	if !contains(fs.snapshot(), "finished:9:failed") {
+		t.Errorf("calls = %v, want finished:9:failed", fs.snapshot())
+	}
+	if hookErr == nil || !errors.Is(hookErr, ErrCrashLoop) {
+		t.Errorf("hook err = %v, want ErrCrashLoop", hookErr)
+	}
+}
+
+func TestRecoverWithoutStoreIsNoop(t *testing.T) {
+	q := New(context.Background(), func(context.Context, []Item) error { return nil }, 1, nil, silentLog())
+	if n, err := q.Recover(context.Background()); n != 0 || err != nil {
+		t.Errorf("Recover = (%d, %v), want (0, nil)", n, err)
+	}
+}
