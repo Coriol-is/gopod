@@ -37,6 +37,7 @@ import (
 	"github.com/Coriol-is/gopod/internal/control"
 	"github.com/Coriol-is/gopod/internal/ipc"
 	"github.com/Coriol-is/gopod/internal/memory"
+	"github.com/Coriol-is/gopod/internal/observability"
 	"github.com/Coriol-is/gopod/internal/queue"
 	"github.com/Coriol-is/gopod/internal/runner"
 	"github.com/Coriol-is/gopod/internal/runner/mountsec"
@@ -76,6 +77,24 @@ func run() error {
 		slog.String("data_dir", cfg.DataDir),
 		slog.String("store_path", cfg.StorePath),
 	)
+
+	// Observability (M3.6). Opt-in Prometheus /metrics listener gated by
+	// GOPOD_METRICS_ADDR; tracing is still the otel no-op provider (O4).
+	// A failed Init (e.g. the address cannot be bound) is fatal so an
+	// operator who asked for metrics never runs silently without them.
+	obsCfg := observability.LoadConfig()
+	obsCfg.Version = buildVersion()
+	obs, err := observability.Init(obsCfg)
+	if err != nil {
+		return fmt.Errorf("init observability: %w", err)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := obs.Shutdown(shutdownCtx); err != nil {
+			logger.Error("observability shutdown", slog.Any("err", err))
+		}
+	}()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
