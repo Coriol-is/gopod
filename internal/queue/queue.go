@@ -69,6 +69,10 @@ type TurnStore interface {
 	InsertTurn(ctx context.Context, it Item) (id int64, dup bool, err error)
 	MarkRunning(ctx context.Context, id int64) error
 	MarkFinished(ctx context.Context, id int64, status, errText string) error
+	// LoadUnfinished returns every pending, running or interrupted turn.
+	// Rows MUST be in ascending id order: Recover schedules them in the
+	// order returned and does not re-sort, so this is what preserves
+	// per-chat arrival order across a restart.
 	LoadUnfinished(ctx context.Context) ([]Item, error)
 }
 
@@ -208,15 +212,16 @@ func (q *Queue) Enqueue(ctx context.Context, item Item) (int64, bool) {
 }
 
 // schedule appends item to its chat's pending list and starts a worker
-// if none is active. Shared by Enqueue and Recover.
-func (q *Queue) schedule(item Item) {
+// if none is active. Shared by Enqueue and Recover. Returns false when
+// the queue is closed and the item was not accepted.
+func (q *Queue) schedule(item Item) bool {
 	q.mu.Lock()
 	if q.closed {
 		q.mu.Unlock()
 		q.log.Debug("queue closed, turn left pending for recovery",
 			slog.String("folder", item.Folder),
 			slog.Int64("turn", item.ID))
-		return
+		return false
 	}
 	cs, ok := q.chats[item.Folder]
 	if !ok {
@@ -226,7 +231,7 @@ func (q *Queue) schedule(item Item) {
 	cs.pending = append(cs.pending, item)
 	if cs.active {
 		q.mu.Unlock()
-		return // worker already running, it will drain pending
+		return true // worker already running, it will drain pending
 	}
 	cs.active = true
 	// Add under the same lock hold as the closed check so Close wg.Wait
@@ -238,6 +243,7 @@ func (q *Queue) schedule(item Item) {
 		defer q.wg.Done()
 		q.worker(q.ctx, item.Folder)
 	}()
+	return true
 }
 
 // ErrCrashLoop is passed to OnDone hooks for a turn that Recover
@@ -275,8 +281,9 @@ func (q *Queue) Recover(ctx context.Context) (int, error) {
 			slog.Int64("turn", it.ID),
 			slog.String("folder", it.Folder),
 			slog.Bool("resumed", it.Resumed))
-		q.schedule(it)
-		n++
+		if q.schedule(it) {
+			n++
+		}
 	}
 	return n, nil
 }

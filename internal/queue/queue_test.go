@@ -517,25 +517,53 @@ func TestRecoverPreservesOrderPerChat(t *testing.T) {
 	}
 	var order []int64
 	var mu sync.Mutex
-	done := make(chan struct{}, 2)
+	done := make(chan struct{})
+	var once sync.Once
 	handler := func(ctx context.Context, items []Item) error {
 		mu.Lock()
 		for _, it := range items {
 			order = append(order, it.ID)
 		}
+		if len(order) == 2 {
+			once.Do(func() { close(done) })
+		}
 		mu.Unlock()
-		done <- struct{}{}
 		return nil
 	}
 	q := New(context.Background(), handler, 1, fs, silentLog())
-	q.Recover(context.Background())
-	<-done
-	// Second item may have coalesced into the first batch or run alone.
-	time.Sleep(50 * time.Millisecond)
+	n, err := q.Recover(context.Background())
+	if err != nil || n != 2 {
+		t.Fatalf("Recover = (%d, %v), want (2, nil)", n, err)
+	}
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for both items")
+	}
 	mu.Lock()
 	defer mu.Unlock()
-	if len(order) < 2 || order[0] != 1 || order[1] != 2 {
-		t.Errorf("order = %v, want [1 2 ...]", order)
+	if len(order) != 2 || order[0] != 1 || order[1] != 2 {
+		t.Errorf("order = %v, want [1 2]", order)
+	}
+}
+
+func TestRecoverAfterCloseCountsNothing(t *testing.T) {
+	fs := newFakeStore()
+	fs.unfinished = []Item{{ID: 5, Folder: "a", Source: "telegram", SourceID: "5", Attempts: 1}}
+	handler := func(ctx context.Context, items []Item) error {
+		t.Error("handler must not run after Close")
+		return nil
+	}
+	q := New(context.Background(), handler, 1, fs, silentLog())
+	q.Close()
+	n, err := q.Recover(context.Background())
+	if err != nil || n != 0 {
+		t.Errorf("Recover = (%d, %v), want (0, nil)", n, err)
+	}
+	for _, c := range fs.snapshot() {
+		if strings.HasPrefix(c, "running:") {
+			t.Errorf("unexpected %q after Close", c)
+		}
 	}
 }
 
@@ -551,7 +579,10 @@ func TestRecoverCrashLoopIsFailedWithoutRunning(t *testing.T) {
 	q := New(context.Background(), handler, 1, fs, silentLog())
 	var hookErr error
 	q.OnDone(func(it Item, err error) { hookErr = err })
-	n, _ := q.Recover(context.Background())
+	n, err := q.Recover(context.Background())
+	if err != nil {
+		t.Fatalf("Recover: %v", err)
+	}
 	if n != 0 {
 		t.Errorf("Recover re-enqueued %d, want 0", n)
 	}
