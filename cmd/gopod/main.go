@@ -436,7 +436,7 @@ func run() error {
 		var agentQueue *queue.Queue
 		if agentRunner != nil {
 			queueLog := logger.With(slog.String("subsys", "queue"))
-			agentQueue = queue.New(tgBot.NewAgentHandler(), queue.DefaultMaxConcurrent, queueLog)
+			agentQueue = queue.New(ctx, tgBot.NewAgentHandler(), queue.DefaultMaxConcurrent, nil, queueLog)
 			tgBot.SetQueue(agentQueue)
 			queueLog.Info("queue ready",
 				slog.Int("max_concurrent", queue.DefaultMaxConcurrent))

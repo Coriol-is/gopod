@@ -14,6 +14,7 @@
 //   - **Exponential backoff.** On failure the chat backs off before
 //     retrying (5s → 10s → 20s → 40s → 80s, max 5 retries). Success
 //     resets the retry counter.
+//   - **Durability.** With a TurnStore, every item is a `turns` row before it is dispatched and is marked running/done/failed/interrupted around the handler call. Nil store = memory only.
 //
 // The queue is transport-agnostic: it takes a [Handler] callback that
 // does the actual agent call + Telegram reply. The telegram package
@@ -29,13 +30,44 @@ import (
 
 // Item is one enqueued message waiting for an agent turn.
 type Item struct {
-	ChatID    int64  // Telegram chat ID (for the reply callback)
+	// Durability fields. Zero when the queue has no TurnStore.
+	ID               int64  // turns.id
+	Source           string // "telegram" | "task"
+	SourceID         string // tg message id | "<task_id>:<next_run>"
+	Resumed          bool   // set by Recover: this turn was running/interrupted when gopod died
+	Attempts         int    // from the row, for the crash-loop cap
+	PlaceholderMsgID int    // streaming placeholder recorded by a previous attempt
+	ReplyMsgID       int    // final reply recorded by a previous attempt
+
+	ChatID    int64  // Telegram chat ID (for the reply callback), 0 for tasks
 	MessageID int    // Telegram message ID (for reply threading + reactions)
 	Folder    string // registered chat folder
 	IsOwner   bool
 	Text      string // the user's message text
 	FilePath  string // container-side path to an uploaded file (photo/doc), empty if text-only
 	IsVoice   bool   // true if the original message was a voice message
+}
+
+// Turn statuses written through TurnStore. Mirror store.Turn* so the
+// queue does not import store.
+const (
+	StatusDone        = "done"
+	StatusFailed      = "failed"
+	StatusInterrupted = "interrupted"
+)
+
+// MaxAttempts is how many times a turn may be started (across process
+// restarts) before Recover declares it a crash loop.
+const MaxAttempts = 3
+
+// TurnStore persists turns. Declared here, at the consumer, so the
+// store package stays free of queue imports; cmd/gopod adapts
+// *store.Store to it.
+type TurnStore interface {
+	InsertTurn(ctx context.Context, it Item) (id int64, dup bool, err error)
+	MarkRunning(ctx context.Context, id int64) error
+	MarkFinished(ctx context.Context, id int64, status, errText string) error
+	LoadUnfinished(ctx context.Context) ([]Item, error)
 }
 
 // Handler is the callback the queue invokes for each agent turn.
@@ -57,14 +89,20 @@ type Queue struct {
 	sem        chan struct{} // buffered channel, size = maxConc
 	log        *slog.Logger
 	maxRetries int
+	store      TurnStore // nil = memory only
 
 	// BackoffFunc computes the wait duration for a given retry count.
 	// Defaults to the exponential backoffDuration. Tests override this
 	// to avoid real sleeps.
 	BackoffFunc func(retry int) time.Duration
 
-	mu    sync.Mutex
-	chats map[string]*chatState // keyed by folder
+	ctx    context.Context // workers derive from this; cancelled by Close
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
+
+	mu     sync.Mutex
+	chats  map[string]*chatState // keyed by folder
+	onDone []func(Item, error)
 }
 
 type chatState struct {
@@ -81,42 +119,91 @@ const DefaultMaxConcurrent = 3
 // chat before dropping the pending items.
 const DefaultMaxRetries = 5
 
-// New creates a Queue. maxConcurrent ≤ 0 defaults to
-// DefaultMaxConcurrent. handler must not be nil.
-func New(handler Handler, maxConcurrent int, log *slog.Logger) *Queue {
+// New creates a Queue. Workers derive their context from ctx (the app
+// context), so cancelling it interrupts in-flight turns; see Close.
+// maxConcurrent ≤ 0 defaults to DefaultMaxConcurrent. handler must not
+// be nil. store may be nil (memory-only, dev mode).
+func New(ctx context.Context, handler Handler, maxConcurrent int, store TurnStore, log *slog.Logger) *Queue {
 	if maxConcurrent <= 0 {
 		maxConcurrent = DefaultMaxConcurrent
 	}
 	if log == nil {
 		log = slog.Default()
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	wctx, cancel := context.WithCancel(ctx)
 	return &Queue{
 		handler:     handler,
 		maxConc:     maxConcurrent,
 		sem:         make(chan struct{}, maxConcurrent),
 		log:         log,
 		maxRetries:  DefaultMaxRetries,
+		store:       store,
 		BackoffFunc: backoffDuration,
+		ctx:         wctx,
+		cancel:      cancel,
 		chats:       make(map[string]*chatState),
 	}
 }
 
-// Enqueue adds an item for the chat. If the chat has no active worker,
-// one is started (subject to the global concurrency cap). If the chat
-// already has an active worker, the item is appended to the pending
-// queue — the worker will pick it up after the current run finishes.
+// OnDone registers a hook called after a turn reaches a terminal
+// status (done, failed, interrupted) or is rejected by Recover as a
+// crash loop. Hooks run synchronously in the worker goroutine, in
+// registration order. err is the last handler error, nil on success.
+func (q *Queue) OnDone(fn func(Item, error)) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.onDone = append(q.onDone, fn)
+}
+
+// Close cancels every worker's context and waits for them to exit.
+// In-flight turns are marked interrupted. Safe to call once.
+func (q *Queue) Close() {
+	q.cancel()
+	q.wg.Wait()
+}
+
+// Enqueue persists the item (when a TurnStore is configured) and
+// schedules it for the chat. Returns the turn id and whether the item
+// was a duplicate of an existing turn (same Source+SourceID), in which
+// case nothing was scheduled. Without a store both are zero.
 //
-// Enqueue never blocks on the global cap: if all slots are taken, a
-// background goroutine waits for a slot and then starts the worker.
-// The caller (Telegram default handler) returns immediately in all
-// cases.
+// If the chat has no active worker, one is started (subject to the
+// global concurrency cap). If the chat already has an active worker,
+// the item is appended to the pending queue.
 //
-// IMPORTANT: the worker uses context.Background(), NOT the caller's
-// ctx. The caller's ctx is a request-scoped context from go-telegram/bot
-// that may be cancelled when the handler returns. The worker must
-// outlive the handler — it runs claude for 10-30 seconds and sends
-// the reply asynchronously.
-func (q *Queue) Enqueue(ctx context.Context, item Item) {
+// Enqueue never blocks on the global cap. The worker runs on the
+// queue's own context (derived from the ctx passed to New), NOT the
+// caller's ctx, which for Telegram is request-scoped and cancelled
+// when the handler returns.
+func (q *Queue) Enqueue(ctx context.Context, item Item) (int64, bool) {
+	if q.store != nil {
+		id, dup, err := q.store.InsertTurn(ctx, item)
+		if err != nil {
+			q.log.Error("queue: persist turn failed, dropping",
+				slog.String("folder", item.Folder),
+				slog.String("source", item.Source),
+				slog.String("source_id", item.SourceID),
+				slog.Any("err", err))
+			return 0, false
+		}
+		if dup {
+			q.log.Debug("queue: duplicate turn ignored",
+				slog.String("source", item.Source),
+				slog.String("source_id", item.SourceID))
+			return 0, true
+		}
+		item.ID = id
+	}
+	q.schedule(item)
+	return item.ID, false
+}
+
+// schedule appends item to its chat's pending list and starts a worker
+// if none is active. Shared by Enqueue and Recover.
+func (q *Queue) schedule(item Item) {
 	q.mu.Lock()
 	cs, ok := q.chats[item.Folder]
 	if !ok {
@@ -131,8 +218,11 @@ func (q *Queue) Enqueue(ctx context.Context, item Item) {
 	cs.active = true
 	q.mu.Unlock()
 
-	// Worker uses Background context so it outlives the HTTP handler.
-	go q.worker(context.Background(), item.Folder)
+	q.wg.Add(1)
+	go func() {
+		defer q.wg.Done()
+		q.worker(q.ctx, item.Folder)
+	}()
 }
 
 // Pending returns the number of items waiting across all chats. For
@@ -186,10 +276,20 @@ func (q *Queue) worker(ctx context.Context, folder string) {
 		// New messages arriving during backoff append to pending
 		// and get picked up in the NEXT outer-loop iteration.
 		for {
+			q.markRunning(ctx, items)
 			err := q.handler(ctx, items)
 			if err == nil {
 				q.resetRetries(folder)
+				q.finish(items, StatusDone, nil)
 				break // success → drain more pending in outer loop
+			}
+			if ctx.Err() != nil {
+				// Shutdown, not a failure: leave the rows for Recover.
+				q.log.Info("queue: turn interrupted by shutdown",
+					slog.String("folder", folder))
+				q.finish(items, StatusInterrupted, err)
+				q.deactivate(folder)
+				return
 			}
 
 			retries := q.incrementRetries(folder)
@@ -198,6 +298,7 @@ func (q *Queue) worker(ctx context.Context, folder string) {
 					slog.String("folder", folder),
 					slog.Int("retries", retries),
 					slog.Any("err", err))
+				q.finish(items, StatusFailed, err)
 				q.dropPendingAndDeactivate(folder)
 				return
 			}
@@ -211,9 +312,55 @@ func (q *Queue) worker(ctx context.Context, folder string) {
 			case <-time.After(backoff):
 				// retry same items
 			case <-ctx.Done():
+				q.finish(items, StatusInterrupted, ctx.Err())
 				q.deactivate(folder)
 				return
 			}
+		}
+	}
+}
+
+// markRunning flips every item in the batch to running. Store errors
+// are logged, not fatal: the turn still runs, and Recover may replay it
+// once more than necessary, which the reply memo tolerates.
+func (q *Queue) markRunning(ctx context.Context, items []Item) {
+	if q.store == nil {
+		return
+	}
+	for _, it := range items {
+		if it.ID == 0 {
+			continue
+		}
+		if err := q.store.MarkRunning(context.WithoutCancel(ctx), it.ID); err != nil {
+			q.log.Error("queue: mark running", slog.Int64("turn", it.ID), slog.Any("err", err))
+		}
+	}
+}
+
+// finish marks every item in the batch with status and fires the
+// OnDone hooks. Uses a context detached from cancellation so shutdown
+// bookkeeping still reaches the store.
+func (q *Queue) finish(items []Item, status string, err error) {
+	errText := ""
+	if err != nil {
+		errText = err.Error()
+	}
+	if q.store != nil {
+		for _, it := range items {
+			if it.ID == 0 {
+				continue
+			}
+			if merr := q.store.MarkFinished(context.WithoutCancel(q.ctx), it.ID, status, errText); merr != nil {
+				q.log.Error("queue: mark finished", slog.Int64("turn", it.ID), slog.Any("err", merr))
+			}
+		}
+	}
+	q.mu.Lock()
+	hooks := append([]func(Item, error){}, q.onDone...)
+	q.mu.Unlock()
+	for _, it := range items {
+		for _, h := range hooks {
+			h(it, err)
 		}
 	}
 }
