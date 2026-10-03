@@ -313,6 +313,14 @@ func (b *Bot) NewAgentHandler() queue.Handler {
 		}
 		// Use the last item — the most recent user message.
 		item := items[len(items)-1]
+		if item.Resumed && item.ReplyMsgID != 0 {
+			// The crash hit between sending the reply and marking the
+			// turn done. The user already has the answer.
+			b.log.Info("resumed turn already replied, skipping",
+				slog.Int64("turn", item.ID),
+				slog.Int("reply_msg_id", item.ReplyMsgID))
+			return nil
+		}
 		if b.streamEnabled {
 			b.runAgentStreaming(ctx, item)
 		} else {
