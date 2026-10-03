@@ -13,16 +13,6 @@
 Claude assistant with session continuity, long-term memory, voice,
 vision, scheduling, and multi-provider architecture ready for Codex.
 **Last updated:** 2026-10-03
-**M3.6/O1 landed (2026-10-03, branch `factory/20261003-gopod-5ab2`):**
-`internal/observability` scaffold — `Config`/`LoadConfig()` reading
-`GOPOD_METRICS_ADDR` and `GOPOD_OTLP_ENDPOINT` via `os.Getenv` only
-(D012), `Init(cfg) (Provider, error)` installing the otel no-op
-TracerProvider plus a no-op metrics facade, `Provider.Shutdown(ctx)`.
-No ports, no exporters, no Prometheus registry; a set env var only
-logs that the real provider lands in O2/O4. `go.mod` promotes
-`go.opentelemetry.io/otel` and `/trace` to direct (already present
-as indirect via the Docker SDK). **Not yet wired from
-`cmd/gopod/main.go`** — that is O2. ROADMAP O1 row ✅, M3.6 still ⬜.
 **Last working session:** public-release prep (2026-10-03, uncommitted):
 added MIT `LICENSE`, README "Security notes" section, replaced every
 `/Users/<name>/...` path in CLAUDE.md/ARCHITECTURE/GLOSSARY/GATEWAY/
@@ -33,6 +23,17 @@ user from docs, untracked `chats/owner/` (runtime state, seeded from
 kept for the compose bind mount). Before that: codex streaming deadlock
 + device-flow /login fixes (committed), `/register` moved into
 `internal/control` (uncommitted, tests green).
+
+**M3.6/O1 landed (2026-10-03, committed on branch `factory/20261003-gopod-5ab2`, PR #1):**
+`internal/observability` scaffold — `Config`/`LoadConfig()` reading
+`GOPOD_METRICS_ADDR` and `GOPOD_OTLP_ENDPOINT` via `os.Getenv` only
+(D012), `Init(cfg) (Provider, error)` installing the otel no-op
+TracerProvider plus a no-op metrics facade, `Provider.Shutdown(ctx)`.
+No ports, no exporters, no Prometheus registry; a set env var only
+logs that the real provider lands in O2/O4. `go.mod` promotes
+`go.opentelemetry.io/otel` and `/trace` to direct (already present
+as indirect via the Docker SDK). **Not yet wired from
+`cmd/gopod/main.go`** — that is O2. ROADMAP O1 row ✅, M3.6 still ⬜.
 
 History was rewritten with `git filter-repo` on 2026-10-03 (a stray
 compiled binary and local machine details removed) and force-pushed.

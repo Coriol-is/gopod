@@ -16,6 +16,10 @@ import (
 // GOPOD_OTLP_ENDPOINT is set this is logged, but no SDK provider is built
 // and nothing is dialled; the OTLP exporter wiring is O4.
 func initTracing(cfg Config, log *slog.Logger) (shutdownFunc, error) {
+	// The otel global delegates only once: tracers obtained before the first
+	// SetTracerProvider are re-pointed by that call and by no later one. O4
+	// must therefore replace this line with a single noop-or-SDK choice
+	// (OBSERVABILITY.md §3.2), never "noop first, then SDK".
 	otel.SetTracerProvider(noop.NewTracerProvider())
 
 	if cfg.TracingEnabled() {
