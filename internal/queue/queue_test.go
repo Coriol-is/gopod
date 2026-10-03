@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -427,6 +428,34 @@ func TestNilStoreKeepsMemoryOnlyBehaviour(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("handler not called")
+	}
+}
+
+func TestNoWorkStartedOnCancelledContext(t *testing.T) {
+	fs := newFakeStore()
+	var calls int32
+	handler := func(ctx context.Context, items []Item) error {
+		atomic.AddInt32(&calls, 1)
+		return nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	q := New(ctx, handler, 1, fs, silentLog())
+	q.Enqueue(context.Background(), Item{Folder: "a", Source: "telegram", SourceID: "1"})
+	q.Close() // waits for the worker, so no sleeps needed
+	if n := atomic.LoadInt32(&calls); n != 0 {
+		t.Errorf("handler ran %d times on cancelled ctx", n)
+	}
+	for _, c := range fs.snapshot() {
+		if strings.HasPrefix(c, "running:") || strings.HasPrefix(c, "finished:") {
+			t.Errorf("unexpected store call %q", c)
+		}
+	}
+	// Enqueue after Close leaves the row pending and starts nothing.
+	q.Enqueue(context.Background(), Item{Folder: "a", Source: "telegram", SourceID: "2"})
+	// Turn 1 stays in memory (never drained); turn 2 is refused outright.
+	if q.Pending() != 1 || q.ActiveChats() != 0 {
+		t.Errorf("after Close: pending=%d active=%d, want 1, 0", q.Pending(), q.ActiveChats())
 	}
 }
 

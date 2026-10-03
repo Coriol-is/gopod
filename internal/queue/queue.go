@@ -103,6 +103,7 @@ type Queue struct {
 	mu     sync.Mutex
 	chats  map[string]*chatState // keyed by folder
 	onDone []func(Item, error)
+	closed bool // set by Close; schedule refuses new work afterwards
 }
 
 type chatState struct {
@@ -161,6 +162,9 @@ func (q *Queue) OnDone(fn func(Item, error)) {
 // Close cancels every worker's context and waits for them to exit.
 // In-flight turns are marked interrupted. Safe to call once.
 func (q *Queue) Close() {
+	q.mu.Lock()
+	q.closed = true
+	q.mu.Unlock()
 	q.cancel()
 	q.wg.Wait()
 }
@@ -205,6 +209,13 @@ func (q *Queue) Enqueue(ctx context.Context, item Item) (int64, bool) {
 // if none is active. Shared by Enqueue and Recover.
 func (q *Queue) schedule(item Item) {
 	q.mu.Lock()
+	if q.closed {
+		q.mu.Unlock()
+		q.log.Debug("queue closed, turn left pending for recovery",
+			slog.String("folder", item.Folder),
+			slog.Int64("turn", item.ID))
+		return
+	}
 	cs, ok := q.chats[item.Folder]
 	if !ok {
 		cs = &chatState{}
@@ -262,6 +273,11 @@ func (q *Queue) worker(ctx context.Context, folder string) {
 	defer func() { <-q.sem }()
 
 	for {
+		// select picks randomly when both cases are ready, so re-check.
+		if ctx.Err() != nil {
+			q.deactivate(folder)
+			return
+		}
 		items := q.drainPending(folder)
 		if len(items) == 0 {
 			q.deactivate(folder)
@@ -294,12 +310,12 @@ func (q *Queue) worker(ctx context.Context, folder string) {
 
 			retries := q.incrementRetries(folder)
 			if retries > q.maxRetries {
-				q.log.Error("queue: max retries exceeded, dropping items",
+				q.log.Error("queue: max retries exceeded, batch failed; remaining pending items kept",
 					slog.String("folder", folder),
 					slog.Int("retries", retries),
 					slog.Any("err", err))
 				q.finish(items, StatusFailed, err)
-				q.dropPendingAndDeactivate(folder)
+				q.deactivate(folder)
 				return
 			}
 			backoff := q.BackoffFunc(retries)
@@ -385,16 +401,6 @@ func (q *Queue) deactivate(folder string) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if cs, ok := q.chats[folder]; ok {
-		cs.active = false
-		cs.retries = 0
-	}
-}
-
-func (q *Queue) dropPendingAndDeactivate(folder string) {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	if cs, ok := q.chats[folder]; ok {
-		cs.pending = nil
 		cs.active = false
 		cs.retries = 0
 	}
