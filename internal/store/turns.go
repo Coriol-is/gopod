@@ -132,7 +132,11 @@ func (s *Store) execTurn(ctx context.Context, op, stmt string, args ...any) erro
 	if err != nil {
 		return fmt.Errorf("store: %s: %w", op, err)
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("store: %s rows affected: %w", op, err)
+	}
+	if n == 0 {
 		return ErrTurnNotFound
 	}
 	return nil
