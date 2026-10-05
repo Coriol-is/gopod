@@ -46,6 +46,16 @@ func (r *Runner) logAgentVersion(ctx context.Context, containerID, chatFolder st
 		slog.String("cli_version", firstLine(res.Stdout)))
 }
 
+// tailString returns the last n bytes of s, prefixed with an ellipsis
+// when truncated. Used to keep agent stderr in error messages without
+// flooding the log.
+func tailString(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return "\u2026" + s[len(s)-n:]
+}
+
 // firstLine returns the first non-blank line of s, trimmed.
 func firstLine(s string) string {
 	for _, line := range strings.Split(s, "\n") {

@@ -38,3 +38,46 @@ func TestCodexVersionCmd(t *testing.T) {
 		t.Errorf("VersionCmd = %v, want %v", got, want)
 	}
 }
+
+// codex-cli 0.160 removed --full-auto; the sandbox/approval bypass flag
+// is accepted by both `exec` and `exec resume`. The container is the
+// sandbox (ISOLATION.md), same stance as claude --dangerously-skip-permissions.
+func TestCodexRunCmdFlags(t *testing.T) {
+	p := NewCodexProvider("")
+	for name, cmd := range map[string][]string{
+		"RunCmd":      p.RunCmd("hello", ""),
+		"RunFreshCmd": p.RunFreshCmd("hello"),
+	} {
+		joined := " " + join(cmd) + " "
+		if contains(joined, " --full-auto ") {
+			t.Errorf("%s still passes --full-auto (removed in codex 0.160): %v", name, cmd)
+		}
+		if !contains(joined, " --dangerously-bypass-approvals-and-sandbox ") {
+			t.Errorf("%s missing --dangerously-bypass-approvals-and-sandbox: %v", name, cmd)
+		}
+		if !contains(joined, " --skip-git-repo-check ") {
+			t.Errorf("%s missing --skip-git-repo-check: %v", name, cmd)
+		}
+		if cmd[len(cmd)-1] != "hello" {
+			t.Errorf("%s prompt must be the last argument: %v", name, cmd)
+		}
+	}
+	run := p.RunCmd("hello", "")
+	if run[0] != "codex" || run[1] != "exec" || run[2] != "resume" || run[3] != "--last" {
+		t.Errorf("RunCmd must start with codex exec resume --last: %v", run)
+	}
+	if got := p.RunCmd("q", "SYS"); got[len(got)-1] != "SYS\n\n---\n\nq" {
+		t.Errorf("system prompt not prepended to prompt: %q", got[len(got)-1])
+	}
+}
+
+func join(ss []string) string {
+	out := ""
+	for i, s := range ss {
+		if i > 0 {
+			out += " "
+		}
+		out += s
+	}
+	return out
+}

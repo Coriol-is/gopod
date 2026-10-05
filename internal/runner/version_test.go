@@ -15,3 +15,12 @@ func TestFirstLine(t *testing.T) {
 		}
 	}
 }
+
+func TestTailString(t *testing.T) {
+	if got := tailString("abcdef", 3); got != "…def" {
+		t.Errorf("tailString(abcdef,3) = %q", got)
+	}
+	if got := tailString("ab", 3); got != "ab" {
+		t.Errorf("tailString(ab,3) = %q", got)
+	}
+}

@@ -347,7 +347,7 @@ func (r *Runner) RunStream(
 					return
 				}
 				result <- RunResult{
-					Err:    fmt.Errorf("runner: agent exited %d", ee.Code),
+					Err:    fmt.Errorf("runner: agent exited %d (stderr=%q)", ee.Code, tailString(stderr, 600)),
 					Stderr: stderr,
 				}
 				return

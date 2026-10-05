@@ -25,10 +25,25 @@ func (p *CodexProvider) RequiredEnvVars() []string {
 	return []string{"OPENAI_API_KEY"}
 }
 
+// codexExecFlags are passed to both `codex exec` and `codex exec resume`.
+//
+// codex-cli 0.160 removed --full-auto. The container is the sandbox
+// (read-only rootfs, dropped caps, non-root uid, allowlisted mounts —
+// ISOLATION.md), so Codex's own sandbox and approval prompts are
+// bypassed, the same stance as `claude --dangerously-skip-permissions`.
+// --skip-git-repo-check keeps Codex from refusing a workspace that is
+// not a trusted git repo (RestoreConfigCmd still inits one for the
+// agent's own benefit).
+var codexExecFlags = []string{
+	"--dangerously-bypass-approvals-and-sandbox",
+	"--skip-git-repo-check",
+}
+
 func (p *CodexProvider) RunCmd(prompt, systemPrompt string) []string {
-	// `codex exec resume --last` continues the most recent session.
-	// --full-auto = --sandbox workspace-write (auto-approve writes).
-	cmd := []string{"codex", "exec", "resume", "--last", "--full-auto"}
+	// `codex exec resume --last` continues the most recent session; on
+	// an empty ~/.codex (0.160) it starts a new one instead of failing.
+	cmd := []string{"codex", "exec", "resume", "--last"}
+	cmd = append(cmd, codexExecFlags...)
 	if systemPrompt != "" {
 		// Codex doesn't have --append-system-prompt, so prepend to prompt.
 		prompt = systemPrompt + "\n\n---\n\n" + prompt
@@ -38,8 +53,10 @@ func (p *CodexProvider) RunCmd(prompt, systemPrompt string) []string {
 }
 
 func (p *CodexProvider) RunFreshCmd(prompt string) []string {
-	// No resume = fresh session. --full-auto for sandbox.
-	return []string{"codex", "exec", "--full-auto", prompt}
+	// No resume = fresh session.
+	cmd := []string{"codex", "exec"}
+	cmd = append(cmd, codexExecFlags...)
+	return append(cmd, prompt)
 }
 
 func (p *CodexProvider) RestoreConfigCmd() []string {
