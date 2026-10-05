@@ -2,13 +2,13 @@
 
 | | |
 |---|---|
-| Status | proposed |
+| Status | in-progress (2026-10-05) |
 | Date | 2026-10-05 |
 | Origin | feature survey of `rzaytsev/codex-agent` (2026-10-05) and the 2026-10-03 public-release audit |
 | Size | S |
 | Touches | `internal/memory/api.go`, `internal/runner` (env injection at `docker exec`), container skill `container/skills/memory` |
 | Depends on | — |
-| Spec | `—` |
+| Spec | bounded change, no spec: `internal/memory/tokens.go`, `internal/memory/api.go` (`withChat`), `internal/runner/capability.go` |
 
 ## Problem
 The memory HTTP API binds `0.0.0.0:9876` (needed so sibling containers reach it via `host.docker.internal`), has no authentication, and takes `chat` from the query string (`internal/memory/api.go`). Any agent container, or any host on the LAN when the compose port is published, can read and write any chat's memory, including the owner's. This breaks the CLAUDE.md rule that authorization comes from the path, never from data the LLM produced. Documented in README "Security notes" and HANDOFF since the release audit.

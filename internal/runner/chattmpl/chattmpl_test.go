@@ -24,8 +24,8 @@ func TestSeedFreshDirCreatesBoth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Seed: %v", err)
 	}
-	if len(created) != 2 {
-		t.Errorf("created %d files, want 2: %v", len(created), created)
+	if len(created) != 3 {
+		t.Errorf("created %d files, want 3 (CLAUDE.md, AGENTS.md, MEMORY.md): %v", len(created), created)
 	}
 
 	// Verify CLAUDE.md exists, includes the chat folder name and the
@@ -74,9 +74,9 @@ func TestSeedDoesNotOverwrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Seed: %v", err)
 	}
-	// CLAUDE.md was pre-existing, only MEMORY.md should have been created.
-	if len(created) != 1 {
-		t.Errorf("created %d files, want 1 (CLAUDE.md should be left alone): %v", len(created), created)
+	// CLAUDE.md was pre-existing; only AGENTS.md and MEMORY.md should have been created.
+	if len(created) != 2 {
+		t.Errorf("created %d files, want 2 (CLAUDE.md should be left alone): %v", len(created), created)
 	}
 
 	body, _ := os.ReadFile(filepath.Join(chatDir, "CLAUDE.md"))
@@ -109,5 +109,30 @@ func TestSeedDateDefault(t *testing.T) {
 	// substituted with something that looks like a date (YYYY-MM-DD).
 	if !strings.Contains(string(body), "20") {
 		t.Errorf("seed date placeholder not substituted: %s", body)
+	}
+}
+
+// Codex reads AGENTS.md, Claude Code reads CLAUDE.md. Both harnesses
+// must get the same instructions, so Seed writes both from one template.
+func TestSeedWritesAgentsMDForCodex(t *testing.T) {
+	dir := t.TempDir()
+	mem := filepath.Join(dir, "memory")
+	if err := os.MkdirAll(mem, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	created, err := Seed(dir, mem, Vars{ChatFolder: "alice", Date: "2026-10-05"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claude, err := os.ReadFile(filepath.Join(dir, "CLAUDE.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	agents, err := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("AGENTS.md not seeded: %v (created=%v)", err, created)
+	}
+	if string(agents) != string(claude) {
+		t.Error("AGENTS.md differs from CLAUDE.md")
 	}
 }

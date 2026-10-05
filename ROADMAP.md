@@ -176,7 +176,7 @@ index there is the registry. A CP becomes a row above when it ships.
 
 | CP | Title | Status |
 |----|-------|--------|
-| CP-001 | Capability token for the memory API | proposed |
+| CP-001 | Capability token for the memory API | in-progress |
 | CP-002 | Telegram outbox with retry and `uncertain` state | proposed |
 | CP-003 | Files and voice as typed replies via IPC | proposed |
 | CP-004 | Scheduled tasks run in their own session | proposed |

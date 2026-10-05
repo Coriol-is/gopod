@@ -116,12 +116,15 @@ Read these before exposing a deployment to anything but yourself.
   `codex --full-auto`). Isolation comes from the container, not from
   the CLI: read-only rootfs, dropped capabilities, non-root uid,
   allowlisted mounts. See [docs/ISOLATION.md](docs/ISOLATION.md).
-- **Memory API has no authentication.** It listens on `0.0.0.0:9876`
-  so sibling containers can reach it via `host.docker.internal`, and
-  the compose file publishes that port. Anything on the same network
-  can read and write chat memories. Firewall the port or bind it to
-  the Docker bridge interface only. Docker's `iptables` rules bypass
-  `ufw`, so the rule must target the bridge interface.
+- **Memory API is reachable from the Docker bridge.** It listens on
+  `0.0.0.0:9876` so sibling containers can reach it via
+  `host.docker.internal`, and the compose file publishes that port.
+  Every request needs a per-turn capability token that gopod mints for
+  one agent run and injects into that run's environment; the API derives
+  the chat from the token and ignores any chat named in the request.
+  Without a token the API answers 401. Still firewall the port if you do
+  not trust the LAN (Docker's `iptables` rules bypass `ufw`, so the rule
+  must target the bridge interface).
 - **Owner chat mounts the store read-write.** The owner's agent can
   edit `store.sqlite` directly. Only register chats you trust.
 - **Secrets are env vars.** Forwarded API keys are visible inside the

@@ -273,7 +273,11 @@ func run() error {
 
 				// Memory API server: tiny localhost HTTP endpoint for
 				// the agent to call via curl from inside the container.
-				memAPI := memory.NewAPIServer(agentMemory, memory.MemoryAPIAddr(), runLog)
+				// Per-exec capabilities (CP-001): the runner mints one
+				// per agent run and the API resolves the chat from it.
+				caps := memory.NewTokens()
+				r.SetCapabilities(caps)
+				memAPI := memory.NewAPIServer(agentMemory, memory.MemoryAPIAddr(), caps, runLog)
 				subsystems.Add(1)
 				go func() {
 					defer subsystems.Done()

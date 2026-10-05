@@ -66,14 +66,18 @@ chats' state or the gopod checkout itself.
   store it to long-term memory via the memory API so you remember
   it in future conversations:
   ```bash
-  curl -s -X POST "http://host.docker.internal:9876/memory/add" \
+  curl -s -X POST -H "Authorization: Bearer $GOPOD_MEMORY_CAPABILITY" \
     -H "Content-Type: application/json" \
-    -d '{"chat":"{{.ChatFolder}}","kind":"preference","content":"THE FACT"}'
+    -d '{"kind":"preference","content":"THE FACT"}' \
+    "http://host.docker.internal:9876/memory/add"
   ```
+  `GOPOD_MEMORY_CAPABILITY` is in your environment for this turn and
+  already identifies this chat; never pass a chat name.
 - **Search memory when relevant.** If the user references something
   from a past conversation, search for it:
   ```bash
-  curl -s "http://host.docker.internal:9876/memory/search?q=QUERY&chat={{.ChatFolder}}&k=5"
+  curl -s -H "Authorization: Bearer $GOPOD_MEMORY_CAPABILITY" \
+    "http://host.docker.internal:9876/memory/search?q=QUERY&k=5"
   ```
 - **No exaggerated certainty.** Say "I think" / "probably" when you
   are not sure.

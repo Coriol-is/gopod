@@ -75,6 +75,9 @@ type Runner struct {
 	activityMu sync.Mutex
 	activity   map[string]time.Time
 
+	// caps mints the per-exec memory capability (CP-001). Nil = none.
+	caps CapabilityMinter
+
 	// versionLogged records container ids whose agent CLI version has
 	// been logged, so Ensure logs it once per spawn, not once per turn.
 	versionLoggedMu sync.Mutex
@@ -227,7 +230,7 @@ func (r *Runner) Run(
 	}
 
 	prov := r.ProviderForChat(chatFolder)
-	reply, err := r.execWithProvider(ctx, id, prov, prov.RunCmd(prompt, opts.AppendSystemPrompt))
+	reply, err := r.execWithProvider(ctx, id, chatFolder, prov, prov.RunCmd(prompt, opts.AppendSystemPrompt))
 	if err != nil {
 		return "", err
 	}
@@ -314,8 +317,10 @@ func (r *Runner) RunStream(
 	}
 
 	cmd := prov.RunCmd(prompt, systemPrompt)
-	handle, err := r.d.ExecStream(ctx, id, cmd, nil)
+	env, release := r.agentEnv(chatFolder)
+	handle, err := r.d.ExecStream(ctx, id, cmd, env)
 	if err != nil {
+		release()
 		return nil, fmt.Errorf("runner: exec stream: %w", err)
 	}
 
@@ -326,6 +331,7 @@ func (r *Runner) RunStream(
 		defer close(chunks)
 		defer close(result)
 		defer handle.Close()
+		defer release() // capability dies with the exec, not the handler
 
 		fullOut, stderr := readExecStream(handle.Stdout, handle.Stderr, func(s string) { chunks <- s })
 		stderr = strings.TrimSpace(stderr)
@@ -418,18 +424,20 @@ func (r *Runner) RunFresh(
 		return "", fmt.Errorf("runner: ensure %q: %w", chatFolder, err)
 	}
 	prov := r.ProviderForChat(chatFolder)
-	return r.execWithProvider(ctx, id, prov, prov.RunFreshCmd(prompt))
+	return r.execWithProvider(ctx, id, chatFolder, prov, prov.RunFreshCmd(prompt))
 }
 
 // execWithProvider runs a provider-built command inside a container
 // with config restore and error classification.
-func (r *Runner) execWithProvider(ctx context.Context, containerID string, prov AgentProvider, cmd []string) (string, error) {
+func (r *Runner) execWithProvider(ctx context.Context, containerID, chatFolder string, prov AgentProvider, cmd []string) (string, error) {
 	// Restore config from backup if needed.
 	if restoreCmd := prov.RestoreConfigCmd(); restoreCmd != nil {
 		r.d.Exec(ctx, containerID, restoreCmd, nil)
 	}
 
-	res, err := r.d.Exec(ctx, containerID, cmd, nil)
+	env, release := r.agentEnv(chatFolder)
+	defer release()
+	res, err := r.d.Exec(ctx, containerID, cmd, env)
 	if err != nil {
 		return "", fmt.Errorf("runner: exec: %w", err)
 	}

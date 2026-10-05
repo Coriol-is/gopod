@@ -17,7 +17,7 @@ proposed ──► accepted ──► in-progress ──► done
 | Status | Meaning | Who moves it |
 |---|---|---|
 | `proposed` | Written down, not yet discussed to a decision | anyone |
-| `accepted` | Operator said go. Next step is a spec + plan via the superpowers flow (brainstorm → spec → plan → execute) | operator |
+| `accepted` | Operator said go. Next step is the superpowers flow: brainstorm, then for S an in-chat design and direct execution, for M/L a spec + plan | operator |
 | `in-progress` | Spec exists, work started; CP links the spec and plan | session doing the work |
 | `done` | Shipped on `main`; ROADMAP has a row; ADR written if a real decision was made | session that shipped it |
 | `rejected` | Decided against; keep the file with the reason so it is not re-proposed | operator |
@@ -69,7 +69,7 @@ Bullet list someone else can verify.
 
 | CP | Title | Status | Size |
 |---|---|---|---|
-| [CP-001](CP-001-memory-api-capability-token.md) | Capability token for the memory API | proposed | S |
+| [CP-001](CP-001-memory-api-capability-token.md) | Capability token for the memory API | in-progress | S |
 | [CP-002](CP-002-telegram-outbox.md) | Telegram outbox with retry and `uncertain` state | proposed | M |
 | [CP-003](CP-003-typed-replies-via-ipc.md) | Files and voice as typed replies via IPC | proposed | S |
 | [CP-004](CP-004-isolated-task-sessions.md) | Scheduled tasks run in their own session | proposed | S–M |
