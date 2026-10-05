@@ -12,8 +12,36 @@
 **Phase:** Core complete. gopod is a working personal Telegram
 Claude assistant with session continuity, long-term memory, voice,
 vision, scheduling, and multi-provider architecture ready for Codex.
-**Last updated:** 2026-10-03
-**Last working session:** durable turns (2026-10-03, branch
+**Last updated:** 2026-10-05
+**Last working session (2026-10-05):** production deploy + Codex harness.
+`main` (`b254e01`) is deployed on the production host via `docker compose`
+(data at `/opt/gopod/data`, live owner workspace at
+`/opt/gopod/repo/chats/owner`). Found and fixed in that pass: the
+`Dockerfile` build stage was `golang:1.25-alpine` while `go.mod` had moved
+to `go 1.26.0` with O2 (`1897c8c`); the agent images were 3 weeks / 5 months
+behind npm, so both Dockerfiles now pin the CLI via build args
+(`CLAUDE_CODE_VERSION=2.1.289`, `CODEX_VERSION=0.160.0`, `2c18a80`), the
+runner logs `agent container ready … cli_version=` once per spawn
+(`internal/runner/version.go`, `c352ce8`), and the Docker integration suite
+takes `GOPOD_TEST_{AGENT,CODEX}_IMAGE` / `GOPOD_TEST_{CLAUDE,CODEX}_VERSION`.
+codex-cli 0.160 removed `--full-auto`; `CodexProvider` now passes
+`--dangerously-bypass-approvals-and-sandbox --skip-git-repo-check` to both
+`exec` and `exec resume` (`b254e01`), and the streaming error carries the
+stderr tail. **Verified live against a real ChatGPT login:** `/login`
+persists to `data/sessions/owner/.codex/auth.json`; after `docker rm -f
+gopod-owner` the next message was answered first time (turn 4, 2026-10-05
+14:00:57 → 14:01:50), so the old "cold start answers only the second
+message" symptom is gone (root cause: `~/.codex` on tmpfs + 0.128
+`resume --last` failing on an empty session dir; both removed).
+
+**Also this session:** a CP (change proposal) process. Template, lifecycle
+and registry in [proposals/README.md](proposals/README.md); seven
+proposals CP-001…CP-007 written from the `codex-agent` survey, all
+`proposed`, suggested order in ROADMAP "Proposals". `/handoff` now
+cross-checks the CP registry (step 4b). Uncommitted: `docs/proposals/`,
+`CLAUDE.md`, `ROADMAP.md`, `.claude/skills/handoff/SKILL.md`, this file.
+
+**Previous session:** durable turns (2026-10-03, branch
 `worktree-durable-turns`, merged to `main`). Every agent run is now a row
 in `turns` before it runs and survives a crash: `internal/queue` persists
 through a `TurnStore`, `Recover` replays unfinished rows at boot, and
@@ -24,7 +52,9 @@ container recycling. Design:
 spec `docs/superpowers/specs/2026-10-03-durable-turns-design.md`, plan
 `docs/superpowers/plans/2026-10-03-durable-turns-plan.md`. Unit tests and
 `go build ./...` green on the merged tree; the manual `kill -9` recovery
-test (plan Task 8 step 5) has **not been run yet** (see "What's next").
+test (plan Task 8 step 5) has **not been run yet** (see "What's next");
+the schema migration (`turns`, `task_run_logs.turn_id`) applied cleanly on
+the production store on 2026-10-04.
 
 **In parallel on `main`:** M3.6/O2 (2026-10-03, branch
 `factory/20261003-gopod-b375`): `internal/observability` now has the
@@ -273,14 +303,21 @@ See [GATEWAY.md](GATEWAY.md) for full architecture.
 ## What's next (in order — per [D018](DECISIONS.md))
 
 0. **Run the manual crash-recovery test for durable turns** (plan Task 8
-   step 5, not yet run): start gopod with a real bot; send a message that
-   triggers a slow agent turn; `kill -9` gopod while the streaming
-   placeholder is showing; restart; confirm the same placeholder is edited
-   (no second reply), the agent mentions the interruption, the `turns` row
-   ends `done` with `placeholder_msg_id`/`reply_msg_id` set, and a restart
-   with no unfinished rows replays nothing. Optional variant: delete the
-   placeholder in Telegram before restarting (checks the `reusePlaceholder`
-   fallback). Then merge the branch.
+   step 5, still not run; the branch is merged and deployed, cold start
+   of the agent container is verified, but a `kill -9` of gopod itself
+   mid-turn is not): on the production host, send a message that
+   triggers a slow agent turn; `docker kill -s KILL gopod-gopod-1` while
+   the streaming placeholder is showing; `docker compose up -d`; confirm
+   the same placeholder is edited (no second reply), the agent mentions
+   the interruption, the `turns` row ends `done` with
+   `placeholder_msg_id`/`reply_msg_id` set, and a restart with no
+   unfinished rows replays nothing. Optional variant: delete the
+   placeholder in Telegram before restarting (checks `reusePlaceholder`).
+0b. **CPs in suggested order** (each: accept → spec → plan → execute):
+   CP-001 memory API token → CP-005 tools base image → CP-002 Telegram
+   outbox → CP-003 typed replies via IPC → CP-004 isolated task sessions
+   → CP-006 yielding maintenance + quiet hours → CP-007 store backups.
+   See [proposals/README.md](proposals/README.md).
 
 1. ~~M3 — GroupQueue.~~ ✅ Done.
 2. ~~M3.5 — Control plane (C1+C2).~~ ✅ Done. C3/C4/C5 deferred.
@@ -388,10 +425,21 @@ don't get lost.)
   bind-mounted RW to `/home/node/.codex` for every chat
   (`internal/runner/mounts.go`, `standardMounts` + `EnsureChatDirs`), so
   Codex rollouts and `auth.json` survive idle kill, restart and
-  `/provider` switches. Not yet verified against a real Codex login;
-  `codex exec resume --last` still picks "most recent" rather than a
-  stored thread id (follow-up: persist the Codex thread id per chat in
-  `sessions` and resume by id).
+  `/provider` switches. Verified 2026-10-05 against a real ChatGPT login
+  and a recreated container. `codex exec resume --last` still picks "most
+  recent" rather than a stored thread id (follow-up: persist the Codex
+  thread id per chat in `sessions` and resume by id; `codex-agent` does
+  exactly this with `sdk.resumeThread`).
+- **Pushes to `main` bypass the repo's "changes via pull request" rule.**
+  Three direct pushes on 2026-10-03/05 went through as admin. Either honour
+  the rule (PR per change, as the factory's `#2` did) or drop it.
+- **`/opt/gopod/repo/container/skills` on the production host is empty**,
+  so no container skills are mounted there. `/opt/gopod/repo` is a
+  hand-made directory (chats + container), not a checkout; the gopod
+  binary image is built from `~/gopod`. Decide whether to point
+  `GOPOD_HOST_REPO_DIR` at the checkout or sync skills into it.
+- **`.claude/worktrees/` is not gitignored.** Harmless while no worktree
+  exists; add a line before the next worktree session.
 - **ROADMAP drift found and corrected 2026-09-10.** P3 (Codex provider) and
   P4 (`/provider` command) were listed as ⬜ while both were fully
   implemented — `provider_codex.go` + `container/Dockerfile.codex`, and

@@ -57,6 +57,14 @@ touched. Drift here is common and silent: in September 2026 the table still
 listed P3 and P4 as ⬜ while both were fully implemented in
 `cmd/gopod/main.go`. If a status is wrong, fix it in the same pass.
 
+### 4b. Cross-check the CP registry
+
+Open `docs/proposals/README.md`. Every CP you touched this session must
+have the right status in its own file *and* in the index table
+(`proposed` → `accepted` → `in-progress` → `done`), and an `in-progress`
+or `done` CP must link its spec. A CP that shipped gets a ROADMAP row in
+the same pass.
+
 ### 5. ADR if you decided something
 
 A real architectural choice — one a future session could plausibly reverse

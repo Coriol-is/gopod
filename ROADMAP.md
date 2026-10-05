@@ -169,6 +169,25 @@ G8 is optional — full Vault mode (G1–G7) is the primary path.
 
 ---
 
+## Proposals
+
+Candidate changes live in [docs/proposals/](docs/proposals/README.md); the
+index there is the registry. A CP becomes a row above when it ships.
+
+| CP | Title | Status |
+|----|-------|--------|
+| CP-001 | Capability token for the memory API | proposed |
+| CP-002 | Telegram outbox with retry and `uncertain` state | proposed |
+| CP-003 | Files and voice as typed replies via IPC | proposed |
+| CP-004 | Scheduled tasks run in their own session | proposed |
+| CP-005 | Shared tools base image for agent containers | proposed |
+| CP-006 | Maintenance yields to the user; quiet hours | proposed |
+| CP-007 | Scheduled store backups on the production host | proposed |
+
+Suggested order: CP-001 → CP-005 → CP-002 → CP-003 → CP-004 → CP-006 → CP-007.
+
+---
+
 ## Deferred
 
 | Topic | Why deferred | Revisit when |

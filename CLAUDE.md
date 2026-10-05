@@ -89,6 +89,10 @@ Don't shuffle packages without an ADR.
 `docs/` is for designs that are meant to be stable. `ROADMAP.md` and
 `docs/HANDOFF.md` are for live state. README is human-facing intro.
 Anything ADR-worthy goes into `docs/DECISIONS.md` as `D{NNN}: <title>`.
+Candidate changes that are not yet designed go into `docs/proposals/` as
+`CP-NNN-<slug>.md` (template and lifecycle in
+[docs/proposals/README.md](docs/proposals/README.md)); a CP is accepted by
+the user before any spec or code exists for it.
 
 ### Commit messages
 
