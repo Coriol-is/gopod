@@ -52,10 +52,13 @@ RUN apt-get update \
 # frf — FreeFeed CLI (built in stage 1).
 COPY --from=frf-builder /frf /usr/local/bin/frf
 
-# Install the Claude Code CLI globally. Pinning is left to the apt/npm
-# default for M5e; a pinned version is a future ADR-worthy decision
-# once we know which release stream we track.
-RUN npm install -g @anthropic-ai/claude-code \
+# Install the Claude Code CLI globally, pinned so the version in the
+# image is reproducible and visible in git. Bump deliberately:
+#   docker build --build-arg CLAUDE_CODE_VERSION=x.y.z ...
+# or edit the default below. Check what is baked in with
+#   docker run --rm --entrypoint claude gopod-agent:latest --version
+ARG CLAUDE_CODE_VERSION=2.1.289
+RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} \
  && npm cache clean --force
 
 # gopod bind-mounts /workspace/chat at spawn time per ISOLATION.md

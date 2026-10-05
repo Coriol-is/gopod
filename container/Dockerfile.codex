@@ -23,7 +23,10 @@ RUN apt-get update \
 # frf — FreeFeed CLI (built in stage 1).
 COPY --from=frf-builder /frf /usr/local/bin/frf
 
-RUN npm install -g @openai/codex \
+# Pinned for reproducibility; bump deliberately. Check the baked-in
+# version with: docker run --rm --entrypoint codex gopod-agent-codex:latest --version
+ARG CODEX_VERSION=0.160.0
+RUN npm install -g @openai/codex@${CODEX_VERSION} \
  && npm cache clean --force
 
 RUN mkdir -p /workspace/chat /workspace/memory /workspace/ipc
