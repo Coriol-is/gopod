@@ -49,6 +49,13 @@ func (p *ClaudeProvider) RestoreConfigCmd() []string {
 			`[ -n "$b" ] && cp "$b" "$HOME/.claude.json"; fi`}
 }
 
+func (p *ClaudeProvider) ModelArgs(model string) []string {
+	if model == "" {
+		return nil
+	}
+	return []string{"--model", model}
+}
+
 func (p *ClaudeProvider) VersionCmd() []string {
 	return []string{"claude", "--version"}
 }

@@ -76,3 +76,4 @@ Bullet list someone else can verify.
 | [CP-005](CP-005-tools-base-image.md) | Shared tools base image for agent containers | proposed | M |
 | [CP-006](CP-006-yielding-maintenance-and-quiet-hours.md) | Maintenance yields to the user; quiet hours | proposed | S |
 | [CP-007](CP-007-store-backups.md) | Scheduled store backups on the production host | proposed | S |
+| [CP-008](CP-008-model-per-chat.md) | `/model` per chat | accepted | S |

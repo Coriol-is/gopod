@@ -381,7 +381,24 @@ func run() error {
 					agentRunner.SetChatProvider(rc.Folder, p)
 				}
 			}
+			if m, _ := st.GetState(context.Background(), "model:"+rc.Folder); m != "" {
+				agentRunner.SetChatModel(rc.Folder, m)
+			}
 		}
+
+		// /model (CP-008): per-chat model override, persisted like /provider.
+		control.RegisterModelCommand(router,
+			agentRunner.ModelForChat,
+			func(chatFolder, model string) (string, error) {
+				agentRunner.SetChatModel(chatFolder, model)
+				if err := st.SetState(context.Background(), "model:"+chatFolder, model); err != nil {
+					return "", fmt.Errorf("persist model: %w", err)
+				}
+				if model == "" {
+					return "Model reset to the provider default. Applies from the next message.", nil
+				}
+				return "Model set to " + model + ". Applies from the next message.", nil
+			}, chatFolderLookup)
 
 		control.RegisterProviderCommand(router, func(chatFolder, name string) (string, error) {
 			p, ok := providers[name]

@@ -183,6 +183,7 @@ index there is the registry. A CP becomes a row above when it ships.
 | CP-005 | Shared tools base image for agent containers | proposed |
 | CP-006 | Maintenance yields to the user; quiet hours | proposed |
 | CP-007 | Scheduled store backups on the production host | proposed |
+| CP-008 | `/model` per chat | accepted |
 
 Suggested order: CP-001 → CP-005 → CP-002 → CP-003 → CP-004 → CP-006 → CP-007.
 

@@ -66,6 +66,13 @@ func (p *CodexProvider) RestoreConfigCmd() []string {
 		`cd /workspace/chat && [ -d .git ] || git init -q && git config user.email "agent@gopod" && git config user.name "gopod"`}
 }
 
+func (p *CodexProvider) ModelArgs(model string) []string {
+	if model == "" {
+		return nil
+	}
+	return []string{"-m", model}
+}
+
 func (p *CodexProvider) VersionCmd() []string {
 	return []string{"codex", "--version"}
 }

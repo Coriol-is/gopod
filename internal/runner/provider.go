@@ -65,4 +65,8 @@ type AgentProvider interface {
 	// ClearSessionCmd returns the shell command to wipe session
 	// files (for /clear and compact).
 	ClearSessionCmd() []string
+
+	// ModelArgs returns the CLI flag that selects model, or nil for ""
+	// (provider default). Inserted before the prompt by withModel.
+	ModelArgs(model string) []string
 }

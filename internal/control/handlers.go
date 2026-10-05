@@ -172,6 +172,35 @@ func RegisterProviderCommand(r *Router, switchFn ProviderSwitchFunc, chatFolderL
 		})
 }
 
+// RegisterModelCommand adds /model for per-chat model selection
+// (CP-008). currentFn returns the stored override ("" = provider
+// default); setFn stores one ("" clears) and returns the reply text.
+func RegisterModelCommand(r *Router, currentFn func(chatFolder string) string, setFn func(chatFolder, model string) (string, error), chatFolderLookup func(chatID int64) string) {
+	r.Register("model", "model", "show or set the model for this chat", PermChatLocal,
+		func(ctx context.Context, cmd Command) (Response, error) {
+			folder := chatFolderLookup(cmd.Caller.ChatID)
+			if folder == "" {
+				return Response{Text: "Chat not registered.", Code: 1}, nil
+			}
+			if len(cmd.Args) == 0 {
+				cur := currentFn(folder)
+				if cur == "" {
+					cur = "default"
+				}
+				return Response{Text: "Current model: " + cur + "\n\nUsage: /model <name> | /model default\nClaude aliases: fable, opus, sonnet, haiku (or a full model id)\nCodex: any model id the account can use (e.g. gpt-5)\nApplies from the next message; unknown names fail on the next turn."}, nil
+			}
+			model := cmd.Args[0]
+			if model == "default" {
+				model = ""
+			}
+			result, err := setFn(folder, model)
+			if err != nil {
+				return Response{Text: err.Error(), Code: 1}, nil
+			}
+			return Response{Text: result}, nil
+		})
+}
+
 func versionHandler(_ context.Context, _ Command) (Response, error) {
 	ver := "dev"
 	if info, ok := debug.ReadBuildInfo(); ok {

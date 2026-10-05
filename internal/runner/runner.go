@@ -58,9 +58,10 @@ type Runner struct {
 	// compactAfter triggers auto-compact after N turns. 0 = disabled.
 	compactAfter int
 
-	// Per-chat provider overrides (via /provider command).
+	// Per-chat provider and model overrides (/provider, /model).
 	providersMu   sync.RWMutex
-	chatProviders  map[string]AgentProvider
+	chatProviders map[string]AgentProvider
+	chatModels    map[string]string
 
 	// containerLocksMu serialises EnsureRunning per chat. Without it,
 	// two simultaneous messages on the same chat could race two
@@ -230,7 +231,8 @@ func (r *Runner) Run(
 	}
 
 	prov := r.ProviderForChat(chatFolder)
-	reply, err := r.execWithProvider(ctx, id, chatFolder, prov, prov.RunCmd(prompt, opts.AppendSystemPrompt))
+	cmd := withModel(prov.RunCmd(prompt, opts.AppendSystemPrompt), prov, r.ModelForChat(chatFolder))
+	reply, err := r.execWithProvider(ctx, id, chatFolder, prov, cmd)
 	if err != nil {
 		return "", err
 	}
@@ -316,7 +318,7 @@ func (r *Runner) RunStream(
 		r.d.Exec(ctx, id, restoreCmd, nil)
 	}
 
-	cmd := prov.RunCmd(prompt, systemPrompt)
+	cmd := withModel(prov.RunCmd(prompt, systemPrompt), prov, r.ModelForChat(chatFolder))
 	env, release := r.agentEnv(chatFolder)
 	handle, err := r.d.ExecStream(ctx, id, cmd, env)
 	if err != nil {
