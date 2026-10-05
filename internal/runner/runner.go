@@ -74,6 +74,11 @@ type Runner struct {
 	// turn. Used by the idle watcher (M6e).
 	activityMu sync.Mutex
 	activity   map[string]time.Time
+
+	// versionLogged records container ids whose agent CLI version has
+	// been logged, so Ensure logs it once per spawn, not once per turn.
+	versionLoggedMu sync.Mutex
+	versionLogged   map[string]bool
 }
 
 // SpawnDefaults captures the per-process defaults that go into every
@@ -184,6 +189,7 @@ func (r *Runner) Ensure(
 	if err != nil {
 		return "", err
 	}
+	r.logAgentVersion(ctx, id, chatFolder, prov)
 	return id, nil
 }
 

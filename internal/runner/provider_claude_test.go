@@ -32,3 +32,11 @@ func TestClaudeExtractLoginURL(t *testing.T) {
 		})
 	}
 }
+
+func TestClaudeVersionCmd(t *testing.T) {
+	got := NewClaudeProvider("").VersionCmd()
+	want := []string{"claude", "--version"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("VersionCmd = %v, want %v", got, want)
+	}
+}

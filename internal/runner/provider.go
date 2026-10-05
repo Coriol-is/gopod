@@ -44,6 +44,11 @@ type AgentProvider interface {
 	// Stdout should be JSON parseable by ParseAuthStatus.
 	AuthStatusCmd() []string
 
+	// VersionCmd returns the command that prints the CLI version
+	// (e.g. ["claude", "--version"]). Run once per container spawn so
+	// the harness version baked into the image shows up in gopod logs.
+	VersionCmd() []string
+
 	// ParseAuthStatus parses the stdout of AuthStatusCmd.
 	ParseAuthStatus(stdout string) (AuthStatus, error)
 

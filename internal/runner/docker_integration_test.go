@@ -11,6 +11,19 @@
 // environment (DOCKER_HOST, or the default socket). The image is
 // pulled on demand if absent, which takes a few seconds the first
 // time.
+//
+// The agent-image tests are configurable so the suite can be pointed
+// at a freshly built image and pin the harness version it expects:
+//
+//     GOPOD_TEST_AGENT_IMAGE      image for the Claude tests (default gopod-agent:latest)
+//     GOPOD_TEST_CLAUDE_VERSION   if set, `claude --version` output must contain it
+//     GOPOD_TEST_CODEX_IMAGE      image for the Codex test (default gopod-agent-codex:latest)
+//     GOPOD_TEST_CODEX_VERSION    if set, `codex --version` output must contain it
+//
+// Example, after bumping the pins in container/Dockerfile*:
+//
+//     GOPOD_TEST_CLAUDE_VERSION=2.1.289 GOPOD_TEST_CODEX_VERSION=0.160.0 \
+//       go test -tags docker_integration -run 'AgentImage|Codex' ./internal/runner/
 
 package runner
 
@@ -47,6 +60,38 @@ func ensureAlpinePulled(t *testing.T, d *Docker) {
 	}
 	defer rc.Close()
 	_, _ = io.Copy(io.Discard, rc)
+}
+
+// envOr returns the environment variable key, or def when unset/empty.
+func envOr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
+func agentImage() string { return envOr("GOPOD_TEST_AGENT_IMAGE", "gopod-agent:latest") }
+func codexImage() string { return envOr("GOPOD_TEST_CODEX_IMAGE", "gopod-agent-codex:latest") }
+
+// requireImage skips the test when image is not present locally. Agent
+// images are built from container/Dockerfile*, never pulled.
+func requireImage(t *testing.T, ctx context.Context, d *Docker, image string) {
+	t.Helper()
+	if _, _, err := d.cli.ImageInspectWithRaw(ctx, image); err != nil {
+		t.Skipf("%s not built locally (see container/README.md): %v", image, err)
+	}
+}
+
+// requireVersion fails the test when wantEnv is set and out does not
+// contain its value. With wantEnv unset it only checks the marker.
+func requireVersion(t *testing.T, tool, out, marker, wantEnv string) {
+	t.Helper()
+	if !strings.Contains(out, marker) {
+		t.Errorf("%s --version stdout = %q, want to contain %q", tool, out, marker)
+	}
+	if want := os.Getenv(wantEnv); want != "" && !strings.Contains(out, want) {
+		t.Errorf("%s --version stdout = %q, want to contain %s=%q", tool, out, wantEnv, want)
+	}
 }
 
 func mkDocker(t *testing.T) *Docker {
@@ -144,9 +189,7 @@ func TestIntegrationCheckAuthOnAgentImage(t *testing.T) {
 	// skip rather than fail.
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	if _, _, err := d.cli.ImageInspectWithRaw(ctx, "gopod-agent:latest"); err != nil {
-		t.Skipf("gopod-agent:latest not built locally (run `docker build -t gopod-agent:latest container/`): %v", err)
-	}
+	requireImage(t, ctx, d, agentImage())
 
 	name := "gopod-inttest-auth"
 	if id, _ := d.inspectByName(ctx, name); id != "" {
@@ -154,7 +197,7 @@ func TestIntegrationCheckAuthOnAgentImage(t *testing.T) {
 	}
 
 	cfg := &container.Config{
-		Image:  "gopod-agent:latest",
+		Image:  agentImage(),
 		Cmd:    strslice.StrSlice{"sleep", "3600"},
 		Labels: map[string]string{LabelChat: "inttest-auth", LabelVersion: "integration-test"},
 	}
@@ -204,9 +247,7 @@ func TestIntegrationBuildContainerArgsAgainstAgentImage(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	if _, _, err := d.cli.ImageInspectWithRaw(ctx, "gopod-agent:latest"); err != nil {
-		t.Skipf("gopod-agent:latest not built locally: %v", err)
-	}
+	requireImage(t, ctx, d, agentImage())
 
 	// Tear down any leftover from previous runs.
 	name := "gopod-inttest-buildargs"
@@ -252,7 +293,7 @@ func TestIntegrationBuildContainerArgsAgainstAgentImage(t *testing.T) {
 	}
 
 	cfg, host, _, err := BuildContainerArgs(SpawnConfig{
-		Image:       "gopod-agent:latest",
+		Image:       agentImage(),
 		ChatFolder:  "inttest-buildargs",
 		Version:     "integration-test",
 		Mounts:      mounts,
@@ -308,9 +349,42 @@ func TestIntegrationBuildContainerArgsAgainstAgentImage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Exec claude --version: %v", err)
 	}
-	if !strings.Contains(res.Stdout, "Claude Code") {
-		t.Errorf("claude --version stdout = %q, want to contain 'Claude Code'", res.Stdout)
+	requireVersion(t, "claude", res.Stdout, "Claude Code", "GOPOD_TEST_CLAUDE_VERSION")
+}
+
+// TestIntegrationCodexImageVersion checks the Codex agent image boots
+// and reports the pinned CLI version. Skipped when the image is not
+// built locally.
+func TestIntegrationCodexImageVersion(t *testing.T) {
+	d := mkDocker(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	requireImage(t, ctx, d, codexImage())
+
+	name := "gopod-inttest-codex-version"
+	if id, _ := d.inspectByName(ctx, name); id != "" {
+		_ = d.Remove(ctx, id)
 	}
+	cfg := &container.Config{
+		Image:  codexImage(),
+		Cmd:    strslice.StrSlice{"sleep", "3600"},
+		Labels: map[string]string{LabelChat: "inttest-codex", LabelVersion: "integration-test"},
+	}
+	id, err := d.EnsureRunning(ctx, name, cfg, &container.HostConfig{})
+	if err != nil {
+		t.Fatalf("EnsureRunning: %v", err)
+	}
+	t.Cleanup(func() { _ = d.Remove(context.Background(), id) })
+
+	res, err := d.Exec(ctx, id, NewCodexProvider("").VersionCmd(), nil)
+	if err != nil {
+		t.Fatalf("Exec codex --version: %v", err)
+	}
+	if res.ExitCode != 0 {
+		t.Fatalf("codex --version exit %d: stdout=%q stderr=%q", res.ExitCode, res.Stdout, res.Stderr)
+	}
+	requireVersion(t, "codex", res.Stdout, "codex-cli", "GOPOD_TEST_CODEX_VERSION")
 }
 
 func TestIntegrationCleanupLeftovers(t *testing.T) {

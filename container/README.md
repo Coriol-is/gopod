@@ -22,6 +22,41 @@ If the submodule was not pulled at clone time, run
 `git submodule update --init --recursive` first — otherwise stage 1
 fails with `"/skills/frf-tui": not found`.
 
+## CLI versions
+
+The harness CLIs are pinned by build arg so the version baked into an
+image is reproducible and visible in git:
+
+| Image | Arg | Default |
+|---|---|---|
+| `gopod-agent` | `CLAUDE_CODE_VERSION` | see `container/Dockerfile` |
+| `gopod-agent-codex` | `CODEX_VERSION` | see `container/Dockerfile.codex` |
+
+Bump = edit the default (one-line commit) or pass
+`--build-arg CLAUDE_CODE_VERSION=x.y.z`. Nothing rebuilds agent images
+automatically; `docker compose build` only rebuilds the gopod binary.
+After a bump, rebuild the images on every host that runs gopod.
+
+Check what a built image carries:
+
+```sh
+docker run --rm --entrypoint claude gopod-agent:latest --version
+docker run --rm --entrypoint codex  gopod-agent-codex:latest --version
+```
+
+gopod also logs the version once per container spawn
+(`agent container ready ... cli_version=...`).
+
+The Docker integration suite can assert the expected versions:
+
+```sh
+GOPOD_TEST_CLAUDE_VERSION=2.1.289 GOPOD_TEST_CODEX_VERSION=0.160.0 \
+  go test -tags docker_integration -run 'AgentImage|CodexImage' ./internal/runner/
+```
+
+`GOPOD_TEST_AGENT_IMAGE` / `GOPOD_TEST_CODEX_IMAGE` point it at
+differently tagged images. Tests skip when an image is not built.
+
 The resulting image runs as the non-root `node` user inside, but
 gopod overrides this at spawn time with `--user <host_uid>:<host_gid>`
 so bind-mounted files stay owned by the operator on the host

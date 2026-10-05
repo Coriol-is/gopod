@@ -30,3 +30,11 @@ func TestCodexExtractLoginURL(t *testing.T) {
 		})
 	}
 }
+
+func TestCodexVersionCmd(t *testing.T) {
+	got := NewCodexProvider("").VersionCmd()
+	want := []string{"codex", "--version"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("VersionCmd = %v, want %v", got, want)
+	}
+}

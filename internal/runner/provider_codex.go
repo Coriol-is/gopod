@@ -49,6 +49,10 @@ func (p *CodexProvider) RestoreConfigCmd() []string {
 		`cd /workspace/chat && [ -d .git ] || git init -q && git config user.email "agent@gopod" && git config user.name "gopod"`}
 }
 
+func (p *CodexProvider) VersionCmd() []string {
+	return []string{"codex", "--version"}
+}
+
 func (p *CodexProvider) AuthStatusCmd() []string {
 	return []string{"codex", "login", "status"}
 }
