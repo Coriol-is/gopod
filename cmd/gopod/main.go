@@ -408,8 +408,18 @@ func run() error {
 			agentRunner.SetChatProvider(chatFolder, p)
 			// Persist choice.
 			st.SetState(context.Background(), "provider:"+chatFolder, name)
+			// A model name belongs to one harness (claude aliases vs
+			// codex ids), so a provider switch drops the /model override
+			// instead of failing the next turn with an unknown model.
+			hadModel := agentRunner.ModelForChat(chatFolder) != ""
+			agentRunner.SetChatModel(chatFolder, "")
+			st.SetState(context.Background(), "model:"+chatFolder, "")
 			agentRunner.ClearSession(context.Background(), chatFolder, runner.TierRegistered, allowlist)
-			return fmt.Sprintf("Switched to %s. Session cleared for fresh start.", name), nil
+			msg := fmt.Sprintf("Switched to %s. Session cleared for fresh start.", name)
+			if hadModel {
+				msg += " Model reset to the provider default; use /model to pick one for " + name + "."
+			}
+			return msg, nil
 		}, chatFolderLookup)
 	}
 
