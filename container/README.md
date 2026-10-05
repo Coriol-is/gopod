@@ -22,6 +22,11 @@ If the submodule was not pulled at clone time, run
 `git submodule update --init --recursive` first — otherwise stage 1
 fails with `"/skills/frf-tui": not found`.
 
+The resulting image runs as the non-root `node` user inside, but
+gopod overrides this at spawn time with `--user <host_uid>:<host_gid>`
+so bind-mounted files stay owned by the operator on the host
+([D013](../docs/DECISIONS.md) / ISOLATION.md §6.1).
+
 ## CLI versions
 
 The harness CLIs are pinned by build arg so the version baked into an
@@ -56,11 +61,6 @@ GOPOD_TEST_CLAUDE_VERSION=2.1.289 GOPOD_TEST_CODEX_VERSION=0.160.0 \
 
 `GOPOD_TEST_AGENT_IMAGE` / `GOPOD_TEST_CODEX_IMAGE` point it at
 differently tagged images. Tests skip when an image is not built.
-
-The resulting image runs as the non-root `node` user inside, but
-gopod overrides this at spawn time with `--user <host_uid>:<host_gid>`
-so bind-mounted files stay owned by the operator on the host
-([D013](../docs/DECISIONS.md) / ISOLATION.md §6.1).
 
 ## Contents
 
