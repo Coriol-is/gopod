@@ -199,6 +199,8 @@ var migrations = []string{
 	`ALTER TABLE task_run_logs ADD COLUMN turn_id INTEGER`,
 	// Per-conversation sessions: turns carry the Telegram thread.
 	`ALTER TABLE turns ADD COLUMN thread_id INTEGER NOT NULL DEFAULT 0`,
+	// Per-conversation memory: the summary slot is scoped by thread.
+	`ALTER TABLE memories ADD COLUMN thread_id INTEGER NOT NULL DEFAULT 0`,
 }
 
 // applySchema runs every statement in schemaStatements in order. Idempotent.

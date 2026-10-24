@@ -169,6 +169,10 @@ func (s *APIServer) handleAdd(w http.ResponseWriter, r *http.Request, chat strin
 	if req.Kind == "" {
 		req.Kind = "fact"
 	}
+	if req.Kind == "conversation_summary" {
+		http.Error(w, `{"error":"kind conversation_summary is written by session compact only"}`, http.StatusBadRequest)
+		return
+	}
 
 	id, err := s.mem.Add(r.Context(), chat, req.Kind, req.Title, req.Content, "agent")
 	if err != nil {
