@@ -320,7 +320,7 @@ func (r *Runner) RunStream(
 	}
 
 	prov := r.ProviderForChat(chatFolder)
-	cmd := withModel(prov.RunCmd(prompt, systemPrompt), prov, r.ModelForChat(chatFolder))
+	cmd := withModel(prov.RunCmd(prompt, systemPrompt, SessionRef{}), prov, r.ModelForChat(chatFolder))
 	return r.startStream(ctx, id, chatFolder, tier, allowlist, prov, prompt, cmd)
 }
 

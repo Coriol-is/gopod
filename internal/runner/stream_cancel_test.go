@@ -202,7 +202,7 @@ func isRmCmd(cmd []string) bool { return len(cmd) == 3 && cmd[0] == "rm" && cmd[
 
 type nopMemory struct{}
 
-func (nopMemory) CompileContext(context.Context, string, string) string { return "" }
+func (nopMemory) CompileContext(context.Context, string, int, string) string { return "" }
 
 type streamTestRunner struct {
 	r        *Runner
@@ -228,7 +228,7 @@ func newStreamTestRunner(t *testing.T) *streamTestRunner {
 
 func (s *streamTestRunner) start(t *testing.T, ctx context.Context, prov AgentProvider) (*AgentStream, *fakeProc) {
 	t.Helper()
-	cmd := prov.RunCmd("hi", "")
+	cmd := prov.RunCmd("hi", "", SessionRef{})
 	stream, err := s.r.startStream(ctx, "cid", "chat", TierRegistered, nil, prov, "hi", cmd)
 	if err != nil {
 		t.Fatalf("startStream: %v", err)
@@ -422,7 +422,7 @@ func TestStartStreamNextTurnWaitsForKill(t *testing.T) {
 
 	second := make(chan error, 1)
 	go func() {
-		_, err := s.r.startStream(context.Background(), "cid", "chat", TierRegistered, nil, prov, "next", prov.RunCmd("next", ""))
+		_, err := s.r.startStream(context.Background(), "cid", "chat", TierRegistered, nil, prov, "next", prov.RunCmd("next", "", SessionRef{}))
 		second <- err
 	}()
 
