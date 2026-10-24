@@ -98,3 +98,22 @@ func TestFactsAndPinnedAreSharedAcrossThreads(t *testing.T) {
 		}
 	}
 }
+
+func TestFallbackDoesNotLeakOtherThreadSummary(t *testing.T) {
+	ctx := context.Background()
+	m := newThreadTestMemory(t)
+	m.AddInThread(ctx, "chat", 0, "conversation_summary", "", "zebrafish MAINSUM", "compact")
+	m.AddInThread(ctx, "chat", 5, "conversation_summary", "", "zebrafish THREADSUM", "compact")
+	// Slots are under-filled, so the fallback search runs; FTS matches both.
+	if hits, _ := m.Search(ctx, "chat", "zebrafish", 10); len(hits) < 2 {
+		t.Fatalf("precondition: fallback search should match both summaries, got %d", len(hits))
+	}
+	main := m.CompileContext(ctx, "chat", 0, "zebrafish", DefaultBudget)
+	if strings.Contains(main, "THREADSUM") || strings.Count(main, "MAINSUM") != 1 {
+		t.Errorf("main context wrong: %q", main)
+	}
+	th := m.CompileContext(ctx, "chat", 5, "zebrafish", DefaultBudget)
+	if strings.Contains(th, "MAINSUM") || strings.Count(th, "THREADSUM") != 1 {
+		t.Errorf("thread context wrong: %q", th)
+	}
+}

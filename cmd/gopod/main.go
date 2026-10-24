@@ -600,6 +600,9 @@ type memoryOpsAdapter struct {
 }
 
 func (a *memoryOpsAdapter) Add(ctx context.Context, chatFolder, kind, title, content, source string) (int64, error) {
+	if kind == "conversation_summary" {
+		return 0, fmt.Errorf("kind conversation_summary is written by session compact only")
+	}
 	return a.mem.Add(ctx, chatFolder, kind, title, content, source)
 }
 

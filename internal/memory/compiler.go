@@ -79,6 +79,11 @@ func (m *Memory) CompileContext(ctx context.Context, chatFolder string, thread i
 		remaining := total - len(selected) + budget.Fallback
 		fallback, _ := m.Search(ctx, chatFolder, query, remaining)
 		for _, f := range fallback {
+			// Summaries come only from the reserved, thread-scoped slot;
+			// the broad search spans threads and would leak them.
+			if f.Kind == "conversation_summary" {
+				continue
+			}
 			selected = append(selected, dedupItems(selected, []Item{f})...)
 		}
 	}
