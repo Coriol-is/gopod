@@ -39,10 +39,24 @@ var codexExecFlags = []string{
 	"--skip-git-repo-check",
 }
 
-func (p *CodexProvider) RunCmd(prompt, systemPrompt string) []string {
-	// `codex exec resume --last` continues the most recent session; on
-	// an empty ~/.codex (0.160) it starts a new one instead of failing.
-	cmd := []string{"codex", "exec", "resume", "--last"}
+// RunCmd resumes with `exec resume --last` (zero ref) or `exec resume
+// <id>`, or starts a new conversation with plain `exec` when the ref
+// has an id but Resume is false: Codex picks its own thread id, which
+// the caller reads from the output with ExtractSessionID.
+func (p *CodexProvider) RunCmd(prompt, systemPrompt string, s SessionRef) []string {
+	var cmd []string
+	switch {
+	case s.ID == "":
+		// `codex exec resume --last` continues the most recently
+		// updated session; on an empty ~/.codex (0.160) it starts a new
+		// one instead of failing.
+		cmd = []string{"codex", "exec", "resume", "--last"}
+	case s.Resume:
+		// Fails ("no rollout found for thread id") if the rollout is gone.
+		cmd = []string{"codex", "exec", "resume", s.ID}
+	default:
+		cmd = []string{"codex", "exec"}
+	}
 	cmd = append(cmd, codexExecFlags...)
 	if systemPrompt != "" {
 		// Codex doesn't have --append-system-prompt, so prepend to prompt.
@@ -53,8 +67,11 @@ func (p *CodexProvider) RunCmd(prompt, systemPrompt string) []string {
 }
 
 func (p *CodexProvider) RunFreshCmd(prompt string) []string {
-	// No resume = fresh session.
-	cmd := []string{"codex", "exec"}
+	// No resume = fresh session. --ephemeral (present in 0.160) keeps
+	// the run from writing a rollout, so system tasks (compact summary,
+	// memory extraction) never become what `resume --last` or
+	// LatestSessionIDCmd picks.
+	cmd := []string{"codex", "exec", "--ephemeral"}
 	cmd = append(cmd, codexExecFlags...)
 	return append(cmd, prompt)
 }
@@ -138,9 +155,65 @@ func (p *CodexProvider) ExtractLoginURL(line string) string {
 	return ""
 }
 
-func (p *CodexProvider) ClearSessionCmd() []string {
+// ClearSessionCmd deletes one thread's rollout. Codex 0.16x writes it
+// to ~/.codex/sessions/YYYY/MM/DD/rollout-<local time>-<thread id>.jsonl
+// and appends to the same file on resume; with the file gone, `exec
+// resume <id>` fails, so the caller must start a new conversation. The
+// id is passed as $1, never spliced into the script.
+func (p *CodexProvider) ClearSessionCmd(s SessionRef) []string {
+	if s.ID == "" {
+		return []string{"sh", "-c",
+			`rm -rf "$HOME/.codex/sessions" "$HOME/.codex/conversations"`}
+	}
+	if !validSessionID(s.ID) {
+		return invalidSessionIDCmd()
+	}
 	return []string{"sh", "-c",
-		`rm -rf "$HOME/.codex/sessions" "$HOME/.codex/conversations"`}
+		`[ -d "$HOME/.codex/sessions" ] || exit 0; ` +
+			`find "$HOME/.codex/sessions" -type f -name "rollout-*-$1.jsonl" -exec rm -f {} +`,
+		"sh", s.ID}
+}
+
+// LatestSessionIDCmd prints the thread id of the most recently
+// modified rollout, which is what `exec resume --last` picks (checked
+// against codex-cli 0.164: it follows the last update, not the newest
+// file name). find instead of a fixed-depth glob, so a change to the
+// YYYY/MM/DD layout cannot silently yield no id; the -nt loop avoids
+// splitting the listing into separately sorted batches.
+func (p *CodexProvider) LatestSessionIDCmd() []string {
+	return []string{"sh", "-c",
+		`[ -d "$HOME/.codex/sessions" ] || exit 0; ` +
+			`f=$(find "$HOME/.codex/sessions" -type f -name 'rollout-*.jsonl' | ` +
+			`{ b=; while IFS= read -r x; do if [ -z "$b" ] || [ "$x" -nt "$b" ]; then b=$x; fi; done; printf '%s' "$b"; }); ` +
+			`[ -n "$f" ] || exit 0; ` +
+			`basename "$f" .jsonl | sed -nE 's/^rollout-.*-([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$/\1/p'`}
+}
+
+// ExtractSessionID reads the thread id from either output mode of
+// `codex exec`: the first `--json` event on stdout,
+//
+//	{"type":"thread.started","thread_id":"<id>"}
+//
+// or the plain-mode header line on stderr, `session id: <id>`.
+func (p *CodexProvider) ExtractSessionID(line string) string {
+	line = strings.TrimSpace(stripTerminalEscapes(line))
+	var id string
+	if strings.HasPrefix(line, "{") {
+		var ev struct {
+			Type     string `json:"type"`
+			ThreadID string `json:"thread_id"`
+		}
+		if json.Unmarshal([]byte(line), &ev) != nil || ev.Type != "thread.started" {
+			return ""
+		}
+		id = ev.ThreadID
+	} else if rest, ok := strings.CutPrefix(line, "session id:"); ok {
+		id = strings.TrimSpace(rest)
+	}
+	if !validSessionID(id) {
+		return ""
+	}
+	return id
 }
 
 var _ AgentProvider = (*CodexProvider)(nil)

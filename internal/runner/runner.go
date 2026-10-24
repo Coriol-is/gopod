@@ -228,7 +228,7 @@ func (r *Runner) Run(
 	// decisions → relevant preferences → facts → fallback).
 	var opts RunPromptOpts
 	if r.memory != nil {
-		compiled := r.memory.CompileContext(ctx, chatFolder, prompt)
+		compiled := r.memory.CompileContext(ctx, chatFolder, 0, prompt)
 		if compiled != "" {
 			opts.AppendSystemPrompt = compiled
 			r.log.Debug("injecting compiled memory context",
@@ -238,7 +238,7 @@ func (r *Runner) Run(
 	}
 
 	prov := r.ProviderForChat(chatFolder)
-	cmd := withModel(prov.RunCmd(prompt, opts.AppendSystemPrompt), prov, r.ModelForChat(chatFolder))
+	cmd := withModel(prov.RunCmd(prompt, opts.AppendSystemPrompt, SessionRef{}), prov, r.ModelForChat(chatFolder))
 	reply, err := r.execWithProvider(ctx, id, chatFolder, prov, cmd)
 	if err != nil {
 		return "", err
@@ -310,7 +310,7 @@ func (r *Runner) RunStream(
 	// Build memory context (same as Run).
 	var systemPrompt string
 	if r.memory != nil {
-		compiled := r.memory.CompileContext(ctx, chatFolder, prompt)
+		compiled := r.memory.CompileContext(ctx, chatFolder, 0, prompt)
 		if compiled != "" {
 			systemPrompt = compiled
 			r.log.Debug("injecting compiled memory context (stream)",
@@ -620,7 +620,7 @@ func (r *Runner) SetStore(s stateStore) { r.store = s }
 // using the Phase B policy-driven selection (kind-based budgets,
 // pinned items, recency weighting).
 type MemoryCompiler interface {
-	CompileContext(ctx context.Context, chatFolder, query string) string
+	CompileContext(ctx context.Context, chatFolder string, thread int, query string) string
 }
 
 // SetMemory wires the memory layer after construction.
@@ -647,7 +647,7 @@ func (r *Runner) ClearSession(ctx context.Context, chatFolder string, tier Tier,
 	if err != nil {
 		return err
 	}
-	_, err = r.d.Exec(ctx, id, r.provider.ClearSessionCmd(), nil)
+	_, err = r.d.Exec(ctx, id, r.provider.ClearSessionCmd(SessionRef{}), nil)
 	r.resetTurnCount(chatFolder)
 	return err
 }

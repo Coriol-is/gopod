@@ -19,7 +19,7 @@ func TestModelArgsPerProvider(t *testing.T) {
 
 func TestWithModelInsertsBeforePrompt(t *testing.T) {
 	claude := NewClaudeProvider("")
-	cmd := withModel(claude.RunCmd("hi", ""), claude, "opus")
+	cmd := withModel(claude.RunCmd("hi", "", SessionRef{}), claude, "opus")
 	if cmd[len(cmd)-1] != "hi" || cmd[len(cmd)-2] != "-p" {
 		t.Errorf("prompt no longer last: %v", cmd)
 	}
@@ -27,11 +27,11 @@ func TestWithModelInsertsBeforePrompt(t *testing.T) {
 		t.Errorf("model flag missing: %v", cmd)
 	}
 	codex := NewCodexProvider("")
-	cmd = withModel(codex.RunCmd("hi", ""), codex, "gpt-5")
+	cmd = withModel(codex.RunCmd("hi", "", SessionRef{}), codex, "gpt-5")
 	if cmd[len(cmd)-1] != "hi" || !containsSeq(cmd, "-m", "gpt-5") {
 		t.Errorf("codex cmd = %v", cmd)
 	}
-	if got := withModel(codex.RunCmd("hi", ""), codex, ""); !reflect.DeepEqual(got, codex.RunCmd("hi", "")) {
+	if got := withModel(codex.RunCmd("hi", "", SessionRef{}), codex, ""); !reflect.DeepEqual(got, codex.RunCmd("hi", "", SessionRef{})) {
 		t.Errorf("empty model must leave cmd untouched: %v", got)
 	}
 }

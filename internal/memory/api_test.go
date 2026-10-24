@@ -127,3 +127,19 @@ func TestSkillFileMatchesAgentInstructions(t *testing.T) {
 		t.Error("container/skills/memory/SKILL.md is out of sync with memory.AgentInstructions()")
 	}
 }
+
+func TestAPIAddRejectsConversationSummary(t *testing.T) {
+	s, ops, ts := newTestAPI(t)
+	tok := ts.Mint("chatA")
+	rr := do(s, http.MethodPost, "/memory/add", tok, `{"kind":"conversation_summary","content":"x"}`)
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "session compact") {
+		t.Fatalf("got %d %s", rr.Code, rr.Body.String())
+	}
+	if len(ops.chats) != 0 {
+		t.Errorf("Add must not be called, got %v", ops.chats)
+	}
+	rr = do(s, http.MethodPost, "/memory/add", tok, `{"kind":"decision","content":"x"}`)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("normal kind: got %d %s", rr.Code, rr.Body.String())
+	}
+}
