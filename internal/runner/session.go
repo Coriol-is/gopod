@@ -194,27 +194,32 @@ func announcesNewSession(prov AgentProvider, ref SessionRef) bool {
 }
 
 // captureSession stores the session id a new conversation's run
-// announced in its output (stdout and stderr; Codex prints it on
-// stderr in plain mode). It runs whatever the run's outcome: a failed or
-// stopped turn may still have created the session, and liveSession
-// discards the row next turn if it did not.
-func (r *Runner) captureSession(ctx context.Context, folder string, thread int, prov AgentProvider, outputs ...string) {
+// announced. It runs whatever the run's outcome: a failed or stopped
+// turn may still have created the session, and liveSession discards the
+// row next turn if it did not.
+//
+// Only stderr is read, and its first matching line wins. In plain mode
+// (the only mode RunCmd uses) Codex prints the `session id:` header on
+// stderr before anything else, while stdout is the model's reply: a
+// reply that prints a `session id:` line (prompt injection, or the agent
+// listing ~/.codex/sessions) must never decide which session this
+// conversation resumes. Should RunCmd ever switch to `--json`, where
+// thread.started on stdout is protocol output, this needs revisiting.
+func (r *Runner) captureSession(ctx context.Context, folder string, thread int, prov AgentProvider, stderr string) {
 	ctx = context.WithoutCancel(ctx) // a stopped turn still records its session
-	for _, out := range outputs {
-		for _, line := range strings.Split(out, "\n") {
-			id := prov.ExtractSessionID(line)
-			if id == "" {
-				continue
-			}
-			r.lockChat(folder)
-			err := r.store.PutSession(ctx, folder, thread, prov.Name(), id)
-			r.unlockChat(folder)
-			if err != nil {
-				r.log.Error("storing announced agent session failed",
-					slog.String("chat", folder), slog.Int("thread", thread), slog.Any("err", err))
-			}
-			return
+	for _, line := range strings.Split(stderr, "\n") {
+		id := prov.ExtractSessionID(line)
+		if id == "" {
+			continue
 		}
+		r.lockChat(folder)
+		err := r.store.PutSession(ctx, folder, thread, prov.Name(), id)
+		r.unlockChat(folder)
+		if err != nil {
+			r.log.Error("storing announced agent session failed",
+				slog.String("chat", folder), slog.Int("thread", thread), slog.Any("err", err))
+		}
+		return
 	}
 	r.log.Warn("agent announced no session id; the next turn starts a new conversation",
 		slog.String("chat", folder),

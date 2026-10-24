@@ -94,6 +94,11 @@ type fakeAgentHome struct {
 	failWritesTranscript bool
 	// codexQuiet makes a new codex conversation print no session id.
 	codexQuiet bool
+	// codexStdoutDecoy / codexStderrDecoy: a `session id:` line naming
+	// another session that a new codex conversation prints in its reply
+	// (stdout) or later in its stderr log, after the real header.
+	codexStdoutDecoy string
+	codexStderrDecoy string
 }
 
 func newFakeAgentHome(t *testing.T) *fakeAgentHome {
@@ -251,10 +256,17 @@ func (f *fakeAgentHome) agentLocked(cmd []string) *ExecResult {
 		}
 		id := uuid.NewString()
 		f.touchLocked("codex", id)
-		if f.codexQuiet {
-			return &ExecResult{Stdout: "reply\n"}
+		res := &ExecResult{Stdout: "reply\n"}
+		if f.codexStdoutDecoy != "" {
+			res.Stdout = "session id: " + f.codexStdoutDecoy + "\nreply\n"
 		}
-		return &ExecResult{Stdout: "reply\n", Stderr: "OpenAI Codex v0.164.0\n--------\nsession id: " + id + "\n--------\n"}
+		if !f.codexQuiet {
+			res.Stderr = "OpenAI Codex v0.164.0\n--------\nsession id: " + id + "\n--------\n"
+		}
+		if f.codexStderrDecoy != "" {
+			res.Stderr += "exec ls ~/.codex/sessions\nsession id: " + f.codexStderrDecoy + "\n"
+		}
+		return res
 	}
 	return &ExecResult{ExitCode: 127}
 }
@@ -750,5 +762,158 @@ func TestNoStoreKeepsImplicitSession(t *testing.T) {
 	ref, err := h.r.resolveSession(context.Background(), "cid", convChat, thread7, h.r.provider)
 	if err != nil || ref != (SessionRef{}) {
 		t.Fatalf("ref = %+v, %v; want the zero ref", ref, err)
+	}
+}
+
+// --- fix round 1 ---------------------------------------------------------
+
+// The session id of a new Codex conversation comes from the stderr
+// header only: a `session id:` line in the reply (stdout) or later in
+// the stderr log must never pick the session this conversation resumes.
+func TestCodexCaptureIgnoresDecoys(t *testing.T) {
+	type runFn func(h *convHarness, t *testing.T)
+	paths := map[string]runFn{
+		"sync": func(h *convHarness, t *testing.T) { h.run(t, thread7) },
+		"stream": func(h *convHarness, t *testing.T) {
+			if res := h.runStream(t, thread7); res.Err != nil {
+				t.Fatalf("stream: %v", res.Err)
+			}
+		},
+	}
+	for name, run := range paths {
+		t.Run(name+" stdout decoy, real stderr header", func(t *testing.T) {
+			h := newConvHarness(t, NewCodexProvider("img"))
+			h.home.seed("codex", testSessB) // another conversation's thread
+			h.store.PutSession(context.Background(), convChat, thread9, "codex", testSessB)
+			h.home.codexStdoutDecoy = testSessB
+			run(h, t)
+			got := h.row(thread7)
+			if got == testSessB || !validSessionID(got) || !h.home.has("codex", got) {
+				t.Fatalf("thread row = %q; want the id from the stderr header, not the decoy %s", got, testSessB)
+			}
+		})
+		t.Run(name+" stdout decoy only", func(t *testing.T) {
+			h := newConvHarness(t, NewCodexProvider("img"))
+			h.home.seed("codex", testSessB)
+			h.home.codexQuiet = true
+			h.home.codexStdoutDecoy = testSessB
+			run(h, t)
+			if got := h.row(thread7); got != "" {
+				t.Fatalf("thread row = %q from a stdout-only decoy; want none", got)
+			}
+		})
+		t.Run(name+" later stderr decoy", func(t *testing.T) {
+			h := newConvHarness(t, NewCodexProvider("img"))
+			h.home.seed("codex", testSessB)
+			h.home.codexStderrDecoy = testSessB
+			run(h, t)
+			if got := h.row(thread7); got == testSessB || !validSessionID(got) {
+				t.Fatalf("thread row = %q; the first stderr header must win", got)
+			}
+		})
+	}
+}
+
+// stopHarness runs RunStream against fakeAgentExec, whose processes stay
+// alive until the test ends them, so a Stop can overlap the next turn.
+func newStopHarness(t *testing.T, prov AgentProvider) (*Runner, *fakeAgentExec, *fakeSessionStore) {
+	t.Helper()
+	fx := newFakeAgentExec()
+	st := newFakeSessionStore()
+	r := &Runner{
+		ex:             fx,
+		provider:       prov,
+		log:            slog.New(slog.NewTextHandler(io.Discard, nil)),
+		turnCount:      make(map[convKey]int),
+		activity:       make(map[string]time.Time),
+		memory:         nopMemory{},
+		store:          st,
+		containerLocks: make(map[string]*sync.Mutex),
+		ensureFn: func(context.Context, string, Tier, *mountsec.Allowlist) (string, error) {
+			return "cid", nil
+		},
+	}
+	return r, fx, st
+}
+
+// A Stop during a new conversation's first turn: the queue starts the
+// next turn while the killed agent is still shutting down. That turn
+// must wait for it and then resume the session the first turn created,
+// not start a second conversation (Codex) or drop the row because the
+// transcript was not written yet (Claude).
+func TestStopDuringFirstTurnNextTurnResumesIt(t *testing.T) {
+	for _, prov := range providersUnderTest() {
+		t.Run(prov.Name(), func(t *testing.T) {
+			r, fx, st := newStopHarness(t, prov)
+			fx.killGate = make(chan struct{})
+			var transcript sync.Mutex
+			written := false
+			fx.onExec = func(cmd []string) *ExecResult {
+				if len(cmd) > 0 && reflect.DeepEqual(cmd, prov.SessionExistsCmd(cmd[len(cmd)-1])) {
+					transcript.Lock()
+					defer transcript.Unlock()
+					if written {
+						return &ExecResult{}
+					}
+					return &ExecResult{ExitCode: 1}
+				}
+				return nil
+			}
+
+			ctx1, cancel1 := context.WithCancel(context.Background())
+			defer cancel1()
+			stream1, err := r.RunStream(ctx1, convChat, thread7, TierRegistered, nil, "first")
+			if err != nil {
+				t.Fatal(err)
+			}
+			p1 := <-fx.started
+			first, resume := sessionOf(t, p1.cmd[4:])
+			if resume {
+				t.Fatalf("first turn resumed: %q", p1.cmd)
+			}
+			if prov.AnnouncesSessionID() {
+				first = "c0dec0de-1111-4222-8333-444444444444"
+				p1.stderrW.Write([]byte("session id: " + first + "\n"))
+			}
+			cancel1() // Stop; the kill hangs in its grace period
+			go func() {
+				for range stream1.Chunks {
+				}
+			}()
+
+			second := make(chan *AgentStream, 1)
+			go func() {
+				s, err := r.RunStream(context.Background(), convChat, thread7, TierRegistered, nil, "second")
+				if err != nil {
+					t.Error(err)
+				}
+				second <- s
+			}()
+			select {
+			case p := <-fx.started:
+				t.Fatalf("next turn started while the stopped one was dying: %q", p.cmd)
+			case <-time.After(200 * time.Millisecond):
+			}
+
+			// The dying agent saves its transcript, then exits.
+			transcript.Lock()
+			written = true
+			transcript.Unlock()
+			close(fx.killGate)
+
+			select {
+			case p2 := <-fx.started:
+				wantResume(t, p2.cmd[4:], first)
+				p2.exit(0)
+			case <-time.After(5 * time.Second):
+				t.Fatal("next turn never started")
+			}
+			if s := <-second; s != nil {
+				readResult(t, s)
+			}
+			if got := st.row(convChat, thread7, prov.Name()); got != first {
+				t.Fatalf("thread row = %q, want %q", got, first)
+			}
+		})
 	}
 }

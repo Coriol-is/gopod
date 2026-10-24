@@ -259,11 +259,11 @@ func (r *Runner) Run(
 	cmd := withModel(prov.RunCmd(prompt, opts.AppendSystemPrompt, ref), prov, r.ModelForChat(chatFolder))
 	res, err := r.execAgent(ctx, id, chatFolder, prov, cmd)
 	if announcesNewSession(prov, ref) {
-		var stdout, stderr string
+		var stderr string
 		if res != nil {
-			stdout, stderr = res.Stdout, res.Stderr
+			stderr = res.Stderr
 		}
-		r.captureSession(ctx, chatFolder, thread, prov, stdout, stderr)
+		r.captureSession(ctx, chatFolder, thread, prov, stderr)
 	}
 	if err != nil {
 		return "", err
@@ -348,20 +348,22 @@ func (r *Runner) RunStream(
 	}
 
 	prov := r.ProviderForChat(chatFolder)
-	ref, err := r.resolveSession(ctx, id, chatFolder, thread, prov)
-	if err != nil {
-		return nil, err
+	model := r.ModelForChat(chatFolder)
+	mkCmd := func(ref SessionRef) []string {
+		return withModel(prov.RunCmd(prompt, systemPrompt, ref), prov, model)
 	}
-	cmd := withModel(prov.RunCmd(prompt, systemPrompt, ref), prov, r.ModelForChat(chatFolder))
-	return r.startStream(ctx, id, convKey{chatFolder, thread}, tier, allowlist, prov, prompt, cmd, announcesNewSession(prov, ref))
+	return r.startStream(ctx, id, convKey{chatFolder, thread}, tier, allowlist, prov, prompt, mkCmd)
 }
 
-// startStream runs the agent command cmd in container id and streams
-// its output. It is RunStream after Ensure, session resolution and
-// prompt assembly. capture is set when cmd starts a conversation whose
-// id the provider announces; it is read from the output once the run
-// ends, whatever the outcome, and stored before Result is sent so the
-// conversation's next turn resumes it.
+// startStream runs the agent command mkCmd builds for the
+// conversation's session in container id and streams its output. It is
+// RunStream after Ensure and prompt assembly.
+//
+// The session is resolved only once the chat's agent slot is held, and
+// a new conversation's announced id is stored before the slot is
+// released: after a Stop the next turn may start before this one's
+// agent is dead, and it must see the session the dying turn created
+// (and its transcript) rather than start a second one.
 //
 // Cancelling ctx stops the turn: the agent's process group is killed
 // inside the container (killAgent), the stream ends, and Result carries
@@ -377,14 +379,20 @@ func (r *Runner) startStream(
 	allowlist *mountsec.Allowlist,
 	prov AgentProvider,
 	prompt string,
-	cmd []string,
-	capture bool,
+	mkCmd func(SessionRef) []string,
 ) (*AgentStream, error) {
 	chatFolder := conv.folder
 	releaseSlot, err := r.acquireAgentSlot(ctx, chatFolder)
 	if err != nil {
 		return nil, err
 	}
+	ref, err := r.resolveSession(ctx, id, chatFolder, conv.thread, prov)
+	if err != nil {
+		releaseSlot()
+		return nil, err
+	}
+	cmd := mkCmd(ref)
+	capture := announcesNewSession(prov, ref)
 
 	// Restore config from backup if needed.
 	if restoreCmd := prov.RestoreConfigCmd(); restoreCmd != nil {
@@ -449,11 +457,11 @@ func (r *Runner) startStream(
 		if !<-killed {
 			r.removePidFile(ctx, id, pidFile)
 		}
+		if capture {
+			r.captureSession(ctx, chatFolder, conv.thread, prov, stderr)
+		}
 		releaseSlot()
 
-		if capture {
-			r.captureSession(ctx, chatFolder, conv.thread, prov, fullOut, stderr)
-		}
 		r.touch(chatFolder)
 		fullText := strings.TrimSpace(fullOut)
 
