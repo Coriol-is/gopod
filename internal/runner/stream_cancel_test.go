@@ -217,7 +217,7 @@ func newStreamTestRunner(t *testing.T) *streamTestRunner {
 	r := &Runner{
 		ex:           fx,
 		log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
-		turnCount:    make(map[string]int),
+		turnCount:    make(map[convKey]int),
 		activity:     make(map[string]time.Time),
 		compactAfter: 30,
 		memory:       nopMemory{},
@@ -229,7 +229,7 @@ func newStreamTestRunner(t *testing.T) *streamTestRunner {
 func (s *streamTestRunner) start(t *testing.T, ctx context.Context, prov AgentProvider) (*AgentStream, *fakeProc) {
 	t.Helper()
 	cmd := prov.RunCmd("hi", "", SessionRef{})
-	stream, err := s.r.startStream(ctx, "cid", "chat", TierRegistered, nil, prov, "hi", cmd)
+	stream, err := s.r.startStream(ctx, "cid", convKey{"chat", 0}, TierRegistered, nil, prov, "hi", cmd)
 	if err != nil {
 		t.Fatalf("startStream: %v", err)
 	}
@@ -280,7 +280,7 @@ func TestStartStreamNormalRunIngestsAndRemovesPidFile(t *testing.T) {
 			case <-time.After(2 * time.Second):
 				t.Fatal("reply not ingested")
 			}
-			if n := s.r.getTurnCount("chat"); n != 1 {
+			if n := s.r.getTurnCount("chat", 0); n != 1 {
 				t.Errorf("turn count = %d, want 1", n)
 			}
 			var rm, kill int
@@ -356,7 +356,7 @@ func TestStartStreamCancelKillsAndSkipsPostRun(t *testing.T) {
 				t.Fatalf("cancelled turn ingested: %q", got)
 			case <-time.After(200 * time.Millisecond):
 			}
-			if n := s.r.getTurnCount("chat"); n != 0 {
+			if n := s.r.getTurnCount("chat", 0); n != 0 {
 				t.Errorf("turn count = %d, want 0", n)
 			}
 		})
@@ -422,7 +422,7 @@ func TestStartStreamNextTurnWaitsForKill(t *testing.T) {
 
 	second := make(chan error, 1)
 	go func() {
-		_, err := s.r.startStream(context.Background(), "cid", "chat", TierRegistered, nil, prov, "next", prov.RunCmd("next", "", SessionRef{}))
+		_, err := s.r.startStream(context.Background(), "cid", convKey{"chat", 0}, TierRegistered, nil, prov, "next", prov.RunCmd("next", "", SessionRef{}))
 		second <- err
 	}()
 

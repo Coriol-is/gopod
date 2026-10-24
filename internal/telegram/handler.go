@@ -284,7 +284,7 @@ func (b *Bot) runAgentSync(ctx context.Context, item queue.Item) {
 	if item.Resumed {
 		prompt = resumePrompt(item.Text)
 	}
-	reply, err := b.runner.Run(ctx, item.Folder, tier, b.allowlist, prompt)
+	reply, err := b.runner.Run(ctx, item.Folder, item.ThreadID, tier, b.allowlist, prompt)
 	if err != nil {
 		// ❌ reaction on error
 		if item.MessageID > 0 {

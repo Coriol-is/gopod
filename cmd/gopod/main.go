@@ -233,7 +233,7 @@ func run() error {
 				r.SetMemory(&memoryCompilerAdapter{mem: agentMemory})
 
 				// Session compact callback: summarize + store + supersede.
-				r.SetCompactFn(func(ctx context.Context, chatFolder string) error {
+				r.SetCompactFn(func(ctx context.Context, chatFolder string, thread int) error {
 					promptFn := func(c context.Context, f, p string) (string, error) {
 						return r.RunFresh(c, f, runner.TierRegistered, allowlist, p)
 					}
@@ -245,7 +245,7 @@ func run() error {
 						return err
 					}
 					if summary != "" {
-						agentMemory.AddInThread(ctx, chatFolder, 0, "conversation_summary", "session compact", summary, "compact") // thread wiring: Task 9
+						agentMemory.AddInThread(ctx, chatFolder, thread, "conversation_summary", "session compact", summary, "compact")
 					}
 					return nil
 				})
@@ -414,7 +414,9 @@ func run() error {
 			hadModel := agentRunner.ModelForChat(chatFolder) != ""
 			agentRunner.SetChatModel(chatFolder, "")
 			st.SetState(context.Background(), "model:"+chatFolder, "")
-			agentRunner.ClearSession(context.Background(), chatFolder, runner.TierRegistered, allowlist)
+			// Provider is per chat; the switch clears the main
+			// conversation of the new provider. Thread sessions stay.
+			agentRunner.ClearSession(context.Background(), chatFolder, 0, runner.TierRegistered, allowlist)
 			msg := fmt.Sprintf("Switched to %s. Session cleared for fresh start.", name)
 			if hadModel {
 				msg += " Model reset to the provider default; use /model to pick one for " + name + "."
@@ -426,10 +428,13 @@ func run() error {
 	// /clear + /compact commands.
 	if agentRunner != nil {
 		control.RegisterSessionCommands(router, func(ctx context.Context, folder string, clearOnly bool) (string, error) {
+			// Control commands do not carry their thread yet (Task 10):
+			// /clear and /compact act on the main conversation.
+			const thread = 0
 			if clearOnly {
-				return "", agentRunner.ClearSession(ctx, folder, runner.TierRegistered, allowlist)
+				return "", agentRunner.ClearSession(ctx, folder, thread, runner.TierRegistered, allowlist)
 			}
-			return agentRunner.CompactSession(ctx, folder, runner.TierRegistered, allowlist)
+			return agentRunner.CompactSession(ctx, folder, thread, runner.TierRegistered, allowlist)
 		}, chatFolderLookup)
 	}
 

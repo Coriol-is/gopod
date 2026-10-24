@@ -45,16 +45,17 @@ type Runner struct {
 	extractFn func(ctx context.Context, chatFolder, userMsg, agentReply string)
 
 	// compactFn is the callback for session compaction. Summarizes
-	// the conversation and stores it in memory. Set via SetCompactFn.
-	compactFn func(ctx context.Context, chatFolder string) error
+	// one conversation and stores it in memory. Set via SetCompactFn.
+	compactFn func(ctx context.Context, chatFolder string, thread int) error
 
-	// turnCount tracks turns per chat for auto-compact.
+	// turnCount tracks turns per conversation for auto-compact.
 	turnCountMu sync.Mutex
-	turnCount   map[string]int
+	turnCount   map[convKey]int
 
-	// lastCompact tracks last compact time per chat (for interval/daily triggers).
-	// Protected by activityMu (reuses the same lock as activity map).
-	lastCompact map[string]time.Time
+	// lastCompact tracks last compact time per conversation (for
+	// interval/daily triggers). Protected by activityMu (reuses the
+	// same lock as activity map).
+	lastCompact map[convKey]time.Time
 
 	// compactAfter triggers auto-compact after N turns. 0 = disabled.
 	compactAfter int
@@ -142,7 +143,7 @@ func New(
 		log:            log,
 		containerLocks: make(map[string]*sync.Mutex),
 		activity:       make(map[string]time.Time),
-		turnCount:      make(map[string]int),
+		turnCount:      make(map[convKey]int),
 		compactAfter:   30,
 	}, nil
 }
@@ -205,14 +206,16 @@ func (r *Runner) Ensure(
 }
 
 // Run is the high-level "telegram message → claude reply" entry. It
-// ensures the chat's container is running, runs the prompt via
-// claude -p, and returns the reply.
+// ensures the chat's container is running, runs the prompt in the
+// conversation (chatFolder, thread) — thread 0 is the main chat — and
+// returns the reply.
 //
 // Maps ErrNotLoggedIn through unchanged so the telegram handler can
 // distinguish "needs /login" from real failures.
 func (r *Runner) Run(
 	ctx context.Context,
 	chatFolder string,
+	thread int,
 	tier Tier,
 	allowlist *mountsec.Allowlist,
 	prompt string,
@@ -228,7 +231,7 @@ func (r *Runner) Run(
 	// decisions → relevant preferences → facts → fallback).
 	var opts RunPromptOpts
 	if r.memory != nil {
-		compiled := r.memory.CompileContext(ctx, chatFolder, 0, prompt)
+		compiled := r.memory.CompileContext(ctx, chatFolder, thread, prompt)
 		if compiled != "" {
 			opts.AppendSystemPrompt = compiled
 			r.log.Debug("injecting compiled memory context",
@@ -256,15 +259,16 @@ func (r *Runner) Run(
 	// Auto-compact check: if turn count exceeds threshold, compact
 	// the session asynchronously. Reset count IMMEDIATELY so
 	// concurrent/subsequent turns don't re-trigger.
-	turns := r.incrementTurnCount(chatFolder)
+	turns := r.incrementTurnCount(chatFolder, thread)
 	if r.compactAfter > 0 && turns >= r.compactAfter {
-		r.resetTurnCount(chatFolder) // reset BEFORE async compact
+		r.resetTurnCount(chatFolder, thread) // reset BEFORE async compact
 		r.log.Info("auto-compact triggered",
 			slog.String("chat", chatFolder),
+			slog.Int("thread", thread),
 			slog.Int("turns", turns))
 		go func() {
 			bgCtx := context.Background()
-			r.CompactSession(bgCtx, chatFolder, tier, allowlist)
+			r.CompactSession(bgCtx, chatFolder, thread, tier, allowlist)
 		}()
 	}
 
@@ -297,6 +301,7 @@ type AgentStream struct {
 func (r *Runner) RunStream(
 	ctx context.Context,
 	chatFolder string,
+	thread int,
 	tier Tier,
 	allowlist *mountsec.Allowlist,
 	prompt string,
@@ -310,7 +315,7 @@ func (r *Runner) RunStream(
 	// Build memory context (same as Run).
 	var systemPrompt string
 	if r.memory != nil {
-		compiled := r.memory.CompileContext(ctx, chatFolder, 0, prompt)
+		compiled := r.memory.CompileContext(ctx, chatFolder, thread, prompt)
 		if compiled != "" {
 			systemPrompt = compiled
 			r.log.Debug("injecting compiled memory context (stream)",
@@ -321,7 +326,7 @@ func (r *Runner) RunStream(
 
 	prov := r.ProviderForChat(chatFolder)
 	cmd := withModel(prov.RunCmd(prompt, systemPrompt, SessionRef{}), prov, r.ModelForChat(chatFolder))
-	return r.startStream(ctx, id, chatFolder, tier, allowlist, prov, prompt, cmd)
+	return r.startStream(ctx, id, convKey{chatFolder, thread}, tier, allowlist, prov, prompt, cmd)
 }
 
 // startStream runs the agent command cmd in container id and streams
@@ -335,13 +340,15 @@ func (r *Runner) RunStream(
 // has finished, so the next streamed turn of the chat waits for it.
 func (r *Runner) startStream(
 	ctx context.Context,
-	id, chatFolder string,
+	id string,
+	conv convKey,
 	tier Tier,
 	allowlist *mountsec.Allowlist,
 	prov AgentProvider,
 	prompt string,
 	cmd []string,
 ) (*AgentStream, error) {
+	chatFolder := conv.folder
 	releaseSlot, err := r.acquireAgentSlot(ctx, chatFolder)
 	if err != nil {
 		return nil, err
@@ -446,13 +453,14 @@ func (r *Runner) startStream(
 		if r.memory != nil && r.extractFn != nil && fullText != "" {
 			go r.extractAndIngest(context.Background(), chatFolder, prompt, fullText)
 		}
-		turns := r.incrementTurnCount(chatFolder)
+		turns := r.incrementTurnCount(chatFolder, conv.thread)
 		if r.compactAfter > 0 && turns >= r.compactAfter {
-			r.resetTurnCount(chatFolder)
+			r.resetTurnCount(chatFolder, conv.thread)
 			r.log.Info("auto-compact triggered (stream)",
 				slog.String("chat", chatFolder),
+				slog.Int("thread", conv.thread),
 				slog.Int("turns", turns))
-			go r.CompactSession(context.Background(), chatFolder, tier, allowlist)
+			go r.CompactSession(context.Background(), chatFolder, conv.thread, tier, allowlist)
 		}
 	}()
 
@@ -631,8 +639,9 @@ func (r *Runner) SetExtractFn(fn func(ctx context.Context, chatFolder, userMsg, 
 	r.extractFn = fn
 }
 
-// SetCompactFn wires the session compact callback (summarize → store → clear).
-func (r *Runner) SetCompactFn(fn func(ctx context.Context, chatFolder string) error) {
+// SetCompactFn wires the session compact callback (summarize → store →
+// clear) for one conversation (chatFolder, thread).
+func (r *Runner) SetCompactFn(fn func(ctx context.Context, chatFolder string, thread int) error) {
 	r.compactFn = fn
 }
 
@@ -642,13 +651,13 @@ func (r *Runner) SetCompactAfter(n int) { r.compactAfter = n }
 // ClearSession removes Claude Code session files for a chat, forcing
 // the next --continue to start a fresh conversation. Memory is NOT
 // affected — only the conversation context is cleared.
-func (r *Runner) ClearSession(ctx context.Context, chatFolder string, tier Tier, allowlist *mountsec.Allowlist) error {
+func (r *Runner) ClearSession(ctx context.Context, chatFolder string, thread int, tier Tier, allowlist *mountsec.Allowlist) error {
 	id, err := r.Ensure(ctx, chatFolder, tier, allowlist)
 	if err != nil {
 		return err
 	}
 	_, err = r.d.Exec(ctx, id, r.provider.ClearSessionCmd(SessionRef{}), nil)
-	r.resetTurnCount(chatFolder)
+	r.resetTurnCount(chatFolder, thread)
 	return err
 }
 
@@ -656,40 +665,63 @@ func (r *Runner) ClearSession(ctx context.Context, chatFolder string, tier Tier,
 // summary in memory, then clears the session. The summary becomes
 // the bridge between the old conversation and the new one — the
 // Context Compiler injects it via the reserved summary slot.
-func (r *Runner) CompactSession(ctx context.Context, chatFolder string, tier Tier, allowlist *mountsec.Allowlist) (string, error) {
+func (r *Runner) CompactSession(ctx context.Context, chatFolder string, thread int, tier Tier, allowlist *mountsec.Allowlist) (string, error) {
 	if r.compactFn == nil {
-		return "", r.ClearSession(ctx, chatFolder, tier, allowlist)
+		return "", r.ClearSession(ctx, chatFolder, thread, tier, allowlist)
 	}
-	if r.getTurnCount(chatFolder) == 0 {
+	if r.getTurnCount(chatFolder, thread) == 0 {
 		return "nothing to compact (0 turns)", nil
 	}
-	if err := r.compactFn(ctx, chatFolder); err != nil {
+	if err := r.compactFn(ctx, chatFolder, thread); err != nil {
 		r.log.Warn("compact summarize failed, clearing anyway",
-			slog.String("chat", chatFolder), slog.Any("err", err))
+			slog.String("chat", chatFolder), slog.Int("thread", thread), slog.Any("err", err))
 	}
-	if err := r.ClearSession(ctx, chatFolder, tier, allowlist); err != nil {
+	if err := r.ClearSession(ctx, chatFolder, thread, tier, allowlist); err != nil {
 		return "", err
 	}
 	return "compacted", nil
 }
 
-func (r *Runner) incrementTurnCount(chatFolder string) int {
-	r.turnCountMu.Lock()
-	defer r.turnCountMu.Unlock()
-	r.turnCount[chatFolder]++
-	return r.turnCount[chatFolder]
+// convKey names one conversation: a chat folder and a Telegram thread
+// (0 = the main chat). Containers stay per chat; sessions, turn
+// counters and compaction are per conversation.
+type convKey struct {
+	folder string
+	thread int
 }
 
-func (r *Runner) getTurnCount(chatFolder string) int {
+func (r *Runner) incrementTurnCount(chatFolder string, thread int) int {
 	r.turnCountMu.Lock()
 	defer r.turnCountMu.Unlock()
-	return r.turnCount[chatFolder]
+	k := convKey{chatFolder, thread}
+	r.turnCount[k]++
+	return r.turnCount[k]
 }
 
-func (r *Runner) resetTurnCount(chatFolder string) {
+func (r *Runner) getTurnCount(chatFolder string, thread int) int {
 	r.turnCountMu.Lock()
 	defer r.turnCountMu.Unlock()
-	r.turnCount[chatFolder] = 0
+	return r.turnCount[convKey{chatFolder, thread}]
+}
+
+func (r *Runner) resetTurnCount(chatFolder string, thread int) {
+	r.turnCountMu.Lock()
+	defer r.turnCountMu.Unlock()
+	r.turnCount[convKey{chatFolder, thread}] = 0
+}
+
+// activeConversations returns the conversations with at least one
+// turn since their last compact or clear.
+func (r *Runner) activeConversations() []convKey {
+	r.turnCountMu.Lock()
+	defer r.turnCountMu.Unlock()
+	out := make([]convKey, 0, len(r.turnCount))
+	for k, n := range r.turnCount {
+		if n > 0 {
+			out = append(out, k)
+		}
+	}
+	return out
 }
 
 // extractAndIngest is the background callback for Phase A. Runs
