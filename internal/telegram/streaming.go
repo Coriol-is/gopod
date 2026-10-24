@@ -278,7 +278,27 @@ loop:
 		}
 	}
 
-	res := <-stream.Result
+	// A stop can race the end of the stream: select picks at random
+	// when Chunks is closed and stop is ready, and a stop can land while
+	// waiting for Result. Either way the stop already cancelled the run,
+	// so the turn ends stopped with the text the user saw, never done.
+	var res runner.RunResult
+	select {
+	case <-stop:
+		return b.finishStopped(ctx, item, stream, full.String())
+	default:
+	}
+	select {
+	case res = <-stream.Result:
+	case <-stop:
+		return b.finishStopped(ctx, item, stream, full.String())
+	}
+	select {
+	case <-stop:
+		return b.finishStopped(ctx, item, stream, full.String())
+	default:
+	}
+
 	if res.Err != nil {
 		if placeholder != 0 {
 			b.editMessage(ctx, item.ChatID, placeholder, "")

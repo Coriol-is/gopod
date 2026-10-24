@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/go-telegram/bot/models"
 
@@ -172,4 +173,107 @@ func TestStreamReply_StopDeliversPartial(t *testing.T) {
 	if b.inflightStop(item.ID) == nil {
 		t.Error("streamReply must not unregister; runAgentStreaming owns the registration")
 	}
+}
+
+// TestStreamReply_StopRacingStreamEndEndsStopped: the stop fired
+// before the stream's end is processed, with Chunks already closed and
+// Result already sent, so every select sees both ready. Whichever case
+// wins, the turn must end stopped with exactly one final message.
+func TestStreamReply_StopRacingStreamEndEndsStopped(t *testing.T) {
+	for i := 0; i < 50; i++ {
+		fake := &fakeTelegram{}
+		fake.respond = func(method string, _ map[string]string) (int, string) {
+			if method == "sendMessage" {
+				return sentMessage("777")
+			}
+			return http.StatusOK, `{"ok":true,"result":true}`
+		}
+		b, item := newStreamFixture(t, fake)
+		unregister := b.registerInflight(item.ID, func() {})
+		b.bindDraft(item.ID, item.ChatID, 999)
+		b.handleGenerationStopped(context.Background(), stopUpdate(item.ChatID, 999))
+
+		chunks := make(chan string)
+		close(chunks)
+		result := make(chan runner.RunResult, 1)
+		result <- runner.RunResult{FullText: "the whole answer"}
+		close(result)
+
+		err := b.streamReply(context.Background(), item, &runner.AgentStream{Chunks: chunks, Result: result})
+		unregister()
+		if !errors.Is(err, queue.ErrStopped) {
+			t.Fatalf("iteration %d: err = %v, want queue.ErrStopped", i, err)
+		}
+		sends := fake.callsTo("sendMessage")
+		if len(sends) != 1 {
+			t.Fatalf("iteration %d: sendMessage calls = %d, want 1", i, len(sends))
+		}
+		if got := sends[0].Form["text"]; strings.Contains(got, "whole answer") {
+			t.Fatalf("iteration %d: final text = %q, want the stopped reply, not the full one", i, got)
+		}
+		if got := countBotMessages(t, b, item); got != 1 {
+			t.Fatalf("iteration %d: recorded replies = %d, want 1", i, got)
+		}
+	}
+}
+
+// TestStreamReply_StopWhileWaitingForResult: the stream's chunks end,
+// then the stop lands while streamReply waits for Result.
+func TestStreamReply_StopWhileWaitingForResult(t *testing.T) {
+	fake := &fakeTelegram{}
+	fake.respond = func(method string, _ map[string]string) (int, string) {
+		if method == "sendMessage" {
+			return sentMessage("777")
+		}
+		return http.StatusOK, `{"ok":true,"result":true}`
+	}
+	b, item := newStreamFixture(t, fake)
+	defer b.registerInflight(item.ID, func() {})()
+
+	chunks := make(chan string)
+	result := make(chan runner.RunResult, 1)
+	errc := make(chan error, 1)
+	go func() {
+		errc <- b.streamReply(context.Background(), item, &runner.AgentStream{Chunks: chunks, Result: result})
+	}()
+	chunks <- "partial"
+	waitFor(t, "draft with partial", draftShowing(fake, "partial"))
+	drafts := fake.callsTo("sendMessageDraft")
+	var draftID int
+	for _, c := range drafts[len(drafts)-1].Form["draft_id"] {
+		draftID = draftID*10 + int(c-'0')
+	}
+	close(chunks)
+	time.Sleep(30 * time.Millisecond) // let streamReply leave the loop and block on Result
+	b.handleGenerationStopped(context.Background(), stopUpdate(item.ChatID, draftID))
+
+	select {
+	case err := <-errc:
+		if !errors.Is(err, queue.ErrStopped) {
+			t.Fatalf("err = %v, want queue.ErrStopped", err)
+		}
+	case <-time.After(2 * time.Second):
+		result <- runner.RunResult{FullText: "partial and the rest"}
+		t.Fatalf("stop while waiting for Result was ignored (streamReply returned %v after Result)", <-errc)
+	}
+	result <- runner.RunResult{FullText: "partial and the rest"}
+	close(result)
+	sends := fake.callsTo("sendMessage")
+	if len(sends) != 1 || strings.Contains(sends[0].Form["text"], "the rest") {
+		t.Fatalf("sends = %+v, want one message with the partial text", sends)
+	}
+	if got := countBotMessages(t, b, item); got != 1 {
+		t.Errorf("recorded replies = %d, want 1", got)
+	}
+}
+
+// countBotMessages counts the rows recordReply persisted. The fixture
+// stores no inbound messages, so every row is an outbound reply.
+func countBotMessages(t *testing.T, b *Bot, _ queue.Item) int {
+	t.Helper()
+	n, err := b.store.CountMessages(context.Background())
+	if err != nil {
+		t.Fatalf("CountMessages: %v", err)
+	}
+	return int(n)
 }
