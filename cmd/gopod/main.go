@@ -427,10 +427,9 @@ func run() error {
 
 	// /clear + /compact commands.
 	if agentRunner != nil {
-		control.RegisterSessionCommands(router, func(ctx context.Context, folder string, clearOnly bool) (string, error) {
-			// Control commands do not carry their thread yet (Task 10):
-			// /clear and /compact act on the main conversation.
-			const thread = 0
+		// /clear and /compact act on the conversation they were sent
+		// in: thread comes from the command's Caller (0 = main chat).
+		control.RegisterSessionCommands(router, func(ctx context.Context, folder string, thread int, clearOnly bool) (string, error) {
 			if clearOnly {
 				return "", agentRunner.ClearSession(ctx, folder, thread, runner.TierRegistered, allowlist)
 			}

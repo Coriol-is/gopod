@@ -144,6 +144,8 @@ func (s *Scheduler) runTask(ctx context.Context, t store.TaskRecord, now int64) 
 
 	// 2. Push the prompt through the queue as if it were a Telegram
 	// message. Source/SourceID make a re-fired slot a no-op.
+	// No ThreadID: scheduled tasks run in the main conversation
+	// (thread 0), never in a private-chat topic (threads spec).
 	turnID, dup := s.queue.Enqueue(ctx, queue.Item{
 		Source:   "task",
 		SourceID: taskSourceID(t.ID, slot),

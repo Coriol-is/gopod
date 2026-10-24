@@ -30,8 +30,8 @@ func resumePrompt(userText string) string {
 }
 
 // NewDoneHook returns a queue.OnDone hook that reacts ❌ and explains
-// when a turn was abandoned as a crash loop. Every other completion is
-// already handled by the agent handler itself.
+// when a turn was abandoned as a crash loop, in the turn's thread.
+// Every other completion is already handled by the agent handler itself.
 func (b *Bot) NewDoneHook() func(queue.Item, error) {
 	return func(it queue.Item, err error) {
 		if !errors.Is(err, queue.ErrCrashLoop) || it.ChatID == 0 || b.api == nil {
@@ -42,7 +42,7 @@ func (b *Bot) NewDoneHook() func(queue.Item, error) {
 		if it.MessageID > 0 {
 			b.react(ctx, it.ChatID, it.MessageID, emojiError)
 		}
-		b.replyTo(ctx, it.ChatID, it.MessageID, crashLoopNotice)
+		b.replyTo(ctx, it.ChatID, it.ThreadID, it.MessageID, crashLoopNotice)
 	}
 }
 

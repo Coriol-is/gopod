@@ -58,6 +58,7 @@ type Command struct {
 // Caller describes the origin of a Command. Frontends populate this.
 type Caller struct {
     ChatID   int64  // Telegram chat ID; 0 for CLI/socket
+    ThreadID int    // private-chat topic the command came from; 0 = main chat / CLI. Routing only, never authorization
     UserID   int64  // Telegram user ID; 0 for non-Telegram
     Username string // Telegram username if available
     Source   Source // "telegram" | "cli" | "socket"

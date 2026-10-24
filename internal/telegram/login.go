@@ -27,6 +27,10 @@ type loginSession struct {
 	cancel context.CancelFunc
 	chatID int64
 	folder string
+	// thread is the private-chat topic /login was sent in (0 = main
+	// chat). The session stays per chat; every message of the flow
+	// answers in this topic.
+	thread int
 
 	// awaitsCode is true for the OAuth code flow (Claude), where the
 	// user pastes a code back as their next message. The device flow
@@ -99,23 +103,24 @@ func (b *Bot) loginHandlerReal(ctx context.Context, _ *bot.Bot, update *models.U
 	}
 	m := update.Message
 	b.persistMessage(ctx, m)
+	thread := inboundThreadID(m)
 
 	if b.runner == nil {
-		b.replyText(ctx, m.Chat.ID,
+		b.replyText(ctx, m.Chat.ID, thread,
 			"Runner is not available. Is Docker running?")
 		return
 	}
 
 	rc, ok := b.resolveRegistered(ctx, m)
 	if !ok {
-		b.replyText(ctx, m.Chat.ID,
+		b.replyText(ctx, m.Chat.ID, thread,
 			"This chat is not registered. The owner can register it with /register.")
 		return
 	}
 
 	// Refuse if already in a login session.
 	if existing := b.logins.get(m.Chat.ID); existing != nil {
-		b.replyText(ctx, m.Chat.ID,
+		b.replyText(ctx, m.Chat.ID, thread,
 			"A /login session is already active for this chat. "+
 				"Paste the auth code from the browser, or wait for the session to time out.")
 		return
@@ -132,11 +137,11 @@ func (b *Bot) loginHandlerReal(ctx context.Context, _ *bot.Bot, update *models.U
 		b.log.Error("/login: ensure container failed",
 			slog.String("folder", rc.Folder),
 			slog.Any("err", err))
-		b.replyText(ctx, m.Chat.ID, fmt.Sprintf("Failed to start container: %v", err))
+		b.replyText(ctx, m.Chat.ID, thread, fmt.Sprintf("Failed to start container: %v", err))
 		return
 	}
 
-	b.replyText(ctx, m.Chat.ID, "Starting authentication flow...")
+	b.replyText(ctx, m.Chat.ID, thread, "Starting authentication flow...")
 
 	// Spawn interactive exec.
 	loginCtx, loginCancel := context.WithTimeout(context.Background(), loginTimeout)
@@ -151,7 +156,7 @@ func (b *Bot) loginHandlerReal(ctx context.Context, _ *bot.Bot, update *models.U
 		b.log.Error("/login: ExecInteractive failed",
 			slog.String("folder", rc.Folder),
 			slog.Any("err", err))
-		b.replyText(ctx, m.Chat.ID, fmt.Sprintf("Failed to start login: %v", err))
+		b.replyText(ctx, m.Chat.ID, thread, fmt.Sprintf("Failed to start login: %v", err))
 		return
 	}
 
@@ -190,7 +195,7 @@ func (b *Bot) loginHandlerReal(ctx context.Context, _ *bot.Bot, update *models.U
 	if url == "" {
 		loginCancel()
 		exec.DrainAndClose()
-		b.replyText(ctx, m.Chat.ID,
+		b.replyText(ctx, m.Chat.ID, thread,
 			"Could not extract the login URL. Check gopod logs.")
 		return
 	}
@@ -202,6 +207,7 @@ func (b *Bot) loginHandlerReal(ctx context.Context, _ *bot.Bot, update *models.U
 		cancel:     loginCancel,
 		chatID:     m.Chat.ID,
 		folder:     rc.Folder,
+		thread:     thread,
 		awaitsCode: deviceCode == "",
 	}
 	b.logins.set(m.Chat.ID, session)
@@ -221,7 +227,7 @@ func (b *Bot) loginHandlerReal(ctx context.Context, _ *bot.Bot, update *models.U
 			"\n\nAfter signing in, copy the authorization code from the " +
 			"success page and send it here as your next message."
 	}
-	b.replyText(ctx, m.Chat.ID, loginMsg)
+	b.replyText(ctx, m.Chat.ID, thread, loginMsg)
 
 	// Device flow: the CLI finishes on its own once the user signs in
 	// in the browser. Wait for it in the background instead of leaving
@@ -239,7 +245,7 @@ func (b *Bot) loginHandlerReal(ctx context.Context, _ *bot.Bot, update *models.U
 			exec.DrainAndClose()
 			// Only notify if it was a timeout, not a clean completion.
 			if loginCtx.Err() == context.DeadlineExceeded {
-				b.replyText(context.Background(), m.Chat.ID,
+				b.replyText(context.Background(), m.Chat.ID, thread,
 					"Login session timed out. Run /login to try again.")
 			}
 		}
@@ -255,13 +261,13 @@ func (b *Bot) handleLoginCode(ctx context.Context, chatID int64, code string) {
 		return
 	}
 
-	b.replyText(ctx, chatID, "Verifying code...")
+	b.replyText(ctx, chatID, session.thread, "Verifying code...")
 
 	// Write the code to claude's stdin.
 	if _, err := session.exec.WriteStdin([]byte(code + "\n")); err != nil {
 		b.log.Error("/login: WriteStdin failed",
 			slog.Any("err", err))
-		b.replyText(ctx, chatID, fmt.Sprintf("Failed to send code: %v", err))
+		b.replyText(ctx, chatID, session.thread, fmt.Sprintf("Failed to send code: %v", err))
 		b.cleanupLoginSession(chatID, session)
 		return
 	}
@@ -316,9 +322,9 @@ func (b *Bot) finishLogin(ctx context.Context, chatID int64, session *loginSessi
 	if len(resultLines) == 0 {
 		// Check auth status as fallback.
 		if b.checkAuthAfterLogin(ctx, session) {
-			b.replyText(ctx, chatID, "Logged in successfully! Send a message to start chatting with "+provName+".")
+			b.replyText(ctx, chatID, session.thread, "Logged in successfully! Send a message to start chatting with "+provName+".")
 		} else {
-			b.replyText(ctx, chatID,
+			b.replyText(ctx, chatID, session.thread,
 				"Login completed but could not verify auth status. "+
 					"Try sending a message — if it fails, run /login again.")
 		}
@@ -330,9 +336,9 @@ func (b *Bot) finishLogin(ctx context.Context, chatID int64, session *loginSessi
 	if strings.Contains(lower, "logged in") ||
 		strings.Contains(lower, "authenticated") ||
 		strings.Contains(lower, "success") {
-		b.replyText(ctx, chatID, result+"\n\nSend a message to start chatting with "+provName+".")
+		b.replyText(ctx, chatID, session.thread, result+"\n\nSend a message to start chatting with "+provName+".")
 	} else {
-		b.replyText(ctx, chatID, "Login result:\n\n"+result)
+		b.replyText(ctx, chatID, session.thread, "Login result:\n\n"+result)
 	}
 }
 
