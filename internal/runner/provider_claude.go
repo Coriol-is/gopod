@@ -90,10 +90,26 @@ func (p *ClaudeProvider) ParseAuthStatus(stdout string) (AuthStatus, error) {
 	return status, nil
 }
 
+// notLoggedInNeedles are the lowercase phrases the Claude CLI prints
+// when it has no usable credentials. Claude Code 2.1.289 prints
+// "Failed to authenticate: OAuth session expired and could not be
+// refreshed" on stdout and exits 1 with an empty stderr.
+var notLoggedInNeedles = []string{
+	"not logged in",
+	"failed to authenticate",
+	"oauth session expired",
+}
+
 func (p *ClaudeProvider) IsNotLoggedInError(stderr, stdout string) bool {
-	const needle = "not logged in"
-	return strings.Contains(strings.ToLower(stderr), needle) ||
-		strings.Contains(strings.ToLower(stdout), needle)
+	for _, out := range []string{stderr, stdout} {
+		low := strings.ToLower(out)
+		for _, needle := range notLoggedInNeedles {
+			if strings.Contains(low, needle) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (p *ClaudeProvider) LoginCmd() []string {

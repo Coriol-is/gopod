@@ -40,3 +40,23 @@ func TestClaudeVersionCmd(t *testing.T) {
 		t.Errorf("VersionCmd = %v, want %v", got, want)
 	}
 }
+
+func TestClaudeIsNotLoggedInError(t *testing.T) {
+	p := NewClaudeProvider("")
+	cases := []struct {
+		name           string
+		stderr, stdout string
+		want           bool
+	}{
+		{"legacy stderr", "Error: Not logged in", "", true},
+		{"cli 2.1.289 expired session on stdout", "", "Failed to authenticate: OAuth session expired and could not be refreshed\n", true},
+		{"oauth expired on stderr", "OAuth session expired", "", true},
+		{"unrelated failure", "exit status 1", "something else", false},
+		{"empty", "", "", false},
+	}
+	for _, c := range cases {
+		if got := p.IsNotLoggedInError(c.stderr, c.stdout); got != c.want {
+			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+		}
+	}
+}
