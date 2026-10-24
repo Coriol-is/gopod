@@ -108,8 +108,12 @@ the user before any spec or code exists for it.
 - **After non-trivial changes:** run `/handoff` — it updates HANDOFF.md
   (state) and, if applicable, ROADMAP.md (milestone status), and prompts for
   an ADR in DECISIONS.md when you made a real architectural choice.
-- **Never commit unless the user explicitly asks.** This applies even if a
-  task feels "complete".
+- **Git flow (owner-approved 2026-10-24).** Work happens on a feature branch
+  in a git worktree, never directly on `main`. Commit there freely, open a
+  PR, have it reviewed, wait for CI (`.github/workflows/ci.yml`) to go green,
+  then squash-merge. Squash title follows `<area>: <imperative summary>`.
+  Work is autonomous unless it needs the owner's approval or an
+  architectural decision; those stop and ask.
 - **Don't add features the user didn't ask for.** This project's discipline is
   *smaller than NanoClaw*. Resist scope creep aggressively.
 
@@ -129,6 +133,8 @@ the table in [docs/ARCHITECTURE.md §2](docs/ARCHITECTURE.md).
 - Bypass `internal/control` to wire a slash command directly to a handler
 - Put secret values in any committed file
 - Skip reading HANDOFF.md
-- Use destructive git operations without explicit user permission
-- Commit without explicit user permission
+- Use destructive git operations (force-push, reset --hard, history
+  rewrite, branch deletion on shared branches) without explicit user
+  permission
+- Push straight to `main` or merge a PR with red CI
 - "Improve" code that the current task didn't ask you to touch
