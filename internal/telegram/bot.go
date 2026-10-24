@@ -100,6 +100,11 @@ type Bot struct {
 	draftBadReqs map[int64]int
 	draftSeq     atomic.Int64
 
+	// goneThreads marks private-chat topics that no longer exist
+	// (threadgone.go); sends into them go to the main chat.
+	threadsMu   sync.Mutex
+	goneThreads map[chatThread]bool
+
 	// inflight maps turn id to its stoppable streaming state (stop.go).
 	inflightMu sync.Mutex
 	inflight   map[int64]*inflightTurn

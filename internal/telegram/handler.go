@@ -40,6 +40,7 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 	}
 	m := update.Message
 	b.persistMessage(ctx, m)
+	b.noteInboundThread(m)
 
 	// Without a runner this stays at M1 echo-only behaviour.
 	if b.runner == nil {
@@ -432,12 +433,15 @@ func (b *Bot) resolveRegistered(ctx context.Context, m *models.Message) (store.R
 // private-chat topic (0 = main chat) the action shows in.
 func (b *Bot) startTyping(ctx context.Context, chatID int64, thread int) func() {
 	send := func() {
+		if b.threadGone(chatID, thread) {
+			return // no typing into a topic that no longer exists
+		}
 		_, err := b.api.SendChatAction(ctx, &bot.SendChatActionParams{
 			ChatID:          chatID,
 			MessageThreadID: thread,
 			Action:          models.ChatActionTyping,
 		})
-		if err != nil {
+		if err != nil && !b.checkThreadGone(chatID, thread, err) {
 			// Best-effort; don't spam logs on every refresh failure.
 			b.log.Debug("SendChatAction failed",
 				slog.Int64("chat_id", chatID),
@@ -488,10 +492,29 @@ func (b *Bot) sendFormatted(ctx context.Context, chatID int64, thread int, reply
 }
 
 // sendFormattedErr is sendFormatted reporting the error that stopped
-// it. The id is the last message delivered, 0 when none was. A 429 on
-// the HTML attempt is returned as is: the plain-text fallback is for
-// markup Telegram rejects and would only hit the same rate limit.
+// it. The id is the last message delivered, 0 when none was.
+//
+// When thread is a topic that no longer exists (threadgone.go), known
+// before or learned from this send, the whole text goes to the main
+// chat instead, prefixed with threadGoneNote and replying to nothing
+// (the original message went with the topic). Chunks already delivered
+// into the topic went with it too, so the full text is resent.
 func (b *Bot) sendFormattedErr(ctx context.Context, chatID int64, thread int, replyToMsgID int, text string) (int, error) {
+	if !b.threadGone(chatID, thread) {
+		id, err := b.sendChunks(ctx, chatID, thread, replyToMsgID, text)
+		if !b.checkThreadGone(chatID, thread, err) {
+			return id, err
+		}
+	}
+	return b.sendChunks(ctx, chatID, 0, 0, threadGoneNote+text)
+}
+
+// sendChunks sends text as HTML chunks into thread, falling back to
+// plain text when Telegram rejects the markup. A 429 on the HTML
+// attempt is returned as is: the plain-text fallback is for markup
+// Telegram rejects and would only hit the same rate limit. So is a
+// thread-gone error, which the plain text would hit as well.
+func (b *Bot) sendChunks(ctx context.Context, chatID int64, thread int, replyToMsgID int, text string) (int, error) {
 	const maxLen = 4000
 	last := 0
 	htmlText := markdownToTelegramHTML(text)
@@ -517,7 +540,7 @@ func (b *Bot) sendFormattedErr(ctx context.Context, chatID int64, thread int, re
 			last = sent.ID
 		}
 		if err != nil {
-			if errors.As(err, new(*bot.TooManyRequestsError)) {
+			if errors.As(err, new(*bot.TooManyRequestsError)) || (thread != 0 && isThreadGone(err)) {
 				return last, fmt.Errorf("sendMessage: %w", err)
 			}
 			// Fallback: send as plain text.

@@ -24,6 +24,9 @@ import (
 // the user's original message ID for reply threading; pass 0 for no
 // threading.
 func (b *Bot) sendPlaceholder(ctx context.Context, chatID int64, thread int, replyToMsgID int) int {
+	if b.threadGone(chatID, thread) {
+		return 0 // the caller falls back to one final message, sent to main
+	}
 	params := &bot.SendMessageParams{
 		ChatID:          chatID,
 		MessageThreadID: thread,
@@ -38,6 +41,9 @@ func (b *Bot) sendPlaceholder(ctx context.Context, chatID int64, thread int, rep
 
 	sent, err := b.api.SendMessage(ctx, params)
 	if err != nil {
+		if b.checkThreadGone(chatID, thread, err) {
+			return 0
+		}
 		b.log.Warn("sendPlaceholder failed",
 			slog.Int64("chat_id", chatID),
 			slog.Any("err", err))
@@ -262,13 +268,15 @@ loop:
 				if wait, ok := retryAfter(err); ok {
 					draftHold = time.Now().Add(wait)
 				}
-				if b.draftsSupported(item.ChatID) {
+				if b.draftsSupported(item.ChatID) && !errors.Is(err, errThreadGone) {
 					// Transient (rate limit, network): retry next tick.
 					b.log.Debug("sendDraft failed",
 						slog.Int64("chat_id", item.ChatID), slog.Any("err", err))
 					continue
 				}
-				// Refused: the rest of the turn uses the edit path.
+				// Refused, or the topic is gone: the rest of the turn
+				// uses the edit path (which, for a gone topic, sends no
+				// placeholder and ends in one reply to main).
 				draftID = useDraft(0)
 				if !startPlaceholder() {
 					b.drainAndSend(ctx, item, stream)
@@ -322,8 +330,12 @@ loop:
 		finalText = "(empty reply)"
 	}
 
+	// The topic vanished after the placeholder went out: editing it
+	// would deliver nothing, so send the reply (to main) like a draft turn.
+	gone := placeholder != 0 && b.threadGone(item.ChatID, item.ThreadID)
+
 	switch {
-	case draftID != 0:
+	case draftID != 0 || gone:
 		// The draft is only a preview: persist the reply as a real
 		// message. Sending it also clears the draft. The draft expires
 		// on its own, so an undelivered reply must not end the turn
