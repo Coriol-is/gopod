@@ -2,6 +2,7 @@ package runner
 
 import (
 	"bufio"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -411,5 +412,79 @@ func TestExtractSessionID(t *testing.T) {
 
 	if got := NewClaudeProvider("").ExtractSessionID(`{"type":"thread.started","thread_id":"x"}`); got != "" {
 		t.Errorf("claude ExtractSessionID = %q, want empty", got)
+	}
+}
+
+// shellExit runs cmd like runShell and returns its exit code.
+func shellExit(t *testing.T, home string, cmd []string) int {
+	t.Helper()
+	c := exec.Command(cmd[0], cmd[1:]...)
+	c.Env = []string{"HOME=" + home, "PATH=" + os.Getenv("PATH")}
+	err := c.Run()
+	var ee *exec.ExitError
+	switch {
+	case err == nil:
+		return 0
+	case errors.As(err, &ee):
+		return ee.ExitCode()
+	default:
+		t.Fatalf("running %q: %v", cmd, err)
+		return -1
+	}
+}
+
+func TestSessionExistsCmd(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh")
+	}
+	const unknown = "99999999-2222-4333-8444-555555555555"
+	claudeHome, _, _, _ := claudeFixture(t)
+	codexHome, _, _ := codexFixture(t)
+	cases := []struct {
+		name string
+		p    AgentProvider
+		home string
+		id   string
+		want int
+	}{
+		{"claude present", NewClaudeProvider(""), claudeHome, testSessA, 0},
+		{"claude missing", NewClaudeProvider(""), claudeHome, unknown, 1},
+		{"claude empty home", NewClaudeProvider(""), t.TempDir(), testSessA, 1},
+		{"claude invalid id", NewClaudeProvider(""), claudeHome, "*", 2},
+		{"codex present", NewCodexProvider(""), codexHome, testSessB, 0},
+		{"codex missing", NewCodexProvider(""), codexHome, unknown, 1},
+		{"codex empty home", NewCodexProvider(""), t.TempDir(), testSessA, 1},
+		{"codex invalid id", NewCodexProvider(""), codexHome, "*" + testSessA[8:], 2},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := shellExit(t, c.home, c.p.SessionExistsCmd(c.id)); got != c.want {
+				t.Errorf("exit = %d, want %d", got, c.want)
+			}
+		})
+	}
+	// The cleared session is missing afterwards: the two commands agree
+	// on where a session lives.
+	for _, p := range providersUnderTest() {
+		home := claudeHome
+		id := testSessB
+		if p.Name() == "codex" {
+			home, id = codexHome, testSessA
+		}
+		if _, ok := runShell(t, home, p.ClearSessionCmd(SessionRef{ID: id})); !ok {
+			t.Fatalf("%s: clear failed", p.Name())
+		}
+		if got := shellExit(t, home, p.SessionExistsCmd(id)); got != 1 {
+			t.Errorf("%s: exists after clear = %d, want 1", p.Name(), got)
+		}
+	}
+}
+
+func TestAnnouncesSessionID(t *testing.T) {
+	if NewClaudeProvider("").AnnouncesSessionID() {
+		t.Error("claude takes the caller's id; it must not announce one")
+	}
+	if !NewCodexProvider("").AnnouncesSessionID() {
+		t.Error("codex picks its own thread id; it must announce it")
 	}
 }

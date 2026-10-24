@@ -117,7 +117,7 @@ func (b *Bot) runAgentStreaming(ctx context.Context, item queue.Item) error {
 	defer cancelRun()
 	defer b.registerInflight(item.ID, cancelRun)()
 
-	stream, err := b.runner.RunStream(runCtx, item.Folder, tier, b.allowlist, prompt)
+	stream, err := b.runner.RunStream(runCtx, item.Folder, item.ThreadID, tier, b.allowlist, prompt)
 	if err != nil {
 		// Fallback: if streaming setup fails, try sync path.
 		b.log.Warn("RunStream failed, falling back to sync",
