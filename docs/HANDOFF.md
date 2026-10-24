@@ -556,6 +556,14 @@ don't get lost.)
   session ids `SessionRef` (Task 6), per-thread `conversation_summary`
   (Task 7). Not wired to callers until Task 9.
 
+- **Future option: one container per thread** (owner, 2026-10-25). Record only,
+  not designed. Alternative to running two agents in the same container
+  (ROADMAP T5): each `(chat, thread)` gets its own agent container with the
+  chat workspace and memory mounted shared. Gains real parallelism and separate
+  `$HOME`/session dirs; costs RAM, more lifecycle (idle kill, cleanup, the
+  per-chat `/provider` and `ProviderForChat` assumptions, the per-chat agent
+  slot). Decide after the concurrency spike (HANDOFF item 00). See ROADMAP T5b.
+
 ## How to update this file
 
 1. **Before starting work:** read this file. Read the docs it points at.

@@ -172,6 +172,7 @@ Spec: [docs/superpowers/specs/2026-10-24-telegram-threads-and-drafts-design.md](
 | T3 | Stop button (`can_stop`) ending turns `stopped`; runner kills the agent | ✅ | D021 |
 | T4 | Conversations per private-chat thread: sessions, summaries, queue, sends, commands | ✅ | D022; needs topics ("Threaded mode") enabled in @BotFather |
 | T5 | Parallel execution of threads | ⏸️ | Needs research: two agents in one container (`$HOME`) unverified; sequential per chat today |
+| T5b | One container per thread (alternative route to parallel threads) | ⏸️ | Needs research. Idea: each `(chat, thread)` gets its own agent container, workspace and memory mounts shared. Real parallelism and no shared `$HOME` between sessions, at the cost of RAM and container lifecycle (idle kill, cleanup, per-thread `/provider` question). Compare with T5 (two agents in one container) once the concurrency spike has run. Owner raised it 2026-10-25; chosen fallback today is sequential per chat |
 | T6 | Inline keyboards (Regenerate / Copy / pickers, confirmations) | ⬜ | Separate spec |
 | T7 | Rich messages (`sendRichMessage`: tables, thinking/details blocks) | ⬜ | Separate spec; verify in private chats first |
 
