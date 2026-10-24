@@ -94,7 +94,7 @@ func TestIntegrationStreamCancelKillsAgent(t *testing.T) {
 	defer cancel()
 	// An "agent" that prints, then runs a long tool in a child process.
 	cmd := []string{"sh", "-c", "echo started; sleep 300; echo unreachable"}
-	stream, err := r.startStream(ctx, id, convKey{"inttest", 0}, TierRegistered, nil, prov, "p", cmd)
+	stream, err := r.startStream(ctx, id, convKey{"inttest", 0}, TierRegistered, nil, prov, "p", cmd, false)
 	if err != nil {
 		t.Fatalf("startStream: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestIntegrationStreamNormalRunRemovesPidFile(t *testing.T) {
 	prov := noRestoreProvider{NewClaudeProvider("unused")}
 
 	stream, err := r.startStream(context.Background(), id, convKey{"inttest", 0}, TierRegistered, nil, prov, "p",
-		[]string{"sh", "-c", `printf '%s\n' "$1"`, "sh", `it's "quoted"`})
+		[]string{"sh", "-c", `printf '%s\n' "$1"`, "sh", `it's "quoted"`}, false)
 	if err != nil {
 		t.Fatalf("startStream: %v", err)
 	}

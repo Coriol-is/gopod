@@ -229,7 +229,7 @@ func newStreamTestRunner(t *testing.T) *streamTestRunner {
 func (s *streamTestRunner) start(t *testing.T, ctx context.Context, prov AgentProvider) (*AgentStream, *fakeProc) {
 	t.Helper()
 	cmd := prov.RunCmd("hi", "", SessionRef{})
-	stream, err := s.r.startStream(ctx, "cid", convKey{"chat", 0}, TierRegistered, nil, prov, "hi", cmd)
+	stream, err := s.r.startStream(ctx, "cid", convKey{"chat", 0}, TierRegistered, nil, prov, "hi", cmd, false)
 	if err != nil {
 		t.Fatalf("startStream: %v", err)
 	}
@@ -422,7 +422,7 @@ func TestStartStreamNextTurnWaitsForKill(t *testing.T) {
 
 	second := make(chan error, 1)
 	go func() {
-		_, err := s.r.startStream(context.Background(), "cid", convKey{"chat", 0}, TierRegistered, nil, prov, "next", prov.RunCmd("next", "", SessionRef{}))
+		_, err := s.r.startStream(context.Background(), "cid", convKey{"chat", 0}, TierRegistered, nil, prov, "next", prov.RunCmd("next", "", SessionRef{}), false)
 		second <- err
 	}()
 

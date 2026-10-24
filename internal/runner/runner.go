@@ -27,14 +27,17 @@ import (
 // inside lastTouchMu serializes EnsureRunning calls for the same chat.
 type Runner struct {
 	d        *Docker
-	ex       agentExecer // r.d in production; the streaming path's exec seam
+	ex       agentExecer // r.d in production; the agent exec seam for tests
 	provider AgentProvider
 	paths    Paths
 	cfg      SpawnDefaults
 	allow    []string // additional env var names beyond provider's RequiredEnvVars
 	version  string
 	log      *slog.Logger
-	store    stateStore // for persisting compact timestamps
+	store    stateStore // compact timestamps and conversation sessions
+
+	// ensureFn replaces Ensure in tests (nil = r.Ensure).
+	ensureFn func(ctx context.Context, chatFolder string, tier Tier, allowlist *mountsec.Allowlist) (string, error)
 
 	// memory is the long-term memory layer. Optional: if nil, prompts
 	// are sent without memory context. Set via SetMemory after
@@ -148,6 +151,14 @@ func New(
 	}, nil
 }
 
+// ensure is Ensure, or the test seam ensureFn.
+func (r *Runner) ensure(ctx context.Context, chatFolder string, tier Tier, allowlist *mountsec.Allowlist) (string, error) {
+	if r.ensureFn != nil {
+		return r.ensureFn(ctx, chatFolder, tier, allowlist)
+	}
+	return r.Ensure(ctx, chatFolder, tier, allowlist)
+}
+
 // Ensure boots (or re-uses) the container for the given chat folder
 // and returns the container id. Idempotent. Per-chat serialised so
 // concurrent callers do not race ContainerCreate.
@@ -220,7 +231,7 @@ func (r *Runner) Run(
 	allowlist *mountsec.Allowlist,
 	prompt string,
 ) (string, error) {
-	id, err := r.Ensure(ctx, chatFolder, tier, allowlist)
+	id, err := r.ensure(ctx, chatFolder, tier, allowlist)
 	if err != nil {
 		return "", fmt.Errorf("runner: ensure %q: %w", chatFolder, err)
 	}
@@ -241,11 +252,23 @@ func (r *Runner) Run(
 	}
 
 	prov := r.ProviderForChat(chatFolder)
-	cmd := withModel(prov.RunCmd(prompt, opts.AppendSystemPrompt, SessionRef{}), prov, r.ModelForChat(chatFolder))
-	reply, err := r.execWithProvider(ctx, id, chatFolder, prov, cmd)
+	ref, err := r.resolveSession(ctx, id, chatFolder, thread, prov)
 	if err != nil {
 		return "", err
 	}
+	cmd := withModel(prov.RunCmd(prompt, opts.AppendSystemPrompt, ref), prov, r.ModelForChat(chatFolder))
+	res, err := r.execAgent(ctx, id, chatFolder, prov, cmd)
+	if announcesNewSession(prov, ref) {
+		var stdout, stderr string
+		if res != nil {
+			stdout, stderr = res.Stdout, res.Stderr
+		}
+		r.captureSession(ctx, chatFolder, thread, prov, stdout, stderr)
+	}
+	if err != nil {
+		return "", err
+	}
+	reply := strings.TrimSpace(res.Stdout)
 	r.touch(chatFolder)
 
 	// Trigger async extraction after successful agent turn.
@@ -306,7 +329,7 @@ func (r *Runner) RunStream(
 	allowlist *mountsec.Allowlist,
 	prompt string,
 ) (*AgentStream, error) {
-	id, err := r.Ensure(ctx, chatFolder, tier, allowlist)
+	id, err := r.ensure(ctx, chatFolder, tier, allowlist)
 	if err != nil {
 		return nil, fmt.Errorf("runner: ensure %q: %w", chatFolder, err)
 	}
@@ -325,12 +348,20 @@ func (r *Runner) RunStream(
 	}
 
 	prov := r.ProviderForChat(chatFolder)
-	cmd := withModel(prov.RunCmd(prompt, systemPrompt, SessionRef{}), prov, r.ModelForChat(chatFolder))
-	return r.startStream(ctx, id, convKey{chatFolder, thread}, tier, allowlist, prov, prompt, cmd)
+	ref, err := r.resolveSession(ctx, id, chatFolder, thread, prov)
+	if err != nil {
+		return nil, err
+	}
+	cmd := withModel(prov.RunCmd(prompt, systemPrompt, ref), prov, r.ModelForChat(chatFolder))
+	return r.startStream(ctx, id, convKey{chatFolder, thread}, tier, allowlist, prov, prompt, cmd, announcesNewSession(prov, ref))
 }
 
 // startStream runs the agent command cmd in container id and streams
-// its output. It is RunStream after Ensure and prompt assembly.
+// its output. It is RunStream after Ensure, session resolution and
+// prompt assembly. capture is set when cmd starts a conversation whose
+// id the provider announces; it is read from the output once the run
+// ends, whatever the outcome, and stored before Result is sent so the
+// conversation's next turn resumes it.
 //
 // Cancelling ctx stops the turn: the agent's process group is killed
 // inside the container (killAgent), the stream ends, and Result carries
@@ -347,6 +378,7 @@ func (r *Runner) startStream(
 	prov AgentProvider,
 	prompt string,
 	cmd []string,
+	capture bool,
 ) (*AgentStream, error) {
 	chatFolder := conv.folder
 	releaseSlot, err := r.acquireAgentSlot(ctx, chatFolder)
@@ -419,6 +451,9 @@ func (r *Runner) startStream(
 		}
 		releaseSlot()
 
+		if capture {
+			r.captureSession(ctx, chatFolder, conv.thread, prov, fullOut, stderr)
+		}
 		r.touch(chatFolder)
 		fullText := strings.TrimSpace(fullOut)
 
@@ -507,36 +542,42 @@ func (r *Runner) RunFresh(
 	allowlist *mountsec.Allowlist,
 	prompt string,
 ) (string, error) {
-	id, err := r.Ensure(ctx, chatFolder, tier, allowlist)
+	id, err := r.ensure(ctx, chatFolder, tier, allowlist)
 	if err != nil {
 		return "", fmt.Errorf("runner: ensure %q: %w", chatFolder, err)
 	}
 	prov := r.ProviderForChat(chatFolder)
-	return r.execWithProvider(ctx, id, chatFolder, prov, prov.RunFreshCmd(prompt))
+	res, err := r.execAgent(ctx, id, chatFolder, prov, prov.RunFreshCmd(prompt))
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(res.Stdout), nil
 }
 
-// execWithProvider runs a provider-built command inside a container
-// with config restore and error classification.
-func (r *Runner) execWithProvider(ctx context.Context, containerID, chatFolder string, prov AgentProvider, cmd []string) (string, error) {
+// execAgent runs a provider-built command inside a container with
+// config restore and error classification. On a non-zero exit it
+// returns the classified error together with the result, so callers can
+// still read what the agent printed (a new conversation's session id).
+func (r *Runner) execAgent(ctx context.Context, containerID, chatFolder string, prov AgentProvider, cmd []string) (*ExecResult, error) {
 	// Restore config from backup if needed.
 	if restoreCmd := prov.RestoreConfigCmd(); restoreCmd != nil {
-		r.d.Exec(ctx, containerID, restoreCmd, nil)
+		r.ex.Exec(ctx, containerID, restoreCmd, nil)
 	}
 
 	env, release := r.agentEnv(chatFolder)
 	defer release()
-	res, err := r.d.Exec(ctx, containerID, cmd, env)
+	res, err := r.ex.Exec(ctx, containerID, cmd, env)
 	if err != nil {
-		return "", fmt.Errorf("runner: exec: %w", err)
+		return nil, fmt.Errorf("runner: exec: %w", err)
 	}
 	if res.ExitCode != 0 {
 		stderr := strings.TrimSpace(res.Stderr)
 		if prov.IsNotLoggedInError(stderr, res.Stdout) {
-			return "", r.classifyAuthError(ctx, containerID)
+			return res, r.classifyAuthError(ctx, containerID)
 		}
-		return "", fmt.Errorf("runner: agent exited %d (stderr=%q)", res.ExitCode, stderr)
+		return res, fmt.Errorf("runner: agent exited %d (stderr=%q)", res.ExitCode, stderr)
 	}
-	return strings.TrimSpace(res.Stdout), nil
+	return res, nil
 }
 
 // classifyAuthError distinguishes "never logged in" from "session expired".
@@ -552,7 +593,7 @@ func (r *Runner) classifyAuthError(ctx context.Context, containerID string) erro
 }
 
 func (r *Runner) checkAuthViaProvider(ctx context.Context, containerID string) (AuthStatus, error) {
-	res, err := r.d.Exec(ctx, containerID, r.provider.AuthStatusCmd(), nil)
+	res, err := r.ex.Exec(ctx, containerID, r.provider.AuthStatusCmd(), nil)
 	if err != nil {
 		return AuthStatus{}, err
 	}
@@ -613,14 +654,20 @@ func (r *Runner) CheckAuth(ctx context.Context, chatFolder string, tier Tier, al
 	return r.checkAuthViaProvider(ctx, id)
 }
 
-// stateStore is the interface Runner needs for persisting compact
-// timestamps across restarts. Consumer-side interface.
+// stateStore is the interface Runner needs from the store: compact
+// timestamps and the session-adoption marker in router_state, and one
+// agent session id per conversation (see session.go). Consumer-side
+// interface.
 type stateStore interface {
 	GetState(ctx context.Context, key string) (string, error)
 	SetState(ctx context.Context, key, value string) error
+	GetSession(ctx context.Context, folder string, thread int, provider string) (string, bool, error)
+	PutSession(ctx context.Context, folder string, thread int, provider, id string) error
+	DeleteSession(ctx context.Context, folder string, thread int, provider string) error
 }
 
-// SetStore wires the state store for persisting compact timestamps.
+// SetStore wires the store. Without one, conversations are not kept
+// apart: every turn uses the implicit SessionRef (legacy behaviour).
 func (r *Runner) SetStore(s stateStore) { r.store = s }
 
 // MemoryCompiler is the interface the Runner needs from the memory
@@ -648,17 +695,35 @@ func (r *Runner) SetCompactFn(fn func(ctx context.Context, chatFolder string, th
 // SetCompactAfter sets the turn threshold for auto-compact. 0 = disabled.
 func (r *Runner) SetCompactAfter(n int) { r.compactAfter = n }
 
-// ClearSession removes Claude Code session files for a chat, forcing
-// the next --continue to start a fresh conversation. Memory is NOT
-// affected — only the conversation context is cleared.
+// ClearSession deletes the agent session of one conversation (its
+// sessions row and its transcript) under the chat's current provider,
+// so the conversation's next turn starts afresh. Other conversations of
+// the chat, and memory, are untouched. A conversation without a session
+// is a no-op that does not even start the container; the exception is
+// main before its legacy session was adopted, which is adopted and then
+// cleared (see session.go).
 func (r *Runner) ClearSession(ctx context.Context, chatFolder string, thread int, tier Tier, allowlist *mountsec.Allowlist) error {
-	id, err := r.Ensure(ctx, chatFolder, tier, allowlist)
+	defer r.resetTurnCount(chatFolder, thread)
+	prov := r.ProviderForChat(chatFolder)
+	if r.store == nil {
+		// No conversation ids without a store: legacy wipe of the
+		// chat's sessions, as before conversations existed.
+		id, err := r.ensure(ctx, chatFolder, tier, allowlist)
+		if err != nil {
+			return err
+		}
+		_, err = r.ex.Exec(ctx, id, prov.ClearSessionCmd(SessionRef{}), nil)
+		return err
+	}
+	need, err := r.needsClear(ctx, chatFolder, thread, prov)
+	if err != nil || !need {
+		return err
+	}
+	id, err := r.ensure(ctx, chatFolder, tier, allowlist)
 	if err != nil {
 		return err
 	}
-	_, err = r.d.Exec(ctx, id, r.provider.ClearSessionCmd(SessionRef{}), nil)
-	r.resetTurnCount(chatFolder, thread)
-	return err
+	return r.clearConversation(ctx, id, chatFolder, thread, prov)
 }
 
 // CompactSession summarizes the current conversation, stores the
@@ -773,8 +838,9 @@ func (r *Runner) touch(chatFolder string) {
 }
 
 // lockChat / unlockChat manage the per-chat sync.Mutex map. The
-// indirection lets us serialise Ensure calls for the same chat
-// without holding a global lock that would serialise across chats.
+// indirection lets us serialise Ensure calls and session bookkeeping
+// (session.go) for the same chat without holding a global lock that
+// would serialise across chats. Never held across an agent run.
 func (r *Runner) lockChat(chatFolder string) {
 	r.containerLocksMu.Lock()
 	mu, ok := r.containerLocks[chatFolder]
