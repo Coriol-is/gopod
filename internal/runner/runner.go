@@ -27,6 +27,7 @@ import (
 // inside lastTouchMu serializes EnsureRunning calls for the same chat.
 type Runner struct {
 	d        *Docker
+	ex       agentExecer // r.d in production; the streaming path's exec seam
 	provider AgentProvider
 	paths    Paths
 	cfg      SpawnDefaults
@@ -83,6 +84,11 @@ type Runner struct {
 	// been logged, so Ensure logs it once per spawn, not once per turn.
 	versionLoggedMu sync.Mutex
 	versionLogged   map[string]bool
+
+	// agentSlots marks chats with a streamed agent process alive (see
+	// acquireAgentSlot). The channel closes when the process is gone.
+	agentSlotsMu sync.Mutex
+	agentSlots   map[string]chan struct{}
 }
 
 // SpawnDefaults captures the per-process defaults that go into every
@@ -127,6 +133,7 @@ func New(
 	}
 	return &Runner{
 		d:              d,
+		ex:             d,
 		provider:       provider,
 		paths:          paths,
 		cfg:            defaults,
@@ -285,7 +292,8 @@ type AgentStream struct {
 // reads from Chunks in a loop, then reads Result for the final outcome.
 //
 // Post-run work (extraction, auto-compact) runs in background
-// goroutines, same as Run.
+// goroutines, same as Run. Cancelling ctx kills the agent inside the
+// container and skips that work (see startStream).
 func (r *Runner) RunStream(
 	ctx context.Context,
 	chatFolder string,
@@ -312,22 +320,69 @@ func (r *Runner) RunStream(
 	}
 
 	prov := r.ProviderForChat(chatFolder)
+	cmd := withModel(prov.RunCmd(prompt, systemPrompt, SessionRef{}), prov, r.ModelForChat(chatFolder))
+	return r.startStream(ctx, id, chatFolder, tier, allowlist, prov, prompt, cmd)
+}
+
+// startStream runs the agent command cmd in container id and streams
+// its output. It is RunStream after Ensure and prompt assembly.
+//
+// Cancelling ctx stops the turn: the agent's process group is killed
+// inside the container (killAgent), the stream ends, and Result carries
+// an error wrapping ctx.Err(). A cancelled turn is not ingested into
+// memory and does not count toward auto-compact. The chat's agent slot
+// (acquireAgentSlot) is held until the process has exited or the kill
+// has finished, so the next streamed turn of the chat waits for it.
+func (r *Runner) startStream(
+	ctx context.Context,
+	id, chatFolder string,
+	tier Tier,
+	allowlist *mountsec.Allowlist,
+	prov AgentProvider,
+	prompt string,
+	cmd []string,
+) (*AgentStream, error) {
+	releaseSlot, err := r.acquireAgentSlot(ctx, chatFolder)
+	if err != nil {
+		return nil, err
+	}
 
 	// Restore config from backup if needed.
 	if restoreCmd := prov.RestoreConfigCmd(); restoreCmd != nil {
-		r.d.Exec(ctx, id, restoreCmd, nil)
+		r.ex.Exec(ctx, id, restoreCmd, nil)
 	}
 
-	cmd := withModel(prov.RunCmd(prompt, systemPrompt, SessionRef{}), prov, r.ModelForChat(chatFolder))
+	pidFile, err := newAgentPidFile()
+	if err != nil {
+		releaseSlot()
+		return nil, err
+	}
 	env, release := r.agentEnv(chatFolder)
-	handle, err := r.d.ExecStream(ctx, id, cmd, env)
+	handle, err := r.ex.ExecStream(ctx, id, wrapWithPidFile(pidFile, cmd), env)
 	if err != nil {
 		release()
+		releaseSlot()
 		return nil, fmt.Errorf("runner: exec stream: %w", err)
 	}
 
 	chunks := make(chan string, 32)
 	result := make(chan RunResult, 1)
+
+	// The watcher kills the agent when the turn is cancelled. finished
+	// tells it the process exited on its own; killed reports which of
+	// the two happened, once the kill (if any) is over.
+	finished := make(chan struct{})
+	killed := make(chan bool, 1)
+	go func() {
+		select {
+		case <-ctx.Done():
+			r.killAgent(ctx, id, chatFolder, pidFile)
+			handle.Close() // ends the read loop even if the kill failed
+			killed <- true
+		case <-finished:
+			killed <- false
+		}
+	}()
 
 	go func() {
 		defer close(chunks)
@@ -335,7 +390,15 @@ func (r *Runner) RunStream(
 		defer handle.Close()
 		defer release() // capability dies with the exec, not the handler
 
-		fullOut, stderr := readExecStream(handle.Stdout, handle.Stderr, func(s string) { chunks <- s })
+		// After a cancel nobody may be reading Chunks any more; drop
+		// the tail instead of blocking the goroutine forever.
+		send := func(s string) {
+			select {
+			case chunks <- s:
+			case <-ctx.Done():
+			}
+		}
+		fullOut, stderr := readExecStream(handle.Stdout, handle.Stderr, send)
 		stderr = strings.TrimSpace(stderr)
 
 		// Wait for exit.
@@ -343,9 +406,24 @@ func (r *Runner) RunStream(
 		if err := <-handle.Done; err != nil {
 			execErr = err
 		}
+		close(finished)
+		if !<-killed {
+			r.removePidFile(ctx, id, pidFile)
+		}
+		releaseSlot()
 
 		r.touch(chatFolder)
 		fullText := strings.TrimSpace(fullOut)
+
+		// A cancelled turn ends here: no reply, no memory ingestion,
+		// no turn count. The partial text belongs to the caller.
+		if ctx.Err() != nil {
+			result <- RunResult{
+				Err:    fmt.Errorf("runner: agent run cancelled: %w", ctx.Err()),
+				Stderr: stderr,
+			}
+			return
+		}
 
 		// Classify auth/exit errors.
 		if execErr != nil {

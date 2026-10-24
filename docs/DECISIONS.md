@@ -807,6 +807,24 @@ hang shutdown. Spec:
 
 ---
 
+## D021 — Stop and native streaming
+
+**Date:** 2026-10-24
+**Status:** Accepted
+**Extends:** D020 (durable turns)
+
+**Context.** Bot API 10.3 adds `sendMessageDraft` (an ephemeral, animated preview in private chats) with a Stop button (`can_stop`, `keep_on_stop`, `Update.stopped_message_generation`). Editing a placeholder message was the only streaming path, and a turn could not be stopped.
+
+**Decision.**
+- Private chats stream through `sendMessageDraft`; the final reply is one `sendMessage`, whose id is the turn's reply id (D020 memo). Groups, and any chat where the API refuses drafts (404 or a capability-style 400, or three unrecognized 400s in a row), use the placeholder-and-edit path; the refusal is sticky per chat until restart. Transient errors retry; a 429 holds draft updates until `retry_after`, and the final send retries a 429 within a bounded budget, returning an error (never a silent `done`) if it cannot deliver.
+- Draft ids come from a per-process counter seeded from the clock, and an in-flight registry maps (chat, draft id) to the turn. Stop cancels only that turn's agent context, sends the partial text as the reply, and ends the turn `stopped`.
+- `stopped` is a terminal turn status: the durable-turns state machine gains `running -> stopped`; `ListUnfinishedTurns`/`Recover` never return or replay it.
+- Cancelling a streamed run kills the agent: the command is wrapped to write its pid to a per-run file in the container's `/tmp` (the exec leads its own process group); on cancel a second exec sends SIGTERM to the group, SIGKILL after 3s, and removes the file. A per-chat agent slot is held until the process is gone, so the next turn of the chat waits for the kill. A cancelled run skips memory extraction, the turn count and auto-compact.
+
+**Consequences.** Known gaps (see HANDOFF): not yet verified live (`kill -9` mid-draft, Stop on real claude/codex turns and whether the session stays resumable, draft id accepted as a string); PID 1 is `sleep infinity`, so killed children stay zombies until `HostConfig.Init = true`; tools started with `setsid` escape the group kill; a crash between the final send and `recordReply` on the draft path sends a second reply on resume; `runner.Run`/`RunFresh` do not take the per-chat agent slot; an undelivered final reply makes the queue re-run the whole turn (agent work repeats, the user gets one reply). Spec: [superpowers/specs/2026-10-24-telegram-threads-and-drafts-design.md](superpowers/specs/2026-10-24-telegram-threads-and-drafts-design.md).
+
+---
+
 ## Template for new ADRs
 
 ```

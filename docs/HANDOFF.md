@@ -469,6 +469,36 @@ don't get lost.)
   holds one skill (`handoff`) and one hook. Left at ⬜ in ROADMAP because
   the milestone means a maintainer skill set, not a single skill.
 
+- **Telegram native streaming + Stop (Phase A, 2026-10-24, PR in review).**
+  `sendMessageDraft` replaces the placeholder-and-edit loop in private chats
+  (edit path stays for groups and as a sticky per-chat fallback); Stop button
+  via `can_stop` + `MessageGenerationStopped` ends the turn `stopped`
+  (never replayed) and the runner kills the agent process group in the
+  container. **Not yet verified live** (spec Task 4): `kill -9` of gopod
+  mid-draft (exactly one final reply, `turns` row `done`), Stop on a real
+  claude and codex turn (is the session resumable after a killed turn?),
+  and whether the draft id is accepted as a string by the live API. Known
+  follow-ups: set `HostConfig.Init = true` in `internal/runner/docker_args.go`
+  (PID 1 is `sleep infinity`, killed children stay zombies and count against
+  the pids limit); tool processes started with `setsid`/detached escape the
+  process-group kill (snapshot descendants from `/proc` before TERM and check
+  on the real image); crash between `sendFormatted` and `recordReply` on the
+  draft path sends a second reply on resume; `draftSeq` restarts at 0 on
+  restart, so a stale Stop could match the first new draft (seed it with a
+  time-based value); `runner.Run`/`RunFresh` are not covered by the
+  per-chat agent slot that makes the next turn wait for a kill.
+  Also open (final-send retry, D021): a 429 on chunk 2+ of a multi-chunk
+  reply ends the turn `done` with a truncated reply; a send that Telegram
+  delivered but whose response was lost makes the whole-turn retry post a
+  second reply; `finishStopped` has no retry for an undelivered partial.
+  Pre-deploy live checks: resume after a killed turn on claude and codex,
+  and that Stop updates arrive (bot's `allowed_updates` default).
+- **Conversation threads (Phase B, plan
+  `docs/superpowers/plans/2026-10-24-telegram-threads-and-drafts.md`).**
+  Landed on main: per-conversation `sessions` store (Task 5), provider
+  session ids `SessionRef` (Task 6), per-thread `conversation_summary`
+  (Task 7). Not wired to callers until Task 9.
+
 ## How to update this file
 
 1. **Before starting work:** read this file. Read the docs it points at.

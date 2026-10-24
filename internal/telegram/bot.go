@@ -16,6 +16,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -88,6 +91,25 @@ type Bot struct {
 	log           *slog.Logger
 	logins        *loginSessions
 	streamEnabled bool
+
+	// draftsOff marks chats where sendMessageDraft was refused; sticky
+	// until restart. draftSeq hands out draft ids.
+	draftsMu  sync.Mutex
+	draftsOff map[int64]bool
+	// draftBadReqs counts consecutive unrecognized 400s per chat.
+	draftBadReqs map[int64]int
+	draftSeq     atomic.Int64
+
+	// inflight maps turn id to its stoppable streaming state (stop.go).
+	inflightMu sync.Mutex
+	inflight   map[int64]*inflightTurn
+
+	// streamTick is the streaming flush cadence; zero means 1s.
+	streamTick time.Duration
+
+	// sleep waits d or until ctx ends; nil means sleepCtx. Tests stub
+	// it to skip retry_after waits.
+	sleep func(ctx context.Context, d time.Duration) error
 }
 
 // New constructs a Bot. The token must be a valid @BotFather token; an

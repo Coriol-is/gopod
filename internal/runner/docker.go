@@ -246,13 +246,20 @@ type StreamHandle struct {
 	Stderr io.ReadCloser // demuxed stderr stream
 	Done   <-chan error   // closed when exec finishes (nil = success)
 	cancel context.CancelFunc
+	conn   io.Closer // the attached exec connection
 }
 
-// Close cancels the exec context and closes the stdout/stderr pipes.
-// Safe to call multiple times.
+// Close cancels the exec context, closes the attached connection and
+// the stdout/stderr pipes. Closing does not stop the process inside the
+// container (Docker has no call for that; see killAgent), but it frees
+// the demux goroutine even if the process keeps running. Safe to call
+// multiple times and from several goroutines.
 func (h *StreamHandle) Close() {
 	if h.cancel != nil {
 		h.cancel()
+	}
+	if h.conn != nil {
+		_ = h.conn.Close()
 	}
 	if h.Stdout != nil {
 		h.Stdout.Close()
@@ -346,6 +353,7 @@ func (d *Docker) ExecStream(
 		Stderr: stderrR,
 		Done:   done,
 		cancel: cancel,
+		conn:   resp.Conn,
 	}, nil
 }
 

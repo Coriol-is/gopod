@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"strconv"
@@ -27,6 +28,13 @@ import (
 // on first sight) get persisted and otherwise ignored. They can still
 // use the public commands (/ping, /whoami, /register).
 func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Update) {
+	if update != nil && update.StoppedMessageGeneration != nil {
+		// Stop button on a streaming draft. gopod sets no
+		// allowed_updates, so Telegram's default set applies, which
+		// includes stopped_message_generation.
+		b.handleGenerationStopped(ctx, update)
+		return
+	}
 	if update == nil || update.Message == nil {
 		return
 	}
@@ -332,8 +340,9 @@ func (b *Bot) NewAgentHandler() queue.Handler {
 				slog.Int("reply_msg_id", item.ReplyMsgID))
 			return nil
 		}
+		var runErr error
 		if b.streamEnabled {
-			b.runAgentStreaming(ctx, item)
+			runErr = b.runAgentStreaming(ctx, item)
 		} else {
 			b.runAgentSync(ctx, item)
 		}
@@ -341,6 +350,12 @@ func (b *Bot) NewAgentHandler() queue.Handler {
 			// Shutdown cut the run short: report it so the queue marks
 			// the turn interrupted rather than done.
 			return err
+		}
+		if runErr != nil {
+			// queue.ErrStopped: the queue marks the turn stopped.
+			// errReplyUndelivered: the reply never reached the chat, so
+			// the turn must not be marked done; the queue retries it.
+			return runErr
 		}
 		// Both paths log and reply on error but always return nil so
 		// the queue does not retry user-visible failures (auth errors,
@@ -443,6 +458,15 @@ func (b *Bot) replyText(ctx context.Context, chatID int64, text string) {
 }
 
 func (b *Bot) sendFormatted(ctx context.Context, chatID int64, replyToMsgID int, text string) int {
+	id, _ := b.sendFormattedErr(ctx, chatID, replyToMsgID, text)
+	return id
+}
+
+// sendFormattedErr is sendFormatted reporting the error that stopped
+// it. The id is the last message delivered, 0 when none was. A 429 on
+// the HTML attempt is returned as is: the plain-text fallback is for
+// markup Telegram rejects and would only hit the same rate limit.
+func (b *Bot) sendFormattedErr(ctx context.Context, chatID int64, replyToMsgID int, text string) (int, error) {
 	const maxLen = 4000
 	last := 0
 	htmlText := markdownToTelegramHTML(text)
@@ -467,6 +491,9 @@ func (b *Bot) sendFormatted(ctx context.Context, chatID int64, replyToMsgID int,
 			last = sent.ID
 		}
 		if err != nil {
+			if errors.As(err, new(*bot.TooManyRequestsError)) {
+				return last, fmt.Errorf("sendMessage: %w", err)
+			}
 			// Fallback: send as plain text.
 			b.log.Debug("HTML send failed, falling back to plain text",
 				slog.Int64("chat_id", chatID),
@@ -481,16 +508,16 @@ func (b *Bot) sendFormatted(ctx context.Context, chatID int64, replyToMsgID int,
 					b.log.Error("SendMessage failed",
 						slog.Int64("chat_id", chatID),
 						slog.Any("err", err))
-					return last
+					return last, fmt.Errorf("sendMessage: %w", err)
 				}
 				if sent != nil {
 					last = sent.ID
 				}
 			}
-			return last
+			return last, nil
 		}
 	}
-	return last
+	return last, nil
 }
 
 // chunkString splits s into pieces of at most n bytes. Prefers

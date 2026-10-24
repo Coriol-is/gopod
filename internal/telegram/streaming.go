@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"strings"
@@ -86,14 +87,20 @@ func (b *Bot) editMessageHTML(ctx context.Context, chatID int64, msgID int, html
 	}
 }
 
-// runAgentStreaming is the streaming variant of runAgentSync. It sends
-// a placeholder message, then edits it every ~1 second with partial
-// agent output as it arrives. On completion, the final edit uses HTML
-// formatting.
+// draftRefresh is how long an unchanged draft is left before it is
+// re-sent; Telegram drops a draft about 30 seconds after its last update.
+const draftRefresh = 20 * time.Second
+
+// runAgentStreaming is the streaming variant of runAgentSync: it starts
+// the agent and hands the stream to streamReply.
 //
-// Falls back to runAgentSync if streaming setup fails (ExecStream
-// error, placeholder send failure).
-func (b *Bot) runAgentStreaming(ctx context.Context, item queue.Item) {
+// The agent runs on a child context registered as in-flight, so the
+// Stop button cancels this turn's run and nothing else; Telegram calls
+// keep using ctx. Returns queue.ErrStopped when the user stopped the
+// turn, nil otherwise.
+//
+// Falls back to runAgentSync if streaming setup fails (RunStream error).
+func (b *Bot) runAgentStreaming(ctx context.Context, item queue.Item) error {
 	tier := runner.TierRegistered
 	if item.IsOwner {
 		tier = runner.TierOwner
@@ -106,83 +113,206 @@ func (b *Bot) runAgentStreaming(ctx context.Context, item queue.Item) {
 	if item.Resumed {
 		prompt = resumePrompt(item.Text)
 	}
-	stream, err := b.runner.RunStream(ctx, item.Folder, tier, b.allowlist, prompt)
+	runCtx, cancelRun := context.WithCancel(ctx)
+	defer cancelRun()
+	defer b.registerInflight(item.ID, cancelRun)()
+
+	stream, err := b.runner.RunStream(runCtx, item.Folder, tier, b.allowlist, prompt)
 	if err != nil {
 		// Fallback: if streaming setup fails, try sync path.
 		b.log.Warn("RunStream failed, falling back to sync",
 			slog.String("folder", item.Folder),
 			slog.Any("err", err))
 		b.runAgentSync(ctx, item)
-		return
+		return nil
 	}
+	return b.streamReply(ctx, item, stream)
+}
 
-	// Send placeholder message -> get its message_id for editing.
-	// Reuse the placeholder left by an interrupted attempt, else send one.
-	placeholder := b.reusePlaceholder(ctx, item)
-	if placeholder == 0 {
-		placeholder = b.sendPlaceholder(ctx, item.ChatID, item.MessageID)
-	}
-	if placeholder == 0 {
-		// Fallback: drain stream, send as buffered.
-		b.drainAndSend(ctx, item, stream)
-		return
-	}
-	b.recordPlaceholder(ctx, item, placeholder)
-
-	var accumulated strings.Builder
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
-
-	dirty := false       // true if accumulated has new data since last edit
-	overflow := false     // true if we've exceeded single-message limit
+// streamReply shows the agent's partial output while it runs and then
+// delivers the final reply.
+//
+// Preferred path: sendMessageDraft. The draft is a preview with no
+// message id; every tick it is updated with the text so far, and the
+// final reply goes out once through sendFormatted, whose message id is
+// the turn's reply id (D020). Nothing is memoized as a placeholder, so a
+// turn resumed after a crash sends a fresh final message.
+//
+// Fallback path (group chats, a chat where the Bot API refused drafts,
+// or a resumed turn whose interrupted attempt left a placeholder): send
+// a placeholder message and edit it every tick, as before drafts.
+//
+// Stop: when the turn is registered in-flight (registerInflight), its
+// drafts carry can_stop and keep_on_stop. A stop ends the turn with the
+// text so far as the reply (see finishStopped) and returns
+// queue.ErrStopped. Otherwise streamReply returns nil.
+func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.AgentStream) error {
 	const editLimit = 4000 // safe limit under Telegram's 4096
 
+	stop := b.inflightStop(item.ID) // nil: not stoppable, never fires
+	stopOpts := draftOpts{CanStop: stop != nil, KeepOnStop: stop != nil}
+	// useDraft makes id the turn's current draft, the one a stop names.
+	useDraft := func(id int) int {
+		b.bindDraft(item.ID, item.ChatID, id)
+		return id
+	}
+
+	// startPlaceholder switches the turn to the edit path. Returns false
+	// when no placeholder could be sent.
+	placeholder := 0
+	startPlaceholder := func() bool {
+		placeholder = b.sendPlaceholder(ctx, item.ChatID, item.MessageID)
+		if placeholder == 0 {
+			return false
+		}
+		b.recordPlaceholder(ctx, item, placeholder)
+		return true
+	}
+
+	draftID := 0 // non-zero while the turn streams through drafts
+	var lastDraft time.Time
+	var draftHold time.Time // no draft updates before this (429 retry_after)
+	if placeholder = b.reusePlaceholder(ctx, item); placeholder != 0 {
+		b.recordPlaceholder(ctx, item, placeholder)
+	} else if b.draftsSupported(item.ChatID) {
+		// The opening draft shows the cursor and probes support up front.
+		draftID = useDraft(b.newDraftID())
+		opening := "❘" // ▍ cursor
+		if item.Resumed {
+			opening = resumingBanner
+		}
+		if err := b.sendDraftOpts(ctx, item.ChatID, 0, draftID, opening, stopOpts); err == nil {
+			lastDraft = time.Now()
+		} else if !b.draftsSupported(item.ChatID) || errors.Is(err, bot.ErrorBadRequest) {
+			// Refused, or a bad call: edit path for this turn.
+			draftID = useDraft(0)
+		} else {
+			b.log.Debug("opening draft failed, will retry",
+				slog.Int64("chat_id", item.ChatID), slog.Any("err", err))
+		}
+	}
+	if draftID == 0 && placeholder == 0 && !startPlaceholder() {
+		b.drainAndSend(ctx, item, stream)
+		return nil
+	}
+
+	tick := b.streamTick
+	if tick <= 0 {
+		tick = time.Second
+	}
+	ticker := time.NewTicker(tick)
+	defer ticker.Stop()
+
+	var accumulated strings.Builder // text of the current draft/placeholder
+	var full strings.Builder        // every chunk so far, for a stop
+	dirty := false                  // accumulated has text not yet shown
+	overflow := false               // the reply outgrew one message
+
+loop:
 	for {
 		select {
 		case chunk, ok := <-stream.Chunks:
 			if !ok {
-				goto done // channel closed, agent exited
+				break loop // channel closed, agent exited
 			}
 			accumulated.WriteString(chunk)
+			full.WriteString(chunk)
 			dirty = true
 
-			// If accumulated text exceeds edit limit, flush as
-			// a finalized message and start a fresh accumulator.
-			if accumulated.Len() > editLimit {
-				b.editMessage(ctx, item.ChatID, placeholder,
-					accumulated.String())
-				overflow = true
-				// New placeholder for continuation (no reply threading).
-				placeholder = b.sendPlaceholder(ctx, item.ChatID, 0)
-				if placeholder == 0 {
-					// Can't send more placeholders — drain rest silently.
-					b.drainAndSend(ctx, item, stream)
-					return
-				}
-				b.recordPlaceholder(ctx, item, placeholder)
-				accumulated.Reset()
-				dirty = false
+			if accumulated.Len() <= editLimit {
+				continue
 			}
+			overflow = true
+			if draftID != 0 {
+				// A draft cannot hold more. Continue in a fresh draft
+				// (replaced, not animated); the final message carries
+				// the whole reply.
+				draftID = useDraft(b.newDraftID())
+				accumulated.Reset()
+				continue
+			}
+			// Edit path: finalize this placeholder, continue in a new one.
+			b.editMessage(ctx, item.ChatID, placeholder, accumulated.String())
+			placeholder = b.sendPlaceholder(ctx, item.ChatID, 0)
+			if placeholder == 0 {
+				b.drainAndSend(ctx, item, stream)
+				return nil
+			}
+			b.recordPlaceholder(ctx, item, placeholder)
+			accumulated.Reset()
+			dirty = false
 
 		case <-ticker.C:
+			if draftID != 0 {
+				if !dirty && time.Since(lastDraft) < draftRefresh {
+					continue
+				}
+				if time.Now().Before(draftHold) {
+					continue // rate limited: wait out retry_after
+				}
+				text := accumulated.String() + "❘" // ▍ cursor, never empty
+				err := b.sendDraftOpts(ctx, item.ChatID, 0, draftID, text, stopOpts)
+				if err == nil {
+					lastDraft = time.Now()
+					dirty = false
+					continue
+				}
+				if wait, ok := retryAfter(err); ok {
+					draftHold = time.Now().Add(wait)
+				}
+				if b.draftsSupported(item.ChatID) {
+					// Transient (rate limit, network): retry next tick.
+					b.log.Debug("sendDraft failed",
+						slog.Int64("chat_id", item.ChatID), slog.Any("err", err))
+					continue
+				}
+				// Refused: the rest of the turn uses the edit path.
+				draftID = useDraft(0)
+				if !startPlaceholder() {
+					b.drainAndSend(ctx, item, stream)
+					return nil
+				}
+			}
 			if dirty && accumulated.Len() > 0 {
-				text := accumulated.String() + "\u2758" // ▍ cursor
-				b.editMessage(ctx, item.ChatID, placeholder, text)
+				b.editMessage(ctx, item.ChatID, placeholder, accumulated.String()+"❘")
 				dirty = false
 			}
 
+		case <-stop:
+			return b.finishStopped(ctx, item, stream, full.String())
+
 		case <-ctx.Done():
-			return
+			return nil
 		}
 	}
 
-done:
-	// Final result.
-	res := <-stream.Result
+	// A stop can race the end of the stream: select picks at random
+	// when Chunks is closed and stop is ready, and a stop can land while
+	// waiting for Result. Either way the stop already cancelled the run,
+	// so the turn ends stopped with the text the user saw, never done.
+	var res runner.RunResult
+	select {
+	case <-stop:
+		return b.finishStopped(ctx, item, stream, full.String())
+	default:
+	}
+	select {
+	case res = <-stream.Result:
+	case <-stop:
+		return b.finishStopped(ctx, item, stream, full.String())
+	}
+	select {
+	case <-stop:
+		return b.finishStopped(ctx, item, stream, full.String())
+	default:
+	}
+
 	if res.Err != nil {
-		b.editMessage(ctx, item.ChatID, placeholder, "")
+		if placeholder != 0 {
+			b.editMessage(ctx, item.ChatID, placeholder, "")
+		}
 		b.handleStreamError(ctx, item, res.Err)
-		return
+		return nil
 	}
 
 	finalText := res.FullText
@@ -190,18 +320,35 @@ done:
 		finalText = "(empty reply)"
 	}
 
-	// Final edit with properly formatted text.
-	if !overflow {
-		// Simple case: everything fits in one message.
-		html := markdownToTelegramHTML(finalText)
-		b.editMessageHTML(ctx, item.ChatID, placeholder, html)
+	switch {
+	case draftID != 0:
+		// The draft is only a preview: persist the reply as a real
+		// message. Sending it also clears the draft. The draft expires
+		// on its own, so an undelivered reply must not end the turn
+		// done: return an error and let the queue retry the turn.
+		sent, err := b.sendFinal(ctx, item.ChatID, item.MessageID, finalText)
+		if sent == 0 {
+			b.log.Error("final reply undelivered",
+				slog.Int64("turn", item.ID),
+				slog.Int64("chat_id", item.ChatID),
+				slog.Any("err", err))
+			return fmt.Errorf("%w: %w", errReplyUndelivered, err)
+		}
+		if err != nil {
+			// Some chunks went out: record them, never resend them.
+			b.log.Warn("final reply partly delivered",
+				slog.Int64("turn", item.ID), slog.Any("err", err))
+		}
+		b.recordReply(ctx, item, sent, finalText)
+	case !overflow:
+		// Everything fits in the placeholder.
+		b.editMessageHTML(ctx, item.ChatID, placeholder, markdownToTelegramHTML(finalText))
 		b.recordReply(ctx, item, placeholder, finalText)
-	} else {
-		// Overflow: finalize last placeholder with remaining text,
-		// then send the full formatted response as a new reply.
+	default:
+		// Overflow: finalize the last placeholder with the remaining
+		// text, then send the full formatted response as a new reply.
 		if accumulated.Len() > 0 {
-			b.editMessage(ctx, item.ChatID, placeholder,
-				accumulated.String())
+			b.editMessage(ctx, item.ChatID, placeholder, accumulated.String())
 		}
 		sent := b.replyTo(ctx, item.ChatID, item.MessageID, finalText)
 		b.recordReply(ctx, item, sent, finalText)
@@ -213,6 +360,97 @@ done:
 
 	// Voice reply (must wait for full text).
 	b.maybeVoiceReply(ctx, item, finalText)
+	return nil
+}
+
+// errReplyUndelivered means the turn's final message could not be sent
+// after bounded retries. The handler returns it so the queue does not
+// mark the turn done; the queue's backoff retry runs the turn again.
+var errReplyUndelivered = errors.New("telegram: final reply undelivered")
+
+// Final-send retry bounds: attempts, and the total retry_after wait.
+const (
+	finalSendAttempts = 3
+	finalSendMaxWait  = 30 * time.Second
+)
+
+// sendFinal sends the turn's final reply, retrying only on 429 (the
+// request was refused, so nothing was delivered and a retry cannot
+// duplicate) after the server's retry_after, at most finalSendAttempts
+// times and finalSendMaxWait in total. Any other error, or a send that
+// delivered some chunks, is returned at once. Returns the last
+// delivered message id, 0 when nothing was delivered.
+func (b *Bot) sendFinal(ctx context.Context, chatID int64, replyTo int, text string) (int, error) {
+	var waited time.Duration
+	for attempt := 1; ; attempt++ {
+		id, err := b.sendFormattedErr(ctx, chatID, replyTo, text)
+		if err == nil || id != 0 {
+			return id, err
+		}
+		wait, ok := retryAfter(err)
+		if !ok || attempt >= finalSendAttempts || waited+wait > finalSendMaxWait {
+			return 0, err
+		}
+		b.log.Info("final reply rate limited, retrying",
+			slog.Int64("chat_id", chatID), slog.Duration("wait", wait))
+		if serr := b.wait(ctx, wait); serr != nil {
+			return 0, fmt.Errorf("%w (wait: %w)", err, serr)
+		}
+		waited += wait
+	}
+}
+
+// retryAfter reports the wait a 429 asks for (at least one second).
+func retryAfter(err error) (time.Duration, bool) {
+	var tm *bot.TooManyRequestsError
+	if !errors.As(err, &tm) {
+		return 0, false
+	}
+	return time.Duration(max(tm.RetryAfter, 1)) * time.Second, true
+}
+
+// wait sleeps d or until ctx ends, through b.sleep when tests set it.
+func (b *Bot) wait(ctx context.Context, d time.Duration) error {
+	if b.sleep != nil {
+		return b.sleep(ctx, d)
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// stoppedEmpty is the reply when the user stopped a turn before the
+// agent produced any text.
+const stoppedEmpty = "(stopped)"
+
+// finishStopped ends a turn the user stopped. Stop is offered only on
+// drafts, which Telegram removes once the bot sends a message
+// (keep_on_stop keeps one only briefly), so the partial text is sent
+// as a real message and memoized as the turn's reply. The agent's
+// remaining output is drained in the background and discarded, so the
+// runner's goroutine never blocks on a reader that has gone.
+func (b *Bot) finishStopped(ctx context.Context, item queue.Item, stream *runner.AgentStream, partial string) error {
+	go func() {
+		for range stream.Chunks {
+		}
+		<-stream.Result
+	}()
+
+	text := strings.TrimSpace(partial)
+	if text == "" {
+		text = stoppedEmpty
+	}
+	sent := b.sendFormatted(ctx, item.ChatID, item.MessageID, text)
+	b.recordReply(ctx, item, sent, text)
+	if item.MessageID > 0 {
+		b.react(ctx, item.ChatID, item.MessageID, emojiDone)
+	}
+	return queue.ErrStopped
 }
 
 // handleStreamError handles errors from a streaming agent run.
