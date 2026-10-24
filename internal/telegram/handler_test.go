@@ -111,3 +111,25 @@ func TestNewRejectsEmptyToken(t *testing.T) {
 		t.Errorf("err = %v, want ErrEmptyToken", err)
 	}
 }
+
+func TestInboundThreadID(t *testing.T) {
+	msg := func(ct models.ChatType, thread int) *models.Message {
+		return &models.Message{Chat: models.Chat{Type: ct}, MessageThreadID: thread}
+	}
+	cases := []struct {
+		name string
+		m    *models.Message
+		want int
+	}{
+		{"private with thread", msg(models.ChatTypePrivate, 42), 42},
+		{"private without thread", msg(models.ChatTypePrivate, 0), 0},
+		{"group with thread", msg(models.ChatTypeGroup, 42), 0},
+		{"supergroup forum topic", msg(models.ChatTypeSupergroup, 42), 0},
+		{"nil message", nil, 0},
+	}
+	for _, c := range cases {
+		if got := inboundThreadID(c.m); got != c.want {
+			t.Errorf("%s: inboundThreadID = %d, want %d", c.name, got, c.want)
+		}
+	}
+}

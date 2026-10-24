@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -758,5 +759,158 @@ func TestQueueRecoverIgnoresStopped(t *testing.T) {
 	time.Sleep(20 * time.Millisecond)
 	if atomic.LoadInt32(&replays) != 0 {
 		t.Error("stopped turn was replayed")
+	}
+}
+
+func TestRecoverKeepsThreadID(t *testing.T) {
+	fs := newFakeStore()
+	fs.unfinished = []Item{{ID: 1, Folder: "a", Source: "telegram", SourceID: "1", Attempts: 1, ThreadID: 9}}
+	got := make(chan Item, 1)
+	handler := func(ctx context.Context, items []Item) error {
+		got <- items[0]
+		return nil
+	}
+	q := New(context.Background(), handler, 1, fs, silentLog())
+	if n, err := q.Recover(context.Background()); err != nil || n != 1 {
+		t.Fatalf("Recover = (%d, %v), want (1, nil)", n, err)
+	}
+	select {
+	case it := <-got:
+		if it.ThreadID != 9 {
+			t.Errorf("recovered ThreadID = %d, want 9", it.ThreadID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout")
+	}
+}
+
+// batchRecorder is a handler that records each call's items and can hold
+// the first call open until released.
+type batchRecorder struct {
+	mu       sync.Mutex
+	batches  [][]Item
+	cur, max int32
+	first    chan struct{} // closed when the first call has started
+	release  chan struct{} // first call waits on this (nil = no gate)
+	once     sync.Once
+	total    int
+	done     chan struct{}
+	want     int
+}
+
+func newBatchRecorder(want int, gate bool) *batchRecorder {
+	r := &batchRecorder{first: make(chan struct{}), done: make(chan struct{}), want: want}
+	if gate {
+		r.release = make(chan struct{})
+	}
+	return r
+}
+
+func (r *batchRecorder) handle(ctx context.Context, items []Item) error {
+	n := atomic.AddInt32(&r.cur, 1)
+	for {
+		old := atomic.LoadInt32(&r.max)
+		if n <= old || atomic.CompareAndSwapInt32(&r.max, old, n) {
+			break
+		}
+	}
+	r.mu.Lock()
+	first := len(r.batches) == 0
+	r.batches = append(r.batches, append([]Item(nil), items...))
+	r.mu.Unlock()
+	if first {
+		close(r.first)
+		if r.release != nil {
+			<-r.release
+		}
+	}
+	atomic.AddInt32(&r.cur, -1)
+	r.mu.Lock()
+	r.total += len(items)
+	if r.total >= r.want {
+		r.once.Do(func() { close(r.done) })
+	}
+	r.mu.Unlock()
+	return nil
+}
+
+func (r *batchRecorder) wait(t *testing.T) {
+	t.Helper()
+	select {
+	case <-r.done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for items")
+	}
+}
+
+// shape renders batches as "0|5,5|0" using item Text, asserting each
+// batch holds a single ThreadID.
+func (r *batchRecorder) shape(t *testing.T) string {
+	t.Helper()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var parts []string
+	for _, b := range r.batches {
+		var txt []string
+		for _, it := range b {
+			if it.ThreadID != b[0].ThreadID {
+				t.Errorf("batch mixes thread ids: %+v", b)
+			}
+			txt = append(txt, it.Text)
+		}
+		parts = append(parts, strings.Join(txt, ","))
+	}
+	return strings.Join(parts, "|")
+}
+
+// Main-chat and thread messages of one chat share a folder, so the queue
+// still serializes and orders them per chat, but never in one batch.
+func TestQueueOrdersMainAndThreadMessagesPerChat(t *testing.T) {
+	r := newBatchRecorder(4, true)
+	q := New(context.Background(), r.handle, 4, nil, silentLog())
+	q.Enqueue(context.Background(), Item{Folder: "alice", ThreadID: 0, Text: "0"})
+	<-r.first
+	for i, th := range []int{5, 0, 6} {
+		q.Enqueue(context.Background(), Item{Folder: "alice", ThreadID: th, Text: strconv.Itoa(i + 1)})
+	}
+	close(r.release)
+	r.wait(t)
+	if got := r.shape(t); got != "0|1|2|3" {
+		t.Errorf("batches = %s, want 0|1|2|3", got)
+	}
+	if mc := atomic.LoadInt32(&r.max); mc > 1 {
+		t.Errorf("max concurrent = %d, want 1", mc)
+	}
+}
+
+func TestQueueBatchesLeadingSameThreadRun(t *testing.T) {
+	r := newBatchRecorder(5, true)
+	q := New(context.Background(), r.handle, 4, nil, silentLog())
+	q.Enqueue(context.Background(), Item{Folder: "alice", Text: "x"})
+	<-r.first // a turn is running; the rest queue up behind it
+	for i, th := range []int{0, 5, 5, 0} {
+		q.Enqueue(context.Background(), Item{Folder: "alice", ThreadID: th, Text: strconv.Itoa(i)})
+	}
+	close(r.release)
+	r.wait(t)
+	if got := r.shape(t); got != "x|0|1,2|3" {
+		t.Errorf("batches = %s, want x|0|1,2|3", got)
+	}
+}
+
+func TestRecoverSplitsThreadsIntoSeparateBatches(t *testing.T) {
+	fs := newFakeStore()
+	fs.unfinished = []Item{
+		{ID: 1, Folder: "a", Source: "telegram", SourceID: "1", Text: "1", ThreadID: 7, Attempts: 1, PlaceholderMsgID: 99},
+		{ID: 2, Folder: "a", Source: "telegram", SourceID: "2", Text: "2"},
+	}
+	r := newBatchRecorder(2, false)
+	q := New(context.Background(), r.handle, 1, fs, silentLog())
+	if n, err := q.Recover(context.Background()); err != nil || n != 2 {
+		t.Fatalf("Recover = (%d, %v), want (2, nil)", n, err)
+	}
+	r.wait(t)
+	if got := r.shape(t); got != "1|2" {
+		t.Errorf("batches = %s, want 1|2", got)
 	}
 }

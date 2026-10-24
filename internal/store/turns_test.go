@@ -243,3 +243,33 @@ func TestLoadUnfinishedSkipsStopped(t *testing.T) {
 		t.Errorf("unfinished = %v, want none", ids(rows))
 	}
 }
+
+func TestTurnRoundTripKeepsThreadID(t *testing.T) {
+	ctx := context.Background()
+	s := openTestStore(t)
+
+	threaded := sampleTurn()
+	threaded.ThreadID = 7
+	id, _, err := s.InsertTurn(ctx, threaded)
+	if err != nil {
+		t.Fatalf("InsertTurn threaded: %v", err)
+	}
+	plain := sampleTurn()
+	plain.SourceID = "43"
+	plain.TGMessageID = 43
+	if _, _, err := s.InsertTurn(ctx, plain); err != nil {
+		t.Fatalf("InsertTurn plain: %v", err)
+	}
+
+	got, err := s.GetTurn(ctx, id)
+	if err != nil || got.ThreadID != 7 {
+		t.Fatalf("GetTurn = %+v, %v; want ThreadID 7", got, err)
+	}
+	list, err := s.ListUnfinishedTurns(ctx)
+	if err != nil || len(list) != 2 {
+		t.Fatalf("ListUnfinishedTurns = %d rows, %v; want 2", len(list), err)
+	}
+	if list[0].ThreadID != 7 || list[1].ThreadID != 0 {
+		t.Errorf("thread ids = %d, %d; want 7, 0", list[0].ThreadID, list[1].ThreadID)
+	}
+}
