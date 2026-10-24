@@ -28,6 +28,9 @@ func (a *IPCSink) Send(ctx context.Context, chatJID, text string) error {
 	if a.bot == nil || a.bot.api == nil {
 		return fmt.Errorf("telegram bot not initialised: %w", ipc.ErrPermanent)
 	}
+	// No MessageThreadID: IPC messages are agent-authored and carry no
+	// conversation, so they always land in the main chat (thread 0),
+	// never in a private-chat topic. Deliberate; see the threads spec.
 	if _, err := a.bot.api.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: id,
 		Text:   text,

@@ -20,12 +20,14 @@ import (
 // its message ID. The caller uses this ID for subsequent editMessage
 // calls to stream partial output. Returns 0 if the send fails.
 //
-// replyToMsgID is the user's original message ID for reply threading;
-// pass 0 for no threading.
-func (b *Bot) sendPlaceholder(ctx context.Context, chatID int64, replyToMsgID int) int {
+// thread is the private-chat topic (0 = main chat). replyToMsgID is
+// the user's original message ID for reply threading; pass 0 for no
+// threading.
+func (b *Bot) sendPlaceholder(ctx context.Context, chatID int64, thread int, replyToMsgID int) int {
 	params := &bot.SendMessageParams{
-		ChatID: chatID,
-		Text:   "\u2758", // ▍ cursor
+		ChatID:          chatID,
+		MessageThreadID: thread,
+		Text:            "\u2758", // ▍ cursor
 	}
 	if replyToMsgID > 0 {
 		params.ReplyParameters = &models.ReplyParameters{
@@ -106,7 +108,7 @@ func (b *Bot) runAgentStreaming(ctx context.Context, item queue.Item) error {
 		tier = runner.TierOwner
 	}
 
-	stopTyping := b.startTyping(ctx, item.ChatID)
+	stopTyping := b.startTyping(ctx, item.ChatID, item.ThreadID)
 	defer stopTyping()
 
 	prompt := item.Text
@@ -161,7 +163,7 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 	// when no placeholder could be sent.
 	placeholder := 0
 	startPlaceholder := func() bool {
-		placeholder = b.sendPlaceholder(ctx, item.ChatID, item.MessageID)
+		placeholder = b.sendPlaceholder(ctx, item.ChatID, item.ThreadID, item.MessageID)
 		if placeholder == 0 {
 			return false
 		}
@@ -181,7 +183,7 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 		if item.Resumed {
 			opening = resumingBanner
 		}
-		if err := b.sendDraftOpts(ctx, item.ChatID, 0, draftID, opening, stopOpts); err == nil {
+		if err := b.sendDraftOpts(ctx, item.ChatID, item.ThreadID, draftID, opening, stopOpts); err == nil {
 			lastDraft = time.Now()
 		} else if !b.draftsSupported(item.ChatID) || errors.Is(err, bot.ErrorBadRequest) {
 			// Refused, or a bad call: edit path for this turn.
@@ -233,7 +235,7 @@ loop:
 			}
 			// Edit path: finalize this placeholder, continue in a new one.
 			b.editMessage(ctx, item.ChatID, placeholder, accumulated.String())
-			placeholder = b.sendPlaceholder(ctx, item.ChatID, 0)
+			placeholder = b.sendPlaceholder(ctx, item.ChatID, item.ThreadID, 0)
 			if placeholder == 0 {
 				b.drainAndSend(ctx, item, stream)
 				return nil
@@ -251,7 +253,7 @@ loop:
 					continue // rate limited: wait out retry_after
 				}
 				text := accumulated.String() + "❘" // ▍ cursor, never empty
-				err := b.sendDraftOpts(ctx, item.ChatID, 0, draftID, text, stopOpts)
+				err := b.sendDraftOpts(ctx, item.ChatID, item.ThreadID, draftID, text, stopOpts)
 				if err == nil {
 					lastDraft = time.Now()
 					dirty = false
@@ -326,7 +328,7 @@ loop:
 		// message. Sending it also clears the draft. The draft expires
 		// on its own, so an undelivered reply must not end the turn
 		// done: return an error and let the queue retry the turn.
-		sent, err := b.sendFinal(ctx, item.ChatID, item.MessageID, finalText)
+		sent, err := b.sendFinal(ctx, item.ChatID, item.ThreadID, item.MessageID, finalText)
 		if sent == 0 {
 			b.log.Error("final reply undelivered",
 				slog.Int64("turn", item.ID),
@@ -350,7 +352,7 @@ loop:
 		if accumulated.Len() > 0 {
 			b.editMessage(ctx, item.ChatID, placeholder, accumulated.String())
 		}
-		sent := b.replyTo(ctx, item.ChatID, item.MessageID, finalText)
+		sent := b.replyTo(ctx, item.ChatID, item.ThreadID, item.MessageID, finalText)
 		b.recordReply(ctx, item, sent, finalText)
 	}
 
@@ -380,10 +382,10 @@ const (
 // times and finalSendMaxWait in total. Any other error, or a send that
 // delivered some chunks, is returned at once. Returns the last
 // delivered message id, 0 when nothing was delivered.
-func (b *Bot) sendFinal(ctx context.Context, chatID int64, replyTo int, text string) (int, error) {
+func (b *Bot) sendFinal(ctx context.Context, chatID int64, thread int, replyTo int, text string) (int, error) {
 	var waited time.Duration
 	for attempt := 1; ; attempt++ {
-		id, err := b.sendFormattedErr(ctx, chatID, replyTo, text)
+		id, err := b.sendFormattedErr(ctx, chatID, thread, replyTo, text)
 		if err == nil || id != 0 {
 			return id, err
 		}
@@ -445,7 +447,7 @@ func (b *Bot) finishStopped(ctx context.Context, item queue.Item, stream *runner
 	if text == "" {
 		text = stoppedEmpty
 	}
-	sent := b.sendFormatted(ctx, item.ChatID, item.MessageID, text)
+	sent := b.sendFormatted(ctx, item.ChatID, item.ThreadID, item.MessageID, text)
 	b.recordReply(ctx, item, sent, text)
 	if item.MessageID > 0 {
 		b.react(ctx, item.ChatID, item.MessageID, emojiDone)
@@ -460,19 +462,19 @@ func (b *Bot) handleStreamError(ctx context.Context, item queue.Item, err error)
 		b.react(ctx, item.ChatID, item.MessageID, emojiError)
 	}
 	if errors.Is(err, runner.ErrSessionExpired) {
-		b.replyTo(ctx, item.ChatID, item.MessageID,
+		b.replyTo(ctx, item.ChatID, item.ThreadID, item.MessageID,
 			"Session expired. Run /login to re-authenticate.")
 		return
 	}
 	if errors.Is(err, runner.ErrNotLoggedIn) {
-		b.replyTo(ctx, item.ChatID, item.MessageID,
+		b.replyTo(ctx, item.ChatID, item.ThreadID, item.MessageID,
 			"Not authenticated. Run /login to sign in.")
 		return
 	}
 	b.log.Error("streaming agent run failed",
 		slog.String("chat_folder", item.Folder),
 		slog.Any("err", err))
-	b.replyTo(ctx, item.ChatID, item.MessageID,
+	b.replyTo(ctx, item.ChatID, item.ThreadID, item.MessageID,
 		"Something went wrong. Check gopod logs for details.")
 }
 
@@ -496,7 +498,7 @@ func (b *Bot) drainAndSend(ctx context.Context, item queue.Item, stream *runner.
 	if item.MessageID > 0 {
 		b.react(ctx, item.ChatID, item.MessageID, emojiDone)
 	}
-	sent := b.replyTo(ctx, item.ChatID, item.MessageID, text)
+	sent := b.replyTo(ctx, item.ChatID, item.ThreadID, item.MessageID, text)
 	b.recordReply(ctx, item, sent, text)
 	b.maybeVoiceReply(ctx, item, text)
 }
@@ -518,7 +520,7 @@ func (b *Bot) maybeVoiceReply(ctx context.Context, item queue.Item, text string)
 			slog.Any("err", err))
 		return
 	}
-	if err := b.sendVoiceReply(ctx, item.ChatID, item.MessageID, audioData); err != nil {
+	if err := b.sendVoiceReply(ctx, item.ChatID, item.ThreadID, item.MessageID, audioData); err != nil {
 		b.log.Warn("send voice reply failed",
 			slog.Any("err", err))
 	}

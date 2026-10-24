@@ -25,7 +25,7 @@ func (b *Bot) loginHandler(ctx context.Context, api *bot.Bot, update *models.Upd
 		return
 	}
 	b.persistMessage(ctx, update.Message)
-	b.replyText(ctx, update.Message.Chat.ID,
+	b.replyText(ctx, update.Message.Chat.ID, inboundThreadID(update.Message),
 		"Runner is not available (Docker may be unreachable). "+
 			"Cannot start interactive login.")
 }
@@ -65,6 +65,6 @@ func (b *Bot) whoamiHandler(ctx context.Context, _ *bot.Bot, update *models.Upda
 		fmt.Fprintf(&sb, "registered: ?? (error: %v)\n", err)
 	}
 
-	b.replyText(ctx, m.Chat.ID, sb.String())
+	b.replyText(ctx, m.Chat.ID, inboundThreadID(m), sb.String())
 }
 

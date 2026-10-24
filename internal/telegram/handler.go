@@ -47,6 +47,9 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 	}
 
 	text := strings.TrimSpace(messageText(m))
+	// thread is the private-chat topic the message came from; every
+	// answer to it below goes back into that topic.
+	thread := inboundThreadID(m)
 
 	// Handle voice messages (I3): transcribe via Whisper, use text as prompt.
 	isVoice := false
@@ -55,7 +58,7 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 		transcript, err := b.transcribeVoice(ctx, m.Voice)
 		if err != nil {
 			b.log.Error("voice transcription failed", slog.Any("err", err))
-			b.replyTo(ctx, m.Chat.ID, m.ID, "Failed to transcribe voice message.")
+			b.replyTo(ctx, m.Chat.ID, thread, m.ID, "Failed to transcribe voice message.")
 			return
 		}
 		if transcript != "" {
@@ -76,7 +79,7 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 		_, containerPath, err := b.downloadPhoto(ctx, rc.Folder, m.Photo)
 		if err != nil {
 			b.log.Error("download photo failed", slog.Any("err", err))
-			b.replyTo(ctx, m.Chat.ID, m.ID, "Failed to download photo.")
+			b.replyTo(ctx, m.Chat.ID, thread, m.ID, "Failed to download photo.")
 			return
 		}
 		filePath = containerPath
@@ -96,7 +99,7 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 		_, containerPath, err := b.downloadDocument(ctx, rc.Folder, m.Document)
 		if err != nil {
 			b.log.Error("download document failed", slog.Any("err", err))
-			b.replyTo(ctx, m.Chat.ID, m.ID, "Failed to download document.")
+			b.replyTo(ctx, m.Chat.ID, thread, m.ID, "Failed to download document.")
 			return
 		}
 		filePath = containerPath
@@ -142,7 +145,7 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 	item := queue.Item{
 		ChatID:    m.Chat.ID,
 		MessageID: m.ID,
-		ThreadID:  inboundThreadID(m),
+		ThreadID:  thread,
 		Folder:    rc.Folder,
 		IsOwner:   rc.IsOwner,
 		Text:      text,
@@ -179,8 +182,9 @@ func inboundThreadID(m *models.Message) int {
 // it through the Router. If the Router is nil (pre-M3.5), falls back
 // to "unknown command".
 func (b *Bot) dispatchSlash(ctx context.Context, m *models.Message, text string) {
+	thread := inboundThreadID(m)
 	if b.router == nil {
-		b.replyText(ctx, m.Chat.ID, "unknown command")
+		b.replyText(ctx, m.Chat.ID, thread, "unknown command")
 		return
 	}
 
@@ -197,7 +201,7 @@ func (b *Bot) dispatchSlash(ctx context.Context, m *models.Message, text string)
 
 	cmdName, ok := b.router.LookupBySlash(slash)
 	if !ok {
-		b.replyText(ctx, m.Chat.ID, "unknown command: /"+slash)
+		b.replyText(ctx, m.Chat.ID, thread, "unknown command: /"+slash)
 		return
 	}
 
@@ -215,11 +219,11 @@ func (b *Bot) dispatchSlash(ctx context.Context, m *models.Message, text string)
 
 	resp, err := b.router.Dispatch(ctx, cmd)
 	if err != nil {
-		b.replyTo(ctx, m.Chat.ID, m.ID, resp.Text)
+		b.replyTo(ctx, m.Chat.ID, thread, m.ID, resp.Text)
 		return
 	}
 	if resp.Text != "" {
-		b.replyTo(ctx, m.Chat.ID, m.ID, resp.Text)
+		b.replyTo(ctx, m.Chat.ID, thread, m.ID, resp.Text)
 	}
 }
 
@@ -277,7 +281,7 @@ func (b *Bot) runAgentSync(ctx context.Context, item queue.Item) {
 	}
 
 	// 👀 already set by defaultHandler before enqueue.
-	stopTyping := b.startTyping(ctx, item.ChatID)
+	stopTyping := b.startTyping(ctx, item.ChatID, item.ThreadID)
 	defer stopTyping()
 
 	prompt := item.Text
@@ -292,19 +296,19 @@ func (b *Bot) runAgentSync(ctx context.Context, item queue.Item) {
 		}
 
 		if errors.Is(err, runner.ErrSessionExpired) {
-			b.replyTo(ctx, item.ChatID, item.MessageID,
+			b.replyTo(ctx, item.ChatID, item.ThreadID, item.MessageID,
 				"Session expired. Run /login to re-authenticate.")
 			return
 		}
 		if errors.Is(err, runner.ErrNotLoggedIn) {
-			b.replyTo(ctx, item.ChatID, item.MessageID,
+			b.replyTo(ctx, item.ChatID, item.ThreadID, item.MessageID,
 				"Not authenticated. Run /login to sign in.")
 			return
 		}
 		b.log.Error("runner.Run failed",
 			slog.String("chat_folder", item.Folder),
 			slog.Any("err", err))
-		b.replyTo(ctx, item.ChatID, item.MessageID,
+		b.replyTo(ctx, item.ChatID, item.ThreadID, item.MessageID,
 			"Something went wrong. Check gopod logs for details.")
 		return
 	}
@@ -323,7 +327,7 @@ func (b *Bot) runAgentSync(ctx context.Context, item queue.Item) {
 
 	mode := b.getReplyMode(item.ChatID, item.IsVoice)
 	if mode != "voice" {
-		sent := b.replyTo(ctx, item.ChatID, item.MessageID, reply)
+		sent := b.replyTo(ctx, item.ChatID, item.ThreadID, item.MessageID, reply)
 		b.recordReply(ctx, item, sent, reply)
 	}
 }
@@ -423,12 +427,14 @@ func (b *Bot) resolveRegistered(ctx context.Context, m *models.Message) (store.R
 
 // startTyping fires a "typing..." chat action immediately and then
 // refreshes it every 4 seconds in a goroutine. Returns a stop func
-// the caller defers — that cancels the refresh loop.
-func (b *Bot) startTyping(ctx context.Context, chatID int64) func() {
+// the caller defers — that cancels the refresh loop. thread is the
+// private-chat topic (0 = main chat) the action shows in.
+func (b *Bot) startTyping(ctx context.Context, chatID int64, thread int) func() {
 	send := func() {
 		_, err := b.api.SendChatAction(ctx, &bot.SendChatActionParams{
-			ChatID: chatID,
-			Action: models.ChatActionTyping,
+			ChatID:          chatID,
+			MessageThreadID: thread,
+			Action:          models.ChatActionTyping,
 		})
 		if err != nil {
 			// Best-effort; don't spam logs on every refresh failure.
@@ -457,21 +463,26 @@ func (b *Bot) startTyping(ctx context.Context, chatID int64) func() {
 	return func() { close(stopCh) }
 }
 
+// Outbound sends take thread, the private-chat topic the conversation
+// lives in (message_thread_id), next to chatID. 0 is the main chat:
+// MessageThreadID is omitempty in go-telegram/bot, so a thread-0 send
+// is the same request as before topics existed.
+
 // replyTo sends a message as a reply to a specific message, with
 // markdown → HTML conversion and smart chunking. Falls back to plain
 // text if HTML send fails.
-func (b *Bot) replyTo(ctx context.Context, chatID int64, replyToMsgID int, text string) int {
-	return b.sendFormatted(ctx, chatID, replyToMsgID, text)
+func (b *Bot) replyTo(ctx context.Context, chatID int64, thread int, replyToMsgID int, text string) int {
+	return b.sendFormatted(ctx, chatID, thread, replyToMsgID, text)
 }
 
 // replyText sends a message without reply threading. Used by
 // commands and system messages.
-func (b *Bot) replyText(ctx context.Context, chatID int64, text string) {
-	_ = b.sendFormatted(ctx, chatID, 0, text)
+func (b *Bot) replyText(ctx context.Context, chatID int64, thread int, text string) {
+	_ = b.sendFormatted(ctx, chatID, thread, 0, text)
 }
 
-func (b *Bot) sendFormatted(ctx context.Context, chatID int64, replyToMsgID int, text string) int {
-	id, _ := b.sendFormattedErr(ctx, chatID, replyToMsgID, text)
+func (b *Bot) sendFormatted(ctx context.Context, chatID int64, thread int, replyToMsgID int, text string) int {
+	id, _ := b.sendFormattedErr(ctx, chatID, thread, replyToMsgID, text)
 	return id
 }
 
@@ -479,7 +490,7 @@ func (b *Bot) sendFormatted(ctx context.Context, chatID int64, replyToMsgID int,
 // it. The id is the last message delivered, 0 when none was. A 429 on
 // the HTML attempt is returned as is: the plain-text fallback is for
 // markup Telegram rejects and would only hit the same rate limit.
-func (b *Bot) sendFormattedErr(ctx context.Context, chatID int64, replyToMsgID int, text string) (int, error) {
+func (b *Bot) sendFormattedErr(ctx context.Context, chatID int64, thread int, replyToMsgID int, text string) (int, error) {
 	const maxLen = 4000
 	last := 0
 	htmlText := markdownToTelegramHTML(text)
@@ -487,9 +498,10 @@ func (b *Bot) sendFormattedErr(ctx context.Context, chatID int64, replyToMsgID i
 
 	for i, c := range chunks {
 		params := &bot.SendMessageParams{
-			ChatID:    chatID,
-			Text:      c,
-			ParseMode: models.ParseModeHTML,
+			ChatID:          chatID,
+			MessageThreadID: thread,
+			Text:            c,
+			ParseMode:       models.ParseModeHTML,
 		}
 		// Reply threading: only the first chunk replies to the original message.
 		if i == 0 && replyToMsgID > 0 {
@@ -514,8 +526,9 @@ func (b *Bot) sendFormattedErr(ctx context.Context, chatID int64, replyToMsgID i
 			plainChunks := chunkString(text, maxLen)
 			for _, pc := range plainChunks {
 				sent, err := b.api.SendMessage(ctx, &bot.SendMessageParams{
-					ChatID: chatID,
-					Text:   pc,
+					ChatID:          chatID,
+					MessageThreadID: thread,
+					Text:            pc,
 				})
 				if err != nil {
 					b.log.Error("SendMessage failed",
@@ -568,7 +581,7 @@ func (b *Bot) pingHandler(ctx context.Context, _ *bot.Bot, update *models.Update
 		return
 	}
 	b.persistMessage(ctx, update.Message)
-	b.replyText(ctx, update.Message.Chat.ID, "pong")
+	b.replyText(ctx, update.Message.Chat.ID, inboundThreadID(update.Message), "pong")
 }
 
 // persistMessage upserts the chat row and stores the message body.

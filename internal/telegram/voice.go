@@ -154,10 +154,12 @@ func textToSpeech(ctx context.Context, apiKey, text string) ([]byte, error) {
 	return io.ReadAll(resp.Body)
 }
 
-// sendVoiceReply sends audio data as a Telegram voice message.
-func (b *Bot) sendVoiceReply(ctx context.Context, chatID int64, replyToMsgID int, audioData []byte) error {
+// sendVoiceReply sends audio data as a Telegram voice message into
+// thread (0 = main chat).
+func (b *Bot) sendVoiceReply(ctx context.Context, chatID int64, thread int, replyToMsgID int, audioData []byte) error {
 	params := &bot.SendVoiceParams{
-		ChatID: chatID,
+		ChatID:          chatID,
+		MessageThreadID: thread,
 		Voice: &models.InputFileUpload{
 			Filename: "reply.ogg",
 			Data:     bytes.NewReader(audioData),
