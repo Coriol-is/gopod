@@ -455,8 +455,8 @@ func (q *Queue) finish(items []Item, status string, err error) {
 	}
 }
 
-// drainPending atomically takes all pending items for the chat,
-// leaving the pending slice empty. The worker calls this at the
+// drainPending atomically takes the leading same-thread run of pending
+// items for the chat. The worker calls this at the
 // start of each loop iteration to pick up any messages that arrived
 // while the previous run was in flight.
 func (q *Queue) drainPending(folder string) []Item {
@@ -466,8 +466,18 @@ func (q *Queue) drainPending(folder string) []Item {
 	if cs == nil || len(cs.pending) == 0 {
 		return nil
 	}
-	items := cs.pending
-	cs.pending = nil
+	// Take only the leading run sharing one ThreadID: a batch is one
+	// conversation. The rest stays pending and the worker drains it next,
+	// so per-chat order is kept. Thread-0-only traffic batches as before.
+	n := 1
+	for n < len(cs.pending) && cs.pending[n].ThreadID == cs.pending[0].ThreadID {
+		n++
+	}
+	items := append([]Item(nil), cs.pending[:n]...)
+	cs.pending = cs.pending[n:]
+	if len(cs.pending) == 0 {
+		cs.pending = nil
+	}
 	return items
 }
 
