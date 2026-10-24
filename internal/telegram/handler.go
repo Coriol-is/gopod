@@ -210,6 +210,7 @@ func (b *Bot) dispatchSlash(ctx context.Context, m *models.Message, text string)
 		Args: parts[1:],
 		Caller: control.Caller{
 			ChatID:   m.Chat.ID,
+			ThreadID: thread,
 			UserID:   userID(m.From),
 			Username: senderDisplayName(m.From),
 			Source:   control.SourceTelegram,

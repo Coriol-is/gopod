@@ -42,7 +42,12 @@ const (
 
 // Caller describes the origin of a Command. Frontends populate this.
 type Caller struct {
-	ChatID   int64  // Telegram chat ID; 0 for CLI
+	ChatID int64 // Telegram chat ID; 0 for CLI
+	// ThreadID is the private-chat topic the command was sent in;
+	// 0 for the main chat and for CLI. It routes the command to a
+	// conversation inside an already-authorized chat and never grants
+	// anything: permission checks use ChatID/IsOwner only.
+	ThreadID int
 	UserID   int64  // Telegram user ID; 0 for CLI
 	Username string // display name / @username
 	Source   Source

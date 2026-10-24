@@ -63,10 +63,13 @@ func RegisterWhoami(r *Router, ownerChatID int64) {
 // setting the per-chat reply mode.
 // RegisterLogsCommand adds /logs to the Router. Owner-only.
 // CompactFunc is the callback control uses to trigger session compact
-// without importing runner. Wired from main.go.
-type CompactFunc func(ctx context.Context, chatFolder string, clear bool) (string, error)
+// without importing runner. Wired from main.go. thread is the
+// conversation inside the chat (0 = main chat).
+type CompactFunc func(ctx context.Context, chatFolder string, thread int, clear bool) (string, error)
 
-// RegisterSessionCommands adds /clear and /compact to the Router.
+// RegisterSessionCommands adds /clear and /compact to the Router. Both
+// act on the conversation the command was sent in (Caller.ThreadID)
+// and leave the chat's other conversations alone.
 func RegisterSessionCommands(r *Router, compactFn CompactFunc, chatFolderLookup func(chatID int64) string) {
 	r.Register("clear", "clear", "clear conversation context (memory preserved)", PermChatLocal,
 		func(ctx context.Context, cmd Command) (Response, error) {
@@ -74,7 +77,7 @@ func RegisterSessionCommands(r *Router, compactFn CompactFunc, chatFolderLookup 
 			if folder == "" {
 				return Response{Text: "Chat not registered.", Code: 1}, nil
 			}
-			_, err := compactFn(ctx, folder, true) // clear = true → no summary
+			_, err := compactFn(ctx, folder, cmd.Caller.ThreadID, true) // clear = true → no summary
 			if err != nil {
 				return Response{}, err
 			}
@@ -87,7 +90,7 @@ func RegisterSessionCommands(r *Router, compactFn CompactFunc, chatFolderLookup 
 			if folder == "" {
 				return Response{Text: "Chat not registered.", Code: 1}, nil
 			}
-			result, err := compactFn(ctx, folder, false) // clear = false → summarize first
+			result, err := compactFn(ctx, folder, cmd.Caller.ThreadID, false) // clear = false → summarize first
 			if err != nil {
 				return Response{}, err
 			}
