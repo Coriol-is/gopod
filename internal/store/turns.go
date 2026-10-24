@@ -33,6 +33,7 @@ type Turn struct {
 	ChatFolder       string
 	ChatID           int64 // Telegram chat id, 0 for tasks
 	TGMessageID      int64
+	ThreadID         int // Telegram private-chat topic, 0 = main chat
 	IsOwner          bool
 	IsVoice          bool
 	Text             string
@@ -47,7 +48,7 @@ type Turn struct {
 	FinishedAt       int64
 }
 
-const turnColumns = `id, source, source_id, chat_folder, chat_id, tg_message_id,
+const turnColumns = `id, source, source_id, chat_folder, chat_id, tg_message_id, thread_id,
 	is_owner, is_voice, text, file_path, status, attempts,
 	placeholder_msg_id, reply_msg_id, error, created_at, started_at, finished_at`
 
@@ -69,13 +70,13 @@ func (s *Store) InsertTurn(ctx context.Context, t Turn) (int64, bool, error) {
 	}
 	const stmt = `
 		INSERT INTO turns
-		  (source, source_id, chat_folder, chat_id, tg_message_id, is_owner, is_voice,
+		  (source, source_id, chat_folder, chat_id, tg_message_id, thread_id, is_owner, is_voice,
 		   text, file_path, status, attempts, placeholder_msg_id, reply_msg_id,
 		   error, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(source, source_id) DO NOTHING`
 	res, err := s.db.ExecContext(ctx, stmt,
-		t.Source, t.SourceID, t.ChatFolder, t.ChatID, t.TGMessageID,
+		t.Source, t.SourceID, t.ChatFolder, t.ChatID, t.TGMessageID, t.ThreadID,
 		boolToInt(t.IsOwner), boolToInt(t.IsVoice),
 		t.Text, nullableString(t.FilePath), t.Status, t.Attempts,
 		t.PlaceholderMsgID, t.ReplyMsgID, nullableString(t.Error), t.CreatedAt)
@@ -184,7 +185,7 @@ func scanTurns(rows *sql.Rows) ([]Turn, error) {
 		var startedAt, finishedAt sql.NullInt64
 		var isOwner, isVoice int
 		if err := rows.Scan(&t.ID, &t.Source, &t.SourceID, &t.ChatFolder, &t.ChatID,
-			&t.TGMessageID, &isOwner, &isVoice, &t.Text, &filePath, &t.Status,
+			&t.TGMessageID, &t.ThreadID, &isOwner, &isVoice, &t.Text, &filePath, &t.Status,
 			&t.Attempts, &t.PlaceholderMsgID, &t.ReplyMsgID, &errText,
 			&t.CreatedAt, &startedAt, &finishedAt); err != nil {
 			return nil, fmt.Errorf("store: scan turn: %w", err)

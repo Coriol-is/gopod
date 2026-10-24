@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -758,5 +759,71 @@ func TestQueueRecoverIgnoresStopped(t *testing.T) {
 	time.Sleep(20 * time.Millisecond)
 	if atomic.LoadInt32(&replays) != 0 {
 		t.Error("stopped turn was replayed")
+	}
+}
+
+func TestRecoverKeepsThreadID(t *testing.T) {
+	fs := newFakeStore()
+	fs.unfinished = []Item{{ID: 1, Folder: "a", Source: "telegram", SourceID: "1", Attempts: 1, ThreadID: 9}}
+	got := make(chan Item, 1)
+	handler := func(ctx context.Context, items []Item) error {
+		got <- items[0]
+		return nil
+	}
+	q := New(context.Background(), handler, 1, fs, silentLog())
+	if n, err := q.Recover(context.Background()); err != nil || n != 1 {
+		t.Fatalf("Recover = (%d, %v), want (1, nil)", n, err)
+	}
+	select {
+	case it := <-got:
+		if it.ThreadID != 9 {
+			t.Errorf("recovered ThreadID = %d, want 9", it.ThreadID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout")
+	}
+}
+
+// Main-chat and thread messages of one chat share a folder, so the queue
+// still serializes and orders them per chat.
+func TestQueueOrdersMainAndThreadMessagesPerChat(t *testing.T) {
+	var mu sync.Mutex
+	var order []string
+	var concurrent, maxConcurrent int32
+	done := make(chan struct{})
+	var once sync.Once
+	handler := func(ctx context.Context, items []Item) error {
+		n := atomic.AddInt32(&concurrent, 1)
+		if n > atomic.LoadInt32(&maxConcurrent) {
+			atomic.StoreInt32(&maxConcurrent, n)
+		}
+		time.Sleep(10 * time.Millisecond)
+		atomic.AddInt32(&concurrent, -1)
+		mu.Lock()
+		for _, it := range items {
+			order = append(order, it.Text)
+		}
+		if len(order) == 4 {
+			once.Do(func() { close(done) })
+		}
+		mu.Unlock()
+		return nil
+	}
+	q := New(context.Background(), handler, 4, nil, silentLog())
+	for i, th := range []int{0, 5, 0, 6} {
+		q.Enqueue(context.Background(), Item{Folder: "alice", ThreadID: th, Text: strconv.Itoa(i)})
+	}
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if got := strings.Join(order, ","); got != "0,1,2,3" {
+		t.Errorf("order = %s, want 0,1,2,3", got)
+	}
+	if mc := atomic.LoadInt32(&maxConcurrent); mc > 1 {
+		t.Errorf("max concurrent = %d, want 1", mc)
 	}
 }

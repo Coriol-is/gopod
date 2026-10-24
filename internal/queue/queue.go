@@ -43,6 +43,7 @@ type Item struct {
 
 	ChatID    int64  // Telegram chat ID (for the reply callback), 0 for tasks
 	MessageID int    // Telegram message ID (for reply threading + reactions)
+	ThreadID  int    // Telegram private-chat topic (message_thread_id), 0 = main chat; ordering is still per Folder
 	Folder    string // registered chat folder
 	IsOwner   bool
 	Text      string // the user's message text

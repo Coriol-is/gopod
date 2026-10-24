@@ -142,6 +142,7 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 	item := queue.Item{
 		ChatID:    m.Chat.ID,
 		MessageID: m.ID,
+		ThreadID:  inboundThreadID(m),
 		Folder:    rc.Folder,
 		IsOwner:   rc.IsOwner,
 		Text:      text,
@@ -160,6 +161,18 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 	}
 	// Sync fallback (no queue).
 	b.runAgentSync(ctx, item)
+}
+
+// inboundThreadID returns the private-chat topic a message belongs to.
+// Bot API 9.3+ stamps message_thread_id on messages inside a private-chat
+// topic; the main chat carries none. Group and supergroup messages also
+// carry message_thread_id (forum topics, reply chains), but gopod keeps
+// one conversation per group, so those map to 0.
+func inboundThreadID(m *models.Message) int {
+	if m == nil || m.Chat.Type != models.ChatTypePrivate || m.MessageThreadID <= 0 {
+		return 0
+	}
+	return m.MessageThreadID
 }
 
 // dispatchSlash parses a "/command arg1 arg2" message and dispatches
