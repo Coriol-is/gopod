@@ -100,6 +100,10 @@ type Bot struct {
 	draftBadReqs map[int64]int
 	draftSeq     atomic.Int64
 
+	// inflight maps turn id to its stoppable streaming state (stop.go).
+	inflightMu sync.Mutex
+	inflight   map[int64]*inflightTurn
+
 	// streamTick is the streaming flush cadence; zero means 1s.
 	streamTick time.Duration
 }

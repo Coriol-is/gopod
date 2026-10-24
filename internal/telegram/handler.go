@@ -27,6 +27,13 @@ import (
 // on first sight) get persisted and otherwise ignored. They can still
 // use the public commands (/ping, /whoami, /register).
 func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Update) {
+	if update != nil && update.StoppedMessageGeneration != nil {
+		// Stop button on a streaming draft. gopod sets no
+		// allowed_updates, so Telegram's default set applies, which
+		// includes stopped_message_generation.
+		b.handleGenerationStopped(ctx, update)
+		return
+	}
 	if update == nil || update.Message == nil {
 		return
 	}
@@ -332,8 +339,9 @@ func (b *Bot) NewAgentHandler() queue.Handler {
 				slog.Int("reply_msg_id", item.ReplyMsgID))
 			return nil
 		}
+		var runErr error
 		if b.streamEnabled {
-			b.runAgentStreaming(ctx, item)
+			runErr = b.runAgentStreaming(ctx, item)
 		} else {
 			b.runAgentSync(ctx, item)
 		}
@@ -341,6 +349,10 @@ func (b *Bot) NewAgentHandler() queue.Handler {
 			// Shutdown cut the run short: report it so the queue marks
 			// the turn interrupted rather than done.
 			return err
+		}
+		if errors.Is(runErr, queue.ErrStopped) {
+			// The user pressed Stop: the queue marks the turn stopped.
+			return runErr
 		}
 		// Both paths log and reply on error but always return nil so
 		// the queue does not retry user-visible failures (auth errors,

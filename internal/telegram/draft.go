@@ -35,7 +35,7 @@ package telegram
 //     draft_id). keep_on_stop keeps the draft visible after the press,
 //     but it "will still disappear after a short time or if the bot sends
 //     a message"; to keep the partial text the bot must send it as a new
-//     message. Wired in Task 3 via draftOpts.
+//     message. Wired in stop.go and streamReply via draftOpts.
 
 import (
 	"context"

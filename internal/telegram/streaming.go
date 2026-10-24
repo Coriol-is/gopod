@@ -93,8 +93,13 @@ const draftRefresh = 20 * time.Second
 // runAgentStreaming is the streaming variant of runAgentSync: it starts
 // the agent and hands the stream to streamReply.
 //
+// The agent runs on a child context registered as in-flight, so the
+// Stop button cancels this turn's run and nothing else; Telegram calls
+// keep using ctx. Returns queue.ErrStopped when the user stopped the
+// turn, nil otherwise.
+//
 // Falls back to runAgentSync if streaming setup fails (RunStream error).
-func (b *Bot) runAgentStreaming(ctx context.Context, item queue.Item) {
+func (b *Bot) runAgentStreaming(ctx context.Context, item queue.Item) error {
 	tier := runner.TierRegistered
 	if item.IsOwner {
 		tier = runner.TierOwner
@@ -107,16 +112,20 @@ func (b *Bot) runAgentStreaming(ctx context.Context, item queue.Item) {
 	if item.Resumed {
 		prompt = resumePrompt(item.Text)
 	}
-	stream, err := b.runner.RunStream(ctx, item.Folder, tier, b.allowlist, prompt)
+	runCtx, cancelRun := context.WithCancel(ctx)
+	defer cancelRun()
+	defer b.registerInflight(item.ID, cancelRun)()
+
+	stream, err := b.runner.RunStream(runCtx, item.Folder, tier, b.allowlist, prompt)
 	if err != nil {
 		// Fallback: if streaming setup fails, try sync path.
 		b.log.Warn("RunStream failed, falling back to sync",
 			slog.String("folder", item.Folder),
 			slog.Any("err", err))
 		b.runAgentSync(ctx, item)
-		return
+		return nil
 	}
-	b.streamReply(ctx, item, stream)
+	return b.streamReply(ctx, item, stream)
 }
 
 // streamReply shows the agent's partial output while it runs and then
@@ -131,8 +140,21 @@ func (b *Bot) runAgentStreaming(ctx context.Context, item queue.Item) {
 // Fallback path (group chats, a chat where the Bot API refused drafts,
 // or a resumed turn whose interrupted attempt left a placeholder): send
 // a placeholder message and edit it every tick, as before drafts.
-func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.AgentStream) {
+//
+// Stop: when the turn is registered in-flight (registerInflight), its
+// drafts carry can_stop and keep_on_stop. A stop ends the turn with the
+// text so far as the reply (see finishStopped) and returns
+// queue.ErrStopped. Otherwise streamReply returns nil.
+func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.AgentStream) error {
 	const editLimit = 4000 // safe limit under Telegram's 4096
+
+	stop := b.inflightStop(item.ID) // nil: not stoppable, never fires
+	stopOpts := draftOpts{CanStop: stop != nil, KeepOnStop: stop != nil}
+	// useDraft makes id the turn's current draft, the one a stop names.
+	useDraft := func(id int) int {
+		b.bindDraft(item.ID, item.ChatID, id)
+		return id
+	}
 
 	// startPlaceholder switches the turn to the edit path. Returns false
 	// when no placeholder could be sent.
@@ -152,16 +174,16 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 		b.recordPlaceholder(ctx, item, placeholder)
 	} else if b.draftsSupported(item.ChatID) {
 		// The opening draft shows the cursor and probes support up front.
-		draftID = b.newDraftID()
+		draftID = useDraft(b.newDraftID())
 		opening := "❘" // ▍ cursor
 		if item.Resumed {
 			opening = resumingBanner
 		}
-		if err := b.sendDraft(ctx, item.ChatID, 0, draftID, opening); err == nil {
+		if err := b.sendDraftOpts(ctx, item.ChatID, 0, draftID, opening, stopOpts); err == nil {
 			lastDraft = time.Now()
 		} else if !b.draftsSupported(item.ChatID) || errors.Is(err, bot.ErrorBadRequest) {
 			// Refused, or a bad call: edit path for this turn.
-			draftID = 0
+			draftID = useDraft(0)
 		} else {
 			b.log.Debug("opening draft failed, will retry",
 				slog.Int64("chat_id", item.ChatID), slog.Any("err", err))
@@ -169,7 +191,7 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 	}
 	if draftID == 0 && placeholder == 0 && !startPlaceholder() {
 		b.drainAndSend(ctx, item, stream)
-		return
+		return nil
 	}
 
 	tick := b.streamTick
@@ -179,9 +201,10 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 	ticker := time.NewTicker(tick)
 	defer ticker.Stop()
 
-	var accumulated strings.Builder
-	dirty := false    // accumulated has text not yet shown
-	overflow := false // the reply outgrew one message
+	var accumulated strings.Builder // text of the current draft/placeholder
+	var full strings.Builder        // every chunk so far, for a stop
+	dirty := false                  // accumulated has text not yet shown
+	overflow := false               // the reply outgrew one message
 
 loop:
 	for {
@@ -191,6 +214,7 @@ loop:
 				break loop // channel closed, agent exited
 			}
 			accumulated.WriteString(chunk)
+			full.WriteString(chunk)
 			dirty = true
 
 			if accumulated.Len() <= editLimit {
@@ -201,7 +225,7 @@ loop:
 				// A draft cannot hold more. Continue in a fresh draft
 				// (replaced, not animated); the final message carries
 				// the whole reply.
-				draftID = b.newDraftID()
+				draftID = useDraft(b.newDraftID())
 				accumulated.Reset()
 				continue
 			}
@@ -210,7 +234,7 @@ loop:
 			placeholder = b.sendPlaceholder(ctx, item.ChatID, 0)
 			if placeholder == 0 {
 				b.drainAndSend(ctx, item, stream)
-				return
+				return nil
 			}
 			b.recordPlaceholder(ctx, item, placeholder)
 			accumulated.Reset()
@@ -222,7 +246,7 @@ loop:
 					continue
 				}
 				text := accumulated.String() + "❘" // ▍ cursor, never empty
-				err := b.sendDraft(ctx, item.ChatID, 0, draftID, text)
+				err := b.sendDraftOpts(ctx, item.ChatID, 0, draftID, text, stopOpts)
 				if err == nil {
 					lastDraft = time.Now()
 					dirty = false
@@ -235,10 +259,10 @@ loop:
 					continue
 				}
 				// Refused: the rest of the turn uses the edit path.
-				draftID = 0
+				draftID = useDraft(0)
 				if !startPlaceholder() {
 					b.drainAndSend(ctx, item, stream)
-					return
+					return nil
 				}
 			}
 			if dirty && accumulated.Len() > 0 {
@@ -246,8 +270,11 @@ loop:
 				dirty = false
 			}
 
+		case <-stop:
+			return b.finishStopped(ctx, item, stream, full.String())
+
 		case <-ctx.Done():
-			return
+			return nil
 		}
 	}
 
@@ -257,7 +284,7 @@ loop:
 			b.editMessage(ctx, item.ChatID, placeholder, "")
 		}
 		b.handleStreamError(ctx, item, res.Err)
-		return
+		return nil
 	}
 
 	finalText := res.FullText
@@ -291,6 +318,36 @@ loop:
 
 	// Voice reply (must wait for full text).
 	b.maybeVoiceReply(ctx, item, finalText)
+	return nil
+}
+
+// stoppedEmpty is the reply when the user stopped a turn before the
+// agent produced any text.
+const stoppedEmpty = "(stopped)"
+
+// finishStopped ends a turn the user stopped. Stop is offered only on
+// drafts, which Telegram removes once the bot sends a message
+// (keep_on_stop keeps one only briefly), so the partial text is sent
+// as a real message and memoized as the turn's reply. The agent's
+// remaining output is drained in the background and discarded, so the
+// runner's goroutine never blocks on a reader that has gone.
+func (b *Bot) finishStopped(ctx context.Context, item queue.Item, stream *runner.AgentStream, partial string) error {
+	go func() {
+		for range stream.Chunks {
+		}
+		<-stream.Result
+	}()
+
+	text := strings.TrimSpace(partial)
+	if text == "" {
+		text = stoppedEmpty
+	}
+	sent := b.sendFormatted(ctx, item.ChatID, item.MessageID, text)
+	b.recordReply(ctx, item, sent, text)
+	if item.MessageID > 0 {
+		b.react(ctx, item.ChatID, item.MessageID, emojiDone)
+	}
+	return queue.ErrStopped
 }
 
 // handleStreamError handles errors from a streaming agent run.

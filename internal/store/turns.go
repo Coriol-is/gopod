@@ -16,6 +16,9 @@ const (
 	TurnDone        = "done"
 	TurnFailed      = "failed"
 	TurnInterrupted = "interrupted"
+	// TurnStopped is terminal: the user pressed Stop on the streaming
+	// draft. The partial text is the reply; the turn is never replayed.
+	TurnStopped = "stopped"
 )
 
 // ErrTurnNotFound is returned when a turn id does not exist.
@@ -160,7 +163,8 @@ func (s *Store) GetTurn(ctx context.Context, id int64) (Turn, error) {
 }
 
 // ListUnfinishedTurns returns pending, running and interrupted turns in
-// id order. This is what boot recovery replays.
+// id order. This is what boot recovery replays. Terminal rows (done,
+// failed, stopped) are never returned.
 func (s *Store) ListUnfinishedTurns(ctx context.Context) ([]Turn, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT `+turnColumns+` FROM turns WHERE status IN (?, ?, ?) ORDER BY id`,

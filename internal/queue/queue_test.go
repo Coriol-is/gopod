@@ -627,3 +627,136 @@ func TestRecoverWithoutStoreIsNoop(t *testing.T) {
 		t.Errorf("Recover = (%d, %v), want (0, nil)", n, err)
 	}
 }
+
+// statusStore is a TurnStore that keeps each row's status and, like
+// store.ListUnfinishedTurns, loads only pending/running/interrupted.
+type statusStore struct {
+	mu     sync.Mutex
+	nextID int64
+	rows   map[int64]*Item
+	status map[int64]string
+}
+
+func newStatusStore() *statusStore {
+	return &statusStore{rows: map[int64]*Item{}, status: map[int64]string{}}
+}
+
+func (s *statusStore) InsertTurn(_ context.Context, it Item) (int64, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.nextID++
+	it.ID = s.nextID
+	s.rows[it.ID] = &it
+	s.status[it.ID] = "pending"
+	return it.ID, false, nil
+}
+
+func (s *statusStore) MarkRunning(_ context.Context, id int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.status[id] = "running"
+	s.rows[id].Attempts++
+	return nil
+}
+
+func (s *statusStore) MarkFinished(_ context.Context, id int64, status, _ string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.status[id] = status
+	return nil
+}
+
+func (s *statusStore) LoadUnfinished(_ context.Context) ([]Item, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []Item
+	for id := int64(1); id <= s.nextID; id++ {
+		switch s.status[id] {
+		case "pending", "running", StatusInterrupted:
+			out = append(out, *s.rows[id])
+		}
+	}
+	return out, nil
+}
+
+func (s *statusStore) statusOf(id int64) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.status[id]
+}
+
+// TestHandlerErrStoppedMarksStopped: a handler reporting ErrStopped
+// ends the turn as stopped, without a retry, and the chat keeps going.
+func TestHandlerErrStoppedMarksStopped(t *testing.T) {
+	ss := newStatusStore()
+	var calls int32
+	handler := func(ctx context.Context, items []Item) error {
+		if atomic.AddInt32(&calls, 1) == 1 {
+			return fmt.Errorf("streaming: %w", ErrStopped)
+		}
+		return nil
+	}
+	q := New(context.Background(), handler, 1, ss, silentLog())
+	q.BackoffFunc = func(int) time.Duration { return time.Millisecond }
+	finished := make(chan error, 2)
+	q.OnDone(func(_ Item, err error) { finished <- err })
+
+	q.Enqueue(context.Background(), Item{Folder: "a", Source: "telegram", SourceID: "1"})
+	select {
+	case err := <-finished:
+		if err != nil {
+			t.Errorf("OnDone err = %v, want nil for a stopped turn", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for stopped turn")
+	}
+	if got := ss.statusOf(1); got != StatusStopped {
+		t.Errorf("status = %q, want %q", got, StatusStopped)
+	}
+
+	q.Enqueue(context.Background(), Item{Folder: "a", Source: "telegram", SourceID: "2"})
+	select {
+	case <-finished:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for next turn")
+	}
+	if got := atomic.LoadInt32(&calls); got != 2 {
+		t.Errorf("handler calls = %d, want 2 (stopped turn must not be retried)", got)
+	}
+	if got := ss.statusOf(2); got != StatusDone {
+		t.Errorf("next turn status = %q, want done", got)
+	}
+}
+
+// TestQueueRecoverIgnoresStopped: after a stop, a restart's Recover
+// does not replay the turn.
+func TestQueueRecoverIgnoresStopped(t *testing.T) {
+	ss := newStatusStore()
+	stopped := make(chan struct{})
+	q := New(context.Background(), func(context.Context, []Item) error {
+		return ErrStopped
+	}, 1, ss, silentLog())
+	q.OnDone(func(Item, error) { close(stopped) })
+	q.Enqueue(context.Background(), Item{Folder: "a", Source: "telegram", SourceID: "1"})
+	select {
+	case <-stopped:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout")
+	}
+	q.Close()
+
+	var replays int32
+	q2 := New(context.Background(), func(context.Context, []Item) error {
+		atomic.AddInt32(&replays, 1)
+		return nil
+	}, 1, ss, silentLog())
+	defer q2.Close()
+	n, err := q2.Recover(context.Background())
+	if err != nil || n != 0 {
+		t.Fatalf("Recover = (%d, %v), want (0, nil)", n, err)
+	}
+	time.Sleep(20 * time.Millisecond)
+	if atomic.LoadInt32(&replays) != 0 {
+		t.Error("stopped turn was replayed")
+	}
+}

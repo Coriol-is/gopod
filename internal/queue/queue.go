@@ -14,7 +14,7 @@
 //   - **Exponential backoff.** On failure the chat backs off before
 //     retrying (5s → 10s → 20s → 40s → 80s, max 5 retries). Success
 //     resets the retry counter.
-//   - **Durability.** With a TurnStore, every item is a `turns` row before it is dispatched and is marked running/done/failed/interrupted around the handler call. Nil store = memory only.
+//   - **Durability.** With a TurnStore, every item is a `turns` row before it is dispatched and is marked running/done/failed/stopped/interrupted around the handler call. Nil store = memory only.
 //
 // The queue is transport-agnostic: it takes a [Handler] callback that
 // does the actual agent call + Telegram reply. The telegram package
@@ -56,7 +56,15 @@ const (
 	StatusDone        = "done"
 	StatusFailed      = "failed"
 	StatusInterrupted = "interrupted"
+	// StatusStopped is terminal: the user stopped the turn. Never replayed.
+	StatusStopped = "stopped"
 )
+
+// ErrStopped is returned by a Handler (possibly wrapped) when the user
+// stopped the turn. The queue marks the batch StatusStopped, does not
+// retry it, and reports a nil error to OnDone hooks: the user got the
+// partial reply they asked for.
+var ErrStopped = errors.New("queue: turn stopped by user")
 
 // MaxAttempts is how many times a turn may be started (across process
 // restarts) before Recover declares it a crash loop.
@@ -69,7 +77,8 @@ type TurnStore interface {
 	InsertTurn(ctx context.Context, it Item) (id int64, dup bool, err error)
 	MarkRunning(ctx context.Context, id int64) error
 	MarkFinished(ctx context.Context, id int64, status, errText string) error
-	// LoadUnfinished returns every pending, running or interrupted turn.
+	// LoadUnfinished returns every pending, running or interrupted turn,
+	// never a terminal one (done, failed, stopped).
 	// Rows MUST be in ascending id order: Recover schedules them in the
 	// order returned and does not re-sort, so this is what preserves
 	// per-chat arrival order across a restart.
@@ -156,7 +165,7 @@ func New(ctx context.Context, handler Handler, maxConcurrent int, store TurnStor
 }
 
 // OnDone registers a hook called after a turn reaches a terminal
-// status (done, failed, interrupted) or is rejected by Recover as a
+// status (done, failed, stopped, interrupted) or is rejected by Recover as a
 // crash loop. Hooks run synchronously in the worker goroutine, in
 // registration order. err is the last handler error, nil on success.
 func (q *Queue) OnDone(fn func(Item, error)) {
@@ -365,6 +374,11 @@ func (q *Queue) worker(ctx context.Context, folder string) {
 				q.resetRetries(folder)
 				q.finish(items, StatusDone, nil)
 				break // success → drain more pending in outer loop
+			}
+			if errors.Is(err, ErrStopped) {
+				q.resetRetries(folder)
+				q.finish(items, StatusStopped, nil)
+				break // terminal, not a failure: no retry
 			}
 
 			retries := q.incrementRetries(folder)

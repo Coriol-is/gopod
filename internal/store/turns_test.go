@@ -220,3 +220,26 @@ func ids(rows []Turn) []int64 {
 	}
 	return out
 }
+
+// TestLoadUnfinishedSkipsStopped: a turn the user stopped is terminal
+// and must never come back through boot recovery.
+func TestLoadUnfinishedSkipsStopped(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	id, _, _ := s.InsertTurn(ctx, sampleTurn())
+	_ = s.MarkTurnRunning(ctx, id)
+	if err := s.MarkTurnFinished(ctx, id, TurnStopped, ""); err != nil {
+		t.Fatalf("MarkTurnFinished(stopped): %v", err)
+	}
+	got, _ := s.GetTurn(ctx, id)
+	if got.Status != TurnStopped || got.FinishedAt == 0 {
+		t.Errorf("row = %+v, want status stopped with finished_at", got)
+	}
+	rows, err := s.ListUnfinishedTurns(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 0 {
+		t.Errorf("unfinished = %v, want none", ids(rows))
+	}
+}
