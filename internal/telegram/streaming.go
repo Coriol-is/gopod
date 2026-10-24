@@ -53,9 +53,10 @@ func (b *Bot) sendPlaceholder(ctx context.Context, chatID int64, thread int, rep
 }
 
 // editMessage edits a previously sent message with plain text content.
-// Errors are logged but not propagated — a failed edit means the user
-// sees a slightly stale partial; the next edit or final message fixes it.
-func (b *Bot) editMessage(ctx context.Context, chatID int64, msgID int, text string) {
+// Errors are logged and returned; mid-stream callers ignore them — a
+// failed edit means the user sees a slightly stale partial; the next
+// edit or final message fixes it.
+func (b *Bot) editMessage(ctx context.Context, chatID int64, msgID int, text string) error {
 	if text == "" {
 		text = "\u2758" // keep cursor visible if empty
 	}
@@ -69,15 +70,17 @@ func (b *Bot) editMessage(ctx context.Context, chatID int64, msgID int, text str
 			slog.Int64("chat_id", chatID),
 			slog.Int("msg_id", msgID),
 			slog.Any("err", err))
+		return fmt.Errorf("editMessageText: %w", err)
 	}
+	return nil
 }
 
 // editMessageHTML edits a previously sent message with HTML-formatted
 // content. Falls back to plain text if the HTML edit fails (e.g. due
-// to malformed tags).
-func (b *Bot) editMessageHTML(ctx context.Context, chatID int64, msgID int, html string) {
+// to malformed tags). Returns the error of the last attempt.
+func (b *Bot) editMessageHTML(ctx context.Context, chatID int64, msgID int, html string) error {
 	if html == "" {
-		return
+		return nil
 	}
 	_, err := b.api.EditMessageText(ctx, &bot.EditMessageTextParams{
 		ChatID:    chatID,
@@ -91,8 +94,9 @@ func (b *Bot) editMessageHTML(ctx context.Context, chatID int64, msgID int, html
 			slog.Int64("chat_id", chatID),
 			slog.Int("msg_id", msgID),
 			slog.Any("err", err))
-		b.editMessage(ctx, chatID, msgID, html)
+		return b.editMessage(ctx, chatID, msgID, html)
 	}
+	return nil
 }
 
 // draftRefresh is how long an unchanged draft is left before it is
@@ -356,13 +360,25 @@ loop:
 		b.recordReply(ctx, item, sent, finalText)
 	case !overflow:
 		// Everything fits in the placeholder.
-		b.editMessageHTML(ctx, item.ChatID, placeholder, markdownToTelegramHTML(finalText))
+		err := b.editMessageHTML(ctx, item.ChatID, placeholder, markdownToTelegramHTML(finalText))
+		if b.finalEditLost(item, err) {
+			if err := b.replyInMain(ctx, item, finalText); err != nil {
+				return err
+			}
+			break
+		}
 		b.recordReply(ctx, item, placeholder, finalText)
 	default:
 		// Overflow: finalize the last placeholder with the remaining
 		// text, then send the full formatted response as a new reply.
 		if accumulated.Len() > 0 {
-			b.editMessage(ctx, item.ChatID, placeholder, accumulated.String())
+			err := b.editMessage(ctx, item.ChatID, placeholder, accumulated.String())
+			if b.finalEditLost(item, err) {
+				if err := b.replyInMain(ctx, item, finalText); err != nil {
+					return err
+				}
+				break
+			}
 		}
 		sent := b.replyTo(ctx, item.ChatID, item.ThreadID, item.MessageID, finalText)
 		b.recordReply(ctx, item, sent, finalText)
@@ -374,6 +390,53 @@ loop:
 
 	// Voice reply (must wait for full text).
 	b.maybeVoiceReply(ctx, item, finalText)
+	return nil
+}
+
+// finalEditLost reports whether the final edit of a turn's placeholder
+// in a topic failed, so the reply may never have reached the user: the
+// topic can be deleted after the placeholder went out, and an edit
+// there fails ("message to edit not found" or a thread-gone error). A
+// "message is not modified" error is benign. The thread is marked gone
+// when the error says so. In the main chat (thread 0) an edit failure
+// stays only logged, as before topics existed.
+func (b *Bot) finalEditLost(item queue.Item, err error) bool {
+	if item.ThreadID == 0 || err == nil || isNotModified(err) {
+		return false
+	}
+	b.checkThreadGone(item.ChatID, item.ThreadID, err)
+	b.log.Warn("final edit in topic failed, replying in the main chat",
+		slog.Int64("turn", item.ID),
+		slog.Int64("chat_id", item.ChatID),
+		slog.Int("thread", item.ThreadID),
+		slog.Any("err", err))
+	return true
+}
+
+// isNotModified reports the Bot API's benign edit error for a message
+// whose new content equals the old.
+func isNotModified(err error) bool {
+	return strings.Contains(strings.ToLower(err.Error()), "message is not modified")
+}
+
+// replyInMain delivers a turn's final text to the main chat, prefixed
+// with threadGoneNote, and records it as the turn's reply. Like the
+// draft path it returns errReplyUndelivered when nothing went out, so
+// the turn is not marked done with its answer lost.
+func (b *Bot) replyInMain(ctx context.Context, item queue.Item, text string) error {
+	sent, err := b.sendFinal(ctx, item.ChatID, 0, 0, threadGoneNote+text)
+	if sent == 0 {
+		b.log.Error("final reply undelivered",
+			slog.Int64("turn", item.ID),
+			slog.Int64("chat_id", item.ChatID),
+			slog.Any("err", err))
+		return fmt.Errorf("%w: %w", errReplyUndelivered, err)
+	}
+	if err != nil {
+		b.log.Warn("final reply partly delivered",
+			slog.Int64("turn", item.ID), slog.Any("err", err))
+	}
+	b.recordReply(ctx, item, sent, text)
 	return nil
 }
 

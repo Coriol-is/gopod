@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-telegram/bot/models"
 
+	"github.com/Coriol-is/gopod/internal/queue"
 	"github.com/Coriol-is/gopod/internal/runner"
 )
 
@@ -255,5 +256,136 @@ func TestInboundMessageRevivesThread(t *testing.T) {
 	})
 	if b.threadGone(streamChat, 7) {
 		t.Error("a message arriving in the thread must clear the gone mark")
+	}
+}
+
+// editFailFake lets placeholders into thread 7 succeed (id 500) and
+// answers every editMessageText with editErr, as when the topic was
+// deleted after the placeholder went out. Main-chat sends get id 777.
+func editFailFake(editErr string) *fakeTelegram {
+	return &fakeTelegram{respond: func(method string, form map[string]string) (int, string) {
+		switch method {
+		case "editMessageText":
+			return apiError(400, editErr)
+		case "sendMessage":
+			if _, ok := form["message_thread_id"]; ok {
+				return sentMessage("500")
+			}
+			return sentMessage("777")
+		}
+		return http.StatusOK, `{"ok":true,"result":true}`
+	}}
+}
+
+// runEditPath streams text through the edit path (drafts off) for a
+// turn in thread, with a few ticks of edits, and returns streamReply's
+// error.
+func runEditPath(t *testing.T, b *Bot, item queue.Item, parts ...string) error {
+	t.Helper()
+	b.markDraftsUnsupported(item.ChatID)
+	chunks := make(chan string)
+	result := make(chan runner.RunResult, 1)
+	errc := make(chan error, 1)
+	go func() {
+		errc <- b.streamReply(context.Background(), item, &runner.AgentStream{Chunks: chunks, Result: result})
+	}()
+	for _, p := range parts {
+		chunks <- p
+		time.Sleep(5 * b.streamTick)
+	}
+	close(chunks)
+	result <- runner.RunResult{FullText: strings.Join(parts, "")}
+	select {
+	case err := <-errc:
+		return err
+	case <-time.After(5 * time.Second):
+		t.Fatal("streamReply did not return")
+		return nil
+	}
+}
+
+func TestEditPathTopicDeletedAfterPlaceholder(t *testing.T) {
+	cases := []struct {
+		name      string
+		thread    int
+		editErr   string
+		parts     []string
+		wantMain  int // sendMessage calls to main
+		wantReply int
+	}{
+		{"edit not found in topic", 7, "Bad Request: message to edit not found", []string{"hello"}, 1, 777},
+		{"thread gone on edit", 7, "Bad Request: message thread not found", []string{"hello"}, 1, 777},
+		{"not modified is benign", 7, "Bad Request: message is not modified", []string{"hello"}, 0, 500},
+		// The reply outgrew the first placeholder; the final edit of
+		// the second one (holding "tail") fails.
+		{"overflow, edit not found", 7, "Bad Request: message to edit not found",
+			[]string{strings.Repeat("word ", 900), "tail"}, 2, 777},
+		{"main chat unchanged", 0, "Bad Request: message to edit not found", []string{"hello"}, 0, 777},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			fake := editFailFake(c.editErr) // main-chat placeholders get id 777
+			b, item := newStreamFixture(t, fake)
+			item.ThreadID = c.thread
+			if err := runEditPath(t, b, item, c.parts...); err != nil {
+				t.Fatalf("streamReply = %v, want nil (turn done)", err)
+			}
+
+			var mainSends []apiCall
+			for _, s := range fake.callsTo("sendMessage") {
+				_, inThread := s.Form["message_thread_id"]
+				if !inThread && s.Form["text"] != "❘" {
+					mainSends = append(mainSends, s)
+				}
+			}
+			if c.thread == 0 {
+				mainSends = nil
+				for _, s := range fake.callsTo("sendMessage") {
+					if s.Form["text"] != "❘" {
+						mainSends = append(mainSends, s)
+					}
+				}
+			}
+			if len(mainSends) != c.wantMain {
+				t.Fatalf("main sends = %d, want %d: %+v", len(mainSends), c.wantMain, mainSends)
+			}
+			if c.wantMain > 0 && !strings.HasPrefix(mainSends[0].Form["text"], threadGoneNote) {
+				t.Errorf("main reply lacks the note: %.80q", mainSends[0].Form["text"])
+			}
+			turn, err := b.store.GetTurn(context.Background(), item.ID)
+			if err != nil {
+				t.Fatalf("GetTurn: %v", err)
+			}
+			if turn.ReplyMsgID != c.wantReply {
+				t.Errorf("ReplyMsgID = %d, want %d", turn.ReplyMsgID, c.wantReply)
+			}
+		})
+	}
+}
+
+func TestEditPathTopicDeletedMainSendFailsIsUndelivered(t *testing.T) {
+	fake := &fakeTelegram{respond: func(method string, form map[string]string) (int, string) {
+		switch method {
+		case "editMessageText":
+			return apiError(400, "Bad Request: message to edit not found")
+		case "sendMessage":
+			if _, ok := form["message_thread_id"]; ok {
+				return sentMessage("500")
+			}
+			return apiError(400, "Bad Request: chat not found")
+		}
+		return http.StatusOK, `{"ok":true,"result":true}`
+	}}
+	b, item := newStreamFixture(t, fake)
+	item.ThreadID = 7
+	if err := runEditPath(t, b, item, "hello"); !errors.Is(err, errReplyUndelivered) {
+		t.Fatalf("streamReply = %v, want errReplyUndelivered", err)
+	}
+	turn, err := b.store.GetTurn(context.Background(), item.ID)
+	if err != nil {
+		t.Fatalf("GetTurn: %v", err)
+	}
+	if turn.ReplyMsgID != 0 {
+		t.Errorf("ReplyMsgID = %d, want 0 (nothing delivered)", turn.ReplyMsgID)
 	}
 }
