@@ -1,5 +1,44 @@
 package runner
 
+import "regexp"
+
+// SessionRef names the agent conversation a command acts on.
+//
+// The zero value is the legacy implicit mode: resume whatever session
+// the CLI considers most recent (`claude --continue`, `codex exec
+// resume --last`) and, for ClearSessionCmd, wipe every session. It
+// exists so callers that have no stored id yet keep today's behaviour.
+//
+// With an ID, Resume selects between continuing that session and
+// starting a new one. Claude accepts a caller-chosen UUID for a new
+// session (`--session-id`); Codex assigns its own thread id, so a new
+// Codex conversation is a plain `codex exec` and the caller reads the
+// real id back with ExtractSessionID. Resume without an ID is treated
+// as the zero value.
+type SessionRef struct {
+	ID     string
+	Resume bool
+}
+
+// sessionIDPattern is what an ID must look like before it is put on a
+// shell command line or into a glob. Claude ids and Codex thread ids
+// (v7) are both UUIDs. Requiring the full canonical form keeps path
+// separators, glob characters and shell metacharacters away from `rm`,
+// and stops a fragment of one id (say its last two groups) from
+// matching another session's file through the `rollout-*-<id>` glob.
+var sessionIDPattern = regexp.MustCompile(
+	`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
+// validSessionID reports whether id is a canonical UUID.
+func validSessionID(id string) bool { return sessionIDPattern.MatchString(id) }
+
+// invalidSessionIDCmd is returned instead of a delete command when the
+// id fails validSessionID: it removes nothing and exits non-zero, so
+// the caller's Exec reports the failure.
+func invalidSessionIDCmd() []string {
+	return []string{"sh", "-c", `echo "gopod: refusing invalid session id" >&2; exit 2`}
+}
+
 // AgentProvider abstracts the CLI agent runtime (Claude Code, Codex,
 // etc.) so gopod can manage different agent backends through the
 // same Runner interface.
@@ -26,9 +65,10 @@ type AgentProvider interface {
 	// container (e.g. ["ANTHROPIC_API_KEY"] for claude).
 	RequiredEnvVars() []string
 
-	// RunCmd builds the command for a conversational prompt (with
-	// session continuity). systemPrompt may be empty.
-	RunCmd(prompt, systemPrompt string) []string
+	// RunCmd builds the command for a conversational prompt in the
+	// session s (see SessionRef; the zero value resumes the most
+	// recent session). systemPrompt may be empty.
+	RunCmd(prompt, systemPrompt string, s SessionRef) []string
 
 	// RunFreshCmd builds the command for a one-shot prompt (no
 	// session continuity). Used for system tasks: compact summarize,
@@ -62,9 +102,23 @@ type AgentProvider interface {
 	// ExtractLoginURL extracts the OAuth URL from a login stdout line.
 	ExtractLoginURL(line string) string
 
-	// ClearSessionCmd returns the shell command to wipe session
-	// files (for /clear and compact).
-	ClearSessionCmd() []string
+	// ClearSessionCmd returns the shell command that deletes the
+	// session s's files (for /clear and compact). The zero value wipes
+	// every session in the container, as before explicit ids existed.
+	// An id that fails validSessionID yields a command that deletes
+	// nothing and exits non-zero.
+	ClearSessionCmd(s SessionRef) []string
+
+	// LatestSessionIDCmd returns the command that prints the id of the
+	// session the zero SessionRef would resume (the most recently
+	// modified one), or nothing if there is none. Used once to adopt
+	// the legacy session when a conversation gets an explicit id.
+	LatestSessionIDCmd() []string
+
+	// ExtractSessionID returns the session id announced by one line of
+	// RunCmd output, or "". Only Codex announces one (Claude's id is
+	// chosen by the caller).
+	ExtractSessionID(line string) string
 
 	// ModelArgs returns the CLI flag that selects model, or nil for ""
 	// (provider default). Inserted before the prompt by withModel.
