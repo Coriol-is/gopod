@@ -64,6 +64,18 @@ go run ./cmd/gopod
 | `/logs` | (owner) show recent gopod logs |
 | `/version` | build info |
 
+## Threads (parallel conversations)
+
+In a private chat with the bot you can open Telegram topics ("threads"). A
+message outside any topic uses the chat's main conversation as always; each
+topic is its own conversation with its own agent context, while the
+workspace, long-term memory and provider stay shared per chat. `/clear` and
+`/compact` act on the conversation they are sent in. Enable *Threaded mode*
+for the bot in @BotFather (Telegram may charge an extra fee on Star
+purchases for this feature, see the Bot Developer Terms). Replies stream
+through `sendMessageDraft` and show a Stop button. Threads run one at a time
+per chat. Design: [D022](docs/DECISIONS.md).
+
 ## Architecture
 
 ```

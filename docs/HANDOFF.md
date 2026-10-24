@@ -12,8 +12,21 @@
 **Phase:** Core complete. gopod is a working personal Telegram
 Claude assistant with session continuity, long-term memory, voice,
 vision, scheduling, and multi-provider architecture ready for Codex.
-**Last updated:** 2026-10-05
-**Last working session (2026-10-05):** production deploy + Codex harness.
+**Last updated:** 2026-10-24
+**Last working session (2026-10-24):** Telegram chat-UI parity, built
+autonomously through worktrees and PRs #3–#10 (agent implementer + separate
+reviewer per task, CI green, admin squash-merge). On `main`, **not deployed
+and not verified live**: native streaming via `sendMessageDraft`, Stop
+button, and parallel conversations per private-chat thread (one agent session
+per `(chat, thread)`). Design and open items: [D021](DECISIONS.md#d021--stop-and-native-streaming),
+[D022](DECISIONS.md#d022--conversations-one-agent-session-per-chat-thread),
+spec `docs/superpowers/specs/2026-10-24-telegram-threads-and-drafts-design.md`,
+plan `docs/superpowers/plans/2026-10-24-telegram-threads-and-drafts.md`.
+Also: CI workflow `.github/workflows/ci.yml` and the PR-based git flow in
+CLAUDE.md (main's ruleset needs 1 approval; PRs are merged with
+`gh pr merge --squash --admin`).
+**Before deploying, run the live checklist** (next section, item 00).
+**Previous session (2026-10-05):** production deploy + Codex harness.
 `main` (`b254e01`) is deployed on the production host via `docker compose`
 (data at `/opt/gopod/data`, live owner workspace at
 `/opt/gopod/repo/chats/owner`). Found and fixed in that pass: the
@@ -302,6 +315,27 @@ See [GATEWAY.md](GATEWAY.md) for full architecture.
 
 ## What's next (in order — per [D018](DECISIONS.md))
 
+00. **Live checklist for the 2026-10-24 work** (nothing below has been run
+   against a real bot): (1) enable *Threaded mode* for the bot in @BotFather
+   (Telegram may charge an extra fee on Star purchases for it) and create two
+   topics; (2) main chat + two topics hold three distinct contexts, across
+   `docker rm -f gopod-<chat>` and a gopod restart, on both `claude` and
+   `codex`; (3) the main chat still has its pre-upgrade history (one-time
+   adoption of the latest legacy session); (4) streaming shows a draft and one
+   final reply; Stop sends the partial text, the `turns` row ends `stopped`,
+   the agent process is gone (`docker top`), and the next message resumes the
+   session without error (resume after a killed turn is unverified for both
+   CLIs); Stop updates arrive at all (bot `allowed_updates`); (5) `kill -9`
+   gopod mid-turn in a thread: exactly one final reply in that thread, row
+   `done`; (6) `sendMessageDraft` accepts the string draft id and the final
+   `sendMessage` clears the draft. Then optionally: set `HostConfig.Init = true`
+   (zombies), and run a concurrency spike for parallel threads (two agents in
+   one container; needs logged-in claude and codex).
+   Open items from review (see D021/D022): compaction summarises without the
+   conversation history (pre-existing; `/compact` effectively clears);
+   `/provider` still clears main; a `/login` code is accepted from any thread;
+   `ClearSession` during a Codex first turn is a no-op; the first adoption
+   marker lives in `router_state`.
 0. **Run the manual crash-recovery test for durable turns** (plan Task 8
    step 5, still not run; the branch is merged and deployed, cold start
    of the agent container is verified, but a `kill -9` of gopod itself

@@ -823,6 +823,24 @@ hang shutdown. Spec:
 
 **Consequences.** Known gaps (see HANDOFF): not yet verified live (`kill -9` mid-draft, Stop on real claude/codex turns and whether the session stays resumable, draft id accepted as a string); PID 1 is `sleep infinity`, so killed children stay zombies until `HostConfig.Init = true`; tools started with `setsid` escape the group kill; a crash between the final send and `recordReply` on the draft path sends a second reply on resume; `runner.Run`/`RunFresh` do not take the per-chat agent slot; an undelivered final reply makes the queue re-run the whole turn (agent work repeats, the user gets one reply). Spec: [superpowers/specs/2026-10-24-telegram-threads-and-drafts-design.md](superpowers/specs/2026-10-24-telegram-threads-and-drafts-design.md).
 
+## D022 — Conversations: one agent session per (chat, thread)
+
+**Date:** 2026-10-24
+**Status:** Accepted
+**Extends:** D020 (durable turns), D021 (native streaming)
+
+**Context.** The chat-UI model of Claude and Codex has parallel conversations with separate contexts. gopod kept one agent session per chat, resumed with `claude --continue` / `codex exec resume --last`, which pick the most recently touched session and cannot tell two conversations apart. Bot API 9.3/9.4 lets a private chat have topics (`message_thread_id`).
+
+**Decision.**
+- A conversation is `(chat_folder, thread_id)`; messages outside any thread are thread 0, the *main* conversation, with today's behaviour. Threads apply to private chats only (`inboundThreadID`); groups stay thread 0.
+- Container, workspace, `CLAUDE.md`, facts/pinned/preferences memory and the provider stay per chat. Per conversation: the agent session, the `conversation_summary` memory slot, turn counters and auto-compact, `/clear` and `/compact`. `/model` and `/provider` stay per chat.
+- Sessions are resumed by explicit id stored in `sessions(chat_folder, thread_id, provider)`: Claude `--session-id <uuid>` for a new conversation then `--resume`; Codex plain `exec` for a new conversation with the thread id read from the stderr header (never from the model's reply), then `exec resume <id>`. Ids are validated as UUIDs before they reach a shell. The runner checks the session still exists before resuming and drops a stale row.
+- Upgrade: the main conversation adopts the container's latest legacy session once per (chat, provider) before any conversation's first turn, guarded by a marker in `router_state`.
+- `turns` and queue items carry `thread_id`; Recover replays into the original thread. Execution stays sequential per chat, and a queue batch only contains consecutive items of one thread, so conversations never mix in one prompt. Every outbound send of a turn, and every command reply, carries `message_thread_id`; the control `Caller` carries the thread (routing only, never authorization). Scheduler and IPC messages stay in main.
+- The memory API refuses `kind=conversation_summary` (only session compact writes it); `Codex RunFreshCmd` runs `--ephemeral` so system runs never become a resumed session.
+
+**Consequences.** Parallel execution of threads is *not* built: it is an optional research track (two agents in one container sharing `$HOME` are unverified; fallback is the current sequential queue). Open items: compaction summarises via `RunFresh` without the conversation's history (pre-existing, so `/compact` effectively clears); `/provider` still clears the main session; a `/login` code is accepted from any thread of the chat; `ClearSession` during a Codex first turn is a no-op; closed or deleted topics are never cleaned up. Requires topics ("Threaded mode") enabled for the bot in @BotFather. Spec: [superpowers/specs/2026-10-24-telegram-threads-and-drafts-design.md](superpowers/specs/2026-10-24-telegram-threads-and-drafts-design.md).
+
 ---
 
 ## Template for new ADRs
