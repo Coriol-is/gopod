@@ -86,13 +86,14 @@ func (b *Bot) editMessageHTML(ctx context.Context, chatID int64, msgID int, html
 	}
 }
 
-// runAgentStreaming is the streaming variant of runAgentSync. It sends
-// a placeholder message, then edits it every ~1 second with partial
-// agent output as it arrives. On completion, the final edit uses HTML
-// formatting.
+// draftRefresh is how long an unchanged draft is left before it is
+// re-sent; Telegram drops a draft about 30 seconds after its last update.
+const draftRefresh = 20 * time.Second
+
+// runAgentStreaming is the streaming variant of runAgentSync: it starts
+// the agent and hands the stream to streamReply.
 //
-// Falls back to runAgentSync if streaming setup fails (ExecStream
-// error, placeholder send failure).
+// Falls back to runAgentSync if streaming setup fails (RunStream error).
 func (b *Bot) runAgentStreaming(ctx context.Context, item queue.Item) {
 	tier := runner.TierRegistered
 	if item.IsOwner {
@@ -115,59 +116,135 @@ func (b *Bot) runAgentStreaming(ctx context.Context, item queue.Item) {
 		b.runAgentSync(ctx, item)
 		return
 	}
+	b.streamReply(ctx, item, stream)
+}
 
-	// Send placeholder message -> get its message_id for editing.
-	// Reuse the placeholder left by an interrupted attempt, else send one.
-	placeholder := b.reusePlaceholder(ctx, item)
-	if placeholder == 0 {
+// streamReply shows the agent's partial output while it runs and then
+// delivers the final reply.
+//
+// Preferred path: sendMessageDraft. The draft is a preview with no
+// message id; every tick it is updated with the text so far, and the
+// final reply goes out once through sendFormatted, whose message id is
+// the turn's reply id (D020). Nothing is memoized as a placeholder, so a
+// turn resumed after a crash sends a fresh final message.
+//
+// Fallback path (group chats, a chat where the Bot API refused drafts,
+// or a resumed turn whose interrupted attempt left a placeholder): send
+// a placeholder message and edit it every tick, as before drafts.
+func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.AgentStream) {
+	const editLimit = 4000 // safe limit under Telegram's 4096
+
+	// startPlaceholder switches the turn to the edit path. Returns false
+	// when no placeholder could be sent.
+	placeholder := 0
+	startPlaceholder := func() bool {
 		placeholder = b.sendPlaceholder(ctx, item.ChatID, item.MessageID)
+		if placeholder == 0 {
+			return false
+		}
+		b.recordPlaceholder(ctx, item, placeholder)
+		return true
 	}
-	if placeholder == 0 {
-		// Fallback: drain stream, send as buffered.
+
+	draftID := 0 // non-zero while the turn streams through drafts
+	var lastDraft time.Time
+	if placeholder = b.reusePlaceholder(ctx, item); placeholder != 0 {
+		b.recordPlaceholder(ctx, item, placeholder)
+	} else if b.draftsSupported(item.ChatID) {
+		// An empty draft shows "Thinking…" and probes support up front.
+		draftID = b.newDraftID()
+		opening := ""
+		if item.Resumed {
+			opening = resumingBanner
+		}
+		if err := b.sendDraft(ctx, item.ChatID, 0, draftID, opening); err == nil {
+			lastDraft = time.Now()
+		} else if !b.draftsSupported(item.ChatID) {
+			draftID = 0
+		} else {
+			b.log.Debug("opening draft failed, will retry",
+				slog.Int64("chat_id", item.ChatID), slog.Any("err", err))
+		}
+	}
+	if draftID == 0 && placeholder == 0 && !startPlaceholder() {
 		b.drainAndSend(ctx, item, stream)
 		return
 	}
-	b.recordPlaceholder(ctx, item, placeholder)
 
-	var accumulated strings.Builder
-	ticker := time.NewTicker(1 * time.Second)
+	tick := b.streamTick
+	if tick <= 0 {
+		tick = time.Second
+	}
+	ticker := time.NewTicker(tick)
 	defer ticker.Stop()
 
-	dirty := false       // true if accumulated has new data since last edit
-	overflow := false     // true if we've exceeded single-message limit
-	const editLimit = 4000 // safe limit under Telegram's 4096
+	var accumulated strings.Builder
+	dirty := false    // accumulated has text not yet shown
+	overflow := false // the reply outgrew one message
 
+loop:
 	for {
 		select {
 		case chunk, ok := <-stream.Chunks:
 			if !ok {
-				goto done // channel closed, agent exited
+				break loop // channel closed, agent exited
 			}
 			accumulated.WriteString(chunk)
 			dirty = true
 
-			// If accumulated text exceeds edit limit, flush as
-			// a finalized message and start a fresh accumulator.
-			if accumulated.Len() > editLimit {
-				b.editMessage(ctx, item.ChatID, placeholder,
-					accumulated.String())
-				overflow = true
-				// New placeholder for continuation (no reply threading).
-				placeholder = b.sendPlaceholder(ctx, item.ChatID, 0)
-				if placeholder == 0 {
-					// Can't send more placeholders — drain rest silently.
+			if accumulated.Len() <= editLimit {
+				continue
+			}
+			overflow = true
+			if draftID != 0 {
+				// A draft cannot hold more. Continue in a fresh draft
+				// (replaced, not animated); the final message carries
+				// the whole reply.
+				draftID = b.newDraftID()
+				accumulated.Reset()
+				continue
+			}
+			// Edit path: finalize this placeholder, continue in a new one.
+			b.editMessage(ctx, item.ChatID, placeholder, accumulated.String())
+			placeholder = b.sendPlaceholder(ctx, item.ChatID, 0)
+			if placeholder == 0 {
+				b.drainAndSend(ctx, item, stream)
+				return
+			}
+			b.recordPlaceholder(ctx, item, placeholder)
+			accumulated.Reset()
+			dirty = false
+
+		case <-ticker.C:
+			if draftID != 0 {
+				if !dirty && time.Since(lastDraft) < draftRefresh {
+					continue
+				}
+				text := accumulated.String()
+				if text != "" {
+					text += "❘" // ▍ cursor
+				}
+				err := b.sendDraft(ctx, item.ChatID, 0, draftID, text)
+				if err == nil {
+					lastDraft = time.Now()
+					dirty = false
+					continue
+				}
+				if b.draftsSupported(item.ChatID) {
+					// Transient (rate limit, network): retry next tick.
+					b.log.Debug("sendDraft failed",
+						slog.Int64("chat_id", item.ChatID), slog.Any("err", err))
+					continue
+				}
+				// Refused: the rest of the turn uses the edit path.
+				draftID = 0
+				if !startPlaceholder() {
 					b.drainAndSend(ctx, item, stream)
 					return
 				}
-				b.recordPlaceholder(ctx, item, placeholder)
-				accumulated.Reset()
-				dirty = false
 			}
-
-		case <-ticker.C:
 			if dirty && accumulated.Len() > 0 {
-				text := accumulated.String() + "\u2758" // ▍ cursor
-				b.editMessage(ctx, item.ChatID, placeholder, text)
+				b.editMessage(ctx, item.ChatID, placeholder, accumulated.String()+"❘")
 				dirty = false
 			}
 
@@ -176,11 +253,11 @@ func (b *Bot) runAgentStreaming(ctx context.Context, item queue.Item) {
 		}
 	}
 
-done:
-	// Final result.
 	res := <-stream.Result
 	if res.Err != nil {
-		b.editMessage(ctx, item.ChatID, placeholder, "")
+		if placeholder != 0 {
+			b.editMessage(ctx, item.ChatID, placeholder, "")
+		}
 		b.handleStreamError(ctx, item, res.Err)
 		return
 	}
@@ -190,18 +267,21 @@ done:
 		finalText = "(empty reply)"
 	}
 
-	// Final edit with properly formatted text.
-	if !overflow {
-		// Simple case: everything fits in one message.
-		html := markdownToTelegramHTML(finalText)
-		b.editMessageHTML(ctx, item.ChatID, placeholder, html)
+	switch {
+	case draftID != 0:
+		// The draft is only a preview: persist the reply as a real
+		// message. Sending it also clears the draft.
+		sent := b.sendFormatted(ctx, item.ChatID, item.MessageID, finalText)
+		b.recordReply(ctx, item, sent, finalText)
+	case !overflow:
+		// Everything fits in the placeholder.
+		b.editMessageHTML(ctx, item.ChatID, placeholder, markdownToTelegramHTML(finalText))
 		b.recordReply(ctx, item, placeholder, finalText)
-	} else {
-		// Overflow: finalize last placeholder with remaining text,
-		// then send the full formatted response as a new reply.
+	default:
+		// Overflow: finalize the last placeholder with the remaining
+		// text, then send the full formatted response as a new reply.
 		if accumulated.Len() > 0 {
-			b.editMessage(ctx, item.ChatID, placeholder,
-				accumulated.String())
+			b.editMessage(ctx, item.ChatID, placeholder, accumulated.String())
 		}
 		sent := b.replyTo(ctx, item.ChatID, item.MessageID, finalText)
 		b.recordReply(ctx, item, sent, finalText)

@@ -16,6 +16,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -88,6 +91,15 @@ type Bot struct {
 	log           *slog.Logger
 	logins        *loginSessions
 	streamEnabled bool
+
+	// draftsOff marks chats where sendMessageDraft was refused; sticky
+	// until restart. draftSeq hands out draft ids.
+	draftsMu  sync.Mutex
+	draftsOff map[int64]bool
+	draftSeq  atomic.Int64
+
+	// streamTick is the streaming flush cadence; zero means 1s.
+	streamTick time.Duration
 }
 
 // New constructs a Bot. The token must be a valid @BotFather token; an
