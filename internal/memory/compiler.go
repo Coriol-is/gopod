@@ -34,14 +34,17 @@ var DefaultBudget = ContextBudget{
 // preferences and facts). Only if the structured slots under-fill
 // does it use a raw semantic fallback.
 //
+// Only the conversation_summary slot is scoped to thread (0 = main
+// conversation); every other slot is chat-wide.
+//
 // Returns "" if no relevant memories exist (agent runs context-free).
-func (m *Memory) CompileContext(ctx context.Context, chatFolder, query string, budget ContextBudget) string {
+func (m *Memory) CompileContext(ctx context.Context, chatFolder string, thread int, query string, budget ContextBudget) string {
 	var selected []Item
 
 	// 0. Conversation summary (reserved slot — guaranteed to be included
 	// if one exists). This is the bridge after session compact.
 	if budget.Summary > 0 {
-		summaries := m.fetchRecentByKind(ctx, chatFolder, "conversation_summary", 30, budget.Summary)
+		summaries := m.fetchRecentByKind(ctx, chatFolder, thread, "conversation_summary", 30, budget.Summary)
 		selected = append(selected, summaries...)
 	}
 
@@ -53,7 +56,7 @@ func (m *Memory) CompileContext(ctx context.Context, chatFolder, query string, b
 
 	// 2. Recent decisions (last 7 days).
 	if budget.Decisions > 0 {
-		decisions := m.fetchRecentByKind(ctx, chatFolder, "decision", 7, budget.Decisions)
+		decisions := m.fetchRecentByKind(ctx, chatFolder, 0, "decision", 7, budget.Decisions)
 		selected = append(selected, dedupItems(selected, decisions)...)
 	}
 
@@ -104,17 +107,25 @@ func (m *Memory) fetchPinned(ctx context.Context, chatFolder string, limit int) 
 	return items
 }
 
-func (m *Memory) fetchRecentByKind(ctx context.Context, chatFolder, kind string, days, limit int) []Item {
+// fetchRecentByKind returns recent active items of one kind. thread
+// only applies to conversation_summary; other kinds are chat-wide.
+func (m *Memory) fetchRecentByKind(ctx context.Context, chatFolder string, thread int, kind string, days, limit int) []Item {
 	cutoff := time.Now().Add(-time.Duration(days) * 24 * time.Hour).UnixMilli()
-	rows, err := m.store.DB().QueryContext(ctx, `
+	q := `
 		SELECT id, chat_folder, kind, IFNULL(title,''), content, IFNULL(source,''), created_at
 		  FROM memories
 		 WHERE chat_folder = ?
 		   AND IFNULL(status,'active') = 'active'
 		   AND kind = ?
-		   AND created_at >= ?
-		 ORDER BY created_at DESC
-		 LIMIT ?`, chatFolder, kind, cutoff, limit)
+		   AND created_at >= ?`
+	args := []any{chatFolder, kind, cutoff}
+	if kind == "conversation_summary" {
+		q += ` AND thread_id = ?`
+		args = append(args, thread)
+	}
+	q += ` ORDER BY created_at DESC LIMIT ?`
+	args = append(args, limit)
+	rows, err := m.store.DB().QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil
 	}

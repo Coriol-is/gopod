@@ -49,6 +49,13 @@ type Item struct {
 // Add stores a new memory item, embeds its content, and inserts
 // both the relational row and the vector. Returns the row ID.
 func (m *Memory) Add(ctx context.Context, chatFolder, kind, title, content, source string) (int64, error) {
+	return m.AddInThread(ctx, chatFolder, 0, kind, title, content, source)
+}
+
+// AddInThread is Add with a conversation (thread) scope. thread only
+// matters for kind=conversation_summary (0 = main conversation); every
+// other kind is chat-wide and the argument is ignored.
+func (m *Memory) AddInThread(ctx context.Context, chatFolder string, thread int, kind, title, content, source string) (int64, error) {
 	if content == "" {
 		return 0, fmt.Errorf("memory: Add: empty content")
 	}
@@ -68,13 +75,21 @@ func (m *Memory) Add(ctx context.Context, chatFolder, kind, title, content, sour
 
 	// For conversation_summary: supersede the previous one so they
 	// don't accumulate. Each chat should have at most one active summary.
-	if kind == "conversation_summary" {
-		m.supersedePreviousSummary(ctx, chatFolder)
+	isSummary := kind == "conversation_summary"
+	if isSummary {
+		m.supersedePreviousSummary(ctx, chatFolder, thread)
+	} else {
+		thread = 0
 	}
 
 	// Dedup: if a very similar active memory already exists (cosine
 	// similarity > 0.92), update it instead of creating a duplicate.
-	existingID, sim, err := m.FindSimilar(ctx, chatFolder, vecs[0])
+	// Summaries skip this: they are per conversation and the supersede
+	// step above already handles replacement.
+	existingID, sim := int64(0), 0.0
+	if !isSummary {
+		existingID, sim, err = m.FindSimilar(ctx, chatFolder, vecs[0])
+	}
 	if err == nil && existingID > 0 && sim > 0.92 {
 		now := time.Now().UnixMilli()
 		_, err := m.store.DB().ExecContext(ctx, `
@@ -98,9 +113,9 @@ func (m *Memory) Add(ctx context.Context, chatFolder, kind, title, content, sour
 
 	// Insert relational row.
 	res, err := db.ExecContext(ctx, `
-		INSERT INTO memories (chat_folder, kind, source, title, content, embed_model, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		chatFolder, kind, source, nullableStr(title), content,
+		INSERT INTO memories (chat_folder, thread_id, kind, source, title, content, embed_model, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		chatFolder, thread, kind, source, nullableStr(title), content,
 		m.embedder.Model(), now, now)
 	if err != nil {
 		return 0, fmt.Errorf("memory: Add: insert: %w", err)
@@ -491,13 +506,14 @@ func sanitizeFTS(s string) string {
 }
 
 // supersedePreviousSummary marks all existing active conversation_summary
-// entries for a chat as superseded, so only the newest one remains active.
-func (m *Memory) supersedePreviousSummary(ctx context.Context, chatFolder string) {
+// entries for one conversation (chat + thread) as superseded, so only
+// the newest one remains active. Other threads' summaries are untouched.
+func (m *Memory) supersedePreviousSummary(ctx context.Context, chatFolder string, thread int) {
 	m.store.DB().ExecContext(ctx, `
 		UPDATE memories SET status = 'superseded', updated_at = ?
-		 WHERE chat_folder = ? AND kind = 'conversation_summary'
+		 WHERE chat_folder = ? AND thread_id = ? AND kind = 'conversation_summary'
 		   AND IFNULL(status, 'active') = 'active'`,
-		time.Now().UnixMilli(), chatFolder)
+		time.Now().UnixMilli(), chatFolder, thread)
 }
 
 // ArchiveStale marks memories not retrieved in archiveAfter days as

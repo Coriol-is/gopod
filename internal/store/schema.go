@@ -192,6 +192,7 @@ var migrations = []string{
 	`ALTER TABLE memories ADD COLUMN last_retrieved_at INTEGER`,
 	// Durable turns: link task run logs to the turn that ran them.
 	`ALTER TABLE task_run_logs ADD COLUMN turn_id INTEGER`,
+	`ALTER TABLE memories ADD COLUMN thread_id INTEGER NOT NULL DEFAULT 0`,
 }
 
 // applySchema runs every statement in schemaStatements in order. Idempotent.

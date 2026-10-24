@@ -245,7 +245,7 @@ func run() error {
 						return err
 					}
 					if summary != "" {
-						agentMemory.Add(ctx, chatFolder, "conversation_summary", "session compact", summary, "compact")
+						agentMemory.AddInThread(ctx, chatFolder, 0, "conversation_summary", "session compact", summary, "compact") // thread wiring: Task 9
 					}
 					return nil
 				})
@@ -620,8 +620,8 @@ type memoryCompilerAdapter struct {
 	mem *memory.Memory
 }
 
-func (a *memoryCompilerAdapter) CompileContext(ctx context.Context, chatFolder, query string) string {
-	return a.mem.CompileContext(ctx, chatFolder, query, memory.DefaultBudget)
+func (a *memoryCompilerAdapter) CompileContext(ctx context.Context, chatFolder string, thread int, query string) string {
+	return a.mem.CompileContext(ctx, chatFolder, thread, query, memory.DefaultBudget)
 }
 
 func newLogger(cfg config.Config) *slog.Logger {

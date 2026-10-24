@@ -221,7 +221,7 @@ func (r *Runner) Run(
 	// decisions → relevant preferences → facts → fallback).
 	var opts RunPromptOpts
 	if r.memory != nil {
-		compiled := r.memory.CompileContext(ctx, chatFolder, prompt)
+		compiled := r.memory.CompileContext(ctx, chatFolder, 0, prompt)
 		if compiled != "" {
 			opts.AppendSystemPrompt = compiled
 			r.log.Debug("injecting compiled memory context",
@@ -302,7 +302,7 @@ func (r *Runner) RunStream(
 	// Build memory context (same as Run).
 	var systemPrompt string
 	if r.memory != nil {
-		compiled := r.memory.CompileContext(ctx, chatFolder, prompt)
+		compiled := r.memory.CompileContext(ctx, chatFolder, 0, prompt)
 		if compiled != "" {
 			systemPrompt = compiled
 			r.log.Debug("injecting compiled memory context (stream)",
@@ -542,7 +542,7 @@ func (r *Runner) SetStore(s stateStore) { r.store = s }
 // using the Phase B policy-driven selection (kind-based budgets,
 // pinned items, recency weighting).
 type MemoryCompiler interface {
-	CompileContext(ctx context.Context, chatFolder, query string) string
+	CompileContext(ctx context.Context, chatFolder string, thread int, query string) string
 }
 
 // SetMemory wires the memory layer after construction.
