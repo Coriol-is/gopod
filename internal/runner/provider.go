@@ -120,6 +120,17 @@ type AgentProvider interface {
 	// chosen by the caller).
 	ExtractSessionID(line string) string
 
+	// AnnouncesSessionID reports who names a new conversation. false:
+	// the CLI uses the caller's SessionRef.ID as is (Claude), so the id
+	// is known before the run. true: the CLI picks its own id and prints
+	// it (Codex), so the caller reads it back with ExtractSessionID.
+	AnnouncesSessionID() bool
+
+	// SessionExistsCmd returns the command that checks whether session
+	// id still has a transcript to resume: exit 0 if it does, 1 if it
+	// does not, 2 if id fails validSessionID. The id is passed as $1.
+	SessionExistsCmd(id string) []string
+
 	// ModelArgs returns the CLI flag that selects model, or nil for ""
 	// (provider default). Inserted before the prompt by withModel.
 	ModelArgs(model string) []string

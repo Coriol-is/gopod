@@ -145,5 +145,21 @@ func (p *ClaudeProvider) LatestSessionIDCmd() []string {
 // ExtractSessionID returns "": the caller chooses Claude's session id.
 func (p *ClaudeProvider) ExtractSessionID(string) string { return "" }
 
+// AnnouncesSessionID is false: `--session-id` takes the caller's UUID.
+func (p *ClaudeProvider) AnnouncesSessionID() bool { return false }
+
+// SessionExistsCmd checks for the transcript ClearSessionCmd deletes.
+// A transcript that was never written (the first turn failed before
+// Claude saved anything) counts as missing, which is what makes a
+// caller start over instead of resuming an id Claude does not know.
+func (p *ClaudeProvider) SessionExistsCmd(id string) []string {
+	if !validSessionID(id) {
+		return invalidSessionIDCmd()
+	}
+	return []string{"sh", "-c",
+		`for f in "$HOME"/.claude/projects/*/"$1".jsonl; do [ -f "$f" ] && exit 0; done; exit 1`,
+		"sh", id}
+}
+
 // Compile-time check.
 var _ AgentProvider = (*ClaudeProvider)(nil)

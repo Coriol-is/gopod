@@ -216,4 +216,21 @@ func (p *CodexProvider) ExtractSessionID(line string) string {
 	return id
 }
 
+// AnnouncesSessionID is true: a plain `codex exec` picks its own thread
+// id and prints it (ExtractSessionID).
+func (p *CodexProvider) AnnouncesSessionID() bool { return true }
+
+// SessionExistsCmd checks for the rollout that `exec resume <id>` needs
+// (the file ClearSessionCmd deletes).
+func (p *CodexProvider) SessionExistsCmd(id string) []string {
+	if !validSessionID(id) {
+		return invalidSessionIDCmd()
+	}
+	return []string{"sh", "-c",
+		`[ -d "$HOME/.codex/sessions" ] || exit 1; ` +
+			`f=$(find "$HOME/.codex/sessions" -type f -name "rollout-*-$1.jsonl" | head -n 1); ` +
+			`[ -n "$f" ]`,
+		"sh", id}
+}
+
 var _ AgentProvider = (*CodexProvider)(nil)
