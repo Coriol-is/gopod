@@ -161,6 +161,20 @@ G8 is optional — full Vault mode (G1–G7) is the primary path.
 
 ---
 
+## Phase 8 — Telegram chat-UI parity ([D021](docs/DECISIONS.md), [D022](docs/DECISIONS.md))
+
+Spec: [docs/superpowers/specs/2026-10-24-telegram-threads-and-drafts-design.md](docs/superpowers/specs/2026-10-24-telegram-threads-and-drafts-design.md). Merged to `main`, **not yet verified live** (see HANDOFF checklist).
+
+| # | Item | Status | Notes |
+|---|---|---|---|
+| T1 | Bot API 10.3 library (`go-telegram/bot` v1.27.0) | ✅ | |
+| T2 | Native streaming via `sendMessageDraft` (private chats, sticky edit fallback) | ✅ | D021 |
+| T3 | Stop button (`can_stop`) ending turns `stopped`; runner kills the agent | ✅ | D021 |
+| T4 | Conversations per private-chat thread: sessions, summaries, queue, sends, commands | ✅ | D022; needs topics ("Threaded mode") enabled in @BotFather |
+| T5 | Parallel execution of threads | ⏸️ | Needs research: two agents in one container (`$HOME`) unverified; sequential per chat today |
+| T6 | Inline keyboards (Regenerate / Copy / pickers, confirmations) | ⬜ | Separate spec |
+| T7 | Rich messages (`sendRichMessage`: tables, thinking/details blocks) | ⬜ | Separate spec; verify in private chats first |
+
 ## Post-milestone work
 
 | ID | Step | Status | Notes |
