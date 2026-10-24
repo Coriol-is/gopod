@@ -231,7 +231,7 @@ func (r *Runner) Run(
 	}
 
 	prov := r.ProviderForChat(chatFolder)
-	cmd := withModel(prov.RunCmd(prompt, opts.AppendSystemPrompt), prov, r.ModelForChat(chatFolder))
+	cmd := withModel(prov.RunCmd(prompt, opts.AppendSystemPrompt, SessionRef{}), prov, r.ModelForChat(chatFolder))
 	reply, err := r.execWithProvider(ctx, id, chatFolder, prov, cmd)
 	if err != nil {
 		return "", err
@@ -318,7 +318,7 @@ func (r *Runner) RunStream(
 		r.d.Exec(ctx, id, restoreCmd, nil)
 	}
 
-	cmd := withModel(prov.RunCmd(prompt, systemPrompt), prov, r.ModelForChat(chatFolder))
+	cmd := withModel(prov.RunCmd(prompt, systemPrompt, SessionRef{}), prov, r.ModelForChat(chatFolder))
 	env, release := r.agentEnv(chatFolder)
 	handle, err := r.d.ExecStream(ctx, id, cmd, env)
 	if err != nil {
@@ -569,7 +569,7 @@ func (r *Runner) ClearSession(ctx context.Context, chatFolder string, tier Tier,
 	if err != nil {
 		return err
 	}
-	_, err = r.d.Exec(ctx, id, r.provider.ClearSessionCmd(), nil)
+	_, err = r.d.Exec(ctx, id, r.provider.ClearSessionCmd(SessionRef{}), nil)
 	r.resetTurnCount(chatFolder)
 	return err
 }

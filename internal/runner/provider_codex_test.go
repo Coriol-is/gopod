@@ -45,7 +45,7 @@ func TestCodexVersionCmd(t *testing.T) {
 func TestCodexRunCmdFlags(t *testing.T) {
 	p := NewCodexProvider("")
 	for name, cmd := range map[string][]string{
-		"RunCmd":      p.RunCmd("hello", ""),
+		"RunCmd":      p.RunCmd("hello", "", SessionRef{}),
 		"RunFreshCmd": p.RunFreshCmd("hello"),
 	} {
 		joined := " " + join(cmd) + " "
@@ -62,11 +62,11 @@ func TestCodexRunCmdFlags(t *testing.T) {
 			t.Errorf("%s prompt must be the last argument: %v", name, cmd)
 		}
 	}
-	run := p.RunCmd("hello", "")
+	run := p.RunCmd("hello", "", SessionRef{})
 	if run[0] != "codex" || run[1] != "exec" || run[2] != "resume" || run[3] != "--last" {
 		t.Errorf("RunCmd must start with codex exec resume --last: %v", run)
 	}
-	if got := p.RunCmd("q", "SYS"); got[len(got)-1] != "SYS\n\n---\n\nq" {
+	if got := p.RunCmd("q", "SYS", SessionRef{}); got[len(got)-1] != "SYS\n\n---\n\nq" {
 		t.Errorf("system prompt not prepended to prompt: %q", got[len(got)-1])
 	}
 }

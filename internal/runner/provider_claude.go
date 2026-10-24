@@ -27,8 +27,22 @@ func (p *ClaudeProvider) RequiredEnvVars() []string {
 	return []string{"ANTHROPIC_API_KEY"}
 }
 
-func (p *ClaudeProvider) RunCmd(prompt, systemPrompt string) []string {
-	cmd := []string{"claude", "--continue", "--dangerously-skip-permissions"}
+// RunCmd selects the session with --continue (zero ref), --session-id
+// (new session under the caller's UUID) or --resume (existing session).
+// Claude rejects --session-id for an id that already has a transcript
+// ("Session ID ... is already in use"), so callers switch to Resume
+// after the first turn.
+func (p *ClaudeProvider) RunCmd(prompt, systemPrompt string, s SessionRef) []string {
+	cmd := []string{"claude"}
+	switch {
+	case s.ID == "":
+		cmd = append(cmd, "--continue")
+	case s.Resume:
+		cmd = append(cmd, "--resume", s.ID)
+	default:
+		cmd = append(cmd, "--session-id", s.ID)
+	}
+	cmd = append(cmd, "--dangerously-skip-permissions")
 	if systemPrompt != "" {
 		cmd = append(cmd, "--append-system-prompt", systemPrompt)
 	}
@@ -101,10 +115,35 @@ func (p *ClaudeProvider) ExtractLoginURL(line string) string {
 	return ""
 }
 
-func (p *ClaudeProvider) ClearSessionCmd() []string {
+// ClearSessionCmd deletes one session's transcript. Claude Code keeps
+// it at ~/.claude/projects/<cwd with / . _ replaced by ->/<id>.jsonl,
+// plus a <id>/ directory for subagent transcripts and tool results;
+// the project-dir glob avoids re-deriving the cwd encoding. The id is
+// passed as $1, never spliced into the script.
+func (p *ClaudeProvider) ClearSessionCmd(s SessionRef) []string {
+	if s.ID == "" {
+		return []string{"sh", "-c",
+			`rm -rf "$HOME/.claude/projects" "$HOME/.claude/.active_session"`}
+	}
+	if !validSessionID(s.ID) {
+		return invalidSessionIDCmd()
+	}
 	return []string{"sh", "-c",
-		`rm -rf "$HOME/.claude/projects" "$HOME/.claude/.active_session"`}
+		`rm -rf "$HOME"/.claude/projects/*/"$1".jsonl "$HOME"/.claude/projects/*/"$1"`,
+		"sh", s.ID}
 }
+
+// LatestSessionIDCmd prints the id of the most recently modified
+// transcript, which is the session `claude --continue` resumes (the
+// container has a single cwd, so a single project directory).
+func (p *ClaudeProvider) LatestSessionIDCmd() []string {
+	return []string{"sh", "-c",
+		`f=$(ls -t "$HOME"/.claude/projects/*/*.jsonl 2>/dev/null | head -n 1); ` +
+			`if [ -n "$f" ]; then basename "$f" .jsonl; fi`}
+}
+
+// ExtractSessionID returns "": the caller chooses Claude's session id.
+func (p *ClaudeProvider) ExtractSessionID(string) string { return "" }
 
 // Compile-time check.
 var _ AgentProvider = (*ClaudeProvider)(nil)
