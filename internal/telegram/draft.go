@@ -42,8 +42,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-telegram/bot"
 )
@@ -54,9 +56,33 @@ type draftOpts struct {
 	KeepOnStop bool
 }
 
-// newDraftID returns a fresh non-zero draft id for this process.
+// newDraftID returns a fresh draft id in (0, MaxInt32]. The sequence is
+// seeded from the clock on first use, not from 1, so a Stop pressed on a
+// draft from before a restart does not name a draft of the new process.
 func (b *Bot) newDraftID() int {
-	return int(b.draftSeq.Add(1))
+	for {
+		old := b.draftSeq.Load()
+		base := old
+		if base == 0 {
+			base = draftSeed()
+		}
+		next := base + 1
+		if next > math.MaxInt32 {
+			next = 1
+		}
+		if b.draftSeq.CompareAndSwap(old, next) {
+			return int(next)
+		}
+	}
+}
+
+// draftSeed is the clock in milliseconds folded into int32 range.
+// Update.stopped_message_generation carries draft_id as an int.
+func draftSeed() int64 {
+	if s := time.Now().UnixMilli() & math.MaxInt32; s != 0 {
+		return s
+	}
+	return 1
 }
 
 // draftsSupported reports whether chatID may use sendMessageDraft:

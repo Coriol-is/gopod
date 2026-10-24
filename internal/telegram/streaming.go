@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"strings"
@@ -170,6 +171,7 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 
 	draftID := 0 // non-zero while the turn streams through drafts
 	var lastDraft time.Time
+	var draftHold time.Time // no draft updates before this (429 retry_after)
 	if placeholder = b.reusePlaceholder(ctx, item); placeholder != 0 {
 		b.recordPlaceholder(ctx, item, placeholder)
 	} else if b.draftsSupported(item.ChatID) {
@@ -245,12 +247,18 @@ loop:
 				if !dirty && time.Since(lastDraft) < draftRefresh {
 					continue
 				}
+				if time.Now().Before(draftHold) {
+					continue // rate limited: wait out retry_after
+				}
 				text := accumulated.String() + "❘" // ▍ cursor, never empty
 				err := b.sendDraftOpts(ctx, item.ChatID, 0, draftID, text, stopOpts)
 				if err == nil {
 					lastDraft = time.Now()
 					dirty = false
 					continue
+				}
+				if wait, ok := retryAfter(err); ok {
+					draftHold = time.Now().Add(wait)
 				}
 				if b.draftsSupported(item.ChatID) {
 					// Transient (rate limit, network): retry next tick.
@@ -315,8 +323,22 @@ loop:
 	switch {
 	case draftID != 0:
 		// The draft is only a preview: persist the reply as a real
-		// message. Sending it also clears the draft.
-		sent := b.sendFormatted(ctx, item.ChatID, item.MessageID, finalText)
+		// message. Sending it also clears the draft. The draft expires
+		// on its own, so an undelivered reply must not end the turn
+		// done: return an error and let the queue retry the turn.
+		sent, err := b.sendFinal(ctx, item.ChatID, item.MessageID, finalText)
+		if sent == 0 {
+			b.log.Error("final reply undelivered",
+				slog.Int64("turn", item.ID),
+				slog.Int64("chat_id", item.ChatID),
+				slog.Any("err", err))
+			return fmt.Errorf("%w: %w", errReplyUndelivered, err)
+		}
+		if err != nil {
+			// Some chunks went out: record them, never resend them.
+			b.log.Warn("final reply partly delivered",
+				slog.Int64("turn", item.ID), slog.Any("err", err))
+		}
 		b.recordReply(ctx, item, sent, finalText)
 	case !overflow:
 		// Everything fits in the placeholder.
@@ -339,6 +361,67 @@ loop:
 	// Voice reply (must wait for full text).
 	b.maybeVoiceReply(ctx, item, finalText)
 	return nil
+}
+
+// errReplyUndelivered means the turn's final message could not be sent
+// after bounded retries. The handler returns it so the queue does not
+// mark the turn done; the queue's backoff retry runs the turn again.
+var errReplyUndelivered = errors.New("telegram: final reply undelivered")
+
+// Final-send retry bounds: attempts, and the total retry_after wait.
+const (
+	finalSendAttempts = 3
+	finalSendMaxWait  = 30 * time.Second
+)
+
+// sendFinal sends the turn's final reply, retrying only on 429 (the
+// request was refused, so nothing was delivered and a retry cannot
+// duplicate) after the server's retry_after, at most finalSendAttempts
+// times and finalSendMaxWait in total. Any other error, or a send that
+// delivered some chunks, is returned at once. Returns the last
+// delivered message id, 0 when nothing was delivered.
+func (b *Bot) sendFinal(ctx context.Context, chatID int64, replyTo int, text string) (int, error) {
+	var waited time.Duration
+	for attempt := 1; ; attempt++ {
+		id, err := b.sendFormattedErr(ctx, chatID, replyTo, text)
+		if err == nil || id != 0 {
+			return id, err
+		}
+		wait, ok := retryAfter(err)
+		if !ok || attempt >= finalSendAttempts || waited+wait > finalSendMaxWait {
+			return 0, err
+		}
+		b.log.Info("final reply rate limited, retrying",
+			slog.Int64("chat_id", chatID), slog.Duration("wait", wait))
+		if serr := b.wait(ctx, wait); serr != nil {
+			return 0, fmt.Errorf("%w (wait: %w)", err, serr)
+		}
+		waited += wait
+	}
+}
+
+// retryAfter reports the wait a 429 asks for (at least one second).
+func retryAfter(err error) (time.Duration, bool) {
+	var tm *bot.TooManyRequestsError
+	if !errors.As(err, &tm) {
+		return 0, false
+	}
+	return time.Duration(max(tm.RetryAfter, 1)) * time.Second, true
+}
+
+// wait sleeps d or until ctx ends, through b.sleep when tests set it.
+func (b *Bot) wait(ctx context.Context, d time.Duration) error {
+	if b.sleep != nil {
+		return b.sleep(ctx, d)
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // stoppedEmpty is the reply when the user stopped a turn before the

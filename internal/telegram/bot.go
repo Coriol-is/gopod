@@ -106,6 +106,10 @@ type Bot struct {
 
 	// streamTick is the streaming flush cadence; zero means 1s.
 	streamTick time.Duration
+
+	// sleep waits d or until ctx ends; nil means sleepCtx. Tests stub
+	// it to skip retry_after waits.
+	sleep func(ctx context.Context, d time.Duration) error
 }
 
 // New constructs a Bot. The token must be a valid @BotFather token; an
