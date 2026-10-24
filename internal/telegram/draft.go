@@ -143,8 +143,13 @@ func isDraftCapabilityError(err error) bool {
 // error (see isDraftCapabilityError) marks drafts unsupported for the
 // chat; any other 400 is a per-call failure, and draftBadRequestLimit
 // of them in a row also mark it. Rate limits, 5xx and network errors
-// are transient and leave the flag alone.
+// are transient and leave the flag alone. A topic that no longer exists
+// (threadgone.go) is none of these: it neither counts nor marks the
+// chat, and later drafts into it are skipped.
 func (b *Bot) sendDraftOpts(ctx context.Context, chatID int64, threadID int, draftID int, text string, opts draftOpts) error {
+	if b.threadGone(chatID, threadID) {
+		return errThreadGone
+	}
 	ok, err := b.api.SendMessageDraft(ctx, &bot.SendMessageDraftParams{
 		ChatID:          chatID,
 		MessageThreadID: threadID,
@@ -155,6 +160,8 @@ func (b *Bot) sendDraftOpts(ctx context.Context, chatID int64, threadID int, dra
 	})
 	if err != nil {
 		switch {
+		case b.checkThreadGone(chatID, threadID, err):
+			return fmt.Errorf("sendMessageDraft: %w: %w", errThreadGone, err)
 		case isDraftCapabilityError(err):
 			b.markDraftsUnsupported(chatID)
 			b.log.Info("sendMessageDraft refused, falling back to edits for this chat",

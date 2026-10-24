@@ -336,6 +336,29 @@ See [GATEWAY.md](GATEWAY.md) for full architecture.
    `/provider` still clears main; a `/login` code is accepted from any thread;
    `ClearSession` during a Codex first turn is a no-op; the first adoption
    marker lives in `router_state`.
+   Added after the final review: (7) check `--ephemeral` exists on the pinned
+   Codex 0.160 (`codex exec --help` in the image; if rejected, every Codex
+   extraction/compact/task-parse run fails silently); (8) after two turns in
+   one thread the stored session id matches the single growing Claude
+   `.jsonl`, and a Codex `sessions` row exists (a Warn "agent announced no
+   session id" means the 0.160 stderr header differs from the 0.164 one the
+   code was checked against); (9) after enabling Threaded mode, a reply in
+   the main chat stays in thread 0 (`inboundThreadID` does not check
+   `is_topic_message`). **Known Codex upgrade caveat:** production ran memory
+   extraction through `RunFresh` without `--ephemeral`, so on Codex the newest
+   rollout in the container is an extraction session and the one-time
+   adoption will make that main's session (the old `resume --last` already
+   resumed the same file, so main had no real continuity before either); step
+   (3) will look like an upgrade bug on Codex. Claude is not affected.
+   A deleted/closed topic mid-turn now diverts the reply to the main chat
+   with a note (`internal/telegram/threadgone.go`; the matched error texts
+   come from reported real errors, not the Bot API docs). Minors from the
+   final review: after `kill -9` the Codex first turn of a thread restarts as
+   a new conversation; `/memory/list` and `/memory/search` return every
+   thread's `conversation_summary`; `/compact` after a restart answers
+   "nothing to compact (0 turns)" because turn counters are in memory;
+   `/clear` and auto-compact are not serialized against a running turn of the
+   same conversation; one extra `find` exec per turn (session existence check).
 0. **Run the manual crash-recovery test for durable turns** (plan Task 8
    step 5, still not run; the branch is merged and deployed, cold start
    of the agent container is verified, but a `kill -9` of gopod itself

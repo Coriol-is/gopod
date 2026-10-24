@@ -20,8 +20,8 @@ const resumingBanner = "⟳ resuming after restart"
 const crashLoopNotice = "Gave up on this message after 3 restarts. Please resend."
 
 // resumePrompt wraps the user's original text in an interruption notice.
-// The session continues (`claude --continue` / `codex resume --last`),
-// so the agent sees its own partial transcript and decides what is
+// The conversation's session is resumed by its stored id, so the agent
+// sees its own partial transcript and decides what is
 // safe to redo. gopod does not classify tool side effects.
 func resumePrompt(userText string) string {
 	return "[gopod] The previous turn was interrupted by a restart before a reply was sent. " +
