@@ -176,7 +176,7 @@ func TestClaudeClearSessionCmd(t *testing.T) {
 		}
 	})
 
-	for _, bad := range []string{"..", "../..", "a/b", "*", "x y", "$(id)"} {
+	for _, bad := range []string{"..", "../..", "a/b", "*", "x y", "$(id)", "abc", testSessA + "0"} {
 		t.Run("rejects "+bad, func(t *testing.T) {
 			home, a, _, b := claudeFixture(t)
 			if _, ok := runShell(t, home, p.ClearSessionCmd(SessionRef{ID: bad})); ok {
@@ -221,7 +221,7 @@ func TestCodexClearSessionCmd(t *testing.T) {
 		}
 	})
 
-	for _, bad := range []string{"..", "a/b", "*", "x y", "$(id)"} {
+	for _, bad := range []string{"..", "a/b", "*", "x y", "$(id)", "abc", "*" + testSessA[8:]} {
 		t.Run("rejects "+bad, func(t *testing.T) {
 			home, a, b := codexFixture(t)
 			if _, ok := runShell(t, home, p.ClearSessionCmd(SessionRef{ID: bad})); ok {
@@ -273,6 +273,91 @@ func TestLatestSessionIDCmd(t *testing.T) {
 	}
 }
 
+func TestCodexRunFreshCmdEphemeral(t *testing.T) {
+	// --ephemeral (codex-cli 0.160 `exec --help`: "Run without persisting
+	// session files to disk") keeps system tasks out of ~/.codex/sessions.
+	got := NewCodexProvider("").RunFreshCmd("hi")
+	want := []string{"codex", "exec", "--ephemeral",
+		"--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check", "hi"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("RunFreshCmd = %q, want %q", got, want)
+	}
+}
+
+func TestCodexLatestSessionIDLayout(t *testing.T) {
+	p := NewCodexProvider("")
+	now := time.Now()
+
+	t.Run("any directory depth", func(t *testing.T) {
+		home := t.TempDir()
+		flat := filepath.Join(home, ".codex", "sessions", "rollout-2026-10-24T09-00-00-"+testSessA+".jsonl")
+		deep := filepath.Join(home, ".codex", "sessions", "2026", "10", "24", "x", "rollout-2026-10-24T08-00-00-"+testSessB+".jsonl")
+		writeFile(t, flat, now.Add(-time.Hour))
+		writeFile(t, deep, now)
+		got, ok := runShell(t, home, p.LatestSessionIDCmd())
+		if !ok || got != testSessB {
+			t.Errorf("got %q ok=%v, want %q", got, ok, testSessB)
+		}
+		writeFile(t, flat, now.Add(time.Minute))
+		if got, _ := runShell(t, home, p.LatestSessionIDCmd()); got != testSessA {
+			t.Errorf("after touching flat: got %q, want %q", got, testSessA)
+		}
+	})
+
+	t.Run("newer RunFresh-style rollout wins", func(t *testing.T) {
+		// RunFreshCmd is --ephemeral now, so new system tasks write no
+		// rollout. Rollouts left by pre-ephemeral system tasks are
+		// indistinguishable from conversations by name, so the newest
+		// one is reported: it is exactly what the legacy `exec resume
+		// --last` would have resumed, which is what migration adopts.
+		home, _, _ := codexFixture(t)
+		fresh := "cccccccc-dddd-4eee-8fff-000000000000"
+		writeFile(t, filepath.Join(home, ".codex", "sessions", "2026", "10", "24",
+			"rollout-2026-10-24T10-00-00-"+fresh+".jsonl"), now.Add(time.Minute))
+		if got, _ := runShell(t, home, p.LatestSessionIDCmd()); got != fresh {
+			t.Errorf("got %q, want %q", got, fresh)
+		}
+	})
+
+	t.Run("non-rollout files are ignored", func(t *testing.T) {
+		home, _, _ := codexFixture(t)
+		writeFile(t, filepath.Join(home, ".codex", "sessions", "notes.jsonl"), now.Add(time.Hour))
+		if got, _ := runShell(t, home, p.LatestSessionIDCmd()); got != testSessA {
+			t.Errorf("got %q, want %q", got, testSessA)
+		}
+	})
+}
+
+func TestClearSessionCmdRejectsIDFragment(t *testing.T) {
+	// The last two groups of testSessA: with a loose pattern,
+	// rollout-*-<fragment>.jsonl would match testSessA's rollout.
+	frag := testSessA[strings.LastIndex(testSessA[:len(testSessA)-13], "-")+1:]
+	if frag != "8444-555555555555" {
+		t.Fatalf("fragment = %q", frag)
+	}
+	t.Run("codex", func(t *testing.T) {
+		home, a, b := codexFixture(t)
+		if _, ok := runShell(t, home, NewCodexProvider("").ClearSessionCmd(SessionRef{ID: frag})); ok {
+			t.Error("fragment id accepted")
+		}
+		if !exists(a) || !exists(b) {
+			t.Error("fragment id removed files")
+		}
+	})
+	t.Run("claude", func(t *testing.T) {
+		home, a, _, b := claudeFixture(t)
+		if _, ok := runShell(t, home, NewClaudeProvider("").ClearSessionCmd(SessionRef{ID: frag})); ok {
+			t.Error("fragment id accepted")
+		}
+		if !exists(a) || !exists(b) {
+			t.Error("fragment id removed files")
+		}
+	})
+	if got := NewCodexProvider("").ExtractSessionID(`{"type":"thread.started","thread_id":"` + frag + `"}`); got != "" {
+		t.Errorf("ExtractSessionID accepted fragment: %q", got)
+	}
+}
+
 func TestExtractSessionID(t *testing.T) {
 	codex := NewCodexProvider("")
 
@@ -315,6 +400,7 @@ func TestExtractSessionID(t *testing.T) {
 		`{"type":"thread.started"}`,
 		`{"type":"thread.started","thread_id":"../etc"}`,
 		"session id: not/an/id",
+		"session id: abc",
 		"hello session id: x",
 		"{not json",
 	} {

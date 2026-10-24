@@ -67,8 +67,11 @@ func (p *CodexProvider) RunCmd(prompt, systemPrompt string, s SessionRef) []stri
 }
 
 func (p *CodexProvider) RunFreshCmd(prompt string) []string {
-	// No resume = fresh session.
-	cmd := []string{"codex", "exec"}
+	// No resume = fresh session. --ephemeral (present in 0.160) keeps
+	// the run from writing a rollout, so system tasks (compact summary,
+	// memory extraction) never become what `resume --last` or
+	// LatestSessionIDCmd picks.
+	cmd := []string{"codex", "exec", "--ephemeral"}
 	cmd = append(cmd, codexExecFlags...)
 	return append(cmd, prompt)
 }
@@ -174,12 +177,16 @@ func (p *CodexProvider) ClearSessionCmd(s SessionRef) []string {
 // LatestSessionIDCmd prints the thread id of the most recently
 // modified rollout, which is what `exec resume --last` picks (checked
 // against codex-cli 0.164: it follows the last update, not the newest
-// file name).
+// file name). find instead of a fixed-depth glob, so a change to the
+// YYYY/MM/DD layout cannot silently yield no id; the -nt loop avoids
+// splitting the listing into separately sorted batches.
 func (p *CodexProvider) LatestSessionIDCmd() []string {
 	return []string{"sh", "-c",
-		`f=$(ls -t "$HOME"/.codex/sessions/*/*/*/rollout-*.jsonl 2>/dev/null | head -n 1); ` +
-			`if [ -n "$f" ]; then basename "$f" .jsonl | ` +
-			`sed -E 's/^rollout-[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}-[0-9]{2}-[0-9]{2}-//'; fi`}
+		`[ -d "$HOME/.codex/sessions" ] || exit 0; ` +
+			`f=$(find "$HOME/.codex/sessions" -type f -name 'rollout-*.jsonl' | ` +
+			`{ b=; while IFS= read -r x; do if [ -z "$b" ] || [ "$x" -nt "$b" ]; then b=$x; fi; done; printf '%s' "$b"; }); ` +
+			`[ -n "$f" ] || exit 0; ` +
+			`basename "$f" .jsonl | sed -nE 's/^rollout-.*-([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$/\1/p'`}
 }
 
 // ExtractSessionID reads the thread id from either output mode of

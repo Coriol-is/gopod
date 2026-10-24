@@ -21,13 +21,15 @@ type SessionRef struct {
 }
 
 // sessionIDPattern is what an ID must look like before it is put on a
-// shell command line or into a glob. Claude ids are UUIDs and Codex
-// thread ids are UUIDs (v7) too; the pattern is deliberately narrower
-// than "anything the CLI accepts" so a path separator, glob character
-// or shell metacharacter can never reach `rm`.
-var sessionIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]{0,127}$`)
+// shell command line or into a glob. Claude ids and Codex thread ids
+// (v7) are both UUIDs. Requiring the full canonical form keeps path
+// separators, glob characters and shell metacharacters away from `rm`,
+// and stops a fragment of one id (say its last two groups) from
+// matching another session's file through the `rollout-*-<id>` glob.
+var sessionIDPattern = regexp.MustCompile(
+	`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
-// validSessionID reports whether id is safe to use in a file path.
+// validSessionID reports whether id is a canonical UUID.
 func validSessionID(id string) bool { return sessionIDPattern.MatchString(id) }
 
 // invalidSessionIDCmd is returned instead of a delete command when the
