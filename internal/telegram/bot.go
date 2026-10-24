@@ -96,7 +96,9 @@ type Bot struct {
 	// until restart. draftSeq hands out draft ids.
 	draftsMu  sync.Mutex
 	draftsOff map[int64]bool
-	draftSeq  atomic.Int64
+	// draftBadReqs counts consecutive unrecognized 400s per chat.
+	draftBadReqs map[int64]int
+	draftSeq     atomic.Int64
 
 	// streamTick is the streaming flush cadence; zero means 1s.
 	streamTick time.Duration

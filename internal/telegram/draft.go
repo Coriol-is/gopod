@@ -25,6 +25,8 @@ package telegram
 //     gopod still streams partials as plain text, because a half-written
 //     markdown reply converts to unbalanced HTML; only the final
 //     sendMessage carries HTML.
+//     gopod's opening draft still sends the "▍" cursor rather than empty
+//     text, so it does not depend on that relaxation.
 //   - If gopod dies mid-turn: nothing is left behind. The draft expires
 //     on its own within ~30 seconds; there is no dangling placeholder to
 //     clean up. A resumed turn (D020) sends a fresh final message.
@@ -41,6 +43,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 
 	"github.com/go-telegram/bot"
 )
@@ -84,10 +87,37 @@ func (b *Bot) sendDraft(ctx context.Context, chatID int64, threadID int, draftID
 	return b.sendDraftOpts(ctx, chatID, threadID, draftID, text, draftOpts{})
 }
 
-// sendDraftOpts is sendDraft with the stop-button flags. When the Bot
-// API refuses the method (400 or 404), drafts are marked unsupported
-// for the chat; rate limits, 5xx and network errors are transient and
-// leave the flag alone.
+// draftBadRequestLimit is how many consecutive unrecognized 400s on a
+// chat turn drafts off for it, as a failsafe.
+const draftBadRequestLimit = 3
+
+// draftCapabilityHints are substrings of a 400 description that mean
+// the Bot API does not offer drafts here, as opposed to a bad call.
+var draftCapabilityHints = []string{"method", "not supported", "not available", "unknown", "private chat"}
+
+// isDraftCapabilityError reports whether err says drafts are not
+// available for the chat: a 404, or a 400 naming the method or chat type.
+func isDraftCapabilityError(err error) bool {
+	if errors.Is(err, bot.ErrorNotFound) {
+		return true
+	}
+	if !errors.Is(err, bot.ErrorBadRequest) {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	for _, h := range draftCapabilityHints {
+		if strings.Contains(msg, h) {
+			return true
+		}
+	}
+	return false
+}
+
+// sendDraftOpts is sendDraft with the stop-button flags. A capability
+// error (see isDraftCapabilityError) marks drafts unsupported for the
+// chat; any other 400 is a per-call failure, and draftBadRequestLimit
+// of them in a row also mark it. Rate limits, 5xx and network errors
+// are transient and leave the flag alone.
 func (b *Bot) sendDraftOpts(ctx context.Context, chatID int64, threadID int, draftID int, text string, opts draftOpts) error {
 	ok, err := b.api.SendMessageDraft(ctx, &bot.SendMessageDraftParams{
 		ChatID:          chatID,
@@ -98,16 +128,44 @@ func (b *Bot) sendDraftOpts(ctx context.Context, chatID int64, threadID int, dra
 		KeepOnStop:      opts.KeepOnStop,
 	})
 	if err != nil {
-		if errors.Is(err, bot.ErrorBadRequest) || errors.Is(err, bot.ErrorNotFound) {
+		switch {
+		case isDraftCapabilityError(err):
 			b.markDraftsUnsupported(chatID)
 			b.log.Info("sendMessageDraft refused, falling back to edits for this chat",
 				slog.Int64("chat_id", chatID),
 				slog.Any("err", err))
+		case errors.Is(err, bot.ErrorBadRequest):
+			if b.countDraftBadRequest(chatID) >= draftBadRequestLimit {
+				b.markDraftsUnsupported(chatID)
+				b.log.Info("sendMessageDraft kept failing, falling back to edits for this chat",
+					slog.Int64("chat_id", chatID),
+					slog.Any("err", err))
+			}
 		}
 		return fmt.Errorf("sendMessageDraft: %w", err)
 	}
 	if !ok {
 		return errors.New("sendMessageDraft: api returned false")
 	}
+	b.resetDraftBadRequests(chatID)
 	return nil
+}
+
+// countDraftBadRequest records one more consecutive unrecognized 400
+// for chatID and returns the run length.
+func (b *Bot) countDraftBadRequest(chatID int64) int {
+	b.draftsMu.Lock()
+	defer b.draftsMu.Unlock()
+	if b.draftBadReqs == nil {
+		b.draftBadReqs = make(map[int64]int)
+	}
+	b.draftBadReqs[chatID]++
+	return b.draftBadReqs[chatID]
+}
+
+// resetDraftBadRequests clears the 400 run after a successful draft.
+func (b *Bot) resetDraftBadRequests(chatID int64) {
+	b.draftsMu.Lock()
+	defer b.draftsMu.Unlock()
+	delete(b.draftBadReqs, chatID)
 }

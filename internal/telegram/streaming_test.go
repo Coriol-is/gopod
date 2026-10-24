@@ -100,6 +100,9 @@ func TestRunAgentStreaming_UsesDraftsThenFinalMessage(t *testing.T) {
 	<-done
 
 	drafts := fake.callsTo("sendMessageDraft")
+	if drafts[0].Form["text"] == "" {
+		t.Error("opening draft must not send empty text")
+	}
 	prev := ""
 	for _, d := range drafts {
 		text := strings.TrimSuffix(d.Form["text"], "❘")
@@ -239,5 +242,43 @@ func TestRunAgentStreaming_DraftOverflowStartsNewDraftAndSendsWholeReply(t *test
 	}
 	if n := len(fake.callsTo("editMessageText")); n != 0 {
 		t.Errorf("editMessageText calls = %d, want 0", n)
+	}
+}
+
+func TestRunAgentStreaming_OpeningDraftBadCallUsesEditsThisTurnOnly(t *testing.T) {
+	fake := &fakeTelegram{}
+	fake.respond = func(method string, _ map[string]string) (int, string) {
+		switch method {
+		case "sendMessageDraft":
+			return apiError(http.StatusBadRequest, "Bad Request: chat not found")
+		case "sendMessage", "editMessageText":
+			return sentMessage("88")
+		}
+		return http.StatusOK, `{"ok":true,"result":true}`
+	}
+	b, item := newStreamFixture(t, fake)
+
+	chunks := make(chan string)
+	result := make(chan runner.RunResult, 1)
+	close(chunks)
+	result <- runner.RunResult{FullText: "done"}
+	b.streamReply(context.Background(), item, &runner.AgentStream{Chunks: chunks, Result: result})
+
+	drafts := fake.callsTo("sendMessageDraft")
+	if len(drafts) != 1 || drafts[0].Form["text"] == "" {
+		t.Fatalf("want one non-empty opening draft, got %+v", drafts)
+	}
+	if !b.draftsSupported(streamChat) {
+		t.Error("a single bad call must not mark the chat unsupported")
+	}
+	if n := len(fake.callsTo("sendMessage")); n != 1 {
+		t.Errorf("sendMessage calls = %d, want 1 (the placeholder)", n)
+	}
+	turn, err := b.store.GetTurn(context.Background(), item.ID)
+	if err != nil {
+		t.Fatalf("GetTurn: %v", err)
+	}
+	if turn.ReplyMsgID != 88 {
+		t.Errorf("ReplyMsgID = %d, want 88", turn.ReplyMsgID)
 	}
 }

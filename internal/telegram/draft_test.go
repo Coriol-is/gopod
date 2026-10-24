@@ -153,3 +153,60 @@ func TestDraftsSupported_GroupChatsNever(t *testing.T) {
 		t.Error("group chat must not use drafts")
 	}
 }
+
+func TestSendDraft_ErrorClassification(t *testing.T) {
+	ctx := context.Background()
+	cases := []struct {
+		name     string
+		code     int
+		desc     string
+		wantFlip bool
+	}{
+		{"chat not found is a bad call", http.StatusBadRequest, "Bad Request: chat not found", false},
+		{"text too long is a bad call", http.StatusBadRequest, "Bad Request: message is too long", false},
+		{"404 is a capability error", http.StatusNotFound, "Not Found", true},
+		{"method not available", http.StatusBadRequest, "Bad Request: method is not available", true},
+		{"not supported", http.StatusBadRequest, "Bad Request: drafts are not supported", true},
+		{"private chat only", http.StatusBadRequest, "Bad Request: allowed only in private chats", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := &fakeTelegram{respond: func(string, map[string]string) (int, string) {
+				return apiError(tc.code, tc.desc)
+			}}
+			b := newFakeBot(t, fake)
+			if err := b.sendDraft(ctx, 1001, 0, 1, "hi"); err == nil {
+				t.Fatal("want error")
+			}
+			if got := !b.draftsSupported(1001); got != tc.wantFlip {
+				t.Errorf("flag flipped = %v, want %v", got, tc.wantFlip)
+			}
+		})
+	}
+}
+
+func TestSendDraft_RepeatedBadRequestsFlipAndSuccessResets(t *testing.T) {
+	ctx := context.Background()
+	fail := true
+	fake := &fakeTelegram{respond: func(string, map[string]string) (int, string) {
+		if fail {
+			return apiError(http.StatusBadRequest, "Bad Request: chat not found")
+		}
+		return http.StatusOK, `{"ok":true,"result":true}`
+	}}
+	b := newFakeBot(t, fake)
+
+	// Two failures, a success, two more: the run never reaches 3.
+	for _, f := range []bool{true, true, false, true, true} {
+		fail = f
+		_ = b.sendDraft(ctx, 1001, 0, 1, "hi")
+	}
+	if !b.draftsSupported(1001) {
+		t.Fatal("a success must reset the bad-request run")
+	}
+	fail = true
+	_ = b.sendDraft(ctx, 1001, 0, 1, "hi")
+	if b.draftsSupported(1001) {
+		t.Fatal("3 consecutive 400s must mark drafts unsupported")
+	}
+}

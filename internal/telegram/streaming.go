@@ -151,15 +151,16 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 	if placeholder = b.reusePlaceholder(ctx, item); placeholder != 0 {
 		b.recordPlaceholder(ctx, item, placeholder)
 	} else if b.draftsSupported(item.ChatID) {
-		// An empty draft shows "Thinking…" and probes support up front.
+		// The opening draft shows the cursor and probes support up front.
 		draftID = b.newDraftID()
-		opening := ""
+		opening := "❘" // ▍ cursor
 		if item.Resumed {
 			opening = resumingBanner
 		}
 		if err := b.sendDraft(ctx, item.ChatID, 0, draftID, opening); err == nil {
 			lastDraft = time.Now()
-		} else if !b.draftsSupported(item.ChatID) {
+		} else if !b.draftsSupported(item.ChatID) || errors.Is(err, bot.ErrorBadRequest) {
+			// Refused, or a bad call: edit path for this turn.
 			draftID = 0
 		} else {
 			b.log.Debug("opening draft failed, will retry",
@@ -220,10 +221,7 @@ loop:
 				if !dirty && time.Since(lastDraft) < draftRefresh {
 					continue
 				}
-				text := accumulated.String()
-				if text != "" {
-					text += "❘" // ▍ cursor
-				}
+				text := accumulated.String() + "❘" // ▍ cursor, never empty
 				err := b.sendDraft(ctx, item.ChatID, 0, draftID, text)
 				if err == nil {
 					lastDraft = time.Now()
