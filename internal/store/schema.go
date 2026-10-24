@@ -61,10 +61,15 @@ var schemaStatements = []string{
 	)`,
 
 	// --- Claude CLI session continuity per chat.
+	// Keyed by (chat, thread, provider); legacy single-key tables are
+	// rebuilt by migrateSessions. Fresh DBs get the new shape directly.
 	`CREATE TABLE IF NOT EXISTS sessions (
-	  chat_folder TEXT PRIMARY KEY,
-	  session_id TEXT NOT NULL,
-	  updated_at INTEGER NOT NULL
+	  chat_folder TEXT NOT NULL,
+	  thread_id   INTEGER NOT NULL DEFAULT 0,
+	  provider    TEXT NOT NULL DEFAULT 'claude',
+	  session_id  TEXT NOT NULL,
+	  updated_at  INTEGER NOT NULL,
+	  PRIMARY KEY (chat_folder, thread_id, provider)
 	)`,
 
 	// --- Scheduler state (M4).
@@ -192,6 +197,8 @@ var migrations = []string{
 	`ALTER TABLE memories ADD COLUMN last_retrieved_at INTEGER`,
 	// Durable turns: link task run logs to the turn that ran them.
 	`ALTER TABLE task_run_logs ADD COLUMN turn_id INTEGER`,
+	// Per-conversation sessions: turns carry the Telegram thread.
+	`ALTER TABLE turns ADD COLUMN thread_id INTEGER NOT NULL DEFAULT 0`,
 }
 
 // applySchema runs every statement in schemaStatements in order. Idempotent.
@@ -200,6 +207,9 @@ func (s *Store) applySchema(ctx context.Context) error {
 		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
 			return fmt.Errorf("statement %d: %w\n--- sql ---\n%s", i, err, stmt)
 		}
+	}
+	if err := s.migrateSessions(ctx); err != nil {
+		return err
 	}
 	// Run migrations (ALTER TABLE). Ignore "duplicate column" errors
 	// so re-applying on an already-migrated DB is a no-op.
