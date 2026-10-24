@@ -487,6 +487,12 @@ don't get lost.)
   restart, so a stale Stop could match the first new draft (seed it with a
   time-based value); `runner.Run`/`RunFresh` are not covered by the
   per-chat agent slot that makes the next turn wait for a kill.
+  Also open (final-send retry, D021): a 429 on chunk 2+ of a multi-chunk
+  reply ends the turn `done` with a truncated reply; a send that Telegram
+  delivered but whose response was lost makes the whole-turn retry post a
+  second reply; `finishStopped` has no retry for an undelivered partial.
+  Pre-deploy live checks: resume after a killed turn on claude and codex,
+  and that Stop updates arrive (bot's `allowed_updates` default).
 - **Conversation threads (Phase B, plan
   `docs/superpowers/plans/2026-10-24-telegram-threads-and-drafts.md`).**
   Landed on main: per-conversation `sessions` store (Task 5), provider
