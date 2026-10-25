@@ -78,19 +78,33 @@ func (d *Docker) Client() *client.Client { return d.cli }
 // with the given Config/HostConfig. Behaviour matrix:
 //
 //   - no container with that name → create + start, return new id.
-//   - container exists and is running → return existing id.
+//   - running container has the selected immutable image → reuse it.
+//   - running container has a proven image mismatch → typed error, preserve it.
 //   - container exists but is stopped/exited → remove it (so the
 //     fresh spawn picks up any new mount/flag changes), then create and start.
 //
 // The (cfg, host) pair is applied only when a new container is
 // created. gopod does not mutate an already-running container's
-// config — stop/remove/recreate is the only supported update path.
+// config. Only the private startup reconciliation path, called while holding
+// the chat agent slot before recovery, may stop/remove/recreate a mismatch.
 func (d *Docker) EnsureRunning(
 	ctx context.Context,
 	name string,
 	cfg *container.Config,
 	host *container.HostConfig,
 ) (string, error) {
+	return d.ensureRunning(ctx, name, cfg, host, false)
+}
+
+// ImageMismatchError preserves a running container until a serialized startup
+// reconciliation explicitly permits replacement.
+type ImageMismatchError struct{}
+
+func (*ImageMismatchError) Error() string {
+	return "docker: running container image differs from selected image"
+}
+
+func (d *Docker) ensureRunning(ctx context.Context, name string, cfg *container.Config, host *container.HostConfig, reconcile bool) (string, error) {
 	existing, err := d.inspectByName(ctx, name)
 	if err != nil {
 		return "", err
@@ -102,7 +116,24 @@ func (d *Docker) EnsureRunning(
 			return "", fmt.Errorf("docker: inspect %q: %w", name, err)
 		}
 		if info.State != nil && info.State.Running {
-			return existing, nil
+			// A tag may now refer to a different image. Verify by immutable ID;
+			// failed verification preserves the running container unchanged.
+			desired, err := d.cli.ImageInspect(ctx, cfg.Image)
+			if err != nil {
+				return "", fmt.Errorf("docker: verify selected image: %w", err)
+			}
+			if desired.ID == "" || info.Image == "" {
+				return "", errors.New("docker: selected image identity unavailable")
+			}
+			if desired.ID == info.Image {
+				return existing, nil
+			}
+			if !reconcile {
+				return "", &ImageMismatchError{}
+			}
+			if err := d.Stop(ctx, existing, DefaultStopGrace); err != nil {
+				return "", fmt.Errorf("docker: stop mismatched image: %w", err)
+			}
 		}
 		// Stopped leftover. Remove before re-creating.
 		d.log.Info("removing stopped leftover before respawn",

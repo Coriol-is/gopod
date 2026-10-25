@@ -1093,6 +1093,33 @@ buttons. No generic registry, migration or provider request is introduced.
 
 ---
 
+## D035 — Restore selection before bounded owner runtime checks
+
+**Date:** 2026-10-25
+**Status:** Accepted
+
+**Context.** Restoring a provider formerly removed its container unconditionally,
+while startup never ensured the selected runtime. Auth checks used the default
+provider and Codex's negative status matched a positive substring. Management
+observations must not start an inference session to discover local readiness.
+
+**Decision.** Restore choices without container mutation; unresolved choices
+fail closed. Warm only the registered configured owner before turn recovery,
+under its agent slot. Compare immutable image identity and restrict destructive
+reconciliation to the slot-protected startup path. Probe selected CLI/auth with
+bounded process cleanup and maintain idle tracking. Add an allowlisted Codex
+account/limits management exchange without thread/turn/model requests; report
+unsupported Claude cold-start quota honestly. Keep missing allowance/reset
+fields unknown and do not infer quota recovery.
+
+**Consequences.** Startup does bounded work for one workspace, not every chat.
+Diagnostics do not reset sessions, history, tasks or provider choice. Model
+availability remains unverified without actual authorized inference. Runtime
+checks and external observations have separate evidence and cleanup limits.
+See [startup contract](STARTUP.md) and its linked official-interface research.
+
+---
+
 ## Template for new ADRs
 
 ```

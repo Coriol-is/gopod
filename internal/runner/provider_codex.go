@@ -2,6 +2,7 @@ package runner
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 )
 
@@ -104,6 +105,9 @@ func (p *CodexProvider) ParseAuthStatus(stdout string) (AuthStatus, error) {
 	//   "Logged in using ChatGPT"
 	//   "Logged in using API key"
 	//   "Not logged in"
+	if strings.Contains(strings.ToLower(stdout), "not logged in") {
+		return AuthStatus{LoggedIn: false, AuthMethod: "none"}, nil
+	}
 	if strings.Contains(strings.ToLower(stdout), "logged in") {
 		method := "chatgpt"
 		if strings.Contains(strings.ToLower(stdout), "api key") {
@@ -113,10 +117,13 @@ func (p *CodexProvider) ParseAuthStatus(stdout string) (AuthStatus, error) {
 	}
 	// Try JSON fallback (future versions might switch to JSON).
 	var status AuthStatus
-	if err := json.Unmarshal([]byte(stdout), &status); err == nil {
-		return status, nil
+	var fields map[string]json.RawMessage
+	if json.Unmarshal([]byte(stdout), &fields) == nil && fields["loggedIn"] != nil {
+		if err := json.Unmarshal([]byte(stdout), &status); err == nil {
+			return status, nil
+		}
 	}
-	return AuthStatus{LoggedIn: false, AuthMethod: "none"}, nil
+	return AuthStatus{}, errors.New("codex: unrecognized auth status")
 }
 
 func (p *CodexProvider) IsNotLoggedInError(stderr, stdout string) bool {

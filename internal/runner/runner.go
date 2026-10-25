@@ -70,9 +70,10 @@ type Runner struct {
 	progress bool
 
 	// Per-chat provider and model overrides (/provider, /model).
-	providersMu   sync.RWMutex
-	chatProviders map[string]AgentProvider
-	chatModels    map[string]string
+	providersMu     sync.RWMutex
+	chatProviders   map[string]AgentProvider
+	chatModels      map[string]string
+	selectionBlocks map[string]bool
 
 	// containerLocksMu serialises EnsureRunning per chat. Without it,
 	// two simultaneous messages on the same chat could race two
@@ -167,6 +168,9 @@ func New(
 
 // ensure is Ensure, or the test seam ensureFn.
 func (r *Runner) ensure(ctx context.Context, chatFolder string, tier Tier, allowlist *mountsec.Allowlist) (string, error) {
+	if r.selectionBlocked(chatFolder) {
+		return "", errors.New("runner: provider selection unavailable")
+	}
 	if r.ensureFn != nil {
 		return r.ensureFn(ctx, chatFolder, tier, allowlist)
 	}
@@ -185,6 +189,13 @@ func (r *Runner) Ensure(
 	tier Tier,
 	allowlist *mountsec.Allowlist,
 ) (string, error) {
+	return r.ensureContainer(ctx, chatFolder, tier, allowlist, false)
+}
+
+func (r *Runner) ensureContainer(ctx context.Context, chatFolder string, tier Tier, allowlist *mountsec.Allowlist, reconcile bool) (string, error) {
+	if r.selectionBlocked(chatFolder) {
+		return "", errors.New("runner: provider selection unavailable")
+	}
 	if chatFolder == "" {
 		return "", errors.New("runner: empty chatFolder")
 	}
@@ -222,7 +233,7 @@ func (r *Runner) Ensure(
 		return "", err
 	}
 
-	id, err := r.d.EnsureRunning(ctx, name, conf, host)
+	id, err := r.d.ensureRunning(ctx, name, conf, host, reconcile)
 	if err != nil {
 		return "", err
 	}
@@ -582,7 +593,7 @@ func (r *Runner) startStream(
 					return
 				}
 				if prov.IsNotLoggedInError(stderr, authOut) {
-					result <- RunResult{Err: r.classifyAuthError(ctx, id)}
+					result <- RunResult{Err: r.classifyAuthError(ctx, id, prov)}
 					return
 				}
 				result <- RunResult{
@@ -752,7 +763,7 @@ func (r *Runner) execAgent(ctx context.Context, containerID, chatFolder string, 
 			return res, &UsageLimitError{Provider: prov.Name()}
 		}
 		if prov.IsNotLoggedInError(stderr, res.Stdout) {
-			return res, r.classifyAuthError(ctx, containerID)
+			return res, r.classifyAuthError(ctx, containerID, prov)
 		}
 		return res, fmt.Errorf("runner: agent exited %d (stderr=%q)", res.ExitCode, stderr)
 	}
@@ -760,8 +771,8 @@ func (r *Runner) execAgent(ctx context.Context, containerID, chatFolder string, 
 }
 
 // classifyAuthError distinguishes "never logged in" from "session expired".
-func (r *Runner) classifyAuthError(ctx context.Context, containerID string) error {
-	status, err := r.checkAuthViaProvider(ctx, containerID)
+func (r *Runner) classifyAuthError(ctx context.Context, containerID string, prov AgentProvider) error {
+	status, err := r.checkAuthViaProvider(ctx, containerID, prov)
 	if err != nil {
 		return ErrNotLoggedIn
 	}
@@ -771,12 +782,40 @@ func (r *Runner) classifyAuthError(ctx context.Context, containerID string) erro
 	return ErrNotLoggedIn
 }
 
-func (r *Runner) checkAuthViaProvider(ctx context.Context, containerID string) (AuthStatus, error) {
-	res, err := r.ex.Exec(ctx, containerID, r.provider.AuthStatusCmd(), nil)
+func (r *Runner) checkAuthViaProvider(ctx context.Context, containerID string, prov AgentProvider) (AuthStatus, error) {
+	checkCtx, cancel := context.WithTimeout(ctx, startupExecTimeout)
+	defer cancel()
+	res, err := r.execLocalProbe(checkCtx, containerID, prov.AuthStatusCmd())
 	if err != nil {
-		return AuthStatus{}, err
+		if errors.Is(err, errLocalProbeCleanup) {
+			return AuthStatus{}, errLocalProbeCleanup
+		}
+		if checkCtx.Err() != nil {
+			return AuthStatus{}, checkCtx.Err()
+		}
+		return AuthStatus{}, fmt.Errorf("runner: auth status unavailable")
 	}
-	return r.provider.ParseAuthStatus(res.Stdout)
+	output := res.Stdout
+	if prov.Name() == "codex" {
+		output += "\n" + res.Stderr
+	}
+	if strings.TrimSpace(output) == "" {
+		return AuthStatus{}, fmt.Errorf("runner: auth status empty")
+	}
+	status, err := prov.ParseAuthStatus(output)
+	if err != nil {
+		return AuthStatus{}, fmt.Errorf("runner: auth status invalid")
+	}
+	if res.ExitCode != 0 && status.LoggedIn {
+		return AuthStatus{}, fmt.Errorf("runner: auth status failed")
+	}
+	return status, nil
+}
+
+// RestoreChatProvider only restores trusted persisted selection before dispatch.
+// It never removes a container, writes state or resets the saved model.
+func (r *Runner) RestoreChatProvider(chatFolder string, p AgentProvider) {
+	r.setChatProviderOverride(chatFolder, p)
 }
 
 // Provider returns the agent provider for a given chat. If a per-chat
@@ -821,6 +860,7 @@ func (r *Runner) setChatProviderOverride(chatFolder string, p AgentProvider) {
 		r.chatProviders = make(map[string]AgentProvider)
 	}
 	r.chatProviders[chatFolder] = p
+	delete(r.selectionBlocks, chatFolder)
 	r.providersMu.Unlock()
 
 }
@@ -834,11 +874,16 @@ func (r *Runner) ClearChatProvider(chatFolder string) {
 
 // CheckAuth probes auth state of the chat's agent container.
 func (r *Runner) CheckAuth(ctx context.Context, chatFolder string, tier Tier, allowlist *mountsec.Allowlist) (AuthStatus, error) {
-	id, err := r.Ensure(ctx, chatFolder, tier, allowlist)
+	release, err := r.acquireAgentSlot(ctx, chatFolder)
 	if err != nil {
 		return AuthStatus{}, err
 	}
-	return r.checkAuthViaProvider(ctx, id)
+	defer release()
+	id, err := r.ensure(ctx, chatFolder, tier, allowlist)
+	if err != nil {
+		return AuthStatus{}, err
+	}
+	return r.checkAuthViaProvider(ctx, id, r.ProviderForChat(chatFolder))
 }
 
 // stateStore is the interface Runner needs from the store: compact
@@ -1061,4 +1106,19 @@ func (r *Runner) unlockChat(chatFolder string) {
 	if mu != nil {
 		mu.Unlock()
 	}
+}
+
+// BlockChatSelection prevents dispatch through an unresolved persisted selection.
+func (r *Runner) BlockChatSelection(folder string) {
+	r.providersMu.Lock()
+	defer r.providersMu.Unlock()
+	if r.selectionBlocks == nil {
+		r.selectionBlocks = make(map[string]bool)
+	}
+	r.selectionBlocks[folder] = true
+}
+func (r *Runner) selectionBlocked(folder string) bool {
+	r.providersMu.RLock()
+	defer r.providersMu.RUnlock()
+	return r.selectionBlocks[folder]
 }

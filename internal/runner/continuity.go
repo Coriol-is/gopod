@@ -68,7 +68,7 @@ func (r *Runner) switchChatProvider(ctx context.Context, folder, expected string
 	if expected != "" && r.ProviderForChat(folder).Name() != expected {
 		return ErrProviderChanged
 	}
-	if r.ProviderForChat(folder).Name() == p.Name() {
+	if r.ProviderForChat(folder).Name() == p.Name() && !r.selectionBlocked(folder) {
 		return nil
 	}
 	s, ok := r.store.(continuityStore)
