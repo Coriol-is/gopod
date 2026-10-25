@@ -251,6 +251,7 @@ func (r *Runner) Run(
 				slog.Int("len", len(compiled)))
 		}
 	}
+	opts.AppendSystemPrompt = systemPromptWith(opts.AppendSystemPrompt)
 
 	prov := r.ProviderForChat(chatFolder)
 	ref, err := r.resolveSession(ctx, id, chatFolder, thread, prov)
@@ -347,6 +348,7 @@ func (r *Runner) RunStream(
 				slog.Int("len", len(compiled)))
 		}
 	}
+	systemPrompt = systemPromptWith(systemPrompt)
 
 	prov := r.ProviderForChat(chatFolder)
 	model := r.ModelForChat(chatFolder)
