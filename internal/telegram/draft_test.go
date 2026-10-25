@@ -37,6 +37,18 @@ func (f *fakeTelegram) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				form[k] = v[0]
 			}
 		}
+		// Uploads (sendDocument, sendVoice): field.filename, field.content.
+		for k, fhs := range r.MultipartForm.File {
+			if len(fhs) == 0 {
+				continue
+			}
+			form[k+".filename"] = fhs[0].Filename
+			if f, err := fhs[0].Open(); err == nil {
+				data, _ := io.ReadAll(f)
+				f.Close()
+				form[k+".content"] = string(data)
+			}
+		}
 	}
 	f.mu.Lock()
 	f.calls = append(f.calls, apiCall{Method: method, Form: form})
