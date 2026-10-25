@@ -170,6 +170,7 @@ func (b *Bot) spendConfirmation(q cbQuery, cancel bool) (e cmdButton, toast stri
 // same IsOwner rule as a typed command (dispatchSlash).
 func (b *Bot) callbackCaller(q cbQuery) control.Caller {
 	return control.Caller{
+		ChatKind: q.ChatKind,
 		ChatID:   q.ChatID,
 		ThreadID: q.ThreadID,
 		UserID:   q.UserID,

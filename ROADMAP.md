@@ -26,7 +26,7 @@ has passed. The proposal registry remains the single CP status source;
 | Order | Workstream | Ordered work / dependencies | State |
 |---|---|---|---|
 | 1 | Qualify the deployed release | Tasks panel, delivery, upgraded CLIs, quota/provider continuity, Stop/recovery and media baseline — A01–A17 | Implemented/deployed baseline; live checks open |
-| 2 | Reliability and diagnostics | CP-017 Telegram diagnosis -> CP-002 bounded outbox/uncertain delivery -> CP-004 isolated task sessions -> CP-007 scheduled backups/restore -> CP-006 maintenance/quiet hours | CP-017 spec and execution plan ready; implementation not started; remaining proposals need bounded design |
+| 2 | Reliability and diagnostics | CP-017 Telegram diagnosis -> CP-002 bounded outbox/uncertain delivery -> CP-004 isolated task sessions -> CP-007 scheduled backups/restore -> CP-006 maintenance/quiet hours | CP-017 private-DM slice implemented; live acceptance pending; remaining proposals need bounded design |
 | 3 | Conversation management | CP-016 topic deletion/retirement -> CP-018 per-conversation providers/models/quota scope | Specs saved; no implementation |
 | 4 | Group service UX | CP-019 ephemeral command/service/error replies; T14 scoped menu/strings work coordinated with transport | Spec saved; ordinary output stays public |
 | 5 | Media, three queues | CP-014 Q1 cards/links/attachment fidelity -> Q2 document/OCR/image/speech -> Q3 video speech+frames/export; CP-003 typed IPC artifacts and CP-005 qualified tools support appropriate slices | Specs/proposals only beyond existing baseline |
@@ -253,7 +253,7 @@ approved queue above. A saved spec is not an active implementation.
 | Proposal | Status | Implementation scope |
 |---|---|---|
 | CP-016 topic deletion | ⬜ | Explicit confirmed private-topic deletion, durable retirement and safe session cleanup; no deleted-topic event assumed |
-| CP-017 Telegram diagnostics | ⬜ | Separate Telegram settings, subscriptions, code support and contextual rights; owner doctor and scoped help; [execution plan](docs/superpowers/plans/2026-10-25-telegram-capability-diagnostics.md) ready, code not started |
+| CP-017 Telegram diagnostics | ✅ | Separate Telegram settings, subscriptions, code support and contextual rights; owner doctor and scoped help; [execution plan](docs/superpowers/plans/2026-10-25-telegram-capability-diagnostics.md) implemented for private DMs; group reports/notices deferred |
 | CP-018 per-thread providers | ⬜ | Chat default plus topic overrides, provider-specific models and scoped confirmed quota fallback |
 | CP-019 ephemeral command/service/error replies | ⬜ | Public conversational messages unchanged; private delivery never falls back to public |
 

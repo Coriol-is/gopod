@@ -565,3 +565,19 @@ another switch offer. A switch failure does not enqueue; a queue failure after
 a successful switch explicitly asks the user to resend. Restart forgets button
 tokens; a crash between provider change and retry insertion can require a manual
 resend. Existing native sessions and bounded context remain as in D030.
+
+## Telegram capability diagnostics (CP-017 initial release)
+
+In registered private chats, `/telegram` returns a cache-only availability summary.
+The configured owner chat can use `/telegram doctor` for details and
+`/telegram doctor refresh` for a bounded getMe refresh (5-second deadline,
+30-second cooldown; failures back off up to five minutes). The report separates
+Telegram settings, local implementation and subscriptions; unknown/stale is not
+disabled. It neither changes BotFather nor probes models/containers.
+
+`/help guest`, `/help inline`, `/help topics` are deterministic private-chat help.
+All these new routes silently ignore group/channel/unknown contexts until CP-019
+private service delivery exists. Doctor uses hidden `telegram.doctor` through
+owner-only Router dispatch; a human owner in another chat has no privilege.
+Menus advertise `/telegram` in private chats only. No guest/inline/business
+handler or additional update subscription is enabled.

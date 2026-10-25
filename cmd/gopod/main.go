@@ -515,6 +515,11 @@ func run() error {
 			return fmt.Errorf("init telegram: %w", err)
 		}
 
+		control.RegisterTelegramCommands(router, tgBot.TelegramSnapshot, tgBot.RefreshTelegramSnapshot, func(ctx context.Context, id int64) bool {
+			_, err := st.GetRegistered(ctx, fmt.Sprintf("tg:%d", id))
+			return err == nil
+		})
+
 		if fallbackSwitch != nil {
 			control.RegisterProviderFallbackCommand(router, st, fallbackSwitch, tgBot.EnqueueProviderFallback)
 		}

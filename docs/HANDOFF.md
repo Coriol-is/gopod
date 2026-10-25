@@ -29,6 +29,7 @@ historical. No schedule/provider mutation was issued by this incident fix. Do
 not pause/resume, replace or change it merely to close a validation checkbox.
 
 ## What's done
+- CP-017 initial private-DM capability diagnostics is implemented; deployment/client evidence tracked separately below.
 - CP-001: per-exec memory capability, header-only authorization and chat/thread
   scope; stale registry status closed. Authenticated real skill acceptance A14.
 - CP-008: /model selection/persistence and provider flags; stale accepted status
@@ -58,7 +59,6 @@ not pause/resume, replace or change it merely to close a validation checkbox.
 | 012 | [Provider registry](superpowers/specs/2026-10-25-provider-registry.md) |
 | 014 | [Three media queues](superpowers/specs/2026-10-25-telegram-media-input.md) |
 | 016 | [Topic deletion and session retirement](superpowers/specs/2026-10-25-telegram-topic-deletion.md) |
-| 017 | [Telegram capability diagnostics](superpowers/specs/2026-10-25-telegram-capability-diagnostics.md) |
 | 018 | [Per-conversation providers](superpowers/specs/2026-10-25-per-thread-providers.md) |
 | 019 | [Ephemeral commands/service/errors](superpowers/specs/2026-10-25-telegram-ephemeral-commands.md) |
 
@@ -67,12 +67,16 @@ command replies and errors private, including every callback/page/failure path;
 there is no implementation or privacy-flag activation yet.
 
 ## What's in progress
-CP-017 [execution plan](superpowers/plans/2026-10-25-telegram-capability-diagnostics.md)
-is prepared in five tasks: safe DM tracer, cache, reports/help, integration, release.
-Initial scope is private-DM only until CP-019; no new query handlers or subscriptions.
-Planning does not change the accepted CP status or start implementation.
+CP-017 initial private-DM slice is implemented; reviewed release/activation is in progress.
+`/telegram` reads cached observations for registered private chats; owner chat alone
+can use `/telegram doctor` and explicit `refresh`. Static `/help guest|inline|topics`
+works without model/container/media processing. New commands silently suppress all
+output in groups/unknown contexts; no new query handlers or subscriptions.
+Five-second getMe uses a raw tri-state decoder, single-flight lifecycle cache,
+15-minute freshness, 30-second cooldown and capped backoff. SDK constructor no
+longer blocks startup on getMe. See [plan](superpowers/plans/2026-10-25-telegram-capability-diagnostics.md)
+and D034. Real Telegram client acceptance remains pending (A18).
 
-No unmerged feature implementation is active. PR #43 is merged and deployed.
 The live extraction stall is addressed by a one-minute system-run deadline and
 same-chat foreground preemption; buffered user/system cancellation waits for a
 bounded process-group cleanup attempt. Canceled compaction preserves context.
@@ -120,7 +124,7 @@ unreviewed proposal. Pending proposed CP-002–007 still need their bounded desi
   and container stay chat-shared, turns serialize per chat.
 
 ## Open questions / blockers
-No blocker to the documentation reconciliation. Implementation-specific choices
+No open implementation decision for the initial CP-017 slice. Implementation-specific choices
 are in accepted specs or pending proposals, not stale "should we build buttons?"
 questions. Driver/sqlite-vec upgrade remains constrained by D017; do not change
 storage dependencies as routine cleanup.

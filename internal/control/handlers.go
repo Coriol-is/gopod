@@ -24,11 +24,23 @@ func RegisterBuiltins(r *Router) {
 
 func helpHandler(r *Router) Handler {
 	return func(ctx context.Context, cmd Command) (Response, error) {
+		if len(cmd.Args) > 0 {
+			if text, ok := telegramHelpTopic(cmd.Args[0]); ok {
+				if !telegramPrivate(cmd.Caller) {
+					return Response{}, nil
+				}
+				if len(cmd.Args) != 1 {
+					return Response{Text: "Use /help guest, /help inline or /help topics in private chat.", Code: 1}, nil
+				}
+				return Response{Text: text}, nil
+			}
+			return Response{Text: "Use /help or /help guest|inline|topics.", Code: 1}, nil
+		}
 		cmds := r.List()
 		var sb strings.Builder
 		sb.WriteString("**gopod commands**\n\n")
 		for _, c := range cmds {
-			if c.SlashName == "" {
+			if c.SlashName == "" || (c.Name == "telegram" && !telegramPrivate(cmd.Caller)) {
 				continue
 			}
 			if c.Perm == PermOwnerOnly && !cmd.Caller.IsOwner {

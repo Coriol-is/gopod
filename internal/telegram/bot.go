@@ -16,6 +16,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -81,6 +84,7 @@ type Deps struct {
 // cancelled (typically by SIGINT/SIGTERM in main). One Bot instance
 // corresponds to one Telegram bot token.
 type Bot struct {
+	capabilities  *capabilityCache
 	api           *bot.Bot
 	store         *store.Store
 	runner        *runner.Runner
@@ -206,8 +210,13 @@ var allowedUpdates = bot.AllowedUpdates{
 // persisted there. The Runner handle is optional; without it the bot
 // runs in M1-style "echo" mode (persist + /ping reply + nothing else).
 func New(token string, deps Deps) (*Bot, error) {
-	if token == "" {
+	if strings.TrimSpace(token) == "" {
 		return nil, ErrEmptyToken
+	}
+	prefix, secret, ok := strings.Cut(token, ":")
+	id, parseErr := strconv.ParseInt(prefix, 10, 64)
+	if !ok || parseErr != nil || id <= 0 || secret == "" || strings.ContainsAny(token, " \r\n\t/") {
+		return nil, errors.New("telegram: invalid token format")
 	}
 	if deps.Store == nil {
 		return nil, errors.New("telegram: nil Store")
@@ -228,7 +237,9 @@ func New(token string, deps Deps) (*Bot, error) {
 		streamEnabled: deps.StreamEnabled,
 	}
 
-	opts := b.botOptions()
+	client := &http.Client{Timeout: time.Minute}
+	b.capabilities = newCapabilityCache(newCapabilityFetcher(token, client), time.Now)
+	opts := append(b.botOptions(), bot.WithSkipGetMe(), bot.WithHTTPClient(time.Minute, client))
 	// Load last processed update offset for cursor backfill (M8a).
 	// On restart, this tells Telegram to deliver any updates that
 	// arrived while gopod was down.
@@ -288,6 +299,10 @@ func (b *Bot) registerHandlers(api *bot.Bot) {
 // publish failure is logged at warn level and the bot keeps running —
 // command discovery is nice-to-have, not a hard requirement.
 func (b *Bot) Run(ctx context.Context) error {
+	if b.capabilities != nil {
+		b.capabilities.Start(ctx)
+		defer b.capabilities.Close()
+	}
 	b.publishCommands(ctx)
 
 	b.log.Info("telegram bot starting (long poll)")
@@ -307,16 +322,17 @@ func (b *Bot) Run(ctx context.Context) error {
 // to the Router is all that's needed — no manual sync with a hardcoded
 // slice.
 func (b *Bot) publishCommands(ctx context.Context) {
-	var cmds []models.BotCommand
+	var cmds, privateCmds []models.BotCommand
 	if b.router != nil {
 		for _, c := range b.router.List() {
 			if c.SlashName == "" {
 				continue
 			}
-			cmds = append(cmds, models.BotCommand{
-				Command:     c.SlashName,
-				Description: c.Description,
-			})
+			entry := models.BotCommand{Command: c.SlashName, Description: c.Description}
+			privateCmds = append(privateCmds, entry)
+			if c.Name != "telegram" {
+				cmds = append(cmds, entry)
+			}
 		}
 	}
 	if len(cmds) == 0 {
@@ -333,6 +349,11 @@ func (b *Bot) publishCommands(ctx context.Context) {
 	if !ok {
 		b.log.Warn("telegram: setMyCommands returned false")
 		return
+	}
+	if len(privateCmds) > len(cmds) {
+		if _, err := b.api.SetMyCommands(ctx, &bot.SetMyCommandsParams{Commands: privateCmds, Scope: &models.BotCommandScopeAllPrivateChats{}}); err != nil {
+			b.log.Warn("telegram: private menu publication failed")
+		}
 	}
 	b.log.Info("telegram: published commands",
 		slog.Int("count", len(cmds)))
