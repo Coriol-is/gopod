@@ -10,8 +10,32 @@ closes transport/input-retention problems, not all container/service exposure.
 
 ## Required behavior
 
+### Build and runtime profiles (owner decision)
+
+Provide two Dockerfile sets and two runtime profiles: `personal` and `group`.
+Keep the personal image contents and personal-chat behavior unchanged by this
+split; shared correctness/security fixes may still apply to both. Each set has
+Claude and Codex variants, preserving provider choice independently of profile:
+`container/personal/Dockerfile{,.codex}` and
+`container/group/Dockerfile{,.codex}`. The controller Dockerfile is unaffected.
+Shared non-sensitive build stages/scripts may be reused, but the group build
+must not inherit the personal final image, private tools/configuration or secrets.
+Do not bake credentials into either image.
+
+Resolve images by `(profile, provider)` with separate tags/digests. The trusted
+controller selects the profile from chat registration/type; threads inherit it.
+Missing group images/configuration fail closed, never fall back to personal.
+Apply profile-specific mounts, env, credentials, instructions and network policy
+at runtime as well: separate Dockerfiles alone are not an isolation boundary.
+Test all four image/profile/provider combinations, personal behavior preservation,
+group denial and same-image policy reconciliation. Unknown/private non-owner
+contexts remain denied until explicitly qualified; this does not add a third
+container profile or enable channel transport.
+
+### Enforcement
+
 1. Derive an explicit profile from trusted chat identity/type and approved policy.
-   Owner-private, registered-group and restricted-private are distinct; unknown
+   Owner-private and registered-group select different profiles; unknown
    or inconsistent context fails closed. A configured owner group cannot inherit
    owner-private rights. Future channel publication needs its own grant/profile;
    incoming channel_post handling is not implicitly enabled.
@@ -60,6 +84,15 @@ P0 containment must not wait for a namespace rewrite or API-billing decision.
 Unqualified group execution stays closed until the required boundary is proven.
 Choice of dedicated subscription identity, API project/key or inference broker
 requires an explicit supported account/budget decision; no silent paid migration.
+
+An additional candidate preserves the existing subscription: keep the native
+authenticated CLI in a trusted group-specific runtime and expose only scoped
+tools that execute outside its credential boundary. The [offline spike](../../../experiments/subscription-isolation/README.md)
+proves synthetic tool-container isolation. Follow-up [Pi canaries](../../research/2026-10-25-subscription-cli-tool-isolation-prototype.md)
+also passed native subscription new/resume round trips for both pinned providers;
+they do not establish complete production/account-service isolation.
+All native file/code/integration paths must be excluded or externally constrained,
+including on resume; readable auth plus unrestricted native tools is not accepted.
 
 Acceptance uses isolated owner/group A/group B/private canaries, positive allowed
 controls, attempted path/config/CLI/policy bypasses and actual Docker enforcement.

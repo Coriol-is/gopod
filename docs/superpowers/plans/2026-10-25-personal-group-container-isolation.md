@@ -206,6 +206,15 @@ complete protected-root mount denial. No model calls needed; groups remain off.
 
 ### 3. Inference identity, CLI policy and explicitly scoped integrations
 
+Implement the accepted two-set build layout from the spec: personal and group
+Dockerfiles, each with Claude/Codex variants. Preserve existing personal image
+behavior; do not derive the group final image from the personal final image.
+Map `(profile, provider)` to explicit image identities, fail closed on missing
+group configuration, and update build/CI/deployment configuration for all four
+combinations. Shared non-sensitive stages are allowed. Runtime env/mount/auth/
+network enforcement remains required; image separation cannot replace it.
+Include personal regression checks and negative group-to-personal fallback tests.
+
 **Owner:** provider/auth implementer; **review:** credential-boundary reviewer.
 **Dependency:** PRs 1–2; inference decision blocks credential provisioning and
 group re-enablement, never PR 1 containment.
@@ -225,6 +234,7 @@ credential provisioning:
 | Dedicated integration-free subscription account | Confirm provider-supported use and that readable auth cannot reach personal services; separate account lifecycle and login |
 | Explicit group API project/key | Owner approves changed billing, budget and project scopes; do not silently convert subscription use |
 | Inference-only broker | Agent never receives upstream personal OAuth/key; broker allows only approved inference routes and no connector/service delegation; assess native CLI compatibility |
+| Existing subscription with native CLI / external tool separation | Keep native auth in trusted group-specific runtime, disable all untrusted local file/code/integration authority, expose only scoped external tools; prove exact tool inventory and authenticated new/resume round trips for each CLI. See [prototype evidence](../../research/2026-10-25-subscription-cli-tool-isolation-prototype.md): synthetic inventory and Pi native-subscription new/resume round trips passed for both providers; production/account-service isolation remains unqualified |
 
 Do not call owner-account subscription reuse isolated while Bash can read its
 auth and invoke an alternate client. If no choice meets the contract, restricted
@@ -397,8 +407,9 @@ revocation/rotation and historical deletion require their own explicit operation
 
 - Accept the immutable namespace/profile ADR and non-destructive clean-group
   epoch approach; identify any approved content/task carryover.
-- Select dedicated subscription identity, explicit API billing/project or a
-  compatible inference-only broker. No silent subscription-to-API migration.
+- Select dedicated subscription identity, explicit API billing/project, a
+  compatible inference-only broker or the candidate native CLI/external-tool
+  separation design with the existing subscription. No silent subscription-to-API migration.
 - Select an enforceable Docker-host egress mechanism and prove exact route
   control where provider inference and account services share infrastructure.
 - Name any per-group integrations, dedicated identities and allowed scopes;

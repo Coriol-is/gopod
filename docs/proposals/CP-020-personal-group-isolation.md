@@ -22,6 +22,16 @@ containment independent of billing/namespace migration. Group integrations are
 explicit dedicated scoped grants, not inherited personal services. Planning and
 requirements are accepted; broad implementation has not started.
 
+Owner decision: two Dockerfile sets (`personal`, `group`) and two runtime profiles,
+each independently supporting Claude and Codex. Preserve personal-chat behavior;
+restrict group images and runtime authority. See the spec for the build matrix
+and fail-closed image selection contract.
+
+An [experimental native-subscription prototype](../research/2026-10-25-subscription-cli-tool-isolation-prototype.md)
+has passed new/resume inference-to-isolated-tool canaries for both pinned CLIs
+on Pi. It is not integrated into Runner or enabled for production group chats;
+the broad isolation implementation and release gates remain open.
+
 ## Out of scope
 Silently changing billing, deleting historical data, revoking accounts, enabling
 channel/Guest transport or claiming the private-login hotfix is full isolation.
