@@ -143,6 +143,12 @@ type Bot struct {
 	// loginRun starts a reserved login and reports whether a session
 	// was stored; nil means runLogin. Tests stub it (login.go).
 	loginRun func(ctx context.Context, m *models.Message, thread int, rc store.RegisteredChat) bool
+
+	// statuses holds each user message's reaction state machine
+	// (status.go); reactClock is its clock, nil means the real one.
+	statusMu   sync.Mutex
+	statuses   map[statusKey]*statusReactor
+	reactClock reactClock
 }
 
 // allowedUpdates is the explicit getUpdates allowed_updates list. Before

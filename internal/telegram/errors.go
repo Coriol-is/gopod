@@ -84,14 +84,12 @@ func classifyErr(err error) errKind {
 	return errAgentFailed
 }
 
-// replyError tells the user a turn failed: 👎 on their message, and,
+// replyError tells the user a turn failed: 😱 on their message, and,
 // unless the same kind of error was answered in this chat within
 // errCooldown, a reply from the error table in the turn's topic.
 func (b *Bot) replyError(ctx context.Context, item queue.Item, err error) {
 	kind := classifyErr(err)
-	if item.MessageID > 0 {
-		b.react(ctx, item.ChatID, item.MessageID, emojiError)
-	}
+	b.turnStatus(item).Set(stError)
 	b.log.Error("agent run failed",
 		slog.String("chat_folder", item.Folder),
 		slog.Int64("turn", item.ID),

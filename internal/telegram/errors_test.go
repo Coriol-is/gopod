@@ -102,7 +102,7 @@ func TestReplyError_AuthExpiredOffersLogin(t *testing.T) {
 	if sends[0].Form["message_thread_id"] != "7" || !strings.Contains(sends[0].Form["reply_parameters"], `"message_id":10`) {
 		t.Fatalf("not a reply in the turn's topic: %v", sends[0].Form)
 	}
-	if r := fake.callsTo("setMessageReaction"); len(r) != 1 || !strings.Contains(r[0].Form["reaction"], emojiError) {
+	if r := fake.callsTo("setMessageReaction"); len(r) != 1 || !strings.Contains(r[0].Form["reaction"], stateEmoji[stError]) {
 		t.Fatalf("reactions = %+v", r)
 	}
 }

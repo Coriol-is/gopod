@@ -173,6 +173,7 @@ func (b *Bot) runAgentStreaming(ctx context.Context, item queue.Item) error {
 		b.runAgentSync(ctx, item)
 		return nil
 	}
+	b.turnStatus(item).Set(stThinking) // the agent runs
 	return b.streamReply(ctx, item, stream)
 }
 
@@ -197,6 +198,7 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 	const editLimit = 4000 // safe limit under Telegram's 4096
 
 	stop := b.inflightStop(item.ID) // nil: not stoppable, never fires
+	status := b.turnStatus(item)
 	stopOpts := draftOpts{CanStop: stop != nil, KeepOnStop: stop != nil}
 	// kb is the edit path's Stop button (nil when not stoppable): on
 	// the placeholder and on every mid-stream edit of it.
@@ -275,6 +277,7 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 	// addChunk applies one answer chunk. Returns false when the turn
 	// had to be finished by drainAndSend.
 	addChunk := func(chunk string) bool {
+		status.Set(stThinking)
 		accumulated.WriteString(chunk)
 		full.WriteString(chunk)
 		answering = true
@@ -349,6 +352,7 @@ loop:
 			}
 			// Text before a tool step was narration: the answer (and
 			// what a stop delivers) starts again after it.
+			status.Set(stTool)
 			steps = append(steps, progressLine(ev))
 			if len(steps) > progressShown {
 				steps = steps[len(steps)-progressShown:]
@@ -493,9 +497,7 @@ loop:
 		b.recordReply(ctx, item, sent, finalText)
 	}
 
-	if item.MessageID > 0 {
-		b.react(ctx, item.ChatID, item.MessageID, emojiDone)
-	}
+	status.Set(stDone)
 
 	// Voice reply (must wait for full text).
 	b.maybeVoiceReply(ctx, item, finalText)
@@ -643,9 +645,7 @@ func (b *Bot) finishStopped(ctx context.Context, item queue.Item, stream *runner
 	}
 	sent, _ := b.sendFinal(ctx, item.ChatID, item.ThreadID, item.MessageID, text)
 	b.recordReply(ctx, item, sent, text)
-	if item.MessageID > 0 {
-		b.react(ctx, item.ChatID, item.MessageID, emojiDone)
-	}
+	b.turnStatus(item).Set(stStopped)
 	return queue.ErrStopped
 }
 
@@ -685,9 +685,7 @@ func (b *Bot) finishStoppedEdit(ctx context.Context, item queue.Item, stream *ru
 		sent, _ := b.sendFinal(ctx, item.ChatID, item.ThreadID, item.MessageID, text)
 		b.recordReply(ctx, item, sent, text)
 	}
-	if item.MessageID > 0 {
-		b.react(ctx, item.ChatID, item.MessageID, emojiDone)
-	}
+	b.turnStatus(item).Set(stStopped)
 	return queue.ErrStopped
 }
 
@@ -712,9 +710,7 @@ func (b *Bot) drainAndSend(ctx context.Context, item queue.Item, stream *runner.
 		text = "(empty reply)"
 	}
 
-	if item.MessageID > 0 {
-		b.react(ctx, item.ChatID, item.MessageID, emojiDone)
-	}
+	b.turnStatus(item).Set(stDone)
 	sent, _ := b.sendFinal(ctx, item.ChatID, item.ThreadID, item.MessageID, text)
 	b.recordReply(ctx, item, sent, text)
 	b.maybeVoiceReply(ctx, item, text)

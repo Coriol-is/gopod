@@ -143,9 +143,7 @@ func (b *Bot) streamNotStarted(ctx, runCtx context.Context, item queue.Item) (bo
 		sent = b.sendFormatted(ctx, item.ChatID, item.ThreadID, item.MessageID, stoppedEmpty)
 	}
 	b.recordReply(ctx, item, sent, stoppedEmpty)
-	if item.MessageID > 0 {
-		b.react(ctx, item.ChatID, item.MessageID, emojiDone)
-	}
+	b.turnStatus(item).Set(stStopped)
 	return true, queue.ErrStopped
 }
 
