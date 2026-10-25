@@ -98,6 +98,16 @@ func (b *Bot) editMessageKB(ctx context.Context, chatID int64, msgID int, text s
 // placeholder. Falls back to plain text if the HTML edit fails (e.g.
 // due to malformed tags). Returns the error of the last attempt.
 func (b *Bot) editMessageHTML(ctx context.Context, chatID int64, msgID int, html string) error {
+	return b.editMessageHTMLKB(ctx, chatID, msgID, html, noKeyboard())
+}
+
+// editMessageHTMLKB is editMessageHTML with the keyboard to show after
+// the edit: the final edit of a placeholder that becomes the reply
+// swaps its Stop button for the reply action row in the same call.
+// When the plain-text fallback fails too while markup has buttons, the
+// edit is tried once more without them: a refused keyboard never costs
+// the reply.
+func (b *Bot) editMessageHTMLKB(ctx context.Context, chatID int64, msgID int, html string, markup models.ReplyMarkup) error {
 	if html == "" {
 		return nil
 	}
@@ -106,7 +116,7 @@ func (b *Bot) editMessageHTML(ctx context.Context, chatID int64, msgID int, html
 		MessageID:   msgID,
 		Text:        html,
 		ParseMode:   models.ParseModeHTML,
-		ReplyMarkup: noKeyboard(),
+		ReplyMarkup: markup,
 	})
 	if err != nil {
 		if isNotModified(err) {
@@ -119,7 +129,13 @@ func (b *Bot) editMessageHTML(ctx context.Context, chatID int64, msgID int, html
 			slog.Int64("chat_id", chatID),
 			slog.Int("msg_id", msgID),
 			slog.Any("err", err))
-		return b.editMessage(ctx, chatID, msgID, htmlToPlain(html))
+		perr := b.editMessageKB(ctx, chatID, msgID, htmlToPlain(html), markup)
+		if perr != nil && hasButtons(markup) && !isNotModified(perr) {
+			if _, limited := retryAfter(perr); !limited {
+				return b.editMessageHTML(ctx, chatID, msgID, html)
+			}
+		}
+		return perr
 	}
 	return nil
 }
@@ -375,7 +391,9 @@ loop:
 			// what a stop delivers) starts again after it.
 			status.Set(stTool)
 			stepCount++
-			steps = append(steps, progressLine(ev))
+			line := progressLine(ev)
+			b.logStep(item, line) // for the Steps button (replyrow.go)
+			steps = append(steps, line)
 			if len(steps) > progressShown {
 				steps = steps[len(steps)-progressShown:]
 			}
@@ -503,7 +521,7 @@ loop:
 		// message. Sending it also clears the draft. The draft expires
 		// on its own, so an undelivered reply must not end the turn
 		// done: return an error and let the queue retry the turn.
-		sent, err := b.sendFinal(ctx, item.ChatID, item.ThreadID, item.MessageID, finalText)
+		sent, err := b.sendFinal(ctx, item.ChatID, item.ThreadID, item.MessageID, finalText, b.replyMarkup(item, finalText))
 		if sent == 0 {
 			b.log.Error("final reply undelivered",
 				slog.Int64("turn", item.ID),
@@ -517,11 +535,12 @@ loop:
 				slog.Int64("turn", item.ID), slog.Any("err", err))
 		}
 		b.recordReply(ctx, item, sent, finalText)
+		b.noteReply(ctx, item, sent, finalText)
 	case !overflow:
 		// Everything fits in the placeholder. Oversized code goes out as
 		// documents first; the reply in main keeps their notes.
 		shown := b.attachLongCode(ctx, item.ChatID, item.ThreadID, finalText)
-		err := b.editMessageHTML(ctx, item.ChatID, placeholder, finalReplyHTML(shown))
+		err := b.editMessageHTMLKB(ctx, item.ChatID, placeholder, finalReplyHTML(shown), b.replyMarkup(item, finalText))
 		if b.finalEditLost(item, err) {
 			if err := b.replyInMain(ctx, item, shown); err != nil {
 				return err
@@ -529,6 +548,7 @@ loop:
 			break
 		}
 		b.recordReply(ctx, item, placeholder, finalText)
+		b.noteReply(ctx, item, placeholder, finalText)
 	default:
 		// Overflow: finalize the last placeholder with the remaining
 		// text, then send the full formatted response as a new reply.
@@ -543,8 +563,9 @@ loop:
 		} else if kb != nil {
 			b.clearKeyboard(ctx, item.ChatID, placeholder)
 		}
-		sent, _ := b.sendFinal(ctx, item.ChatID, item.ThreadID, item.MessageID, finalText)
+		sent, _ := b.sendFinal(ctx, item.ChatID, item.ThreadID, item.MessageID, finalText, b.replyMarkup(item, finalText))
 		b.recordReply(ctx, item, sent, finalText)
+		b.noteReply(ctx, item, sent, finalText)
 	}
 
 	status.Set(stDone)
@@ -585,7 +606,7 @@ func isNotModified(err error) bool {
 // draft path it returns errReplyUndelivered when nothing went out, so
 // the turn is not marked done with its answer lost.
 func (b *Bot) replyInMain(ctx context.Context, item queue.Item, text string) error {
-	sent, err := b.sendFinal(ctx, item.ChatID, 0, 0, threadGoneNote+text)
+	sent, err := b.sendFinal(ctx, item.ChatID, 0, 0, threadGoneNote+text, nil)
 	if sent == 0 {
 		b.log.Error("final reply undelivered",
 			slog.Int64("turn", item.ID),
@@ -598,6 +619,8 @@ func (b *Bot) replyInMain(ctx context.Context, item queue.Item, text string) err
 			slog.Int64("turn", item.ID), slog.Any("err", err))
 	}
 	b.recordReply(ctx, item, sent, text)
+	// The topic-gone fallback has no row and is main's newest reply.
+	b.newestReply(ctx, item.ChatID, 0, sent, false)
 	return nil
 }
 
@@ -622,11 +645,13 @@ const (
 // Every path that delivers an agent's final reply goes through here:
 // oversized code blocks are sent as documents first (attachLongCode),
 // and the text renders with finalReplyHTML (long blocks collapsed).
-func (b *Bot) sendFinal(ctx context.Context, chatID int64, thread int, replyTo int, text string) (int, error) {
+// markup (replyMarkup, nil for none) goes on the last text message
+// only, never on a document.
+func (b *Bot) sendFinal(ctx context.Context, chatID int64, thread int, replyTo int, text string, markup models.ReplyMarkup) (int, error) {
 	text = b.attachLongCode(ctx, chatID, thread, text)
 	var waited time.Duration
 	for attempt := 1; ; attempt++ {
-		id, err := b.sendRendered(ctx, chatID, thread, replyTo, text, finalReplyHTML)
+		id, err := b.sendRendered(ctx, chatID, thread, replyTo, text, finalReplyHTML, markup)
 		if err == nil || id != 0 {
 			return id, err
 		}
@@ -693,8 +718,9 @@ func (b *Bot) finishStopped(ctx context.Context, item queue.Item, stream *runner
 	if text == "" {
 		text = stoppedEmpty
 	}
-	sent, _ := b.sendFinal(ctx, item.ChatID, item.ThreadID, item.MessageID, text)
+	sent, _ := b.sendFinal(ctx, item.ChatID, item.ThreadID, item.MessageID, text, nil)
 	b.recordReply(ctx, item, sent, text)
+	b.noteBareReply(ctx, item, sent) // a stopped reply has no row
 	b.turnStatus(item).Set(stStopped)
 	return queue.ErrStopped
 }
@@ -725,6 +751,7 @@ func (b *Bot) finishStoppedEdit(ctx context.Context, item queue.Item, stream *ru
 			}
 		} else {
 			b.recordReply(ctx, item, placeholder, text)
+			b.noteBareReply(ctx, item, placeholder)
 		}
 	} else {
 		if tail != "" {
@@ -732,8 +759,9 @@ func (b *Bot) finishStoppedEdit(ctx context.Context, item queue.Item, stream *ru
 		} else {
 			b.clearKeyboard(ctx, item.ChatID, placeholder)
 		}
-		sent, _ := b.sendFinal(ctx, item.ChatID, item.ThreadID, item.MessageID, text)
+		sent, _ := b.sendFinal(ctx, item.ChatID, item.ThreadID, item.MessageID, text, nil)
 		b.recordReply(ctx, item, sent, text)
+		b.noteBareReply(ctx, item, sent)
 	}
 	b.turnStatus(item).Set(stStopped)
 	return queue.ErrStopped
@@ -761,8 +789,9 @@ func (b *Bot) drainAndSend(ctx context.Context, item queue.Item, stream *runner.
 	}
 
 	b.turnStatus(item).Set(stDone)
-	sent, _ := b.sendFinal(ctx, item.ChatID, item.ThreadID, item.MessageID, text)
+	sent, _ := b.sendFinal(ctx, item.ChatID, item.ThreadID, item.MessageID, text, b.replyMarkup(item, text))
 	b.recordReply(ctx, item, sent, text)
+	b.noteReply(ctx, item, sent, text)
 	b.maybeVoiceReply(ctx, item, text)
 }
 

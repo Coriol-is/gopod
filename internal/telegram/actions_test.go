@@ -4,13 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/go-telegram/bot/models"
 
+	"github.com/Coriol-is/gopod/internal/queue"
+	"github.com/Coriol-is/gopod/internal/runner"
 	"github.com/Coriol-is/gopod/internal/store"
 )
 
@@ -295,4 +300,271 @@ func TestLoginReserved_PanicReleasesSlot(t *testing.T) {
 	}
 	waitFor(t, "login started", func() bool { return stub.calls.Load() == 1 })
 	stub.results <- false
+}
+
+// pressed runs one button press and returns its toast.
+func pressed(t *testing.T, b *Bot, fake *fakeTelegram, qid string, thread, msgID int, data string) string {
+	t.Helper()
+	b.callbackHandler(context.Background(), b.api, cbUpdate(qid, streamChat, thread, msgID, data))
+	return answeredOnce(t, fake, qid)
+}
+
+func TestRegenerate_SameThreadNewTurn(t *testing.T) {
+	fake := &fakeTelegram{respond: okResponder}
+	b := newCallbackFixture(t, fake)
+	b.registerCallbacks()
+	mt := withQueue(t, b)
+	id := failedTurn(t, b, streamChat) // topic 7, "original question"
+	data := fmt.Sprintf("rg:%d", id)
+
+	if toast := pressed(t, b, fake, "q1", 7, 99, data); toast != regenToastQueued {
+		t.Fatalf("toast = %q", toast)
+	}
+	if toast := pressed(t, b, fake, "q2", 7, 99, data); toast != regenToastAlready {
+		t.Fatalf("second tap toast = %q", toast)
+	}
+	got := mt.inserted()
+	if len(got) != 1 {
+		t.Fatalf("enqueued %d turns, want 1", len(got))
+	}
+	it := got[0]
+	if it.ThreadID != 7 || it.ChatID != streamChat || it.Folder != "owner" || !it.IsOwner ||
+		it.MessageID != 20 || it.FilePath != "/workspace/chat/a.png" ||
+		it.Source != "telegram" || it.SourceID != "cb:q1" ||
+		it.Text != regeneratePrefix+"original question" {
+		t.Fatalf("regenerate item = %+v", it)
+	}
+	// The pressed row goes at once; the new reply brings its own.
+	m := fake.callsTo("editMessageReplyMarkup")
+	if len(m) != 1 || m[0].Form["message_id"] != "99" || !cleared(t, m[0]) {
+		t.Fatalf("keyboard clear = %+v", m)
+	}
+}
+
+func TestRegenerate_TurnFromOtherChatRefused(t *testing.T) {
+	fake := &fakeTelegram{respond: okResponder}
+	b := newCallbackFixture(t, fake)
+	b.registerCallbacks()
+	mt := withQueue(t, b)
+	id := failedTurn(t, b, streamChat+3) // a turn of another chat
+
+	for i, data := range []string{
+		fmt.Sprintf("rg:%d", id), fmt.Sprintf("mo:%d", id), fmt.Sprintf("mb:%d", id),
+		fmt.Sprintf("st2:%d", id), fmt.Sprintf("af:%d", id),
+	} {
+		if toast := pressed(t, b, fake, fmt.Sprint("q", i), 0, 99, data); toast != cbToastNotYours {
+			t.Errorf("%s toast = %q", data, toast)
+		}
+	}
+	if toast := pressed(t, b, fake, "qx", 0, 99, "rg:999999"); toast != cbToastExpired {
+		t.Errorf("unknown turn toast = %q", toast)
+	}
+	if n := len(mt.inserted()); n != 0 {
+		t.Fatalf("enqueued %d turns, want 0", n)
+	}
+	for _, m := range []string{"editMessageReplyMarkup", "sendMessage", "sendDocument"} {
+		if n := len(fake.callsTo(m)); n != 0 {
+			t.Errorf("%s called %d times for another chat's turn", m, n)
+		}
+	}
+}
+
+// Nothing in memory names the turn after a restart: Regenerate reads it
+// from the store. Regenerating a regenerated turn keeps one prefix.
+func TestRegenerate_WorksAfterRestart(t *testing.T) {
+	fake := &fakeTelegram{respond: okResponder}
+	b := newCallbackFixture(t, fake)
+	b.registerCallbacks()
+	mt := withQueue(t, b)
+	id, _, err := b.store.InsertTurn(context.Background(), store.Turn{
+		Source: "telegram", SourceID: "cb:old", ChatFolder: "owner", ChatID: streamChat,
+		TGMessageID: 30, Text: regeneratePrefix + "вопрос",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if toast := pressed(t, b, fake, "q1", 0, 99, fmt.Sprintf("rg:%d", id)); toast != regenToastQueued {
+		t.Fatalf("toast = %q", toast)
+	}
+	got := mt.inserted()
+	if len(got) != 1 || got[0].Text != regeneratePrefix+"вопрос" || got[0].ThreadID != 0 {
+		t.Fatalf("items = %+v", got)
+	}
+}
+
+// stepsTurn streams a turn of the owner chat in topic 7 with tool steps
+// and returns it.
+func stepsTurn(t *testing.T, b *Bot, evs ...runner.ProgressEvent) queue.Item {
+	t.Helper()
+	item := turnIn(t, b, 7, 21)
+	item.IsOwner = true
+	s := newStructuredStream()
+	errc := make(chan error, 1)
+	go func() { errc <- b.streamReply(context.Background(), item, s.stream()) }()
+	for _, ev := range evs {
+		s.progress <- ev
+	}
+	s.finish("итоговый ответ")
+	if err := <-errc; err != nil {
+		t.Fatal(err)
+	}
+	return item
+}
+
+func TestSteps_SentAsExpandableQuoteRedacted(t *testing.T) {
+	fake := seqFake()
+	b := newCallbackFixture(t, fake)
+	b.registerCallbacks()
+	secret := runner.ProgressEvent{Tool: "Bash", Detail: "curl -H 'Authorization: Bearer abcdef1234567890' https://x"}
+	item := stepsTurn(t, b,
+		runner.ProgressEvent{Tool: "Read", Detail: "/workspace/chat/main.go"},
+		secret)
+
+	if toast := pressed(t, b, fake, "q1", 7, 500, fmt.Sprintf("st2:%d", item.ID)); toast != "" {
+		t.Fatalf("toast = %q", toast)
+	}
+	sends := fake.callsTo("sendMessage")
+	c := sends[len(sends)-1]
+	text := c.Form["text"]
+	if !strings.HasPrefix(text, "<blockquote expandable>") || !strings.Contains(text, "main.go") ||
+		!strings.Contains(text, html.EscapeString(progressLine(secret))) || strings.Contains(text, "abcdef1234567890") {
+		t.Fatalf("steps message = %q", text)
+	}
+	if c.Form["message_thread_id"] != "7" || !strings.Contains(c.Form["reply_parameters"], `"message_id":500`) {
+		t.Fatalf("steps message routing = %v", c.Form)
+	}
+}
+
+func TestSteps_ExpiredToast(t *testing.T) {
+	fake := seqFake()
+	b := newCallbackFixture(t, fake)
+	b.registerCallbacks()
+	now := time.Now()
+	fakeClock(b, &now)
+	item := stepsTurn(t, b, runner.ProgressEvent{Tool: "Grep", Detail: "TODO"})
+	data := fmt.Sprintf("st2:%d", item.ID)
+
+	now = now.Add(memoTTL + time.Second)
+	if toast := pressed(t, b, fake, "q1", 7, 500, data); toast != stepsToastNone {
+		t.Fatalf("expired toast = %q", toast)
+	}
+	if toast := pressed(t, b, fake, "q2", 7, 500, fmt.Sprintf("af:%d", item.ID)); toast != fileToastGone {
+		t.Fatalf("expired as-file toast = %q", toast)
+	}
+	// A plain run kept no steps at all.
+	plain := turnIn(t, b, 0, 22)
+	if toast := pressed(t, b, fake, "q3", 0, 501, fmt.Sprintf("st2:%d", plain.ID)); toast != stepsToastNone {
+		t.Fatalf("no-steps toast = %q", toast)
+	}
+	if n := len(fake.callsTo("sendDocument")); n != 0 {
+		t.Fatalf("documents sent = %d", n)
+	}
+}
+
+func TestAsFile_SendsDocumentInThread(t *testing.T) {
+	fake := seqFake()
+	b := newCallbackFixture(t, fake)
+	b.registerCallbacks()
+	item := turnIn(t, b, 7, 21)
+	reply := "# Ответ\n\n" + strings.Repeat("строка\n", 50)
+	if err := streamAll(t, b, item, reply); err != nil {
+		t.Fatal(err)
+	}
+	if toast := pressed(t, b, fake, "q1", 7, 500, fmt.Sprintf("af:%d", item.ID)); toast != "" {
+		t.Fatalf("toast = %q", toast)
+	}
+	docs := fake.callsTo("sendDocument")
+	if len(docs) != 1 {
+		t.Fatalf("documents = %d, want 1", len(docs))
+	}
+	d := docs[0]
+	if d.Form["document.filename"] != "reply.md" || d.Form["document.content"] != reply ||
+		d.Form["message_thread_id"] != "7" {
+		t.Fatalf("document = %v", d.Form)
+	}
+}
+
+func TestMoreBack_SwapsMarkupOnly(t *testing.T) {
+	fake := seqFake()
+	b := newCallbackFixture(t, fake)
+	b.registerCallbacks()
+	item := turnIn(t, b, 0, 21)
+	if err := streamAll(t, b, item, "короткий ответ"); err != nil {
+		t.Fatal(err)
+	}
+	texts := len(fake.callsTo("editMessageText")) + len(fake.callsTo("sendMessage"))
+	id := strconv.FormatInt(item.ID, 10)
+
+	if toast := pressed(t, b, fake, "q1", 0, 500, "mo:"+id); toast != "" {
+		t.Fatalf("more toast = %q", toast)
+	}
+	if toast := pressed(t, b, fake, "q2", 0, 500, "mb:"+id); toast != "" {
+		t.Fatalf("back toast = %q", toast)
+	}
+	m := fake.callsTo("editMessageReplyMarkup")
+	if len(m) != 2 || m[0].Form["message_id"] != "500" || m[1].Form["message_id"] != "500" {
+		t.Fatalf("markup edits = %+v", m)
+	}
+	more, _ := markupData(t, m[0])
+	if strings.Join(more, ",") != "st2:"+id+",af:"+id+",mb:"+id {
+		t.Fatalf("more row = %v", more)
+	}
+	if !hasAct(t, m[1], "rg") || !hasAct(t, m[1], "mo") ||
+		!strings.Contains(m[1].Form["reply_markup"], `"copy_text":{"text":"короткий ответ"}`) {
+		t.Fatalf("back row = %s", m[1].Form["reply_markup"])
+	}
+	if n := len(fake.callsTo("editMessageText")) + len(fake.callsTo("sendMessage")); n != texts {
+		t.Fatalf("more/back sent or edited text (%d -> %d calls)", texts, n)
+	}
+}
+
+// A scheduled task's turn is not a chat turn: no reply button acts on it,
+// even when its row names the chat.
+func TestReplyActions_TaskTurnRefused(t *testing.T) {
+	fake := &fakeTelegram{respond: okResponder}
+	b := newCallbackFixture(t, fake)
+	b.registerCallbacks()
+	mt := withQueue(t, b)
+	id, _, err := b.store.InsertTurn(context.Background(), store.Turn{
+		Source: "task", SourceID: "task-1:123", ChatFolder: "owner", ChatID: streamChat, Text: "daily report",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, act := range []string{"rg", "mo", "mb", "st2", "af"} {
+		if toast := pressed(t, b, fake, fmt.Sprint("q", i), 0, 99, fmt.Sprintf("%s:%d", act, id)); toast != cbToastNotYours {
+			t.Errorf("%s toast = %q", act, toast)
+		}
+	}
+	if n := len(mt.inserted()); n != 0 {
+		t.Fatalf("enqueued %d turns, want 0", n)
+	}
+}
+
+// A regenerate whose turn could not be saved says so, keeps the row and
+// can be pressed again.
+func TestRegenerate_NotSavedReportsFailure(t *testing.T) {
+	fake := &fakeTelegram{respond: okResponder}
+	b := newCallbackFixture(t, fake)
+	b.registerCallbacks()
+	mt := withQueue(t, b)
+	mt.fail = true
+	id := failedTurn(t, b, streamChat)
+	data := fmt.Sprintf("rg:%d", id)
+
+	if toast := pressed(t, b, fake, "q1", 7, 99, data); toast != regenToastFailed {
+		t.Fatalf("toast = %q", toast)
+	}
+	if n := len(fake.callsTo("editMessageReplyMarkup")); n != 0 {
+		t.Fatalf("row cleared %d times after a failed regenerate", n)
+	}
+	mt.mu.Lock()
+	mt.fail = false
+	mt.mu.Unlock()
+	if toast := pressed(t, b, fake, "q2", 7, 99, data); toast != regenToastQueued {
+		t.Fatalf("second press toast = %q", toast)
+	}
+	if n := len(mt.inserted()); n != 1 {
+		t.Fatalf("enqueued %d turns, want 1", n)
+	}
 }

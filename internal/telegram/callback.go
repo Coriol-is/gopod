@@ -112,6 +112,11 @@ func (b *Bot) registerCallbacks() {
 	b.onCallback("st", b.stopCallback)  // ⏹ on an edit-path placeholder
 	b.onCallback("rt", b.retryTurn)     // 🔁 under an error reply
 	b.onCallback("lg", b.loginCallback) // 🔑 under an auth error reply
+	b.onCallback("rg", b.regenerate)    // 🔁 under the newest reply
+	b.onCallback("mo", b.moreRow)       // ⋯ under the newest reply
+	b.onCallback("mb", b.backRow)       // ‹ in the More row
+	b.onCallback("st2", b.showSteps)    // 🧭 in the More row
+	b.onCallback("af", b.asFile)        // 📄 in the More row
 }
 
 // callbackHandler is the dispatcher for every callback_query.

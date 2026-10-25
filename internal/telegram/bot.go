@@ -154,6 +154,9 @@ type Bot struct {
 	// (statusline.go). Both under statusMu.
 	busyThreads map[chatThread]int
 	queueWaits  map[chatThread][]*queueWaiter
+	// rows is the reply action row state (replyrow.go), under rowMu.
+	rowMu sync.Mutex
+	rows  replyRow
 }
 
 // allowedUpdates is the explicit getUpdates allowed_updates list. Before
