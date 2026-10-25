@@ -26,16 +26,16 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
-	"strings"
-	"time"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"syscall"
+	"time"
 
-	picoclog "github.com/Coriol-is/gopod/internal/log"
 	"github.com/Coriol-is/gopod/internal/config"
 	"github.com/Coriol-is/gopod/internal/control"
 	"github.com/Coriol-is/gopod/internal/ipc"
+	picoclog "github.com/Coriol-is/gopod/internal/log"
 	"github.com/Coriol-is/gopod/internal/memory"
 	"github.com/Coriol-is/gopod/internal/observability"
 	"github.com/Coriol-is/gopod/internal/queue"
@@ -176,7 +176,7 @@ func run() error {
 				Image:       cfg.ContainerImage,
 				UID:         os.Getuid(),
 				GID:         os.Getgid(),
-				MemoryBytes: 4 << 30,    // 4 GiB; GOPOD_CONTAINER_MEM later
+				MemoryBytes: 4 << 30,       // 4 GiB; GOPOD_CONTAINER_MEM later
 				NanoCPUs:    2_000_000_000, // 2 CPUs
 				PidsLimit:   1024,
 			}
@@ -423,24 +423,16 @@ func run() error {
 				return nil
 			}, chatFolderLookup)
 
-		control.RegisterProviderCommand(router, func(chatFolder, name string) (string, error) {
+		control.RegisterProviderCommand(router, func(ctx context.Context, chatFolder, name string) (string, error) {
 			p, ok := providers[name]
 			if !ok {
 				return "", fmt.Errorf("unknown provider %q (available: claude, codex)", name)
 			}
-			agentRunner.SetChatProvider(chatFolder, p)
-			// Persist choice.
-			st.SetState(context.Background(), "provider:"+chatFolder, name)
-			// A model name belongs to one harness (claude aliases vs
-			// codex ids), so a provider switch drops the /model override
-			// instead of failing the next turn with an unknown model.
 			hadModel := agentRunner.ModelForChat(chatFolder) != ""
-			agentRunner.SetChatModel(chatFolder, "")
-			st.SetState(context.Background(), "model:"+chatFolder, "")
-			// Provider is per chat; the switch clears the main
-			// conversation of the new provider. Thread sessions stay.
-			agentRunner.ClearSession(context.Background(), chatFolder, 0, runner.TierRegistered, allowlist)
-			msg := fmt.Sprintf("Switched to %s. Session cleared for fresh start.", name)
+			if err := agentRunner.SwitchChatProvider(ctx, chatFolder, p); err != nil {
+				return "", err
+			}
+			msg := fmt.Sprintf("Switched to %s. Conversations continue with their own recent history; sessions, workspace and memory are preserved.", name)
 			if hadModel {
 				msg += " Model reset to the provider default; use /model to pick one for " + name + "."
 			}

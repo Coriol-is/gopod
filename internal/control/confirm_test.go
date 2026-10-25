@@ -107,7 +107,7 @@ func TestProvider_PickerAndConfirmation(t *testing.T) {
 	var switched []string
 	r := New(silentLog())
 	RegisterProviderCommand(r,
-		func(_, name string) (string, error) {
+		func(_ context.Context, _, name string) (string, error) {
 			switched = append(switched, name)
 			return "Switched to " + name, nil
 		},
@@ -194,5 +194,24 @@ func TestModelPicker_Buttons(t *testing.T) {
 	}
 	if got["sonnet"].Style != StylePrimary || got["opus"].Style == StylePrimary {
 		t.Errorf("current model not marked: %+v", got)
+	}
+}
+
+func TestProviderSwitchReceivesCommandContext(t *testing.T) {
+	type key struct{}
+	ctx, cancel := context.WithCancel(context.WithValue(context.Background(), key{}, "command"))
+	cancel()
+	r := New(silentLog())
+	called := false
+	RegisterProviderCommand(r, func(got context.Context, _, _ string) (string, error) {
+		called = true
+		if got.Value(key{}) != "command" || got.Err() != context.Canceled {
+			t.Fatal("provider switch lost command context")
+		}
+		return "", got.Err()
+	}, func(string) string { return "claude" }, []string{"claude", "codex"}, func(int64) string { return "owner" })
+	_, _ = r.Dispatch(ctx, Command{Name: "provider", Args: []string{"codex"}, Confirmed: true, Caller: Caller{ChatID: 42, IsOwner: true}})
+	if !called {
+		t.Fatal("switch not called")
 	}
 }

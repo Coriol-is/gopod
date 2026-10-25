@@ -22,6 +22,14 @@ import (
 // row in router_state and a migrations runner here. For now everything
 // is additive and IF NOT EXISTS keeps re-runs safe.
 var schemaStatements = []string{
+	`CREATE TABLE IF NOT EXISTS conversation_history (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ chat_folder TEXT NOT NULL,
+ thread_id INTEGER NOT NULL,
+ role TEXT NOT NULL CHECK(role IN ('user','assistant')),
+ content TEXT NOT NULL
+ )`,
+	`CREATE INDEX IF NOT EXISTS idx_conversation_history ON conversation_history(chat_folder,thread_id,id)`,
 	// --- Telegram chats: every chat gopod has ever heard from.
 	`CREATE TABLE IF NOT EXISTS chats (
 	  jid TEXT PRIMARY KEY,

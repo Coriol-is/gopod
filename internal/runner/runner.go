@@ -243,6 +243,11 @@ func (r *Runner) Run(
 	allowlist *mountsec.Allowlist,
 	prompt string,
 ) (string, error) {
+	releaseSlot, err := r.acquireAgentSlot(ctx, chatFolder)
+	if err != nil {
+		return "", err
+	}
+	defer releaseSlot()
 	id, err := r.ensure(ctx, chatFolder, tier, allowlist)
 	if err != nil {
 		return "", fmt.Errorf("runner: ensure %q: %w", chatFolder, err)
@@ -265,13 +270,21 @@ func (r *Runner) Run(
 	opts.AppendSystemPrompt = systemPromptWith(opts.AppendSystemPrompt)
 
 	prov := r.ProviderForChat(chatFolder)
+	agentPrompt, err := r.handoffPrompt(ctx, chatFolder, thread, prov.Name(), prompt)
+	if err != nil {
+		return "", err
+	}
 	ref, err := r.resolveSession(ctx, id, chatFolder, thread, prov)
 	if err != nil {
 		return "", err
 	}
-	cmd := withModel(prov.RunCmd(prompt, opts.AppendSystemPrompt, ref), prov, r.ModelForChat(chatFolder))
+	cmd := withModel(prov.RunCmd(agentPrompt, opts.AppendSystemPrompt, ref), prov, r.ModelForChat(chatFolder))
 	releaseGate, err := r.admit(ctx, chatFolder, ClassInteractive)
 	if err != nil {
+		return "", err
+	}
+	if err := r.recordConversationRequest(ctx, chatFolder, thread, prompt); err != nil {
+		releaseGate()
 		return "", err
 	}
 	res, err := r.execAgent(ctx, id, chatFolder, thread, prov, cmd)
@@ -284,6 +297,9 @@ func (r *Runner) Run(
 		r.captureSession(ctx, chatFolder, thread, prov, stderr)
 	}
 	if err != nil {
+		return "", err
+	}
+	if err := r.markConversationProvider(ctx, chatFolder, thread, prov.Name(), strings.TrimSpace(res.Stdout)); err != nil {
 		return "", err
 	}
 	reply := strings.TrimSpace(res.Stdout)
@@ -356,6 +372,16 @@ func (r *Runner) RunStream(
 	allowlist *mountsec.Allowlist,
 	prompt string,
 ) (*AgentStream, error) {
+	releaseSlot, err := r.acquireAgentSlot(ctx, chatFolder)
+	if err != nil {
+		return nil, err
+	}
+	transferred := false
+	defer func() {
+		if !transferred {
+			releaseSlot()
+		}
+	}()
 	id, err := r.ensure(ctx, chatFolder, tier, allowlist)
 	if err != nil {
 		return nil, fmt.Errorf("runner: ensure %q: %w", chatFolder, err)
@@ -376,11 +402,16 @@ func (r *Runner) RunStream(
 	systemPrompt = systemPromptWith(systemPrompt)
 
 	prov := r.ProviderForChat(chatFolder)
+	agentPrompt, err := r.handoffPrompt(ctx, chatFolder, thread, prov.Name(), prompt)
+	if err != nil {
+		return nil, err
+	}
 	model := r.ModelForChat(chatFolder)
 	mkCmd := func(ref SessionRef) []string {
-		return withModel(prov.RunCmd(prompt, systemPrompt, ref), prov, model)
+		return withModel(prov.RunCmd(agentPrompt, systemPrompt, ref), prov, model)
 	}
-	return r.startStream(ctx, id, convKey{chatFolder, thread}, tier, allowlist, prov, prompt, mkCmd)
+	transferred = true
+	return r.startStream(ctx, id, convKey{chatFolder, thread}, tier, allowlist, prov, prompt, mkCmd, releaseSlot)
 }
 
 // startStream runs the agent command mkCmd builds for the
@@ -408,15 +439,29 @@ func (r *Runner) startStream(
 	prov AgentProvider,
 	prompt string,
 	mkCmd func(SessionRef) []string,
+	heldSlot ...func(),
 ) (*AgentStream, error) {
 	chatFolder := conv.folder
-	releaseSlot, err := r.acquireAgentSlot(ctx, chatFolder)
+	var releaseSlot func()
+	var err error
+	if len(heldSlot) > 0 {
+		releaseSlot = heldSlot[0]
+	} else {
+		releaseSlot, err = r.acquireAgentSlot(ctx, chatFolder)
+	}
 	if err != nil {
 		return nil, err
 	}
+
+	started := false
+	defer func() {
+		if !started {
+			releaseSlot()
+		}
+	}()
+
 	ref, err := r.resolveSession(ctx, id, chatFolder, conv.thread, prov)
 	if err != nil {
-		releaseSlot()
 		return nil, err
 	}
 	cmd := mkCmd(ref)
@@ -429,7 +474,6 @@ func (r *Runner) startStream(
 	// Acquire order: queue slot -> chat's agent slot -> gate (gate.go).
 	releaseGate, err := r.admit(ctx, chatFolder, ClassInteractive)
 	if err != nil {
-		releaseSlot()
 		return nil, err
 	}
 
@@ -441,15 +485,18 @@ func (r *Runner) startStream(
 	pidFile, err := newAgentPidFile()
 	if err != nil {
 		releaseGate()
-		releaseSlot()
 		return nil, err
 	}
 	env, release := r.agentExecEnv(chatFolder, conv.thread, prov)
+	if err := r.recordConversationRequest(ctx, chatFolder, conv.thread, prompt); err != nil {
+		release()
+		releaseGate()
+		return nil, err
+	}
 	handle, err := r.ex.ExecStream(ctx, id, wrapWithPidFile(pidFile, cmd), env)
 	if err != nil {
 		release()
 		releaseGate()
-		releaseSlot()
 		return nil, fmt.Errorf("runner: exec stream: %w", err)
 	}
 
@@ -465,6 +512,7 @@ func (r *Runner) startStream(
 	// the two happened, once the kill (if any) is over.
 	finished := make(chan struct{})
 	killed := make(chan bool, 1)
+	started = true
 	go func() {
 		select {
 		case <-ctx.Done():
@@ -483,6 +531,7 @@ func (r *Runner) startStream(
 			defer close(progress)
 		}
 		defer handle.Close()
+		defer releaseSlot()
 		defer release() // capability dies with the exec, not the handler
 
 		// After a cancel nobody may be reading Chunks any more; drop
@@ -509,7 +558,6 @@ func (r *Runner) startStream(
 		if capture {
 			r.captureSession(ctx, chatFolder, conv.thread, prov, stderr)
 		}
-		releaseSlot()
 
 		r.touch(chatFolder)
 		fullText := strings.TrimSpace(fullOut)
@@ -543,6 +591,10 @@ func (r *Runner) startStream(
 			}
 		}
 
+		if err := r.markConversationProvider(ctx, chatFolder, conv.thread, prov.Name(), fullText); err != nil {
+			result <- RunResult{Err: err}
+			return
+		}
 		result <- RunResult{FullText: fullText, Stderr: stderr}
 
 		// Post-run: extraction, auto-compact (same as Run).
@@ -650,6 +702,11 @@ func (r *Runner) RunFresh(
 	allowlist *mountsec.Allowlist,
 	prompt string,
 ) (string, error) {
+	releaseSlot, err := r.acquireAgentSlot(ctx, chatFolder)
+	if err != nil {
+		return "", err
+	}
+	defer releaseSlot()
 	id, err := r.ensure(ctx, chatFolder, tier, allowlist)
 	if err != nil {
 		return "", fmt.Errorf("runner: ensure %q: %w", chatFolder, err)
@@ -734,16 +791,14 @@ func (r *Runner) ProviderForChat(chatFolder string) AgentProvider {
 	return r.provider
 }
 
-// SetChatProvider sets a per-chat provider override and kills the
-// existing container so Ensure respawns it with the new provider's image.
+// SetChatProvider restores an override during boot and removes an old image.
+// Runtime commands must use SwitchChatProvider for persistence and serialization.
 func (r *Runner) SetChatProvider(chatFolder string, p AgentProvider) {
-	r.providersMu.Lock()
-	if r.chatProviders == nil {
-		r.chatProviders = make(map[string]AgentProvider)
-	}
-	r.chatProviders[chatFolder] = p
-	r.providersMu.Unlock()
+	r.setChatProviderOverride(chatFolder, p)
 
+	if r.d == nil {
+		return
+	} // subprocess/test runner has no Docker container
 	// Kill the existing container — it has the wrong image.
 	name := ContainerName(chatFolder)
 	ctx := context.Background()
@@ -754,6 +809,16 @@ func (r *Runner) SetChatProvider(chatFolder string, p AgentProvider) {
 			slog.String("chat", chatFolder),
 			slog.String("new_provider", p.Name()))
 	}
+}
+
+func (r *Runner) setChatProviderOverride(chatFolder string, p AgentProvider) {
+	r.providersMu.Lock()
+	if r.chatProviders == nil {
+		r.chatProviders = make(map[string]AgentProvider)
+	}
+	r.chatProviders[chatFolder] = p
+	r.providersMu.Unlock()
+
 }
 
 // ClearChatProvider removes a per-chat override (reverts to default).
@@ -815,14 +880,24 @@ func (r *Runner) SetCompactFn(fn func(ctx context.Context, chatFolder string, th
 // SetCompactAfter sets the turn threshold for auto-compact. 0 = disabled.
 func (r *Runner) SetCompactAfter(n int) { r.compactAfter = n }
 
-// ClearSession deletes the agent session of one conversation (its
-// sessions row and its transcript) under the chat's current provider,
-// so the conversation's next turn starts afresh. Other conversations of
-// the chat, and memory, are untouched. A conversation without a session
-// is a no-op that does not even start the container; the exception is
-// main before its legacy session was adopted, which is adopted and then
-// cleared (see session.go).
+// ClearSession invalidates this conversation across providers and clears its
+// neutral transcript. Other threads, shared memory and files remain. With a
+// legacy store lacking continuity support it deletes only the current native
+// session as before. Old native files are retained but never resumed by the
+// continuity-aware path.
 func (r *Runner) ClearSession(ctx context.Context, chatFolder string, thread int, tier Tier, allowlist *mountsec.Allowlist) error {
+	release, err := r.acquireAgentSlot(ctx, chatFolder)
+	if err != nil {
+		return err
+	}
+	defer release()
+	if s, ok := r.store.(continuityStore); ok {
+		if err := s.ClearConversationContinuity(ctx, chatFolder, thread); err != nil {
+			return fmt.Errorf("runner: clearing conversation continuity: %w", err)
+		}
+		r.resetTurnCount(chatFolder, thread)
+		return nil
+	}
 	defer r.resetTurnCount(chatFolder, thread)
 	prov := r.ProviderForChat(chatFolder)
 	if r.store == nil {

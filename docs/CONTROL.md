@@ -296,7 +296,7 @@ callback data is a random token, never the command:
 | `cx:<token>` | Cancel (a Button with no Command) | 5 min, single use | spends the pair; the message becomes «Отменено.» without buttons |
 | `pg:<token>:<n>` | `‹ n/N ›` of a long reply | 10 min | edits the same message to page n |
 
-Long replies: a command reply over 3000 characters (`/logs`, `/recall`,
+Long replies: pages are budgeted at 3800 rendered HTML bytes (`/logs`, `/recall`,
 `/tasks list`, `/help`, any command) is one message with a `‹ n/N ›` row
 instead of several chunks, split on line boundaries; a code block cut by a
 page boundary is closed and reopened. The Response's own buttons stay under
@@ -315,8 +315,7 @@ Pickers: `/model` with no args offers the provider's model names (Claude:
 `default`; `/provider` with no args offers `claude`, `codex`. The current
 one is marked `✓` and styled `primary`.
 
-Confirmations (owner Q6): `/clear` and `/provider <name>` (it clears the
-main conversation) answer `CodeConfirm` with Yes (`danger`) / Cancel; a
+Confirmations (owner Q6): `/clear` and `/provider <name>` answer `CodeConfirm` with Yes (`danger`) / Cancel; a
 provider picked from the picker is confirmed the same way. `/chats
 unregister` and `/container restart|stop` are on the Q6 list but do not
 exist yet: they must use `control.Confirm` when they are added. The CLI
@@ -538,3 +537,14 @@ inventing local plumbing.
 - [go-telegram/bot — RegisterHandler / MatchType](https://pkg.go.dev/github.com/go-telegram/bot)
 - NanoClaw `claw` CLI as prior art for the CLI surface
 - NanoClaw `src/ipc.ts` task ops as prior art for cross-chat dispatch
+
+
+### Provider continuity (D030)
+
+A confirmed `/provider` switch waits for the chat's active agent, preserves
+both harnesses' native sessions, resets the model override, and persists the
+new provider. Each thread receives only its own bounded recent transcript on
+its first turn with a different provider; main is a separate conversation.
+`/clear` invalidates all providers' session mappings and the neutral transcript
+for that conversation only. Shared memory and workspace are retained. Full
+native tool history is not migrated. Automatic quota fallback is deferred.

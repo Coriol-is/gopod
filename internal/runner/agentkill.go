@@ -136,6 +136,9 @@ func (r *Runner) removePidFile(ctx context.Context, containerID, pidFile string)
 // the old one is still shutting down.
 func (r *Runner) acquireAgentSlot(ctx context.Context, chatFolder string) (func(), error) {
 	for {
+		if err := ctx.Err(); err != nil {
+			return nil, fmt.Errorf("runner: acquiring agent slot: %w", err)
+		}
 		r.agentSlotsMu.Lock()
 		if r.agentSlots == nil {
 			r.agentSlots = make(map[string]chan struct{})
