@@ -149,15 +149,15 @@ func (m *Memory) AddInThread(ctx context.Context, chatFolder string, thread int,
 //
 // chatFolder scopes the search to one chat. Pass "_global" to search
 // only global memories, or "" to search ALL memories (owner use case).
-// Search is chat-wide (every thread); it backs the owner-facing
-// listings. Agent context uses SearchInThread.
+// Search is chat-wide (every thread, every summary); it backs the
+// owner-facing control commands. Agent reads use SearchInThread.
 func (m *Memory) Search(ctx context.Context, chatFolder, query string, k int) ([]Item, error) {
-	return m.SearchInThread(ctx, chatFolder, 0, query, k)
+	return m.SearchInThread(ctx, chatFolder, allThreads, query, k)
 }
 
 // SearchInThread is Search limited to the rows conversation thread may
-// see (visibleIn). Thread 0 (main) sees the whole chat, so it equals
-// Search.
+// see (visibleIn): main sees every thread's rows, a thread sees main's
+// and its own, and summaries only ever of the own conversation.
 func (m *Memory) SearchInThread(ctx context.Context, chatFolder string, thread int, query string, k int) ([]Item, error) {
 	if query == "" {
 		return nil, nil
@@ -201,9 +201,33 @@ func (m *Memory) SearchInThread(ctx context.Context, chatFolder string, thread i
 	return merged, nil
 }
 
+// ListInThread returns the most recent active memories conversation
+// thread may see (visibleIn), newest first. It backs the agent-facing
+// /memory/list; the owner-facing List stays chat-wide.
+func (m *Memory) ListInThread(ctx context.Context, chatFolder string, thread int, limit int) ([]Item, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	vis, visArgs := visibleIn("", thread)
+	args := append([]any{chatFolder}, visArgs...)
+	args = append(args, limit)
+	rows, err := m.store.DB().QueryContext(ctx, `
+		SELECT id, chat_folder, kind, IFNULL(title,''), content, IFNULL(source,''), created_at
+		  FROM memories
+		 WHERE chat_folder = ?
+		   AND IFNULL(status,'active') = 'active'`+vis+`
+		 ORDER BY created_at DESC
+		 LIMIT ?`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("memory: ListInThread: %w", err)
+	}
+	defer rows.Close()
+	return scanItems(rows)
+}
+
 // List returns the most recent memories for a chat, ordered by
 // created_at descending. No embedding needed — this is a simple
-// SQL scan.
+// SQL scan. Chat-wide: owner-facing only.
 func (m *Memory) List(ctx context.Context, chatFolder string, limit int) ([]Item, error) {
 	if limit <= 0 {
 		limit = 20
@@ -322,19 +346,31 @@ func (m *Memory) FindSimilar(ctx context.Context, chatFolder string, thread int,
 	return id, similarity, nil
 }
 
+// allThreads is the thread value for chat-wide, owner-facing reads: no
+// visibility filter at all. Telegram thread ids are never negative.
+const allThreads = -1
+
 // visibleIn returns the SQL condition (with its args) limiting rows of
 // alias to those conversation thread may see (D023): thread 0 (main)
 // sees every row of the chat; thread T != 0 sees thread 0 rows and its
-// own. The condition starts with " AND " or is empty.
+// own. In both cases a conversation_summary is only visible to its own
+// conversation. allThreads means no filter. The condition starts with
+// " AND " or is empty.
 func visibleIn(alias string, thread int) (string, []any) {
-	if thread == 0 {
+	if thread == allThreads {
 		return "", nil
 	}
-	col := "thread_id"
+	p := ""
 	if alias != "" {
-		col = alias + ".thread_id"
+		p = alias + "."
 	}
-	return " AND " + col + " IN (0, ?)", []any{thread}
+	cond := " AND (" + p + "kind != 'conversation_summary' OR " + p + "thread_id = ?)"
+	args := []any{thread}
+	if thread != 0 {
+		cond += " AND " + p + "thread_id IN (0, ?)"
+		args = append(args, thread)
+	}
+	return cond, args
 }
 
 // vecSearch runs a KNN query against memory_vec, filtering by

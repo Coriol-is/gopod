@@ -258,7 +258,7 @@ func (r *Runner) Run(
 		return "", err
 	}
 	cmd := withModel(prov.RunCmd(prompt, opts.AppendSystemPrompt, ref), prov, r.ModelForChat(chatFolder))
-	res, err := r.execAgent(ctx, id, chatFolder, prov, cmd)
+	res, err := r.execAgent(ctx, id, chatFolder, thread, prov, cmd)
 	if announcesNewSession(prov, ref) {
 		var stderr string
 		if res != nil {
@@ -405,7 +405,7 @@ func (r *Runner) startStream(
 		releaseSlot()
 		return nil, err
 	}
-	env, release := r.agentEnv(chatFolder)
+	env, release := r.agentEnv(chatFolder, conv.thread)
 	handle, err := r.ex.ExecStream(ctx, id, wrapWithPidFile(pidFile, cmd), env)
 	if err != nil {
 		release()
@@ -556,7 +556,7 @@ func (r *Runner) RunFresh(
 		return "", fmt.Errorf("runner: ensure %q: %w", chatFolder, err)
 	}
 	prov := r.ProviderForChat(chatFolder)
-	res, err := r.execAgent(ctx, id, chatFolder, prov, prov.RunFreshCmd(prompt))
+	res, err := r.execAgent(ctx, id, chatFolder, 0, prov, prov.RunFreshCmd(prompt))
 	if err != nil {
 		return "", err
 	}
@@ -567,13 +567,15 @@ func (r *Runner) RunFresh(
 // config restore and error classification. On a non-zero exit it
 // returns the classified error together with the result, so callers can
 // still read what the agent printed (a new conversation's session id).
-func (r *Runner) execAgent(ctx context.Context, containerID, chatFolder string, prov AgentProvider, cmd []string) (*ExecResult, error) {
+// thread is the conversation the memory capability is bound to (0 for
+// system runs).
+func (r *Runner) execAgent(ctx context.Context, containerID, chatFolder string, thread int, prov AgentProvider, cmd []string) (*ExecResult, error) {
 	// Restore config from backup if needed.
 	if restoreCmd := prov.RestoreConfigCmd(); restoreCmd != nil {
 		r.ex.Exec(ctx, containerID, restoreCmd, nil)
 	}
 
-	env, release := r.agentEnv(chatFolder)
+	env, release := r.agentEnv(chatFolder, thread)
 	defer release()
 	res, err := r.ex.Exec(ctx, containerID, cmd, env)
 	if err != nil {
