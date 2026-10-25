@@ -49,7 +49,7 @@ Separate native `--auth-only` checks confirmed the methods `claude.ai` and
 invoke inference or expose account identity fields. The final helper checks
 this method before inference and rejects API-key, unknown or failed auth.
 
-Final local suite: **49 tests passed in 19.442s**, with real Docker and both
+Final local suite: **51 tests passed in 20.858s**, with real Docker and both
 pinned native CLIs against localhost mock providers; no tests were skipped.
 The native subscription checks above are separate Pi evidence, not CI tests.
 
@@ -117,3 +117,18 @@ same schema. No authority or sandbox restriction was relaxed to obtain success.
 The existing six-PR [implementation plan](../superpowers/plans/2026-10-25-personal-group-container-isolation.md)
 still starts with P0 containment; these results remove the assumption that a new
 account or paid API is the only possible inference design.
+
+## Delivery checkpoint
+
+[PR 55](https://github.com/Coriol-is/gopod/pull/55) is independently reviewed and
+open. At code commit `6919706`, application CI and all 51 isolation tests pass;
+Sonar's security gate still reports command-argument injection in `capture`.
+Both independent reviewers found no model-controlled path into those Docker
+management arguments: they come from trusted canary builders, request text is
+bounded stdin, and model-derived session IDs must be UUIDs. Untrusted MCP command
+execution uses the separate fixed Executor, not this management helper.
+
+The finding needs resolution in Sonar against that source/path evidence before
+merge; it has not been suppressed, excluded or bypassed. The available session
+has no Sonar write credential or browser surface for issue review. No main merge
+or production deployment is claimed while this required gate remains red.
