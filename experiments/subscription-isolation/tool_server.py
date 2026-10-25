@@ -18,6 +18,7 @@ import uuid
 
 OUTPUT_LIMIT = 65536
 REQUEST_LIMIT = 131072
+INVALID_COMMAND = "invalid command"
 TOOL = {
     "name": "group_exec",
     "description": "Run a command in the isolated experimental group workspace; no network or account credentials.",
@@ -90,7 +91,7 @@ class Executor:
             raise ValueError("only command is accepted")
         command = arguments["command"]
         if not isinstance(command, str) or not command or len(command) > 16384 or "\0" in command:
-            raise ValueError("invalid command")
+            raise ValueError(INVALID_COMMAND)
         if self.cancel_signal is not None:
             raise ValueError("executor is stopping")
         name = "gopod-isolation-spike-" + uuid.uuid4().hex
@@ -127,9 +128,30 @@ class Executor:
                 "output": bytes(output[:OUTPUT_LIMIT]).decode("utf-8", errors="replace")}
 
 
+class RequestFrames:
+    def __init__(self):
+        self.pending = bytearray()
+
+    def feed(self, chunk):
+        self.pending.extend(chunk)
+        frames = []
+        while b"\n" in self.pending:
+            line, _, rest = self.pending.partition(b"\n")
+            self.pending = bytearray(rest)
+            if len(line) > REQUEST_LIMIT:
+                return frames + [None]
+            frames.append(bytes(line))
+        if len(self.pending) > REQUEST_LIMIT:
+            frames.append(None)
+        return frames
+
+    def finish(self):
+        return [bytes(self.pending)] if self.pending else []
+
+
 def request_lines(executor):
     """Bounded framing, also responsive to shutdown while stdin stays open."""
-    pending = bytearray()
+    frames = RequestFrames()
     with selectors.DefaultSelector() as selector:
         selector.register(sys.stdin.buffer, selectors.EVENT_READ)
         while executor.cancel_signal is None:
@@ -137,31 +159,21 @@ def request_lines(executor):
                 continue
             chunk = os.read(sys.stdin.fileno(), 4096)
             if not chunk:
-                if pending:
-                    yield bytes(pending)
+                yield from frames.finish()
                 return
-            pending.extend(chunk)
-            while b"\n" in pending:
-                line, _, rest = pending.partition(b"\n")
-                pending = bytearray(rest)
-                if len(line) > REQUEST_LIMIT:
-                    yield None
+            for line in frames.feed(chunk):
+                yield line
+                if line is None or executor.cancel_signal is not None:
                     return
-                yield bytes(line)
-                if executor.cancel_signal is not None:
-                    return
-            if len(pending) > REQUEST_LIMIT:
-                yield None
-                return
 
 
 def mcp_command(arguments):
     """Strict external cmd schema; the internal Executor API stays command."""
     if not isinstance(arguments, dict) or set(arguments) != {"cmd"}:
-        raise ValueError("invalid command")
+        raise ValueError(INVALID_COMMAND)
     command = arguments["cmd"]
     if not isinstance(command, str) or not command or len(command) > 16384 or "\0" in command:
-        raise ValueError("invalid command")
+        raise ValueError(INVALID_COMMAND)
     return command
 
 
@@ -171,7 +183,7 @@ def call_tool(params, executor):
     try:
         value = executor.run({"command": mcp_command(params.get("arguments"))})
     except ValueError as error:
-        if str(error) not in {"only command is accepted", "invalid command"}:
+        if str(error) not in {"only command is accepted", INVALID_COMMAND}:
             raise
         return {"content": [{"type": "text", "text": ARGUMENT_HINT}], "isError": True}
     return {"content": [{"type": "text", "text": json.dumps(value)}],

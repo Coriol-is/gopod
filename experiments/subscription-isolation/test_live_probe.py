@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import uuid
 from types import SimpleNamespace
 import unittest
 from unittest import mock
@@ -145,14 +146,38 @@ class ToolAuditTests(unittest.TestCase):
 
 
 class LifecycleTests(unittest.TestCase):
-    def fixture_capture(self, script, cancellation, timeout):
+    @unittest.skipUnless(os.environ.get('GOPOD_ISOLATION_DOCKER_TEST') == '1', 'opt-in Docker stdin transport')
+    def test_fixed_docker_separators_and_stdin_transport(self):
+        name = 'gopod-stdin-canary-' + uuid.uuid4().hex
+        cancellation = live_probe.Cancellation()
+        image = os.environ.get('GOPOD_ISOLATION_TEST_IMAGE', 'node:22-slim')
+        prompt = '--model=bad; $(printf injection)\ncanary-only'
+        try:
+            created = live_probe.capture(['docker', 'create', '--rm', '--pull=never', '--name', name,
+                                          '--network=none', '--read-only', '--cap-drop=ALL',
+                                          '--security-opt=no-new-privileges', '--memory=128m', '--pids-limit=64',
+                                          '--user=1000:1000', '--entrypoint=/bin/sleep', '--', image, 'infinity'],
+                                         cancellation, timeout=10, cancelable=False)
+            self.assertEqual(created.returncode, 0)
+            self.assertEqual(live_probe.capture(['docker', 'start', '--', name], cancellation, timeout=5).returncode, 0)
+            result = live_probe.capture(['docker', 'exec', '--interactive', '--', name, 'node', '-e',
+                                        'process.stdin.pipe(process.stdout)'], cancellation, timeout=5, input_text=prompt)
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(result.stdout, prompt)
+            self.assertIsNone(result.stopped)
+        finally:
+            subprocess.run(['docker', 'rm', '-f', '--', name], stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, timeout=5)
+
+    def fixture_capture(self, script, cancellation, timeout, input_text=None):
         original = subprocess.Popen
         def fixture(argv, **kwargs):
-            self.assertEqual(argv, ['docker', 'exec', 'synthetic-only', 'offline-fixture'])
+            self.assertEqual(argv, ['docker', 'exec', '--interactive', '--', 'synthetic-only', 'offline-fixture'])
             self.assertIs(kwargs['shell'], False)
             return original([sys.executable, '-c', script], **kwargs)
         with mock.patch.object(live_probe.subprocess, 'Popen', side_effect=fixture):
-            return live_probe.capture(['docker', 'exec', 'synthetic-only', 'offline-fixture'], cancellation, timeout)
+            return live_probe.capture(['docker', 'exec', '--interactive', '--', 'synthetic-only', 'offline-fixture'],
+                                      cancellation, timeout, input_text=input_text)
 
     def test_capture_rejects_arbitrary_binaries_and_docker_operations(self):
         with mock.patch.object(live_probe.subprocess, 'Popen') as spawn:
@@ -161,6 +186,27 @@ class LifecycleTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     live_probe.capture(argv, live_probe.Cancellation(), timeout=1)
             spawn.assert_not_called()
+
+    def test_prompt_is_bounded_stdin_data_and_never_an_argument(self):
+        prompt = '--model=bad; $(printf injection)\nprivate-prompt-value'
+        for provider in ('claude', 'codex'):
+            argv = live_probe.turn_command(provider, 'synthetic-container', '00000000-0000-0000-0000-000000000001', 'new')
+            self.assertNotIn(prompt, argv)
+            self.assertIn('--interactive', argv)
+            self.assertEqual(argv[argv.index('--') + 1], 'synthetic-container')
+            self.assertEqual(argv[-1], '-p' if provider == 'claude' else '-')
+        with mock.patch.object(live_probe.subprocess, 'Popen') as spawn:
+            for value in ('x' * (live_probe.INPUT_LIMIT + 1), '\u044f' * live_probe.INPUT_LIMIT, b'invalid-type'):
+                with self.assertRaises(ValueError):
+                    live_probe.capture(['docker', 'exec', '--', 'synthetic'], live_probe.Cancellation(), timeout=1, input_text=value)
+            spawn.assert_not_called()
+        result = self.fixture_capture('import sys;sys.stdout.write(sys.stdin.read())', live_probe.Cancellation(), 3, prompt)
+        self.assertEqual(result.stdout, prompt)
+        self.assertIsNone(result.stopped)
+        result = self.fixture_capture('import time;time.sleep(5)', live_probe.Cancellation(), 0.1, 'x' * live_probe.INPUT_LIMIT)
+        self.assertEqual(result.stopped, 'deadline')
+        with self.assertRaises(ValueError):
+            live_probe.turn_command('arbitrary-program', 'synthetic', None, 'new')
 
     def test_capture_deadline_output_and_sigterm_are_bounded(self):
         cancellation = live_probe.Cancellation()
@@ -228,7 +274,7 @@ class LifecycleTests(unittest.TestCase):
                 def bridge(workspace, *_args, **_kwargs):
                     holder.update(work=Path(workspace), turns=[])
                     return server, 'http://127.0.0.1:12345/mcp/synthetic'
-                def fake_capture(argv, _cancellation, timeout, cancelable=True):
+                def fake_capture(argv, _cancellation, timeout, cancelable=True, input_text=None):
                     commands.append(live_probe.docker_command(argv))
                     if argv[1] != 'exec':
                         return live_probe.Capture(0, 'synthetic-container-id')
@@ -238,6 +284,8 @@ class LifecycleTests(unittest.TestCase):
                         return live_probe.Capture(0, json.dumps({'loggedIn': True, 'authMethod': 'claude.ai'}))
                     if 'login' in argv and 'status' in argv:
                         return live_probe.Capture(0, 'Logged in using ChatGPT')
+                    self.assertIn(marker, input_text)
+                    self.assertNotIn(input_text, argv)
                     holder['turns'].append(argv)
                     turn = 'new' if len(holder['turns']) == 1 else 'resume'
                     proof = f'{provider}-{turn}.txt'

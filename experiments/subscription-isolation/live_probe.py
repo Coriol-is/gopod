@@ -25,6 +25,7 @@ from http_tool_bridge import start_bridge
 
 
 CAPTURE_LIMIT = 262144
+INPUT_LIMIT = 16384
 CLAUDE_ALLOWED_TOOLS = {"mcp__group__group_exec", "EndConversation"}
 EXPECTED_VERSIONS = {'claude': '2.1.310 (Claude Code)', 'codex': 'codex-cli 0.164.0'}
 
@@ -66,36 +67,84 @@ def docker_command(argv):
     return ['docker', argv[1], *argv[2:]]
 
 
-def capture(argv, cancellation, timeout, *, cancelable=True):
-    """Bounded in-memory diagnostics; never log native command/output."""
-    command = docker_command(argv)
+def input_payload(input_text):
+    if input_text is None:
+        return b''
+    if not isinstance(input_text, str):
+        raise ValueError('input must be text')
+    payload = input_text.encode('utf-8')
+    if len(payload) > INPUT_LIMIT:
+        raise ValueError('input exceeds limit')
+    return payload
+
+
+class CaptureIO:
+    """Nonblocking bounded stdin/stdout; never wait on a child input reader."""
+    def __init__(self, proc, payload, cancellation, deadline, cancelable):
+        self.proc, self.payload = proc, payload
+        self.cancellation, self.deadline, self.cancelable = cancellation, deadline, cancelable
+        self.position, self.output, self.stopped = 0, bytearray(), None
+        self.reader_done = False
+
+    def write_input(self, selector):
+        try:
+            count = os.write(self.proc.stdin.fileno(), self.payload[self.position:self.position + 4096])
+            self.position += count
+        except BrokenPipeError:
+            self.position = len(self.payload)
+        except BlockingIOError:
+            return
+        if self.position == len(self.payload):
+            selector.unregister(self.proc.stdin)
+            self.proc.stdin.close()
+
+    def read_output(self, selector):
+        data = os.read(self.proc.stdout.fileno(), min(4096, CAPTURE_LIMIT + 1 - len(self.output)))
+        if not data:
+            selector.unregister(self.proc.stdout)
+            self.reader_done = True
+            return
+        self.output.extend(data)
+        if len(self.output) > CAPTURE_LIMIT:
+            self.stopped = 'output_limit'
+
+    def stop_reason(self):
+        if self.cancelable and self.cancellation.signum is not None:
+            return 'cancelled'
+        if time.monotonic() >= self.deadline:
+            return 'deadline'
+        return self.stopped
+
+    def complete(self):
+        return self.reader_done and (self.proc.stdin is None or self.proc.stdin.closed)
+
+    def run(self):
+        with selectors.DefaultSelector() as selector:
+            selector.register(self.proc.stdout, selectors.EVENT_READ, self.read_output)
+            if self.proc.stdin is not None:
+                os.set_blocking(self.proc.stdin.fileno(), False)
+                selector.register(self.proc.stdin, selectors.EVENT_WRITE, self.write_input)
+            while not self.complete():
+                self.stopped = self.stop_reason()
+                if self.stopped:
+                    break
+                for key, _events in selector.select(max(0, min(self.deadline - time.monotonic(), 0.2))):
+                    key.data(selector)
+                    if self.stopped:
+                        break
+        return self.output[:CAPTURE_LIMIT], self.stopped
+
+
+def capture(argv, cancellation, timeout, *, cancelable=True, input_text=None):
+    """Fixed Docker execution; prompt data travels only over bounded stdin."""
+    command, payload = docker_command(argv), input_payload(input_text)
     if cancelable and cancellation.signum is not None:
         return Capture(-1, "", stopped="cancelled")
-    proc = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT, shell=False)
-    deadline = time.monotonic() + timeout
-    output = bytearray()
-    stopped = None
+    stdin = subprocess.PIPE if payload else subprocess.DEVNULL
+    proc = subprocess.Popen(['docker', *command[1:]], stdin=stdin, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, shell=False, bufsize=0)
     try:
-        with selectors.DefaultSelector() as selector:
-            selector.register(proc.stdout, selectors.EVENT_READ)
-            while True:
-                if cancelable and cancellation.signum is not None:
-                    stopped = "cancelled"
-                    break
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    stopped = "deadline"
-                    break
-                if not selector.select(min(remaining, 0.2)):
-                    continue
-                data = os.read(proc.stdout.fileno(), min(4096, CAPTURE_LIMIT + 1 - len(output)))
-                if not data:
-                    break
-                output.extend(data)
-                if len(output) > CAPTURE_LIMIT:
-                    stopped = "output_limit"
-                    break
+        output, stopped = CaptureIO(proc, payload, cancellation, time.monotonic() + timeout, cancelable).run()
         if stopped:
             proc.kill()
         code = proc.wait(timeout=3)
@@ -104,7 +153,9 @@ def capture(argv, cancellation, timeout, *, cancelable=True):
             proc.kill()
             proc.wait()
         proc.stdout.close()
-    return Capture(code, bytes(output[:CAPTURE_LIMIT]).decode("utf-8", errors="replace"), stopped=stopped)
+        if proc.stdin is not None and not proc.stdin.closed:
+            proc.stdin.close()
+    return Capture(code, bytes(output).decode("utf-8", errors="replace"), stopped=stopped)
 
 
 def proof_matches(workspace, name, marker):
@@ -158,7 +209,7 @@ class ToolAudit:
             return {'calls': [dict(x) for x in self.records], 'total_calls': self.count,
                     'call_limit': self.MAX_CALLS, 'call_limit_exceeded': self.over_budget}
 
-    def run(self, arguments):
+    def record_call(self, arguments):
         with self.lock:
             if self.count >= self.MAX_CALLS or self.expected is None:
                 self.over_budget = True
@@ -172,30 +223,40 @@ class ToolAudit:
                       'marker_returned': False, 'proof_matches_after': False}
             record.update(argument_shape(arguments))
             self.records.append(record)
+            return record, proof
+
+    def record_result(self, record, result):
+        code, stopped, output = result.get('exit_code'), result.get('stopped'), result.get('output')
+        with self.lock:
+            record['exit_code'] = code if type(code) is int else None
+            record['stopped'] = stopped if stopped in (None, 'timeout', 'output_limit', 'cancelled') else 'other'
+            record['marker_returned'] = isinstance(output, str) and self.marker in output
+
+    def run(self, arguments):
+        record, proof = self.record_call(arguments)
         try:
             result = self.original_run(arguments)
-            code, stopped, output = result.get('exit_code'), result.get('stopped'), result.get('output')
-            with self.lock:
-                record['exit_code'] = code if type(code) is int else None
-                record['stopped'] = stopped if stopped in (None, 'timeout', 'output_limit', 'cancelled') else 'other'
-                record['marker_returned'] = isinstance(output, str) and self.marker in output
+            self.record_result(record, result)
             return result
         except Exception as error:
             with self.lock:
-                if isinstance(error, ValueError) and str(error) in {
-                        'only command is accepted', 'invalid command', 'executor is stopping'}:
-                    record['stopped'] = 'invalid_arguments'
-                elif isinstance(error, subprocess.TimeoutExpired):
-                    record['stopped'] = 'cleanup_timeout'
-                elif isinstance(error, OSError):
-                    record['stopped'] = 'spawn_unavailable'
-                else:
-                    record['stopped'] = 'unknown'
+                record['stopped'] = exception_reason(error)
             raise
         finally:
             matched = proof_matches(self.workspace, proof, self.marker)
             with self.lock:
                 record['proof_matches_after'] = matched
+
+
+def exception_reason(error):
+    if isinstance(error, ValueError) and str(error) in {
+            'only command is accepted', 'invalid command', 'executor is stopping'}:
+        return 'invalid_arguments'
+    if isinstance(error, subprocess.TimeoutExpired):
+        return 'cleanup_timeout'
+    if isinstance(error, OSError):
+        return 'spawn_unavailable'
+    return 'unknown'
 
 
 def argument_shape(arguments):
@@ -282,6 +343,7 @@ def run(options):
 
 
 def validated_inputs(options):
+    validate_provider(options.provider)
     auth = Path(options.auth_file)
     if not auth.is_absolute() or auth.is_symlink() or not auth.is_file():
         raise ValueError("operator must supply an existing absolute native auth file")
@@ -291,7 +353,13 @@ def validated_inputs(options):
     return auth, image
 
 
+def validate_provider(provider):
+    if provider not in ('claude', 'codex'):
+        raise ValueError('unsupported provider')
+
+
 def write_policy(provider, policy, endpoint):
+    validate_provider(provider)
     if provider == "claude":
         target = "/home/node/.claude/.credentials.json"
         (policy / "mcp.json").write_text(json.dumps({"mcpServers": {"group": {"type": "http", "url": endpoint}}}))
@@ -323,28 +391,31 @@ def container_command(options, auth, policy, name, target, image):
                '--workdir=/workspace/chat', '--env=HOME=/home/node']
     if options.provider == "codex":
         command += ['--mount', f'type=bind,src={policy / "config.toml"},dst=/home/node/.codex/config.toml,readonly']
-    command += ['--entrypoint=/bin/sleep', image, 'infinity']
+    command += ['--entrypoint=/bin/sleep', '--', image, 'infinity']
     return command
 
 
-def turn_command(provider, name, session, turn, prompt):
-    cli = ['docker', 'exec']
+def turn_command(provider, name, session, turn):
+    validate_provider(provider)
+    if turn not in ('new', 'resume'):
+        raise ValueError('unsupported turn')
+    cli = ['docker', 'exec', '--interactive']
     if provider == "claude":
         for key, value in ENV_OVERRIDES.items():
             cli += ['--env', key + '=' + value]
-        cli += [name, 'claude', '--restricted', '--tools', '', '--strict-mcp-config',
+        cli += ['--', name, 'claude', '--restricted', '--tools', '', '--strict-mcp-config',
                 '--mcp-config', '/qualification/mcp.json', '--settings', json.dumps(SETTINGS),
                 '--setting-sources', '', '--disable-slash-commands', '--permission-mode', 'dontAsk',
                 '--allowedTools', 'mcp__group__group_exec', '--system-prompt-snapshot', 'off',
                 '--system-prompt', 'Use only the supplied isolated group MCP tool for the synthetic canary.',
                 '--model', 'claude-haiku-4-5', '--max-turns', '3',
                 '--session-id' if turn == "new" else '--resume', session,
-                '--output-format', 'stream-json', '--verbose', '-p', prompt]
+                '--output-format', 'stream-json', '--verbose', '-p']
     else:
-        cli += ['--env', 'CODEX_HOME=/home/node/.codex', name, 'codex', 'exec']
+        cli += ['--env', 'CODEX_HOME=/home/node/.codex', '--', name, 'codex', 'exec']
         if turn == "resume":
             cli += ['resume', session]
-        cli += ['--strict-config', '--skip-git-repo-check', '--json', prompt]
+        cli += ['--strict-config', '--skip-git-repo-check', '--json', '-']
     return cli
 
 
@@ -387,11 +458,12 @@ def execute_turn(provider, turn, name, session, work, marker, audit, cancellatio
     expected_command = f"printf {marker} > {proof}; cat {proof}"
     audit.configure(expected_command, proof)
     prompt = (f"This is an isolation canary, not a user chat. Use only the group MCP tool group_exec once "
+              "with exactly one JSON field cmd containing the shell command "
               f"to run exactly: {expected_command}. "
               "Do not inspect accounts, environment, other files, network or any other tools. "
               f"Then reply exactly {marker}. No planning or extra work.")
-    cli = turn_command(provider, name, session, turn, prompt)
-    result = capture(cli, cancellation, timeout=90)
+    cli = turn_command(provider, name, session, turn)
+    result = capture(cli, cancellation, timeout=90, input_text=prompt)
     if result.stopped:
         return ({'turn': turn, 'passed': False, 'failure': result.stopped,
                  'tool_execution': audit.snapshot()}, session)
@@ -403,9 +475,10 @@ def initial_session(provider):
 
 
 def auth_status_command(provider, name):
+    validate_provider(provider)
     if provider == 'claude':
-        return ['docker', 'exec', name, 'claude', 'auth', 'status', '--json']
-    return ['docker', 'exec', '--env', 'CODEX_HOME=/home/node/.codex', name, 'codex', 'login', 'status']
+        return ['docker', 'exec', '--', name, 'claude', 'auth', 'status', '--json']
+    return ['docker', 'exec', '--env', 'CODEX_HOME=/home/node/.codex', '--', name, 'codex', 'login', 'status']
 
 
 def auth_evidence(provider, result):
@@ -433,7 +506,7 @@ def auth_evidence(provider, result):
 
 
 def qualify_runtime(options, name, cancellation):
-    version_result = capture(['docker', 'exec', name, options.provider, '--version'], cancellation, timeout=10)
+    version_result = capture(['docker', 'exec', '--', name, options.provider, '--version'], cancellation, timeout=10)
     version_match = version_result.stdout.strip() == EXPECTED_VERSIONS[options.provider]
     report = {'version_match': version_match, 'auth_method': 'unknown', 'subscription_auth_verified': False}
     if version_match and version_result.returncode == 0 and version_result.stopped is None:
@@ -468,7 +541,7 @@ def _run(options, cancellation):
             if created.returncode != 0 or created.stopped or cancellation.signum is not None:
                 report['failure'] = 'cancelled' if cancellation.signum is not None else 'create_unavailable'
                 return report
-            started = capture(['docker', 'start', name], cancellation, timeout=10)
+            started = capture(['docker', 'start', '--', name], cancellation, timeout=10)
             if started.returncode != 0 or started.stopped:
                 report['failure'] = started.stopped or 'start_unavailable'
                 return report
