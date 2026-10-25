@@ -5,6 +5,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -12,6 +15,7 @@ import (
 
 	"github.com/go-telegram/bot/models"
 
+	"github.com/Coriol-is/gopod/internal/control"
 	"github.com/Coriol-is/gopod/internal/queue"
 	"github.com/Coriol-is/gopod/internal/runner"
 )
@@ -53,11 +57,31 @@ func newInboundFixture(t *testing.T, filePaths map[string]string) *inboundFixtur
 			items <- it
 		}
 		return nil
-	}, 1, nil, b.log)
+	}, 1, &ctxTurnStore{}, b.log)
 	t.Cleanup(q.Close)
 	b.queue = q
 	return &inboundFixture{b: b, fake: fake, items: items}
 }
+
+// ctxTurnStore is a queue.TurnStore that, like SQLite, refuses to
+// insert under a cancelled context, and numbers rows from 1.
+type ctxTurnStore struct {
+	mu   sync.Mutex
+	next int64
+}
+
+func (s *ctxTurnStore) InsertTurn(ctx context.Context, _ queue.Item) (int64, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, false, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.next++
+	return s.next, false, nil
+}
+func (s *ctxTurnStore) MarkRunning(context.Context, int64) error                  { return nil }
+func (s *ctxTurnStore) MarkFinished(context.Context, int64, string, string) error { return nil }
+func (s *ctxTurnStore) LoadUnfinished(context.Context) ([]queue.Item, error)      { return nil, nil }
 
 // next returns the next queued item, failing after a timeout.
 func (f *inboundFixture) next(t *testing.T) queue.Item {
@@ -223,9 +247,176 @@ func TestAudioFile_Transcribed(t *testing.T) {
 	if !strings.HasPrefix(it.Text, "summarize") || !strings.Contains(it.Text, "buy milk") {
 		t.Errorf("captioned audio text = %q", it.Text)
 	}
-	if got := w.uploaded(); got[1] != "audio.mp3" {
-		t.Errorf("unnamed audio uploaded as %q, want audio.mp3", got[1])
+	if got := w.uploaded(); len(got) != 2 || got[1] != "audio.mp3" {
+		t.Errorf("whisper got %v, want the unnamed audio as audio.mp3", got)
 	}
+}
+
+func TestAudioFile_CaptionSurvivesFailedTranscription(t *testing.T) {
+	f := newInboundFixture(t, nil)
+	t.Setenv("OPENAI_API_KEY", "")
+	m := threadedMsg(0, "")
+	m.Caption = "what is this song?"
+	m.Audio = &models.Audio{FileID: "a1"}
+	f.handle(m)
+	it := f.next(t)
+	if !strings.HasPrefix(it.Text, "what is this song?") || !strings.Contains(it.Text, "could not be transcribed") {
+		t.Errorf("queued text = %q, want the caption with a note", it.Text)
+	}
+	if n := len(f.fake.callsTo("sendMessage")); n != 0 {
+		t.Errorf("sendMessage called %d times, want no failure reply", n)
+	}
+}
+
+func TestMedia_UnregisteredChatDownloadsNothing(t *testing.T) {
+	f := newInboundFixture(t, nil)
+	w := newFakeWhisper(t, f.b, "x")
+	stranger := func(id int) *models.Message {
+		return &models.Message{ID: id, Chat: models.Chat{ID: 2002, Type: models.ChatTypePrivate},
+			From: &models.User{ID: 77, FirstName: "Stranger"}}
+	}
+	for _, m := range []*models.Message{
+		func() *models.Message { m := stranger(1); m.Voice = &models.Voice{FileID: "v"}; return m }(),
+		func() *models.Message { m := stranger(2); m.Audio = &models.Audio{FileID: "a"}; return m }(),
+		func() *models.Message { m := stranger(3); m.VideoNote = &models.VideoNote{FileID: "n"}; return m }(),
+		func() *models.Message { m := stranger(4); m.Photo = []models.PhotoSize{{FileID: "p"}}; return m }(),
+		func() *models.Message { m := stranger(5); m.Document = &models.Document{FileID: "d"}; return m }(),
+	} {
+		f.handle(m)
+	}
+	f.none(t)
+	if n := len(f.fake.callsTo("getFile")); n != 0 {
+		t.Errorf("getFile called %d times for an unregistered chat", n)
+	}
+	if got := w.uploaded(); len(got) != 0 {
+		t.Errorf("whisper called for an unregistered chat: %v", got)
+	}
+	if n := len(f.fake.callsTo("sendMessage")); n != 0 {
+		t.Errorf("sendMessage called %d times for an unregistered chat", n)
+	}
+}
+
+func TestAlbum_ShutdownStillQueuesTurn(t *testing.T) {
+	f := newInboundFixture(t, nil)
+	f.b.albumClock = newManualClock() // the window never closes by itself
+	ctx, cancel := context.WithCancel(context.Background())
+	for i, id := range []string{"p1", "p2"} {
+		f.b.defaultHandler(ctx, nil, &models.Update{Message: albumPart(11+i, id, "")})
+	}
+	cancel() // shutdown: the bot's context is gone before the window ends
+
+	done := make(chan struct{})
+	go func() { _ = f.b.Run(ctx); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not return after shutdown")
+	}
+	it := f.next(t)
+	if it.ID == 0 {
+		t.Error("album turn has no row id: not persisted")
+	}
+	if n := strings.Count(it.Text, "/workspace/chat/uploads/"); n != 2 {
+		t.Errorf("album turn names %d uploads, want 2: %q", n, it.Text)
+	}
+}
+
+func TestDocument_SameNameKeptApart(t *testing.T) {
+	f := newInboundFixture(t, map[string]string{"d1": "documents/x.pdf", "d2": "documents/y.pdf"})
+	for i, id := range []string{"d1", "d2"} {
+		m := threadedMsg(0, "")
+		m.ID = 30 + i
+		m.Document = &models.Document{FileID: id, FileName: "report.pdf"}
+		f.handle(m)
+	}
+	a, b := f.next(t), f.next(t)
+	if a.FilePath == b.FilePath {
+		t.Fatalf("two documents named report.pdf saved to one path %q", a.FilePath)
+	}
+	for _, it := range []queue.Item{a, b} {
+		if !strings.HasSuffix(it.FilePath, "-report.pdf") {
+			t.Errorf("saved name %q lost the sender's file name", it.FilePath)
+		}
+		host := filepath.Join("owner", "uploads", filepath.Base(it.FilePath))
+		if _, err := os.Stat(host); err != nil {
+			t.Errorf("saved file missing: %v", err)
+		}
+	}
+}
+
+func TestDocument_TraversalNameStaysInUploads(t *testing.T) {
+	f := newInboundFixture(t, nil)
+	for i, name := range []string{"../../escape.txt", `..\..\win.txt`, "..", "/", "a/../../b.txt"} {
+		m := threadedMsg(0, "")
+		m.ID = 40 + i
+		m.Document = &models.Document{FileID: "d" + strconv.Itoa(i), FileName: name}
+		f.handle(m)
+		it := f.next(t)
+		if strings.Contains(it.FilePath, "..") || strings.Count(it.FilePath, "/") != 4 {
+			t.Errorf("name %q saved as %q, outside the uploads directory", name, it.FilePath)
+		}
+	}
+	// Nothing landed outside ./owner/uploads.
+	_ = filepath.WalkDir(".", func(p string, d os.DirEntry, err error) error {
+		if err == nil && !d.IsDir() && !strings.HasPrefix(p, filepath.Join("owner", "uploads")+string(filepath.Separator)) {
+			t.Errorf("file written outside the uploads directory: %s", p)
+		}
+		return nil
+	})
+	// One dir above the test's working directory has no escaped file.
+	if _, err := os.Stat(filepath.Join("..", "escape.txt")); err == nil {
+		t.Error("escape.txt written above the working directory")
+	}
+}
+
+func TestSafeUploadName(t *testing.T) {
+	for in, want := range map[string]string{
+		"report.pdf":       "report.pdf",
+		"../../etc/passwd": "passwd",
+		`..\..\win.ini`:    "win.ini",
+		"..":               "",
+		".":                "",
+		"":                 "",
+		"///":              "",
+		"a\nb.txt":         "a_b.txt",
+	} {
+		if got := safeUploadName(in); got != want {
+			t.Errorf("safeUploadName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestReplyContext_SlashCommandReachesRouterRaw(t *testing.T) {
+	fake := threadFake()
+	b, _ := commandBot(t, fake)
+	b.runner = &runner.Runner{}
+	b.logins = newLoginSessions()
+	var gotArgs []string
+	b.router.Register("echo", "echo", "test", control.PermPublic,
+		func(_ context.Context, c control.Command) (control.Response, error) {
+			gotArgs = c.Args
+			return control.Response{Text: "echoed"}, nil
+		})
+	m := threadedMsg(0, "/echo a b")
+	m.ReplyToMessage = &models.Message{ID: 3, From: &models.User{ID: 5, FirstName: "Ann"}, Text: "earlier"}
+	b.defaultHandler(context.Background(), nil, &models.Update{Message: m})
+	if strings.Join(gotArgs, " ") != "a b" {
+		t.Errorf("router got args %q, want the raw \"a b\"", gotArgs)
+	}
+}
+
+func TestReplyContext_LoginCodeReachesSessionRaw(t *testing.T) {
+	f := newInboundFixture(t, nil)
+	f.b.logins.set(streamChat, &loginSession{chatID: streamChat, awaitsCode: true})
+	var got string
+	f.b.loginCode = func(_ context.Context, _ int64, code string) { got = code }
+	m := threadedMsg(0, "abc#def")
+	m.ReplyToMessage = &models.Message{ID: 3, From: &models.User{ID: 99, FirstName: "gopod", IsBot: true}, Text: "Paste the code"}
+	f.handle(m)
+	if got != "abc#def" {
+		t.Errorf("login session got %q, want the raw code", got)
+	}
+	f.none(t)
 }
 
 func TestVideoNote_Transcribed(t *testing.T) {

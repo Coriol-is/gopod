@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/go-telegram/bot/models"
 
@@ -81,11 +82,31 @@ func (b *Bot) flushAlbum(k albumKey, a *albumBuf) {
 	b.enqueueAlbum(a.ctx, a.rc, msgs)
 }
 
+// flushPendingAlbums queues every album still in its window at once.
+// Run calls it after the long poll stops: Telegram's offset already
+// covers those items, so an album left in memory would be lost; queued,
+// it is a turn row that Recover replays (D020).
+func (b *Bot) flushPendingAlbums() {
+	b.albumMu.Lock()
+	pending := make(map[albumKey]*albumBuf, len(b.albums))
+	for k, a := range b.albums {
+		pending[k] = a
+	}
+	b.albumMu.Unlock()
+	for k, a := range pending {
+		b.flushAlbum(k, a) // skips one its own timer took meanwhile
+	}
+}
+
 // enqueueAlbum downloads every photo and document of an album and
 // queues one turn for it, answering the first item. The prompt is the
 // album's caption (Telegram puts it on one item) followed by the list
 // of uploaded paths. Items of other kinds (video, audio) are skipped.
 func (b *Bot) enqueueAlbum(ctx context.Context, rc store.RegisteredChat, msgs []*models.Message) {
+	// The album is flushed by a timer or at shutdown, when the bot's
+	// context may already be cancelled: download and enqueue detached.
+	ctx, cancel := downloadContext(ctx)
+	defer cancel()
 	first := msgs[0]
 	thread := inboundThreadID(first)
 	var caption string
@@ -202,6 +223,7 @@ func replyContextLine(m *models.Message) string {
 	if m.Quote != nil && m.Quote.Text != "" {
 		text = m.Quote.Text
 	}
+	name, text = headerSafe(name), headerSafe(text)
 	if name == "" {
 		name = "a message"
 	}
@@ -243,13 +265,37 @@ func messageSender(r *models.Message) string {
 // forwardFrom is " from <origin>" for a forward origin, or "" when
 // there is nothing to name.
 func forwardFrom(o *models.MessageOrigin) string {
-	if o.Type == models.MessageOriginTypeChannel && o.MessageOriginChannel != nil && o.MessageOriginChannel.Chat.Title != "" {
-		return " from channel " + o.MessageOriginChannel.Chat.Title
+	if o.Type == models.MessageOriginTypeChannel && o.MessageOriginChannel != nil {
+		if title := headerSafe(o.MessageOriginChannel.Chat.Title); title != "" {
+			return " from channel " + title
+		}
 	}
-	if name := originName(o); name != "" {
+	if name := headerSafe(originName(o)); name != "" {
 		return " from " + name
 	}
 	return ""
+}
+
+// headerSafe makes third-party text (a replied message, a quote, a
+// sender or chat name) safe inside a header line: line breaks and
+// other control characters become single spaces, and the characters
+// that delimit the header (`"`, `[`, `]`) are replaced, so the text
+// can neither end the header early nor start a fake line of its own.
+func headerSafe(s string) string {
+	s = strings.Map(func(r rune) rune {
+		switch {
+		case r == '"':
+			return '\''
+		case r == '[':
+			return '('
+		case r == ']':
+			return ')'
+		case unicode.IsControl(r), r == ' ', r == ' ':
+			return ' '
+		}
+		return r
+	}, s)
+	return strings.Join(strings.Fields(s), " ")
 }
 
 // originName names a message origin the way the client shows it.

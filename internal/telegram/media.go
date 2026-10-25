@@ -2,21 +2,37 @@ package telegram
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"time"
+	"unicode"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
 
-// uploadSeq numbers downloaded photos within the process.
+// uploadSeq numbers downloaded files within the process, so files
+// downloaded within one millisecond (an album) never share a name.
 var uploadSeq atomic.Int64
+
+// mediaDownloadTimeout bounds one inbound media download. Downloads run
+// detached from the bot's context (context.WithoutCancel) so a shutdown
+// mid-download still ends in a queued turn (D020); this keeps them from
+// holding the shutdown forever.
+const mediaDownloadTimeout = 2 * time.Minute
+
+// downloadContext is the context inbound media downloads run in: not
+// cancelled by shutdown, bounded by mediaDownloadTimeout.
+func downloadContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), mediaDownloadTimeout)
+}
 
 // downloadPhoto downloads the highest-resolution photo from a Telegram
 // message and saves it to the chat's uploads directory. Returns the
@@ -30,16 +46,45 @@ func (b *Bot) downloadPhoto(ctx context.Context, chatFolder string, photos []mod
 	}
 	// Last element = highest resolution.
 	best := photos[len(photos)-1]
+	hostPath, containerPath, err = b.saveUpload(ctx, chatFolder, best.FileID, "", ".jpg")
+	if err != nil {
+		return "", "", err
+	}
+	b.log.Debug("downloaded photo",
+		slog.String("file_id", best.FileID),
+		slog.String("host_path", hostPath),
+		slog.String("container_path", containerPath),
+		slog.Int("width", best.Width),
+		slog.Int("height", best.Height))
+	return hostPath, containerPath, nil
+}
 
-	file, err := b.api.GetFile(ctx, &bot.GetFileParams{FileID: best.FileID})
+// downloadDocument downloads a document/file attachment. Same pattern
+// as downloadPhoto; the saved name keeps the sender's file name (its
+// last path element only) after a unique prefix.
+func (b *Bot) downloadDocument(ctx context.Context, chatFolder string, doc *models.Document) (hostPath, containerPath string, err error) {
+	if doc == nil {
+		return "", "", fmt.Errorf("nil document")
+	}
+	return b.saveUpload(ctx, chatFolder, doc.FileID, doc.FileName, ".bin")
+}
+
+// saveUpload downloads a Telegram file into the chat's uploads
+// directory as "<unix ms>-<seq>-<name>", or "<unix ms>-<seq><ext>" when
+// name is empty or unusable, ext being the downloaded file's extension
+// or defaultExt. The name comes from the sender, so only its last path
+// element is used: it can never leave the chat's uploads directory.
+func (b *Bot) saveUpload(ctx context.Context, chatFolder, fileID, name, defaultExt string) (hostPath, containerPath string, err error) {
+	file, err := b.api.GetFile(ctx, &bot.GetFileParams{FileID: fileID})
 	if err != nil {
 		return "", "", fmt.Errorf("GetFile: %w", err)
 	}
 
-	downloadURL := b.api.FileDownloadLink(file)
-
-	// Download the file.
-	resp, err := http.Get(downloadURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, b.api.FileDownloadLink(file), nil)
+	if err != nil {
+		return "", "", fmt.Errorf("download: %w", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return "", "", fmt.Errorf("download: %w", err)
 	}
@@ -48,84 +93,53 @@ func (b *Bot) downloadPhoto(ctx context.Context, chatFolder string, photos []mod
 		return "", "", fmt.Errorf("download: HTTP %d", resp.StatusCode)
 	}
 
-	// Save to chats/<folder>/uploads/<timestamp>.<ext>
-	ext := filepath.Ext(file.FilePath)
-	if ext == "" {
-		ext = ".jpg"
+	prefix := fmt.Sprintf("%d-%d", time.Now().UnixMilli(), uploadSeq.Add(1))
+	filename := prefix + "-" + safeUploadName(name)
+	if safeUploadName(name) == "" {
+		ext := filepath.Ext(file.FilePath)
+		if ext == "" {
+			ext = defaultExt
+		}
+		filename = prefix + ext
 	}
-	// The sequence keeps an album's photos, downloaded within one
-	// millisecond, from overwriting each other.
-	filename := fmt.Sprintf("%d-%d%s", time.Now().UnixMilli(), uploadSeq.Add(1), ext)
 
 	uploadsDir := filepath.Join(b.chatDir(chatFolder), "uploads")
 	if err := os.MkdirAll(uploadsDir, 0o755); err != nil {
 		return "", "", fmt.Errorf("mkdir uploads: %w", err)
 	}
-
 	hostPath = filepath.Join(uploadsDir, filename)
 	f, err := os.Create(hostPath)
 	if err != nil {
 		return "", "", fmt.Errorf("create file: %w", err)
 	}
-	defer f.Close()
-
-	if _, err := io.Copy(f, resp.Body); err != nil {
+	_, copyErr := io.Copy(f, resp.Body)
+	closeErr := f.Close()
+	if err := errors.Join(copyErr, closeErr); err != nil {
+		_ = os.Remove(hostPath)
 		return "", "", fmt.Errorf("save file: %w", err)
 	}
-
-	containerPath = "/workspace/chat/uploads/" + filename
-
-	b.log.Debug("downloaded photo",
-		slog.String("file_id", best.FileID),
-		slog.String("host_path", hostPath),
-		slog.String("container_path", containerPath),
-		slog.Int("width", best.Width),
-		slog.Int("height", best.Height))
-
-	return hostPath, containerPath, nil
+	return hostPath, "/workspace/chat/uploads/" + filename, nil
 }
 
-// downloadDocument downloads a document/file attachment. Same pattern
-// as downloadPhoto but for arbitrary file types.
-func (b *Bot) downloadDocument(ctx context.Context, chatFolder string, doc *models.Document) (hostPath, containerPath string, err error) {
-	if doc == nil {
-		return "", "", fmt.Errorf("nil document")
-	}
-
-	file, err := b.api.GetFile(ctx, &bot.GetFileParams{FileID: doc.FileID})
-	if err != nil {
-		return "", "", fmt.Errorf("GetFile: %w", err)
-	}
-
-	downloadURL := b.api.FileDownloadLink(file)
-	resp, err := http.Get(downloadURL)
-	if err != nil {
-		return "", "", fmt.Errorf("download: %w", err)
-	}
-	defer resp.Body.Close()
-
-	filename := doc.FileName
-	if filename == "" {
-		ext := filepath.Ext(file.FilePath)
-		if ext == "" {
-			ext = ".bin"
+// safeUploadName is the last path element of a sender-supplied file
+// name, or "" when nothing usable is left ("", ".", "..", only
+// separators). Backslashes count as separators too.
+func safeUploadName(name string) string {
+	name = strings.ReplaceAll(name, `\`, "/")
+	name = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return '_'
 		}
-		filename = fmt.Sprintf("%d%s", time.Now().UnixMilli(), ext)
+		return r
+	}, name)
+	if strings.Trim(name, "/") == "" {
+		return ""
 	}
-
-	uploadsDir := filepath.Join(b.chatDir(chatFolder), "uploads")
-	os.MkdirAll(uploadsDir, 0o755)
-
-	hostPath = filepath.Join(uploadsDir, filename)
-	f, err := os.Create(hostPath)
-	if err != nil {
-		return "", "", err
+	base := filepath.Base(name)
+	if base == "." || base == ".." || strings.TrimSpace(base) == "" {
+		return ""
 	}
-	defer f.Close()
-	io.Copy(f, resp.Body)
-
-	containerPath = "/workspace/chat/uploads/" + filename
-	return hostPath, containerPath, nil
+	return base
 }
 
 // chatDir returns the host-side chat directory path.

@@ -474,14 +474,22 @@ pending: a 20-line and a 100-line block in a private chat and in a topic.
    and answered in text, a failed transcription replies "Failed to
    transcribe audio."; a sticker gets no reply and no reaction; (6) a long
    code reply shows "sending a file…" before the `📎` snippet and a voice
-   reply shows "recording audio…" while TTS runs. Known limits: an album
-   is collected in memory for 1 s after its last item, so a shutdown in
-   that window loses it; video and audio items inside an album are
-   skipped (photos and documents only); two album documents with the same
-   file name overwrite each other in `uploads/`; audio files and video
-   notes do not switch the reply to voice; a caption-less single photo's
+   reply shows "recording audio…" while TTS runs; (7) stop gopod
+   (`docker compose restart`) right after sending an album: the album
+   still becomes one turn after the restart (flushed at shutdown, replayed
+   by Recover). Known limits: video and audio items inside an album are
+   skipped silently (photos and documents only); an item arriving more
+   than 1 s after the previous one starts a second turn; an album caption
+   starting with `/` is sent to the agent, not to the Router, and an
+   album never feeds a waiting `/login` code; audio files and video notes
+   do not switch the reply to voice; Whisper rejects `.opus`, `.aac` and
+   `.amr` audio files ("Failed to transcribe audio."); the header is part
+   of the turn text, so `extractAndIngest` sees replied/forwarded text and
+   may store it as a fact about the user; a caption-less single photo's
    prompt still does not name its upload path (pre-existing, noted, not
-   changed here).
+   changed here). Media from unregistered chats is no longer downloaded
+   or transcribed; document names keep only their last path element
+   after a unique prefix.
 0. **Run the manual crash-recovery test for durable turns** (plan Task 8
    step 5, still not run; the branch is merged and deployed, cold start
    of the agent container is verified, but a `kill -9` of gopod itself

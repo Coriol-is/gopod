@@ -167,6 +167,10 @@ type Bot struct {
 	// whisperURL is the transcription endpoint; "" means OpenAI's.
 	// Tests point it at a fake.
 	whisperURL string
+
+	// loginCode takes the OAuth code a /login session waits for; nil
+	// means handleLoginCode. Tests stub it.
+	loginCode func(ctx context.Context, chatID int64, code string)
 }
 
 // allowedUpdates is the explicit getUpdates allowed_updates list. Before
@@ -275,6 +279,9 @@ func (b *Bot) Run(ctx context.Context) error {
 
 	b.log.Info("telegram bot starting (long poll)")
 	b.api.Start(ctx)
+	// Albums still in their collection window become turns now, before
+	// the store closes (inbound_context.go).
+	b.flushPendingAlbums()
 	b.log.Info("telegram bot stopped")
 	return nil
 }
