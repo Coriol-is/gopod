@@ -603,3 +603,12 @@ don't get lost.)
    `internal/store/messages.go:GetSince` and integration tests" is useful.
 4. **After non-trivial decisions:** write an ADR in
    [DECISIONS.md](DECISIONS.md) and link it from here.
+
+- **Lifecycle notices (2026-10-25, branch `feat/lifecycle-notices`,
+  [D027](DECISIONS.md#d027--lifecycle-notices)).** gopod tells the owner and
+  chats with unfinished turns "🔄 Перезапускаюсь…" on SIGTERM (3 s bound) and
+  the owner "✅ Снова на связи" / "⚠️ Был неожиданный перезапуск" on startup,
+  with the replay count and a 2-minute spam guard. `GOPOD_NOTIFY_LIFECYCLE=0`
+  disables. Compose `stop_grace_period: 30s`. Not verified live: on the Pi,
+  `docker compose up -d` (recreate) should show both messages, and
+  `docker kill -s KILL gopod-gopod-1` then `docker compose up -d` the crash one.

@@ -878,6 +878,24 @@ hang shutdown. Spec:
 
 **Consequences.** If the text fails after documents went out and the queue retries the turn, the documents are sent again (accepted duplicate). On the edit path, when the final edit is lost and the reply goes to main, the stored transcript has the notes instead of the code. Documents are not memoized on the turn row. Live check pending: that Telegram renders the quoted `pre` collapsed and accepts it in every client.
 
+## D027 — Lifecycle notices
+
+**Date:** 2026-10-25
+**Status:** Accepted
+**Extends:** D020 (durable turns)
+
+**Context.** gopod restarts on every deploy (`docker compose up -d`) and after crashes. People in the middle of a turn saw it go silent and could not tell a restart from a hang; the owner could not tell a deploy from a crash. Recover already resumes the interrupted turns, but nobody was told.
+
+**Decision.**
+- On SIGTERM/SIGINT the signal no longer cancels the app context directly: `gracefulContext` (cmd/gopod) runs shutdown hooks first, then cancels every subsystem. The first signal restores default handling, so a second one kills at once.
+- The hook (`telegram.Lifecycle.Shutdown`) writes `lifecycle:graceful_shutdown_at` to `router_state`, then sends one plain-text notice (`🔄 Перезапускаюсь…`) to the owner's main chat and to every distinct `(chat, thread)` with an unfinished turn (`ListUnfinishedTurns`; task turns, which have no chat, are skipped). A thread notice falls back to main when the topic is gone. Sends run concurrently under one 3 s deadline; failures are logged at Warn.
+- On startup, after Recover and once the bot polls, `Lifecycle.Started` tells the owner only: `✅ Снова на связи (версия v)` when the previous run left the graceful marker, `⚠️ Был неожиданный перезапуск (версия v)` when a previous run recorded its start (`lifecycle:started_at`) but left no marker, nothing on the very first start. With replayed turns it adds `Продолжаю N незавершённых запросов.` (Russian plural). Chats with replayed turns hear from the resumed turn (existing banner), not from here. The marker is cleared after reading.
+- Spam guard: at most one startup notice per 2 minutes (`lifecycle:last_start_notice_at`); a suppressed one is logged. A deploy that restarts gopod twice quickly or a crash loop produces one notice.
+- Notices are not turn replies and are not recorded. `GOPOD_NOTIFY_LIFECYCLE` (default on; `0/false/no/off` disables) gates sending; without a bot token or owner id nothing is sent. Markers are kept even when disabled, so turning notices on later reports no phantom crash.
+- `stop_grace_period: 30s` in docker-compose.yml: the 10 s default did not cover notice + agent kill + store close, and a SIGKILL mid-shutdown leaves no marker.
+
+**Consequences.** A signal before the hook is registered (early startup, e.g. during Docker cleanup) sends no notice and the next start reports a crash. A SIGKILL after the marker was written is reported as graceful. Shutdown notices have no spam guard: two quick deploys send two "restarting" messages but one "back". Shutdown is up to 3 s slower.
+
 ---
 
 ## Template for new ADRs
