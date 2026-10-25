@@ -31,6 +31,11 @@ services:
       args:
         VERSION: ${GOPOD_VERSION:-dev}
     restart: unless-stopped
+    # Graceful shutdown on SIGTERM: restart notice (up to 3 s, D027),
+    # then in-flight agent turns are interrupted (SIGTERM to the agent,
+    # SIGKILL after 3 s) and the store is closed. Compose's default 10 s
+    # can cut that off and turn a deploy into a "crash"; give it room.
+    stop_grace_period: 30s
     env_file: .env
     environment:
       # Data dir MUST match the host path so agent container bind
