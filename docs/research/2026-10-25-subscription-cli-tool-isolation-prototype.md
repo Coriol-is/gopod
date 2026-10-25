@@ -49,7 +49,7 @@ Separate native `--auth-only` checks confirmed the methods `claude.ai` and
 invoke inference or expose account identity fields. The final helper checks
 this method before inference and rejects API-key, unknown or failed auth.
 
-Final local suite: **51 tests passed in 20.858s**, with real Docker and both
+Final local suite: **53 tests passed in 19.842s**, with real Docker and both
 pinned native CLIs against localhost mock providers; no tests were skipped.
 The native subscription checks above are separate Pi evidence, not CI tests.
 

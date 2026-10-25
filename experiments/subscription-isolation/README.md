@@ -138,7 +138,7 @@ requires a verified subscription method before inference. Use `--auth-only`
 with the same operator-supplied parameters to inspect only these fixed method
 enums without a model request. API-key and unknown auth are rejected.
 
-The final local suite passed **51 tests in 20.858s** with all opt-ins enabled.
+The final local suite passed **53 tests in 19.842s** with all opt-ins enabled.
 
 Claude Code 2.1.310 / `claude-haiku-4-5` and Codex 0.164.0 / account-default model:
 new and resumed subscription sessions both wrote/read the synthetic proof via

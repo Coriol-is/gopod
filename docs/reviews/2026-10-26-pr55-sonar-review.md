@@ -96,3 +96,6 @@ used; the updated source is submitted to the normal Sonar/CI checks.
 
 The False Positive disposition above describes the old reviewed revision, not
 a request to waive the gate on the replacement implementation.
+
+Post-fix full local suite: **53 tests passed in 19.842s**, including both pinned
+CLIs against localhost mocks and real Docker; no opt-ins were skipped.
