@@ -30,6 +30,14 @@ CLAUDE.md (main's ruleset needs 1 approval; PRs are merged with
 ([D023](DECISIONS.md#d023--extracted-memories-are-scoped-per-conversation)):
 a thread sees main/manual/pinned rows plus its own, main sees all; existing
 rows stay shared (thread 0).
+**2026-10-25:** lifecycle notices
+([D027](DECISIONS.md#d027--lifecycle-notices)): on SIGTERM gopod tells the
+owner and chats with unfinished turns "🔄 Перезапускаюсь…" (3 s bound), on
+startup tells the owner "✅ Снова на связи" or "⚠️ Был неожиданный перезапуск"
+with the replay count (one notice per 2 minutes). `GOPOD_NOTIFY_LIFECYCLE=0`
+disables; compose `stop_grace_period: 30s`. Not verified live: on the Pi a
+`docker compose up -d` recreate should show both messages, and
+`docker kill -s KILL <container>` then `docker compose up -d` the crash one.
 **Previous session (2026-10-05):** production deploy + Codex harness.
 `main` (`b254e01`) is deployed on the production host via `docker compose`
 (data at `/opt/gopod/data`, live owner workspace at
@@ -592,6 +600,21 @@ don't get lost.)
   deployment"). Other projects' images on that host (nanoclaw, codex
   assistant, honcho) are not gopod's: do not prune them.
 
+- **Agent admission control landed (ROADMAP T8, D026, branch
+  feat/agent-gate, 2026-10-25).** Global agent gate in
+  `internal/runner/gate.go` (Run/RunStream interactive, RunFresh
+  background; `GOPOD_MAX_AGENTS`=2), MemAvailable check
+  (`GOPOD_MIN_AVAILABLE_MB`=900, 60 s bound on an idle system), Claude
+  `NODE_OPTIONS=--max-old-space-size` (`GOPOD_AGENT_NODE_HEAP_MB`=768) in
+  `agentenv.go`, Telegram wait text in `internal/telegram/agentwait.go`.
+  Also fixed: a Stop while a turn waited to start used to fall back to the
+  sync path and run the agent anyway. Not verified live on the Pi: the
+  wait draft/placeholder in Telegram, Stop on the wait draft, the
+  MemAvailable value read inside the gopod container, and that claude
+  honours the heap flag (`ps`/`/proc/<pid>/cmdline` and `environ` inside
+  an agent container). `gopod_agents_running/waiting` metrics skipped
+  (catalog is spec-checked; runner not instrumented yet).
+
 ## How to update this file
 
 1. **Before starting work:** read this file. Read the docs it points at.
@@ -603,12 +626,3 @@ don't get lost.)
    `internal/store/messages.go:GetSince` and integration tests" is useful.
 4. **After non-trivial decisions:** write an ADR in
    [DECISIONS.md](DECISIONS.md) and link it from here.
-
-- **Lifecycle notices (2026-10-25, branch `feat/lifecycle-notices`,
-  [D027](DECISIONS.md#d027--lifecycle-notices)).** gopod tells the owner and
-  chats with unfinished turns "🔄 Перезапускаюсь…" on SIGTERM (3 s bound) and
-  the owner "✅ Снова на связи" / "⚠️ Был неожиданный перезапуск" on startup,
-  with the replay count and a 2-minute spam guard. `GOPOD_NOTIFY_LIFECYCLE=0`
-  disables. Compose `stop_grace_period: 30s`. Not verified live: on the Pi,
-  `docker compose up -d` (recreate) should show both messages, and
-  `docker kill -s KILL gopod-gopod-1` then `docker compose up -d` the crash one.

@@ -199,6 +199,15 @@ func run() error {
 			}
 			agentRunner = r
 			r.SetStore(st)
+			r.SetAgentLimits(runner.AgentLimits{
+				MaxAgents:      cfg.MaxAgents,
+				MinAvailableMB: cfg.MinAvailableMB,
+				NodeHeapMB:     cfg.AgentNodeHeapMB,
+			})
+			runLog.Info("agent admission",
+				slog.Int("max_agents", cfg.MaxAgents),
+				slog.Int("min_available_mb", cfg.MinAvailableMB),
+				slog.Int("agent_node_heap_mb", cfg.AgentNodeHeapMB))
 			if cfg.CompactAfter > 0 {
 				r.SetCompactAfter(cfg.CompactAfter)
 			}

@@ -3,6 +3,7 @@ package config
 import (
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -107,5 +108,57 @@ func TestLoadNotifyLifecycle(t *testing.T) {
 		if cfg.NotifyLifecycle != tc.want {
 			t.Errorf("GOPOD_NOTIFY_LIFECYCLE=%q: NotifyLifecycle = %v, want %v", tc.val, cfg.NotifyLifecycle, tc.want)
 		}
+	}
+}
+
+func TestLoadAgentAdmissionDefaults(t *testing.T) {
+	t.Setenv("GOPOD_MAX_AGENTS", "")
+	t.Setenv("GOPOD_MIN_AVAILABLE_MB", "")
+	t.Setenv("GOPOD_AGENT_NODE_HEAP_MB", "")
+	cfg, err := Load(false)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.MaxAgents != 2 || cfg.MinAvailableMB != 900 || cfg.AgentNodeHeapMB != 768 {
+		t.Fatalf("got max=%d min=%d heap=%d, want 2, 900, 768",
+			cfg.MaxAgents, cfg.MinAvailableMB, cfg.AgentNodeHeapMB)
+	}
+}
+
+func TestLoadAgentAdmissionOverrides(t *testing.T) {
+	cases := []struct {
+		max, min, heap          string
+		wantMax, wantMin, wantH int
+	}{
+		{"3", "1200", "512", 3, 1200, 512},
+		{"1", "0", "0", 1, 0, 0},   // 0 disables the memory check and the heap cap
+		{"0", "-5", "-1", 1, 0, 0}, // max is at least 1; negatives clamp to off
+		{" 4 ", "900", "768", 4, 900, 768},
+	}
+	for _, c := range cases {
+		t.Setenv("GOPOD_MAX_AGENTS", c.max)
+		t.Setenv("GOPOD_MIN_AVAILABLE_MB", c.min)
+		t.Setenv("GOPOD_AGENT_NODE_HEAP_MB", c.heap)
+		cfg, err := Load(false)
+		if err != nil {
+			t.Fatalf("%+v: Load: %v", c, err)
+		}
+		if cfg.MaxAgents != c.wantMax || cfg.MinAvailableMB != c.wantMin || cfg.AgentNodeHeapMB != c.wantH {
+			t.Errorf("%+v: got max=%d min=%d heap=%d", c, cfg.MaxAgents, cfg.MinAvailableMB, cfg.AgentNodeHeapMB)
+		}
+	}
+}
+
+func TestLoadAgentAdmissionInvalid(t *testing.T) {
+	for _, key := range []string{"GOPOD_MAX_AGENTS", "GOPOD_MIN_AVAILABLE_MB", "GOPOD_AGENT_NODE_HEAP_MB"} {
+		t.Run(key, func(t *testing.T) {
+			t.Setenv("GOPOD_MAX_AGENTS", "")
+			t.Setenv("GOPOD_MIN_AVAILABLE_MB", "")
+			t.Setenv("GOPOD_AGENT_NODE_HEAP_MB", "")
+			t.Setenv(key, "lots")
+			if _, err := Load(false); err == nil || !strings.Contains(err.Error(), key) {
+				t.Fatalf("err = %v, want one naming %s", err, key)
+			}
+		})
 	}
 }
