@@ -49,8 +49,9 @@ pages are budgeted at 3800 rendered HTML bytes (including fence balancing),
 so Cyrillic/escaped output stays one message. Slow command callbacks are
 answered before dispatch; failed/spent confirmations lose their buttons.
 Unknown providers fail before confirmation and selecting the current provider
-is a no-op. Topic-gone command fallbacks retain their buttons in main (a
-subsequent press acts in main, per the source-message thread rule).
+is a no-op. Topic-gone picker/page fallbacks retain their buttons in main. Risky
+confirmations instead ask the user to rerun the command in the desired
+conversation, without buttons, so a deleted-topic `/clear` cannot clear main.
 **Previous session (2026-10-05):** production deploy + Codex harness.
 `main` (`b254e01`) is deployed on the production host via `docker compose`
 (data at `/opt/gopod/data`, live owner workspace at
@@ -485,8 +486,9 @@ pending: a 20-line and a 100-line block in a private chat and in a topic.
    confirmation toasts expired; (7) unknown `/provider xyz` fails without
    a question and selecting the current provider changes nothing; failed
    Yes removes its buttons; a slow command stops the spinner before work;
-   a deleted-topic command fallback retains its buttons in main (where a
-   subsequent press acts). Include Cyrillic memories, escaped JSON logs,
+   a deleted-topic picker/page fallback retains its buttons in main; a
+   deleted-topic `/clear` offers no confirmation and asks to rerun in the
+   desired conversation, leaving main untouched. Include Cyrillic memories, escaped JSON logs,
    and fenced code in paging checks. Known limits: button labels and texts from
    `internal/control` are English (Phase 5 moves strings); buttons in an
    unregistered chat toast «Этот чат не подключён» (slash commands work

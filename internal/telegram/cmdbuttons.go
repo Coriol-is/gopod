@@ -270,6 +270,8 @@ func (b *Bot) runButtonCommand(ctx context.Context, q cbQuery, cmd control.Comma
 	return "", nil
 }
 
+const cmdTextTopicGone = "Тема удалена. Повторите команду в нужном диалоге — действие не выполнено."
+
 // sendCommandResponse sends a command's Response as a reply to the
 // command message: one message (paged when long, pages.go) with its
 // buttons.
@@ -278,6 +280,18 @@ func (b *Bot) sendCommandResponse(ctx context.Context, chatID int64, thread, rep
 		return
 	}
 	text, markup := b.commandMessage(chatID, resp)
+	if resp.Code == control.CodeConfirm {
+		// Confirmation applies to the requested conversation. Moving its
+		// buttons to main would change /clear's target when pressed.
+		if !b.threadGone(chatID, thread) {
+			_, err := b.sendChunks(ctx, chatID, thread, replyTo, text, markdownToTelegramHTML, markup)
+			if !b.checkThreadGone(chatID, thread, err) {
+				return
+			}
+		}
+		_, _ = b.sendChunks(ctx, chatID, 0, 0, cmdTextTopicGone, markdownToTelegramHTML, nil)
+		return
+	}
 	_, _ = b.sendRenderedOpts(ctx, chatID, thread, replyTo, text, markdownToTelegramHTML, markup, true)
 }
 

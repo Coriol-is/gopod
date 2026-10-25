@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"sync"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-telegram/bot"
@@ -516,8 +516,8 @@ func (b *Bot) sendRendered(ctx context.Context, chatID int64, thread int, replyT
 }
 
 // sendRenderedOpts is sendRendered; keepMarkup keeps the buttons on the
-// topic-gone fallback in main. Command replies (pickers, confirmations,
-// pages) need theirs there: their tokens are bound to the chat, not the
+// topic-gone fallback in main. Command replies (pickers and pages)
+// need theirs there: their tokens are bound to the chat, not the
 // topic, and a question without its buttons cannot be answered.
 func (b *Bot) sendRenderedOpts(ctx context.Context, chatID int64, thread int, replyToMsgID int, text string, render func(string) string, markup models.ReplyMarkup, keepMarkup bool) (int, error) {
 	if !b.threadGone(chatID, thread) {

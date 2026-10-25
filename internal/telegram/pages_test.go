@@ -251,3 +251,21 @@ func TestPages_CounterNotModifiedStillAnswers(t *testing.T) {
 		t.Fatal("counter sent another message")
 	}
 }
+
+func TestPages_TopicGoneKeepsNavigation(t *testing.T) {
+	b, fake, r := newCommandFixture(t)
+	registerLong(r, 300)
+	old := fake.respond
+	fake.respond = func(method string, form map[string]string) (int, string) {
+		if method == "sendMessage" && form["message_thread_id"] == "7" {
+			return apiError(400, "Bad Request: message thread not found")
+		}
+		return old(method, form)
+	}
+	b.dispatchSlash(context.Background(), slashMsg(streamChat, 7, "/long"), "/long")
+	fallback := lastCall(t, fake, "sendMessage")
+	buttonData(t, fallback, btnPageNext)
+	if len(fallback.Form["text"]) > 4000 {
+		t.Fatal("fallback split page budget")
+	}
+}

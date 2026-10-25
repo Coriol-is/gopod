@@ -257,7 +257,7 @@ func TestConfirm_HandlerFailureRemovesButtonsAndAnswersEarly(t *testing.T) {
 	}
 }
 
-func TestConfirm_TopicGoneKeepsButtons(t *testing.T) {
+func TestConfirm_TopicGoneNeverRetargetsMain(t *testing.T) {
 	b, fake, r := newCommandFixture(t)
 	var mu sync.Mutex
 	cleared := 0
@@ -274,8 +274,8 @@ func TestConfirm_TopicGoneKeepsButtons(t *testing.T) {
 	if fallback.Form["message_thread_id"] != "" && fallback.Form["message_thread_id"] != "0" {
 		t.Fatalf("not main fallback: %v", fallback.Form)
 	}
-	if len(buttonsOf(t, fallback)) != 2 {
-		t.Fatalf("confirmation lost buttons: %v", fallback.Form)
+	if len(buttonsOf(t, fallback)) != 0 || fallback.Form["text"] != cmdTextTopicGone {
+		t.Fatalf("fallback must explain rerun without destructive buttons: %v", fallback.Form)
 	}
 	if cleared != 0 {
 		t.Fatal("fallback cleared without confirmation")
