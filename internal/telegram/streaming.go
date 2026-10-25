@@ -89,12 +89,17 @@ func (b *Bot) editMessageHTML(ctx context.Context, chatID int64, msgID int, html
 		ParseMode: models.ParseModeHTML,
 	})
 	if err != nil {
-		// Fallback: try plain text (strip HTML).
+		if isNotModified(err) {
+			// The message already shows this text: nothing to fall back to.
+			return fmt.Errorf("editMessageText: %w", err)
+		}
+		// Fallback: plain text, tags stripped and entities unescaped, so
+		// the user never sees raw markup.
 		b.log.Debug("editMessageHTML failed, falling back to plain text",
 			slog.Int64("chat_id", chatID),
 			slog.Int("msg_id", msgID),
 			slog.Any("err", err))
-		return b.editMessage(ctx, chatID, msgID, html)
+		return b.editMessage(ctx, chatID, msgID, htmlToPlain(html))
 	}
 	return nil
 }
@@ -473,6 +478,12 @@ func (b *Bot) sendFinal(ctx context.Context, chatID int64, thread int, replyTo i
 		}
 		wait, ok := retryAfter(err)
 		if !ok || attempt >= finalSendAttempts || waited+wait > finalSendMaxWait {
+			if ok {
+				b.log.Warn("final reply rate limited, giving up",
+					slog.Int64("chat_id", chatID),
+					slog.Int("thread", thread),
+					slog.Int("attempts", attempt))
+			}
 			return 0, err
 		}
 		b.log.Info("final reply rate limited, retrying",

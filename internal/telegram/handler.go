@@ -323,12 +323,19 @@ func (b *Bot) runAgentSync(ctx context.Context, item queue.Item) {
 	if reply == "" {
 		reply = "(empty reply)"
 	}
+	b.deliverSyncReply(ctx, item, reply)
+}
 
-	// Voice reply if applicable.
+// deliverSyncReply sends the sync path's final reply: voice when the
+// chat's reply mode asks for it, text otherwise. Voice-only mode sends
+// no text, but the voice reply never reads code aloud (stripCodeBlocks),
+// so a reply with code blocks also goes out as text: the code must
+// reach the user in some form.
+func (b *Bot) deliverSyncReply(ctx context.Context, item queue.Item, reply string) {
 	b.maybeVoiceReply(ctx, item, reply)
 
 	mode := b.getReplyMode(item.ChatID, item.IsVoice)
-	if mode != "voice" {
+	if mode != "voice" || stripCodeBlocks(reply) != reply {
 		sent, _ := b.sendFinal(ctx, item.ChatID, item.ThreadID, item.MessageID, reply)
 		b.recordReply(ctx, item, sent, reply)
 	}

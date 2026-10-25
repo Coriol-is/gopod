@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"html"
+	"regexp"
 	"strings"
 )
 
@@ -172,4 +173,15 @@ func replaceDelimited(s, delim, open, close string) string {
 		s = s[end+len(delim):]
 	}
 	return result.String()
+}
+
+// htmlTagRe matches one tag of renderMarkdown's output, whose literal
+// < and > are always escaped.
+var htmlTagRe = regexp.MustCompile(`<[^>]*>`)
+
+// htmlToPlain turns renderMarkdown output back into plain text: tags
+// dropped, entities unescaped. For a plain-text retry of an HTML edit
+// Telegram rejected.
+func htmlToPlain(s string) string {
+	return html.UnescapeString(htmlTagRe.ReplaceAllString(s, ""))
 }
