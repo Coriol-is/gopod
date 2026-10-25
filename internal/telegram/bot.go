@@ -113,6 +113,11 @@ type Bot struct {
 	// gate wait notice, for streamReply to take over (agentwait.go).
 	waitMu           sync.Mutex
 	waitPlaceholders map[waitKey]int
+	// waitRefresh holds each waiting turn's wait draft refresher.
+	waitRefresh map[waitKey]waitRefresher
+	// waitDraftEvery is the wait draft refresh interval; zero means
+	// draftRefresh. Tests shorten it.
+	waitDraftEvery time.Duration
 
 	// streamTick is the streaming flush cadence; zero means 1s.
 	streamTick time.Duration

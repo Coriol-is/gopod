@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/Coriol-is/gopod/internal/queue"
 	"github.com/Coriol-is/gopod/internal/runner"
@@ -37,6 +39,7 @@ func TestWaitNoticeDraftIsStoppableAndReplaced(t *testing.T) {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	defer b.registerInflight(item.ID, cancel)()
+	defer b.stopWaitDraftRefresh(item)
 
 	b.waitNotice(ctx, item)(runner.WaitMemory)
 
@@ -175,5 +178,101 @@ func TestStreamNotStartedShutdownAndLiveRun(t *testing.T) {
 	}
 	if n := len(fake.calls); n != 0 {
 		t.Fatalf("shutdown sent %d API calls", n)
+	}
+}
+
+// waitDrafts returns the wait-text drafts sent so far.
+func waitDrafts(fake *fakeTelegram) []apiCall {
+	var out []apiCall
+	for _, c := range fake.callsTo("sendMessageDraft") {
+		if strings.HasPrefix(c.Form["text"], "⏳") {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// A wait longer than the refresh interval keeps the same stoppable
+// draft alive, Stop still works on it, and after stopWaitDraftRefresh
+// (what runAgentStreaming does when RunStream returns) nothing more is
+// sent, so the stream's opening draft is never overwritten.
+func TestWaitDraftRefreshedUntilStopped(t *testing.T) {
+	fake := &fakeTelegram{respond: okResponder}
+	b, item := newStreamFixture(t, fake)
+	b.waitDraftEvery = 10 * time.Millisecond
+	ctx := context.Background()
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	defer b.registerInflight(item.ID, cancel)()
+
+	b.waitNotice(ctx, item)(runner.WaitSlot)
+	waitFor(t, "refreshed wait draft", func() bool { return len(waitDrafts(fake)) >= 3 })
+	drafts := waitDrafts(fake)
+	for _, d := range drafts {
+		if d.Form["draft_id"] != drafts[0].Form["draft_id"] || d.Form["text"] != waitSlotText || d.Form["can_stop"] != "true" {
+			t.Fatalf("refresh changed the draft: %v vs %v", d.Form, drafts[0].Form)
+		}
+	}
+
+	id, _ := strconv.Atoi(drafts[0].Form["draft_id"])
+	b.handleGenerationStopped(ctx, stopUpdate(streamChat, id))
+	if runCtx.Err() == nil {
+		t.Fatal("stop on a refreshed wait draft did not cancel the turn")
+	}
+
+	b.stopWaitDraftRefresh(item)
+	n := len(waitDrafts(fake))
+	time.Sleep(50 * time.Millisecond)
+	if got := len(waitDrafts(fake)); got != n {
+		t.Fatalf("wait draft sent %d more times after the refresher stopped", got-n)
+	}
+	b.stopWaitDraftRefresh(item) // idempotent, no refresher left
+}
+
+func TestWaitDraftRefreshHonoursRetryAfter(t *testing.T) {
+	fake := &fakeTelegram{}
+	var drafts atomic.Int32
+	fake.respond = func(method string, _ map[string]string) (int, string) {
+		if method == "sendMessageDraft" && drafts.Add(1) == 2 {
+			return tooManyRequests("1")
+		}
+		return okResponder(method, nil)
+	}
+	b, item := newStreamFixture(t, fake)
+	b.waitDraftEvery = 10 * time.Millisecond
+	defer b.stopWaitDraftRefresh(item)
+
+	b.waitNotice(context.Background(), item)(runner.WaitSlot)
+	waitFor(t, "rate-limited refresh", func() bool { return drafts.Load() >= 2 })
+	time.Sleep(300 * time.Millisecond) // well inside retry_after=1s
+	if n := drafts.Load(); n != 2 {
+		t.Fatalf("draft sends = %d during retry_after, want 2", n)
+	}
+	waitFor(t, "refresh after retry_after", func() bool { return drafts.Load() >= 3 })
+}
+
+// Shutdown (the turn's ctx ends) stops the refresher by itself; the
+// later stopWaitDraftRefresh returns at once.
+func TestWaitDraftRefreshEndsWithContext(t *testing.T) {
+	fake := &fakeTelegram{respond: okResponder}
+	b, item := newStreamFixture(t, fake)
+	b.waitDraftEvery = 10 * time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	b.waitNotice(ctx, item)(runner.WaitSlot)
+	waitFor(t, "a refresh", func() bool { return len(waitDrafts(fake)) >= 2 })
+	b.waitMu.Lock()
+	rf := b.waitRefresh[waitKeyOf(item)]
+	b.waitMu.Unlock()
+	cancel()
+	select {
+	case <-rf.done: // exited on its own, before anyone stopped it
+	case <-time.After(time.Second):
+		t.Fatal("refresher did not exit after ctx was cancelled")
+	}
+	b.stopWaitDraftRefresh(item) // returns at once
+	n := len(waitDrafts(fake))
+	time.Sleep(40 * time.Millisecond)
+	if got := len(waitDrafts(fake)); got != n {
+		t.Fatalf("refresher kept sending after cancel")
 	}
 }

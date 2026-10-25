@@ -136,6 +136,8 @@ func (b *Bot) runAgentStreaming(ctx context.Context, item queue.Item) error {
 
 	waitCtx := runner.WithWaitNotice(runCtx, b.waitNotice(ctx, item))
 	stream, err := b.runner.RunStream(waitCtx, item.Folder, item.ThreadID, tier, b.allowlist, prompt)
+	// The wait is over: no wait draft refresh may land after this point.
+	b.stopWaitDraftRefresh(item)
 	if err != nil {
 		// Stopped (or shut down) before the agent started: no fallback.
 		if handled, err := b.streamNotStarted(ctx, runCtx, item); handled {

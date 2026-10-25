@@ -7,10 +7,11 @@ package telegram
 // will appear:
 //
 //   - draft path: one draft with the wait text, bound to the turn so the
-//     Stop button already works. It is not refreshed: the opening draft
-//     streamReply sends once the agent starts replaces it (a new draft id
-//     replaces a draft), and a wait longer than a draft's ~30s lifetime
-//     just leaves the typing indicator.
+//     Stop button already works. A refresher re-sends it every
+//     draftRefresh (a draft expires ~30s after its last update, taking the
+//     Stop button with it) until runAgentStreaming stops it, right after
+//     RunStream returns and before the opening draft of streamReply (a new
+//     draft id) replaces it.
 //   - edit path: the placeholder is sent early with the wait text and
 //     handed to streamReply, which turns it back into the cursor when the
 //     agent starts and then edits it as usual.
@@ -19,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"time"
 
 	"github.com/Coriol-is/gopod/internal/queue"
 	"github.com/Coriol-is/gopod/internal/runner"
@@ -63,15 +65,21 @@ func (b *Bot) waitNotice(ctx context.Context, item queue.Item) runner.WaitNotice
 			stoppable := b.inflightStop(item.ID) != nil
 			id := b.newDraftID()
 			b.bindDraft(item.ID, item.ChatID, id)
-			err := b.sendDraftOpts(ctx, item.ChatID, item.ThreadID, id, text,
-				draftOpts{CanStop: stoppable, KeepOnStop: stoppable})
+			opts := draftOpts{CanStop: stoppable, KeepOnStop: stoppable}
+			err := b.sendDraftOpts(ctx, item.ChatID, item.ThreadID, id, text, opts)
 			if err == nil {
+				b.startWaitDraftRefresh(ctx, item, id, text, opts, time.Time{})
 				return
 			}
 			if b.draftsSupported(item.ChatID) && !errors.Is(err, errThreadGone) {
-				// Transient: show nothing; streamReply probes again.
+				// Transient: the refresher retries it.
 				b.log.Debug("wait draft failed",
 					slog.Int64("chat_id", item.ChatID), slog.Any("err", err))
+				var hold time.Time
+				if wait, ok := retryAfter(err); ok {
+					hold = time.Now().Add(wait)
+				}
+				b.startWaitDraftRefresh(ctx, item, id, text, opts, hold)
 				return
 			}
 			b.bindDraft(item.ID, item.ChatID, 0)
@@ -138,4 +146,75 @@ func (b *Bot) streamNotStarted(ctx, runCtx context.Context, item queue.Item) (bo
 		b.react(ctx, item.ChatID, item.MessageID, emojiDone)
 	}
 	return true, queue.ErrStopped
+}
+
+// startWaitDraftRefresh keeps the turn's wait draft alive: it re-sends
+// the same draft id and text every draftRefresh (b.waitDraftEvery in
+// tests), skipping sends before a 429's retry_after, until
+// stopWaitDraftRefresh or ctx ends. It gives up when drafts are refused
+// or the topic is gone.
+func (b *Bot) startWaitDraftRefresh(ctx context.Context, item queue.Item, draftID int, text string, opts draftOpts, hold time.Time) {
+	every := b.waitDraftEvery
+	if every <= 0 {
+		every = draftRefresh
+	}
+	quit := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(every)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-quit:
+				return
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+			if time.Now().Before(hold) {
+				continue // rate limited: wait out retry_after
+			}
+			err := b.sendDraftOpts(ctx, item.ChatID, item.ThreadID, draftID, text, opts)
+			if err == nil {
+				continue
+			}
+			if wait, ok := retryAfter(err); ok {
+				hold = time.Now().Add(wait)
+			}
+			if !b.draftsSupported(item.ChatID) || errors.Is(err, errThreadGone) {
+				return
+			}
+			b.log.Debug("wait draft refresh failed",
+				slog.Int64("chat_id", item.ChatID), slog.Any("err", err))
+		}
+	}()
+	b.waitMu.Lock()
+	if b.waitRefresh == nil {
+		b.waitRefresh = make(map[waitKey]waitRefresher)
+	}
+	b.waitRefresh[waitKeyOf(item)] = waitRefresher{quit: quit, done: done}
+	b.waitMu.Unlock()
+}
+
+// waitRefresher is a running wait draft refresher: close quit to stop
+// it; done closes when its goroutine has exited.
+type waitRefresher struct {
+	quit chan struct{}
+	done chan struct{}
+}
+
+// stopWaitDraftRefresh stops the turn's wait draft refresher, if any,
+// and returns once it has exited, so no refresh can land after the
+// stream's first draft.
+func (b *Bot) stopWaitDraftRefresh(item queue.Item) {
+	b.waitMu.Lock()
+	k := waitKeyOf(item)
+	rf, ok := b.waitRefresh[k]
+	delete(b.waitRefresh, k)
+	b.waitMu.Unlock()
+	if ok {
+		close(rf.quit)
+		<-rf.done
+	}
 }
