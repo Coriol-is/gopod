@@ -11,7 +11,10 @@ Core Telegram assistant, Docker runtime, Claude/Codex native sessions,
 conversation-scoped history, memory, voice, scheduler and filesystem IPC are
 implemented. No other runtime, channel, guest agent or bot-to-bot peer is enabled.
 
-Reference Pi runs application **0a25267**, deployed 2026-10-25 19:24 UTC.
+Reference Pi runs application **ea38581**, deployed 2026-10-25 19:58 UTC.
+[Doctor output rollout](deployments/2026-10-25-ea38581.md): underscore rendering,
+manual-refresh labels and historical owner startup cache corrected; client
+reverification pending.
 [Startup deployment evidence](deployments/2026-10-25-0a25267.md): controller
 automatically created the selected Claude owner runtime; CLI2.1.310/auth ready.
 Management correctly reports Claude quota unknown/unsupported; no model call.
@@ -21,7 +24,7 @@ Claude Code2.1.310 and Codex CLI 0.164.0 agent tags remain unchanged. Build/revi
 full tests and runner/Telegram/queue races passed. A real no-network Docker
 preemption test passed on the Pi: a silent background shell was gone before a
 foreground waiter reused the slot (no model request). Running version/image,
-startup/integrity verified. Latest startup rollout preserved its immediate preactivation sessions 10, history 26, task 1;
+startup/integrity verified. Latest doctor rollout preserved sessions12/tasks1 and both registrations; history33 before activation,37 after additional live work;
 restarts 0, OOMKilled false, no unfinished user turns at the post-ready verification snapshot.
 [Background-preemption deployment evidence](deployments/2026-10-25-18e0c86.md) records backup,
 rollback, tests and limits. New authenticated Codex replies were observed before
@@ -72,7 +75,7 @@ command replies and errors private, including every callback/page/failure path;
 there is no implementation or privacy-flag activation yet.
 
 ## What's in progress
-Doctor output follow-up is being implemented: protect technical identifiers from
+Doctor output follow-up is merged and deployed: protect technical identifiers from
 Markdown emphasis, label refresh eligibility as manual-only, and expose a scoped
 historical startup observation without claiming current runtime health. Owner
 provided a real doctor response; remaining A18 client checks stay open.
@@ -144,7 +147,19 @@ recommends a bounded Markdown-table parser with lossless row cards, then a nativ
 Rich Table client spike. SDK already supports Rich Tables; no formatter change
 is implemented or implicitly approved by that research.
 
+[Group mention analysis](research/2026-10-25-group-mention-delivery.md) separates
+privacy-mode command/reply delivery from unsupported Guest updates. Registration
+alone does not make ordinary @mentions arrive. No rights/privacy/subscriptions
+were changed. Use Reply for a supported group delivery test; Guest integration
+and private unregistered-chat hints remain separately scoped.
+
 ## Open questions / blockers
+Urgent login privacy hardening/private owner handoff is in progress separately.
+The existing flow can expose login URL/device code/raw output in groups; this
+is not fixed by the doctor rollout. Deep personal/group container isolation audit
+and plan are requested (env, vault/mounts, memory, connected services). Broad
+profile changes are not yet implemented.
+
 No open implementation decision for the initial CP-017 slice. Implementation-specific choices
 are in accepted specs or pending proposals, not stale "should we build buttons?"
 questions. Driver/sqlite-vec upgrade remains constrained by D017; do not change
