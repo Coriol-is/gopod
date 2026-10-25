@@ -400,6 +400,35 @@ pending: a 20-line and a 100-line block in a private chat and in a topic.
    that topic. Known limits: `errBusy` is never produced yet (the D026 gate
    waits without a timeout); a Retry pressed twice across a restart can make
    two turns (the press set is in memory; each press has its own query id).
+0V. **Live checklist for dynamic Telegram UX, phase 2** (branch
+   `feat/ux-phase2`; spec F3 and "Verify live" items 3 and 4, plan Phase 2;
+   nothing run on a real bot yet; run 0U first so regressions are
+   attributable): (1) a reply in a private chat (draft path) and in a group
+   (edit path) ends with one row `🔁 Заново`, `📋 Копировать` (only for a
+   reply of at most 256 characters, or whose only code block fits), `⋯`;
+   on the edit path the row replaces `⏹ Стоп` in the final edit without a
+   flicker; a long reply has the row on its last message only, never on a
+   `📎 snippet` document; (2) the next reply in the same conversation takes
+   the row off the previous reply; a reply in another topic leaves it;
+   a stopped reply has no row and also takes the previous one off; (3)
+   `🔁 Заново` in topic 7 while main runs: waits its turn, answers in topic 7
+   as a new reply, the pressed row disappears, a double tap makes one turn;
+   restart gopod between the reply and the press: Regenerate still works;
+   check that the agent really gives a different answer in the same session
+   (prefix `regeneratePrefix` in `internal/telegram/actions.go`); (4)
+   `📋 Копировать` copies on iOS, Android and Desktop (check the real limit
+   and which text lands: the rendered text, markup removed); (5) `⋯` swaps
+   the row for `🧭 Шаги`, `📄 Файлом`, `‹ Назад` in place, `‹ Назад` restores
+   it; `🧭 Шаги` after a tool turn sends the steps as a collapsed quote in
+   the reply's topic, with secrets masked like the draft lines; `📄 Файлом`
+   sends `reply.md` in the topic; after a restart or an hour both toast
+   «Шаги этого ответа не сохранились» / «Текст этого ответа больше
+   недоступен». Known limits: which message holds the row is in memory, so
+   after a restart the previous reply keeps its row (its buttons still
+   work); the topic-gone fallback reply in main has no row; Back after a
+   restart restores the row without Copy; Regenerate pressed twice across a
+   restart can make two turns; the regenerated turn is not linked to the
+   original in the store.
 0. **Run the manual crash-recovery test for durable turns** (plan Task 8
    step 5, still not run; the branch is merged and deployed, cold start
    of the agent container is verified, but a `kill -9` of gopod itself

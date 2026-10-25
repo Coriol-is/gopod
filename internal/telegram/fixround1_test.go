@@ -96,7 +96,7 @@ func TestSendFinal_LogsWhenGivingUp(t *testing.T) {
 	recordSleeps(b)
 	var logs bytes.Buffer
 	b.log = slog.New(slog.NewTextHandler(&logs, nil))
-	if _, err := b.sendFinal(context.Background(), streamChat, 7, 0, "secret answer"); err == nil {
+	if _, err := b.sendFinal(context.Background(), streamChat, 7, 0, "secret answer", nil); err == nil {
 		t.Fatal("want error")
 	}
 	out := logs.String()
