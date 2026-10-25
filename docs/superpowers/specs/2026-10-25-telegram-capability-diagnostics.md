@@ -2,6 +2,22 @@
 
 Date: 2026-10-25. Status: design only; implementation deferred. CP-017.
 
+Execution: [implementation plan](../plans/2026-10-25-telegram-capability-diagnostics.md).
+
+## Initial release boundary (planning clarification)
+The first release covers registered private-DM summaries, owner-chat-only doctor
+and deterministic private help. Group, supergroup and channel invocations of
+these new commands are silently consumed, including errors and denials; group
+diagnostic output waits for CP-019 private service delivery. Unknown chat kind
+fails closed. Ordinary conversational messages retain their existing behavior.
+No Guest/inline/business handlers, notices or additional update subscriptions
+ship in this release. Context-rights probes and notice-only dispatch are later
+slices, not prerequisites for the initial DM path.
+
+Plain `/telegram doctor` reads cache; `/telegram doctor refresh` requests a
+bounded, rate-limited refresh through owner-only Router authorization. Summaries
+never trigger a network fetch. Reports fit one message without generated pages.
+
 ## Problem and verified evidence
 A setting enabled in BotFather does not mean gopod receives or handles its
 updates. In the deployed bot, read-only getMe reports guest queries and private
@@ -50,8 +66,8 @@ must not call getUpdates concurrently, reset cursor/allowed_updates, change a
 webhook, toggle BotFather settings or send probe messages.
 
 Route all commands through internal/control. Proposed /telegram shows a compact
-available-modes summary for this authorized context; /telegram doctor refreshes
-and returns detailed configuration to the owner. /help guest, /help inline and
+available-modes summary for this authorized context; /telegram doctor returns cached
+detailed configuration to the owner; its explicit refresh subcommand refreshes it. /help guest, /help inline and
 /help topics give deterministic guidance without consuming LLM tokens. Full
 configuration is owner-only; ordinary users see only relevant availability and
 a private-chat help link. Refresh reports stale/error status honestly.
