@@ -34,8 +34,8 @@ image is reproducible and visible in git:
 
 | Image | Arg | Default |
 |---|---|---|
-| `gopod-agent` | `CLAUDE_CODE_VERSION` | see `container/Dockerfile` |
-| `gopod-agent-codex` | `CODEX_VERSION` | see `container/Dockerfile.codex` |
+| `gopod-agent` | `CLAUDE_CODE_VERSION` | `2.1.310` |
+| `gopod-agent-codex` | `CODEX_VERSION` | `0.164.0` |
 
 Bump = edit the default (one-line commit) or pass
 `--build-arg CLAUDE_CODE_VERSION=x.y.z`. Nothing rebuilds agent images
@@ -55,18 +55,42 @@ gopod also logs the version once per container spawn
 The Docker integration suite can assert the expected versions:
 
 ```sh
-GOPOD_TEST_CLAUDE_VERSION=2.1.289 GOPOD_TEST_CODEX_VERSION=0.160.0 \
+GOPOD_TEST_CLAUDE_VERSION=2.1.310 GOPOD_TEST_CODEX_VERSION=0.164.0 \
   go test -tags docker_integration -run 'AgentImage|CodexImage' ./internal/runner/
 ```
 
 `GOPOD_TEST_AGENT_IMAGE` / `GOPOD_TEST_CODEX_IMAGE` point it at
 differently tagged images. Tests skip when an image is not built.
 
+### Qualification on 2026-10-25
+
+The defaults follow the normal npm `latest` releases verified that day:
+[Claude Code 2.1.310](https://github.com/anthropics/claude-code/releases/tag/v2.1.310)
+and [Codex CLI 0.164.0](https://learn.chatgpt.com/docs/changelog).
+Codex's `0.165.0-alpha.1` was excluded. Anthropic's delayed `stable` channel
+pointed to `2.1.308`; this pin deliberately uses the newer non-prerelease
+`latest`, not that delayed channel. See [Claude release channels](https://code.claude.com/docs/en/setup#configure-release-channel).
+
+Both complete images were built and tested on local Linux ARM64 Docker.
+The agent-image integration tests passed (auth check, hardened container args,
+CLI versions). Read-only, network-disabled containers under uid 1000 also
+passed version/help checks for the existing fresh/resume/session/stream/model
+and device-login flags. Claude accepted the runner's
+`NODE_OPTIONS=--max-old-space-size=768` environment for these probes, but its
+new native binary is **not qualified as obeying a V8 heap limit**. Do not treat
+`GOPOD_AGENT_NODE_HEAP_MB` as a Claude RAM cap for this version. Admission control
+still applies; hard memory limits require host cgroup enforcement.
+
+No authenticated model turn, production Pi rebuild or rollout was performed
+by this qualification. Versions in a running deployment change only after its
+agent images are rebuilt and its agent containers are recreated. Historical
+stream recordings retain their original version provenance.
+
 ## Contents
 
 | Component | Why |
 |---|---|
-| `node:22-slim` base | `@anthropic-ai/claude-code` is a Node CLI |
+| `node:22-slim` base | Node 22+ for the Claude npm installer and agent scripts; Claude itself is native |
 | `@anthropic-ai/claude-code` | the agent gopod drives via `docker exec` |
 | `git` | agent workflows and self-modification |
 | `ripgrep` | search tool Claude Code shells out to |

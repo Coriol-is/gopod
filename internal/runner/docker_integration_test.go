@@ -22,7 +22,7 @@
 //
 // Example, after bumping the pins in container/Dockerfile*:
 //
-//     GOPOD_TEST_CLAUDE_VERSION=2.1.289 GOPOD_TEST_CODEX_VERSION=0.160.0 \
+//     GOPOD_TEST_CLAUDE_VERSION=2.1.310 GOPOD_TEST_CODEX_VERSION=0.164.0 \
 //       go test -tags docker_integration -run 'AgentImage|Codex' ./internal/runner/
 
 package runner
