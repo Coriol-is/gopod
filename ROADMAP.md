@@ -73,7 +73,7 @@ if `ANTHROPIC_API_KEY` is set in the environment.
 | C1 | Router scaffold: `Command`, `Caller`, `Perm`, `Response`, `Router.Register/Dispatch`, auth enforcement, unit tests | ✅ |
 | C2 | Telegram frontend: `parseSlash`, dispatch wiring, `/ping`, `/whoami`, `/version`, `/help` | ✅ |
 | C3 | CLI frontend: argv parser, `serve`/`migrate` reserved subcommands, `--json`, mirror of public commands | ⬜ | Deferred |
-| C4 | First batch of real handlers: chats, queue, container, system | ⬜ | Deferred |
+| C4 | Remaining extended handlers: queue/container/system; chat registration already implemented | ⬜ | Deferred |
 | C5 | Logs subsystem: `internal/log/sqlite_handler.go`, retention task and `/logs` (CLI frontend remains C3) | ✅ | SQLite slog handler with D012 redaction landed in M8 |
 
 ### M3.6 sub-steps (observability)
@@ -197,12 +197,12 @@ Spec: [docs/superpowers/specs/2026-10-24-telegram-threads-and-drafts-design.md](
 | T9 | Enable the memory cgroup on the Pi so the per-container RAM limit is enforced (`cgroup_enable=memory cgroup_memory=1` in the boot cmdline + host reboot), then set the agent cap to ~1 GB | ⏸️ | **Backlog, not implemented** (owner, 2026-10-25). Today the 4 GiB limit in code is ignored on the deploy host (`docker inspect` shows `mem=0`) |
 | T6 | Inline keyboards: reply actions, pickers and confirmations | ✅ | Implemented/deployed; live A08/A09/A11 pending. Copy has API/client limits |
 | T7 | Rich messages (`sendRichMessage`: tables, thinking/details blocks) | ⬜ | Same spec, F13; plan phase 7, behind `GOPOD_RICH_REPLIES`; verify in private chats first |
-| T10 | Callback layer, Stop button on the edit path, humane errors with Retry | ✅ | Implemented, merged and deployed; live acceptance A08–A11/A07 remains pending (see docs/ACCEPTANCE.md) |
-| T11 | Reply actions under the newest reply: Regenerate, Copy, Steps, As file | ✅ | Implemented, merged and deployed; live acceptance A08–A11/A07 remains pending (see docs/ACCEPTANCE.md) |
-| T12 | Visible state: status reactions, elapsed time and queue position in the draft | ✅ | Implemented, merged and deployed; live acceptance A08–A11/A07 remains pending (see docs/ACCEPTANCE.md) |
-| T13 | Command buttons: model/provider pickers, confirmations, paged outputs | ✅ | Implemented, merged and deployed; live acceptance A08–A11/A07 remains pending (see docs/ACCEPTANCE.md) |
+| T10 | Callback layer, Stop button on the edit path, humane errors with Retry | ✅ | Implemented, merged and deployed; live acceptance A08 remains pending (see docs/ACCEPTANCE.md) |
+| T11 | Reply actions under the newest reply: Regenerate, Copy, Steps, As file | ✅ | Implemented, merged and deployed; live acceptance A09 remains pending (see docs/ACCEPTANCE.md) |
+| T12 | Visible state: status reactions, elapsed time and queue position in the draft | ✅ | Implemented, merged and deployed; live acceptance A10 remains pending (see docs/ACCEPTANCE.md) |
+| T13 | Command buttons: model/provider pickers, confirmations, paged outputs | ✅ | Implemented, merged and deployed; live acceptance A11 remains pending (see docs/ACCEPTANCE.md) |
 | T14 | Commands menu per scope and one strings file | ⬜ | Plan phase 5; owner Q4 |
-| T15 | Input context: replied/quoted/forwarded text, albums, audio, video notes | ✅ | Implemented, merged and deployed; live acceptance A08–A11/A07 remains pending (see docs/ACCEPTANCE.md) |
+| T15 | Input context: replied/quoted/forwarded text, albums, audio, video notes | ✅ | Implemented, merged and deployed; live acceptance A07 remains pending (see docs/ACCEPTANCE.md) |
 | T16 | Optional task-result buttons and topic titles | ⬜ | Task management buttons shipped separately (CP-015 follow-up); result actions/topic titles remain open |
 
 ## Post-milestone work

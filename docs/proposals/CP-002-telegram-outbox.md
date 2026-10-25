@@ -11,7 +11,7 @@
 | Spec | `—` |
 
 ## Problem
-Final Telegram delivery lacks a durable outbox; many sends and edits are best-effort (`sendFormatted`, `editMessage*`, `react`). A 429 or a 5xx loses the reply; a network blip after the send but before `SetTurnReply` leaves the turn without a memo, so recovery replays it and the user gets a duplicate (parked finding from the durable-turns review). Auth URLs and device codes are sent immediately and may be stale by the time Telegram delivers them.
+Final Telegram delivery lacks a durable outbox; many sends and edits are best-effort (`sendFormatted`, `editMessage*`, `react`). Bounded retries can still exhaust on 429/5xx and lose a best-effort reply; a network blip after the send but before `SetTurnReply` leaves the turn without a memo, so recovery replays it and the user gets a duplicate (parked finding from the durable-turns review). Auth URLs and device codes are sent immediately and may be stale by the time Telegram delivers them.
 
 ## Proposal
 An `outbox` table: one row per outbound message or edit (`pending → sending → sent | uncertain | failed`), a single sender goroutine that retries 429/5xx up to N times honouring `retry_after`, and marks network/unknown responses `uncertain` instead of pretending exactly-once. Login payloads are lazy: the row carries a reference, the sender resolves the current code at send time and drops expired ones. The reply memo (`turns.reply_msg_id`) is written by the sender when Telegram acks, closing the duplicate window.

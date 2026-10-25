@@ -12,10 +12,10 @@ conversation-scoped history, memory, voice, scheduler and filesystem IPC are
 implemented. No other runtime, channel, guest agent or bot-to-bot peer is enabled.
 
 Reference Pi runs application **8df259d**, deployed 2026-10-25 16:42 UTC.
-Agent runtime tags contain **Claude Code2.1.310** and **Codex0.164.0**. The
+Agent runtime tags contain **Claude Code 2.1.310** and **Codex CLI 0.164.0**. The
 application version/image, startup/polling, SQLite integrity and CLI versions
 in hardened ARM64 Pi containers were verified. At the deployment check:
-restarts0, OOMKilledfalse, sessions/history/tasks preserved7/54/1. An actual
+restarts `0`, OOMKilled `false`, sessions/history/tasks preserved `7/54/1`. An actual
 upgraded authenticated model turn/native resume is still A02, not proven by
 --version. Native Claude accepting NODE_OPTIONS is not a qualified V8/RAM cap;
 existing admission checks remain in place, Pi memory cgroup remains unqualified.
