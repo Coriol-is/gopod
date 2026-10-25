@@ -235,3 +235,16 @@ Suggested order: CP-001 → CP-005 → CP-002 → CP-003 → CP-004 → CP-006 �
 1. Change a status emoji.
 2. If you changed scope, add a row or strike through and link the ADR.
 3. Mention it in the next [HANDOFF.md](docs/HANDOFF.md) entry.
+
+## Accepted design follow-ups (2026-10-25)
+
+| Proposal | Status | Implementation scope |
+|---|---|---|
+| CP-016 topic deletion | ⬜ | Explicit confirmed private-topic deletion, durable retirement and safe session cleanup; no deleted-topic event assumed |
+| CP-017 Telegram diagnostics | ⬜ | Separate Telegram settings, subscriptions, code support and contextual rights; owner doctor and scoped help |
+| CP-018 per-thread providers | ⬜ | Chat default plus topic overrides, provider-specific models and scoped confirmed quota fallback |
+
+Specifications are accepted for planning only; no associated mode or routing
+change is enabled by the documents. CP-015 follow-up: the task control panel
+adds bounded task pages and explicit Pause/Resume actions; UTF-8 truncation fixes
+previously silent Cyrillic task-list replies.
