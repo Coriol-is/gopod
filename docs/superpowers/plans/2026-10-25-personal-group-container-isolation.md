@@ -206,6 +206,15 @@ complete protected-root mount denial. No model calls needed; groups remain off.
 
 ### 3. Inference identity, CLI policy and explicitly scoped integrations
 
+Implement the accepted two-set build layout from the spec: personal and group
+Dockerfiles, each with Claude/Codex variants. Preserve existing personal image
+behavior; do not derive the group final image from the personal final image.
+Map `(profile, provider)` to explicit image identities, fail closed on missing
+group configuration, and update build/CI/deployment configuration for all four
+combinations. Shared non-sensitive stages are allowed. Runtime env/mount/auth/
+network enforcement remains required; image separation cannot replace it.
+Include personal regression checks and negative group-to-personal fallback tests.
+
 **Owner:** provider/auth implementer; **review:** credential-boundary reviewer.
 **Dependency:** PRs 1–2; inference decision blocks credential provisioning and
 group re-enablement, never PR 1 containment.
@@ -225,6 +234,7 @@ credential provisioning:
 | Dedicated integration-free subscription account | Confirm provider-supported use and that readable auth cannot reach personal services; separate account lifecycle and login |
 | Explicit group API project/key | Owner approves changed billing, budget and project scopes; do not silently convert subscription use |
 | Inference-only broker | Agent never receives upstream personal OAuth/key; broker allows only approved inference routes and no connector/service delegation; assess native CLI compatibility |
+| Existing subscription with native CLI / external tool separation | Keep native auth in trusted group-specific runtime, disable all untrusted local file/code/integration authority, expose only scoped external tools; prove exact tool inventory and authenticated new/resume round trips for each CLI. See [offline spike](../../../experiments/subscription-isolation/README.md); currently only synthetic Docker/MCP tests passed |
 
 Do not call owner-account subscription reuse isolated while Bash can read its
 auth and invoke an alternate client. If no choice meets the contract, restricted

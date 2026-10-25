@@ -22,6 +22,11 @@ containment independent of billing/namespace migration. Group integrations are
 explicit dedicated scoped grants, not inherited personal services. Planning and
 requirements are accepted; broad implementation has not started.
 
+Owner decision: two Dockerfile sets (`personal`, `group`) and two runtime profiles,
+each independently supporting Claude and Codex. Preserve personal-chat behavior;
+restrict group images and runtime authority. See the spec for the build matrix
+and fail-closed image selection contract.
+
 ## Out of scope
 Silently changing billing, deleting historical data, revoking accounts, enabling
 channel/Guest transport or claiming the private-login hotfix is full isolation.
