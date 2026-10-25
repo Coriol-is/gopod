@@ -8,6 +8,11 @@ package telegram
 // to its turn. The turn's agent context is cancelled, streamReply sends
 // the partial text as the real reply, and the queue marks the turn
 // stopped (terminal, never replayed).
+//
+// The edit path (groups, chats that refuse drafts, the gate wait
+// placeholder) has no native Stop: its placeholder carries an inline
+// ⏹ button (stopKeyboard, data st:<turnID>) whose callback calls
+// stopTurn, the same cancel keyed by turn id and authorized by chat.
 
 import (
 	"context"
@@ -23,20 +28,25 @@ type inflightTurn struct {
 	stopped chan struct{} // closed on the first stop
 	once    sync.Once
 
+	// home is the chat the turn answers in; only a button in that chat
+	// may stop it (stopTurn).
+	home int64
+
 	// chatID and draftID name the draft currently showing the stop
 	// button; zero when the turn is not streaming through a draft.
 	chatID  int64
 	draftID int
 }
 
-// registerInflight makes turnID stoppable until unregister is called.
-// cancel stops the turn's agent run. A zero turnID (memory-only queue)
-// is not registered, and its drafts carry no stop button.
-func (b *Bot) registerInflight(turnID int64, cancel context.CancelFunc) (unregister func()) {
+// registerInflight makes turnID, answering in chatID, stoppable until
+// unregister is called. cancel stops the turn's agent run. A zero
+// turnID (memory-only queue) is not registered, and its drafts and
+// placeholders carry no stop button.
+func (b *Bot) registerInflight(turnID int64, chatID int64, cancel context.CancelFunc) (unregister func()) {
 	if turnID == 0 {
 		return func() {}
 	}
-	t := &inflightTurn{cancel: cancel, stopped: make(chan struct{})}
+	t := &inflightTurn{cancel: cancel, stopped: make(chan struct{}), home: chatID}
 	b.inflightMu.Lock()
 	if b.inflight == nil {
 		b.inflight = make(map[int64]*inflightTurn)
@@ -98,12 +108,40 @@ func (b *Bot) handleGenerationStopped(ctx context.Context, upd *models.Update) {
 			slog.Int("draft_id", ev.DraftID))
 		return
 	}
-	match.once.Do(func() {
+	if match.stop() {
 		b.log.InfoContext(ctx, "turn stopped by user",
 			slog.Int64("turn", turnID),
 			slog.Int64("chat_id", ev.Chat.ID),
 			slog.Int("draft_id", ev.DraftID))
-		close(match.stopped)
-		match.cancel()
+	}
+}
+
+// stop stops the turn once: it closes stopped and cancels the run.
+// Reports whether this call stopped it (false: already stopped).
+func (t *inflightTurn) stop() bool {
+	stopped := false
+	t.once.Do(func() {
+		close(t.stopped)
+		t.cancel()
+		stopped = true
 	})
+	return stopped
+}
+
+// stopTurn stops in-flight turn turnID when it answers in chatID, as the
+// draft Stop does. Reports false when the turn is not running (finished,
+// unknown), belongs to another chat, or was already stopped.
+func (b *Bot) stopTurn(turnID int64, chatID int64) bool {
+	b.inflightMu.Lock()
+	t := b.inflight[turnID]
+	b.inflightMu.Unlock()
+	if t == nil || t.home != chatID {
+		return false
+	}
+	if !t.stop() {
+		return false
+	}
+	b.log.Info("turn stopped by user (button)",
+		slog.Int64("turn", turnID), slog.Int64("chat_id", chatID))
+	return true
 }

@@ -176,7 +176,7 @@ func TestStreamReply_StopDuringProgress(t *testing.T) {
 	b, item := newStreamFixture(t, fake)
 	runCtx, cancelRun := context.WithCancel(context.Background())
 	defer cancelRun()
-	defer b.registerInflight(item.ID, cancelRun)()
+	defer b.registerInflight(item.ID, item.ChatID, cancelRun)()
 	s := newStructuredStream()
 	errc := make(chan error, 1)
 	go func() { errc <- b.streamReply(context.Background(), item, s.stream()) }()
@@ -221,7 +221,7 @@ func TestStreamReply_StopAfterAnswerTextDeliversIt(t *testing.T) {
 	fake := &fakeTelegram{}
 	okDrafts(fake, "779")
 	b, item := newStreamFixture(t, fake)
-	defer b.registerInflight(item.ID, func() {})()
+	defer b.registerInflight(item.ID, item.ChatID, func() {})()
 	s := newStructuredStream()
 	errc := make(chan error, 1)
 	go func() { errc <- b.streamReply(context.Background(), item, s.stream()) }()

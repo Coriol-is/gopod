@@ -10,3 +10,10 @@ const (
 	cbToastNotRegistered = "Этот чат не подключён"
 	cbToastFailed        = "Не получилось, попробуйте ещё раз"
 )
+
+// Stop button (keyboard.go).
+const (
+	btnStop           = "⏹ Стоп"
+	stopToastStopping = "Останавливаю…"
+	stopToastFinished = "Уже завершено"
+)

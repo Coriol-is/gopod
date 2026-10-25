@@ -380,6 +380,19 @@ pending: a 20-line and a 100-line block in a private chat and in a topic.
    "nothing to compact (0 turns)" because turn counters are in memory;
    `/clear` and auto-compact are not serialized against a running turn of the
    same conversation; one extra `find` exec per turn (session existence check).
+0U. **Live checklist for dynamic Telegram UX, phase 1** (branch
+   `feat/ux-phase1`; spec `docs/superpowers/specs/2026-10-25-telegram-dynamic-ux-design.md`
+   "Verify live", plan Phase 1; nothing run on a real bot yet): (1) a button
+   press is answered in under 1 s and its toast shows; `allowed_updates` is now
+   explicit (`message`, `callback_query`, `stopped_message_generation`): check
+   messages and draft Stop still arrive after the restart that applies it;
+   (2) in a registered **group**, a long turn shows `⏹ Стоп` on the
+   placeholder (style `danger` renders or degrades); pressing it stops the
+   turn, the placeholder keeps the text so far without the button, the
+   `turns` row ends `stopped`, the agent process is gone (`docker top`); a
+   second press toasts «Уже завершено»; the same in a private chat whose
+   drafts are refused and on a gate-wait placeholder (`GOPOD_MAX_AGENTS=1`,
+   two chats at once).
 0. **Run the manual crash-recovery test for durable turns** (plan Task 8
    step 5, still not run; the branch is merged and deployed, cold start
    of the agent container is verified, but a `kill -9` of gopod itself

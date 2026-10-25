@@ -102,6 +102,7 @@ func (b *Bot) onCallback(act string, h cbHandler) {
 
 // registerCallbacks registers gopod's button actions. One line per act.
 func (b *Bot) registerCallbacks() {
+	b.onCallback("st", b.stopCallback) // ⏹ on an edit-path placeholder
 }
 
 // callbackHandler is the dispatcher for every callback_query.
