@@ -30,7 +30,7 @@ func runWithDeadline(t *testing.T, m *Memory, chat, keyword string) {
 	defer cancel()
 	done := make(chan struct{})
 	go func() {
-		m.trySupersede(ctx, chat, keyword)
+		m.trySupersede(ctx, chat, 0, keyword)
 		close(done)
 	}()
 	select {

@@ -3,6 +3,7 @@ package memory
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -13,19 +14,27 @@ import (
 	"testing"
 )
 
-// fakeOps records the chat each call was made for.
-type fakeOps struct{ chats []string }
+// fakeOps records the conversation each call was made for.
+type fakeOps struct {
+	chats   []string
+	threads []int
+}
 
-func (f *fakeOps) Search(_ context.Context, chat, _ string, _ int) ([]Item, error) {
+func (f *fakeOps) record(chat string, thread int) {
 	f.chats = append(f.chats, chat)
+	f.threads = append(f.threads, thread)
+}
+
+func (f *fakeOps) SearchInThread(_ context.Context, chat string, thread int, _ string, _ int) ([]Item, error) {
+	f.record(chat, thread)
 	return []Item{{ID: 1, Kind: "fact", Content: "x", Score: 0.9}}, nil
 }
 func (f *fakeOps) Add(_ context.Context, chat, _, _, _, _ string) (int64, error) {
-	f.chats = append(f.chats, chat)
+	f.record(chat, 0)
 	return 7, nil
 }
-func (f *fakeOps) List(_ context.Context, chat string, _ int) ([]Item, error) {
-	f.chats = append(f.chats, chat)
+func (f *fakeOps) ListInThread(_ context.Context, chat string, thread int, _ int) ([]Item, error) {
+	f.record(chat, thread)
 	return nil, nil
 }
 
@@ -72,8 +81,8 @@ func TestAPIRejectsMissingOrUnknownCapability(t *testing.T) {
 
 func TestAPIDerivesChatFromCapabilityAndIgnoresParam(t *testing.T) {
 	s, ops, ts := newTestAPI(t)
-	tok := ts.Mint("alice")
-	rr := do(s, http.MethodGet, "/memory/search?q=hi&chat=owner", tok, "")
+	tok := ts.Mint("alice", 7)
+	rr := do(s, http.MethodGet, "/memory/search?q=hi&chat=owner&thread=0", tok, "")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("search: %d %s", rr.Code, rr.Body.String())
 	}
@@ -85,7 +94,7 @@ func TestAPIDerivesChatFromCapabilityAndIgnoresParam(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &added); err != nil || added["id"] != 7 {
 		t.Errorf("add body = %s", rr.Body.String())
 	}
-	rr = do(s, http.MethodGet, "/memory/list?chat=owner", tok, "")
+	rr = do(s, http.MethodGet, "/memory/list?chat=owner&thread=0", tok, "")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("list: %d %s", rr.Code, rr.Body.String())
 	}
@@ -96,6 +105,11 @@ func TestAPIDerivesChatFromCapabilityAndIgnoresParam(t *testing.T) {
 	}
 	if len(ops.chats) != 3 {
 		t.Errorf("expected 3 memory calls, got %d", len(ops.chats))
+	}
+	// Reads run in the capability's conversation; add is always shared
+	// (thread 0, D023).
+	if want := []int{7, 0, 7}; fmt.Sprint(ops.threads) != fmt.Sprint(want) {
+		t.Errorf("threads = %v, want %v", ops.threads, want)
 	}
 }
 
@@ -108,7 +122,7 @@ func TestAPIHealthNeedsNoCapability(t *testing.T) {
 
 func TestAPIRevokedCapabilityIsRejected(t *testing.T) {
 	s, _, ts := newTestAPI(t)
-	tok := ts.Mint("alice")
+	tok := ts.Mint("alice", 0)
 	ts.Revoke(tok)
 	if rr := do(s, http.MethodGet, "/memory/list", tok, ""); rr.Code != http.StatusUnauthorized {
 		t.Errorf("revoked capability: %d, want 401", rr.Code)
@@ -130,7 +144,7 @@ func TestSkillFileMatchesAgentInstructions(t *testing.T) {
 
 func TestAPIAddRejectsConversationSummary(t *testing.T) {
 	s, ops, ts := newTestAPI(t)
-	tok := ts.Mint("chatA")
+	tok := ts.Mint("chatA", 0)
 	rr := do(s, http.MethodPost, "/memory/add", tok, `{"kind":"conversation_summary","content":"x"}`)
 	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "session compact") {
 		t.Fatalf("got %d %s", rr.Code, rr.Body.String())

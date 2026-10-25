@@ -347,10 +347,9 @@ func (o *ObsidianIngester) Reconcile(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer rows.Close()
-
-	var archived int64
-	now := time.Now().UnixMilli()
+	// Collect first, update after closing rows: the store has a single
+	// connection, so an UPDATE issued while rows are open waits forever.
+	var gone []int64
 	for rows.Next() {
 		var id int64
 		var source string
@@ -364,11 +363,24 @@ func (o *ObsidianIngester) Reconcile(ctx context.Context) (int64, error) {
 		}
 		fullPath := filepath.Join(o.vaultPath, relPath)
 		if _, err := os.Stat(fullPath); os.IsNotExist(err) {
-			o.mem.store.DB().ExecContext(ctx, `
-				UPDATE memories SET status = 'archived', updated_at = ?
-				 WHERE id = ?`, now, id)
-			archived++
+			gone = append(gone, id)
 		}
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return 0, fmt.Errorf("memory: reconcile: %w", err)
+	}
+
+	var archived int64
+	now := time.Now().UnixMilli()
+	for _, id := range gone {
+		if _, err := o.mem.store.DB().ExecContext(ctx, `
+			UPDATE memories SET status = 'archived', updated_at = ?
+			 WHERE id = ?`, now, id); err != nil {
+			return archived, fmt.Errorf("memory: reconcile: archive %d: %w", id, err)
+		}
+		archived++
 	}
 	return archived, nil
 }

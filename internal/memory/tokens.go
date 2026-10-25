@@ -18,8 +18,9 @@ const tokenTTL = time.Hour
 // and the agent's shell must see this one.
 const CapabilityEnv = "GOPOD_MEMORY_CAPABILITY"
 
-// Tokens maps per-exec capability tokens to chat folders. The memory
-// API derives the chat from the token, never from request data, which
+// Tokens maps per-exec capability tokens to conversations (chat folder
+// and thread). The memory API derives both from the token, never from
+// request data, which
 // keeps authorization path-based (CLAUDE.md) even though the API is
 // reachable from every agent container over the Docker bridge.
 //
@@ -33,6 +34,7 @@ type Tokens struct {
 
 type tokenEntry struct {
 	chat    string
+	thread  int // conversation the agent run belongs to (0 = main)
 	expires time.Time
 }
 
@@ -41,9 +43,10 @@ func NewTokens() *Tokens {
 	return &Tokens{byToken: make(map[string]tokenEntry), now: time.Now}
 }
 
-// Mint creates a fresh token bound to chat. Expired entries are swept
-// on every mint so a missed Revoke cannot grow the map unbounded.
-func (t *Tokens) Mint(chat string) string {
+// Mint creates a fresh token bound to one conversation (chat, thread).
+// Expired entries are swept on every mint so a missed Revoke cannot
+// grow the map unbounded.
+func (t *Tokens) Mint(chat string, thread int) string {
 	var b [32]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		panic("memory: crypto/rand unavailable: " + err.Error())
@@ -57,20 +60,20 @@ func (t *Tokens) Mint(chat string) string {
 			delete(t.byToken, k)
 		}
 	}
-	t.byToken[tok] = tokenEntry{chat: chat, expires: now.Add(tokenTTL)}
+	t.byToken[tok] = tokenEntry{chat: chat, thread: thread, expires: now.Add(tokenTTL)}
 	return tok
 }
 
-// Lookup resolves a token to its chat folder. Expired tokens do not
-// resolve even before the next sweep.
-func (t *Tokens) Lookup(tok string) (string, bool) {
+// Lookup resolves a token to its conversation (chat folder, thread).
+// Expired tokens do not resolve even before the next sweep.
+func (t *Tokens) Lookup(tok string) (string, int, bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	e, ok := t.byToken[tok]
 	if !ok || t.now().After(e.expires) {
-		return "", false
+		return "", 0, false
 	}
-	return e.chat, true
+	return e.chat, e.thread, true
 }
 
 // Revoke forgets a token. Safe to call twice.

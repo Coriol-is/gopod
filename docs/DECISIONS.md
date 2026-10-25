@@ -841,6 +841,25 @@ hang shutdown. Spec:
 
 **Consequences.** Parallel execution of threads is *not* built: it is an optional research track (two agents in one container sharing `$HOME` are unverified; fallback is the current sequential queue). Open items: compaction summarises via `RunFresh` without the conversation's history (pre-existing, so `/compact` effectively clears); `/provider` still clears the main session; a `/login` code is accepted from any thread of the chat; `ClearSession` during a Codex first turn is a no-op; closed or deleted topics are never cleaned up. Requires topics ("Threaded mode") enabled for the bot in @BotFather. Spec: [superpowers/specs/2026-10-24-telegram-threads-and-drafts-design.md](superpowers/specs/2026-10-24-telegram-threads-and-drafts-design.md).
 
+## D023 — Extracted memories are scoped per conversation
+
+**Date:** 2026-10-25
+**Status:** Accepted
+**Narrows:** D022 ("facts/pinned/preferences memory stay per chat") and the same line of the threads spec
+
+**Context.** After D022 only `conversation_summary` rows were per conversation. Facts, decisions, preferences and hypotheses extracted after every turn were stored chat-wide (thread 0) and the context compiler injected them into every conversation of the chat, so what was said in one thread showed up in a sibling thread.
+
+**Decision.**
+- Manual and pinned memories stay shared: `Memory.Add`, the agent's `/memory/add` (whatever thread the agent runs in), the remember commands and other manual writes keep storing thread 0, and thread 0 rows (pinned or not) are visible to every conversation of the chat. Memories the agent or owner saves on purpose are meant for the whole chat.
+- Extracted memories are per conversation: the runner's extraction callback carries the turn's thread (`Run` and `RunStream`), and `IngestExtracted` stores every extracted kind with that `thread_id`. `AddInThread` keeps the thread for every kind (no coercion to 0).
+- Visibility rule for every agent-facing read: conversation T != 0 sees rows with `thread_id IN (0, T)`; main (T = 0) is the chat-wide aggregate and sees every row of the chat; a row born in thread A is never visible to a sibling thread B. It applies to every compiler slot (pinned, recent decisions, semantic preferences and facts), the fallback search (vector and FTS), and the agent's memory HTTP API (`/memory/search`, `/memory/list`).
+- The memory API learns the thread from its capability: tokens are minted per agent run for `(chat, thread)` (system runs such as `RunFresh` get thread 0), and the API never takes the thread from request data. `/memory/list` returns active rows only.
+- `conversation_summary` is only ever visible to its own conversation: in the compiler, in the reserved slot (never from the fallback); in the API, only the caller's own conversation's summary (main does not see threads' summaries).
+- The 0.92-similarity dedup and the extractor's `supersedes_keyword` only match rows of the same `thread_id`, so one conversation never rewrites, re-kinds or retires another's row (a thread fact never overwrites a main row and vice versa).
+- Owner-facing reads stay chat-wide: the control memory commands (`/recall` via `SearchText`, `List`) and `ArchiveStale`. The owner never holds a memory capability.
+
+**Consequences.** Rows that existed before this change keep `thread_id = 0` and stay shared; facts already extracted from threads cannot be told apart from main's. Facts learned in a thread reach other threads only through main or a manual/pinned copy. An agent in a thread that saves a memory with `/memory/add` shares it with every conversation of the chat by design.
+
 ## D025 — Long code in final replies
 
 **Date:** 2026-10-25

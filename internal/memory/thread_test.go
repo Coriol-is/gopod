@@ -80,10 +80,12 @@ func TestSupersedeOnlyWithinConversation(t *testing.T) {
 	}
 }
 
-func TestFactsAndPinnedAreSharedAcrossThreads(t *testing.T) {
+// Manual (thread 0) rows, pinned or not, are shared by every
+// conversation of the chat (D023).
+func TestManualAndPinnedAreSharedAcrossThreads(t *testing.T) {
 	ctx := context.Background()
 	m := newThreadTestMemory(t)
-	id, err := m.AddInThread(ctx, "chat", 5, "decision", "", "SHARED-DECISION", "agent")
+	id, err := m.Add(ctx, "chat", "decision", "", "SHARED-DECISION", "agent")
 	if err != nil {
 		t.Fatal(err)
 	}
