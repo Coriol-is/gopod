@@ -24,6 +24,8 @@ TOOL = {
     "inputSchema": {"type": "object", "properties": {"command": {"type": "string", "maxLength": 16384}},
                     "required": ["command"], "additionalProperties": False},
 }
+ARGUMENT_HINT = ('group_exec requires exactly one field command containing a nonempty shell string. '
+                 'Example: {"command":"printf canary"}. No other fields.')
 
 
 class Executor:
@@ -172,9 +174,15 @@ def dispatch(request, executor):
         params = request.get("params", {})
         if params.get("name") != "group_exec":
             raise ValueError("unknown tool")
-        value = executor.run(params.get("arguments"))
-        result = {"content": [{"type": "text", "text": json.dumps(value)}],
-                  "isError": value["stopped"] is not None or value["exit_code"] != 0}
+        try:
+            value = executor.run(params.get("arguments"))
+        except ValueError as error:
+            if str(error) not in {"only command is accepted", "invalid command"}:
+                raise
+            result = {"content": [{"type": "text", "text": ARGUMENT_HINT}], "isError": True}
+        else:
+            result = {"content": [{"type": "text", "text": json.dumps(value)}],
+                      "isError": value["stopped"] is not None or value["exit_code"] != 0}
     else:
         return {"jsonrpc": "2.0", "id": request["id"],
                 "error": {"code": -32601, "message": "Method not found"}}

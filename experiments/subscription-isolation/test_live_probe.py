@@ -74,7 +74,7 @@ class ToolAuditTests(unittest.TestCase):
             self.assertEqual(report['calls'], [{'command_matches_expected': False, 'exit_code': 7,
                                                'stopped': 'other', 'marker_returned': True,
                                                'proof_matches_after': True, 'arguments_type': 'object',
-                                               'has_command': True, 'extra_keys_count': 0, 'command_type': 'string',
+                                               'has_command': True, 'extra_keys_count': 0, 'known_argument_fields': [], 'command_type': 'string',
                                                'command_length': len('private-argument-value')}])
             self.assertNotIn('private-', json.dumps(report))
 
@@ -108,7 +108,8 @@ class ToolAuditTests(unittest.TestCase):
     def test_argument_shape_and_exception_classification_are_fixed_labels(self):
         self.assertEqual(live_probe.argument_shape({'command': ['private-value'], 'private-key': 'private-value'}),
                          {'arguments_type': 'object', 'has_command': True, 'extra_keys_count': 1,
-                          'command_type': 'array', 'command_length': None})
+                          'known_argument_fields': [], 'command_type': 'array', 'command_length': None})
+        self.assertEqual(live_probe.argument_shape({'cmd': 'private-value', 'private-key': 'private-value'})['known_argument_fields'], ['cmd'])
         for arguments, expected_type in [('private-value', 'string'), ([], 'array'), (None, 'null'), (7, 'other')]:
             self.assertEqual(live_probe.argument_shape(arguments)['arguments_type'], expected_type)
         for exception, expected in [(ValueError('only command is accepted'), 'invalid_arguments'),

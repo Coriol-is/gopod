@@ -9,7 +9,7 @@ import time
 import unittest
 from unittest import mock
 
-from tool_server import Executor, OUTPUT_LIMIT, REQUEST_LIMIT, dispatch
+from tool_server import ARGUMENT_HINT, Executor, OUTPUT_LIMIT, REQUEST_LIMIT, dispatch
 
 
 class ProtocolTests(unittest.TestCase):
@@ -22,6 +22,22 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(dispatch({"id": 1, "method": "host/read"}, None)["error"]["code"], -32601)
         with self.assertRaises(ValueError):
             dispatch({"id": 2, "method": "tools/call", "params": {"name": "host_exec"}}, None)
+
+    def test_invalid_arguments_are_actionable_tool_errors_without_docker(self):
+        executor = mock.Mock()
+        # Exercise the real strict validator, which returns before any self or
+        # Docker access on invalid input. Hints never echo untrusted arguments.
+        executor.run.side_effect = lambda arguments: Executor.run(None, arguments)
+        for arguments in ({'cmd': 'private-argument'}, {'command': ''}, {'command': 'true', 'private-key': 'private-value'}):
+            with mock.patch('tool_server.subprocess.Popen') as spawn:
+                response = dispatch({'id': 7, 'method': 'tools/call',
+                                     'params': {'name': 'group_exec', 'arguments': arguments}}, executor)
+                spawn.assert_not_called()
+            self.assertEqual(response['result'], {'content': [{'type': 'text', 'text': ARGUMENT_HINT}], 'isError': True})
+            self.assertNotIn('private-', json.dumps(response))
+        executor.run.side_effect = ValueError('executor is stopping')
+        with self.assertRaises(ValueError):
+            dispatch({'id': 8, 'method': 'tools/call', 'params': {'name': 'group_exec', 'arguments': {}}}, executor)
 
     @unittest.skipUnless(shutil.which("docker"), "requires Docker client executable, not a running daemon")
     def test_idle_sigterm_and_oversized_frame(self):

@@ -200,6 +200,8 @@ def argument_shape(arguments):
     command = arguments.get('command') if isinstance(arguments, dict) else None
     return {'arguments_type': kind(arguments), 'has_command': has_command,
             'extra_keys_count': sum(key != 'command' for key in arguments) if isinstance(arguments, dict) else 0,
+            'known_argument_fields': sorted(key for key in {'cmd', 'code', 'script', 'input', 'arguments', 'payload'}
+                                           if isinstance(arguments, dict) and key in arguments),
             'command_type': kind(command), 'command_length': len(command) if isinstance(command, str) else None}
 
 
