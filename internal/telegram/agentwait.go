@@ -1,6 +1,6 @@
 package telegram
 
-// Waiting for the agent gate (runner/gate.go, D023). When a streamed
+// Waiting for the agent gate (runner/gate.go, D026). When a streamed
 // turn cannot start its agent at once (all agent slots taken, or the
 // host is short of memory), the runner calls the turn's WaitNotice once,
 // before it blocks. The notice shows the wait where the turn's output

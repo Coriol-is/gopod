@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// AgentLimits are the admission settings (D023), read by internal/config.
+// AgentLimits are the admission settings (D026), read by internal/config.
 type AgentLimits struct {
 	MaxAgents      int // agents running at once; < 1 means 1
 	MinAvailableMB int // MemAvailable a start needs; 0 disables the check
@@ -29,8 +29,8 @@ const nodeOptionsEnv = "NODE_OPTIONS"
 // here rather than forwarded from the host (D012 does not apply). A
 // NODE_OPTIONS the container already has (forwarded through the env
 // allowlist) is merged, since the exec's value replaces the container's.
-func (r *Runner) agentExecEnv(chatFolder string, prov AgentProvider) ([]string, func()) {
-	env, release := r.agentEnv(chatFolder)
+func (r *Runner) agentExecEnv(chatFolder string, thread int, prov AgentProvider) ([]string, func()) {
+	env, release := r.agentEnv(chatFolder, thread)
 	if r.nodeHeapMB <= 0 || prov.Name() != "claude" {
 		return env, release
 	}

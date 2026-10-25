@@ -234,7 +234,7 @@ func newStreamTestRunner(t *testing.T) *streamTestRunner {
 		compactAfter: 30,
 		memory:       nopMemory{},
 	}
-	r.SetExtractFn(func(_ context.Context, _, _, reply string) { extracts <- reply })
+	r.SetExtractFn(func(_ context.Context, _ string, _ int, _, reply string) { extracts <- reply })
 	return &streamTestRunner{r: r, fx: fx, extracts: extracts}
 }
 

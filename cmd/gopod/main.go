@@ -262,8 +262,9 @@ func run() error {
 				// Phase A: extraction callback. After each agent turn,
 				// sends the conversation through an extraction prompt
 				// to Claude, stores structured facts. Uses the same
-				// runner.Run as taskPromptFn for the LLM call.
-				r.SetExtractFn(func(ctx context.Context, chatFolder, userMsg, agentReply string) {
+				// runner.Run as taskPromptFn for the LLM call. Facts are
+				// stored in the turn's conversation (D023).
+				r.SetExtractFn(func(ctx context.Context, chatFolder string, thread int, userMsg, agentReply string) {
 					promptFn := func(c context.Context, f, p string) (string, error) {
 						return r.RunFresh(c, f, runner.TierRegistered, allowlist, p)
 					}
@@ -273,9 +274,10 @@ func run() error {
 						return
 					}
 					if len(facts) > 0 {
-						agentMemory.IngestExtracted(ctx, chatFolder, facts)
+						agentMemory.IngestExtracted(ctx, chatFolder, thread, facts)
 						runLog.Debug("extracted facts from turn",
 							slog.String("chat", chatFolder),
+							slog.Int("thread", thread),
 							slog.Int("facts", len(facts)))
 					}
 				})

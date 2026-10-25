@@ -841,9 +841,46 @@ hang shutdown. Spec:
 
 **Consequences.** Parallel execution of threads is *not* built: it is an optional research track (two agents in one container sharing `$HOME` are unverified; fallback is the current sequential queue). Open items: compaction summarises via `RunFresh` without the conversation's history (pre-existing, so `/compact` effectively clears); `/provider` still clears the main session; a `/login` code is accepted from any thread of the chat; `ClearSession` during a Codex first turn is a no-op; closed or deleted topics are never cleaned up. Requires topics ("Threaded mode") enabled for the bot in @BotFather. Spec: [superpowers/specs/2026-10-24-telegram-threads-and-drafts-design.md](superpowers/specs/2026-10-24-telegram-threads-and-drafts-design.md).
 
+## D023 — Extracted memories are scoped per conversation
+
+**Date:** 2026-10-25
+**Status:** Accepted
+**Narrows:** D022 ("facts/pinned/preferences memory stay per chat") and the same line of the threads spec
+
+**Context.** After D022 only `conversation_summary` rows were per conversation. Facts, decisions, preferences and hypotheses extracted after every turn were stored chat-wide (thread 0) and the context compiler injected them into every conversation of the chat, so what was said in one thread showed up in a sibling thread.
+
+**Decision.**
+- Manual and pinned memories stay shared: `Memory.Add`, the agent's `/memory/add` (whatever thread the agent runs in), the remember commands and other manual writes keep storing thread 0, and thread 0 rows (pinned or not) are visible to every conversation of the chat. Memories the agent or owner saves on purpose are meant for the whole chat.
+- Extracted memories are per conversation: the runner's extraction callback carries the turn's thread (`Run` and `RunStream`), and `IngestExtracted` stores every extracted kind with that `thread_id`. `AddInThread` keeps the thread for every kind (no coercion to 0).
+- Visibility rule for every agent-facing read: conversation T != 0 sees rows with `thread_id IN (0, T)`; main (T = 0) is the chat-wide aggregate and sees every row of the chat; a row born in thread A is never visible to a sibling thread B. It applies to every compiler slot (pinned, recent decisions, semantic preferences and facts), the fallback search (vector and FTS), and the agent's memory HTTP API (`/memory/search`, `/memory/list`).
+- The memory API learns the thread from its capability: tokens are minted per agent run for `(chat, thread)` (system runs such as `RunFresh` get thread 0), and the API never takes the thread from request data. `/memory/list` returns active rows only.
+- `conversation_summary` is only ever visible to its own conversation: in the compiler, in the reserved slot (never from the fallback); in the API, only the caller's own conversation's summary (main does not see threads' summaries).
+- The 0.92-similarity dedup and the extractor's `supersedes_keyword` only match rows of the same `thread_id`, so one conversation never rewrites, re-kinds or retires another's row (a thread fact never overwrites a main row and vice versa).
+- Owner-facing reads stay chat-wide: the control memory commands (`/recall` via `SearchText`, `List`) and `ArchiveStale`. The owner never holds a memory capability.
+
+**Consequences.** Rows that existed before this change keep `thread_id = 0` and stay shared; facts already extracted from threads cannot be told apart from main's. Facts learned in a thread reach other threads only through main or a manual/pinned copy. An agent in a thread that saves a memory with `/memory/add` shares it with every conversation of the chat by design.
+
+## D025 — Long code in final replies
+
+**Date:** 2026-10-25
+**Status:** Accepted
+**Extends:** D021 (native streaming)
+
+**Context.** A code-heavy answer floods a Telegram chat: every line is shown, and the 4000-byte chunker split HTML on newlines without regard to tags, so a `<pre>` cut across two messages was rejected and fell back to plain text. Spec part 3: [superpowers/specs/2026-10-25-coding-output-design.md](superpowers/specs/2026-10-25-coding-output-design.md).
+
+**Decision.**
+- Only the agent's final reply is affected (draft-path final, edit-path final, overflow reply, sync path, drain fallback, `finishStopped`, the reply redirected to main from a gone topic); all of them go through `sendFinal`. Command and system replies keep `sendFormatted`/`markdownToTelegramHTML` unchanged.
+- A fenced block over 12 lines renders as `<blockquote expandable><pre>…</pre></blockquote>` (`finalReplyHTML`). The Bot API prose is vague on `pre` inside a quote; TDLib's validator, which the Bot API server runs, allows it ("Pre and Code can't be part of other entities, except blockquote"). The plain-text fallback on rejected markup stays.
+- A block over 60 lines or 3000 characters is sent as a document first (`sendDocument`, name from the fence language: `snippet.go`, `snippet-2.py`, unknown → `.txt`), and the text carries `📎 snippet.go (N lines)` in its place. A failed upload keeps the block inline (collapsed). Documents honour `message_thread_id` and the topic-gone fallback to main.
+- The turn's reply id (D020) is the text message, never a document. The transcript (`recordReply`) stores the agent's original text, code included.
+- The HTML chunker (`chunkHTML`) never cuts inside a tag, entity or UTF-8 sequence, and closes elements open at a boundary and reopens them (attributes kept) in the next chunk.
+- The voice reply drops fenced blocks before TTS.
+
+**Consequences.** If the text fails after documents went out and the queue retries the turn, the documents are sent again (accepted duplicate). On the edit path, when the final edit is lost and the reply goes to main, the stored transcript has the notes instead of the code. Documents are not memoized on the turn row. Live check pending: that Telegram renders the quoted `pre` collapsed and accepts it in every client.
+
 ---
 
-## D023 — Agent admission control
+## D026 — Agent admission control
 
 **Date:** 2026-10-25
 **Status:** Accepted
@@ -856,7 +893,7 @@ hang shutdown. Spec:
 - A start also needs host `MemAvailable` (`/proc/meminfo`) >= `GOPOD_MIN_AVAILABLE_MB` (default 900, 0 = off), re-read every 2 s. Unreadable = sufficient. On an idle system (no agent running) the memory wait is bounded at 60 s, then the start proceeds with a Warn.
 - Acquire order: queue slot -> per-chat agent slot -> gate. Nothing takes a queue or chat slot while holding the gate, background runs hold neither, every wait honours ctx. A streamed turn holds its gate slot until its process has exited or been killed. The queue's `DefaultMaxConcurrent` (3) stays; the gate is the authority.
 - Execs that do not call the model are not gated: auth status, session lookups, pid-file removal and kill, version probes, `/login`.
-- The wait is shown to the user: the runner calls a `WaitNotice` carried in the run context once; Telegram shows `⏳ ждёт свободный слот агента…` / `⏳ ждёт свободную память…` as a stoppable draft, or as the early placeholder on the edit path. A Stop while waiting ends the turn `stopped` (it used to fall back to the sync path and run the agent).
+- The wait is shown to the user: the runner calls a `WaitNotice` carried in the run context once; Telegram shows `⏳ ждёт свободный слот агента…` / `⏳ ждёт свободную память…` as a stoppable draft (re-sent every 20 s while waiting, since drafts expire after ~30 s), or as the early placeholder on the edit path. A Stop while waiting ends the turn `stopped` (it used to fall back to the sync path and run the agent).
 - Soft per-agent cap: Claude agent execs get `NODE_OPTIONS=--max-old-space-size=GOPOD_AGENT_NODE_HEAP_MB` (default 768, 0 = off), merged into an existing `NODE_OPTIONS`; not for Codex. Not a secret, so set by the runner (D012's forwarding rules do not apply).
 
 **Rejected.** Limiting containers instead of running agents (idle containers cost almost nothing); making `RunStream`/`Run` take an extra callback parameter (the context value keeps signatures stable); gopod metrics `gopod_agents_running/waiting` (the catalog is checked against OBSERVABILITY.md §2.3 and the runner is not instrumented yet).

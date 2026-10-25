@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// Agent admission control (D023, ROADMAP T8).
+// Agent admission control (D026, ROADMAP T8).
 //
 // RAM on the deploy host is spent by running agents, not by idle
 // containers, so every start of an agent process (Run, RunStream,

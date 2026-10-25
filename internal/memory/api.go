@@ -26,8 +26,10 @@ import (
 // the LAN, if the port is published) can connect. Authorization is
 // therefore a per-exec capability token (CP-001): the runner mints one
 // per agent run, passes it in the exec environment as CapabilityEnv,
-// and the API resolves the chat from the token. Request data never
-// names the chat.
+// and the API resolves the conversation (chat, thread) from the token.
+// Request data never names either. Reads follow the D023 visibility
+// rule for that thread; /memory/add always writes thread 0 (shared).
+// Owner-facing listings (control commands) do not go through here.
 type APIServer struct {
 	mem    memoryOps
 	tokens *Tokens
@@ -38,9 +40,9 @@ type APIServer struct {
 // memoryOps is the slice of *Memory the API uses; declared here so the
 // handlers can be tested against a fake.
 type memoryOps interface {
-	Search(ctx context.Context, chatFolder, query string, k int) ([]Item, error)
+	SearchInThread(ctx context.Context, chatFolder string, thread int, query string, k int) ([]Item, error)
 	Add(ctx context.Context, chatFolder, kind, title, content, source string) (int64, error)
-	List(ctx context.Context, chatFolder string, limit int) ([]Item, error)
+	ListInThread(ctx context.Context, chatFolder string, thread int, limit int) ([]Item, error)
 }
 
 // NewAPIServer creates a memory API server. addr is the listen
@@ -76,12 +78,13 @@ func newAPIServer(mem memoryOps, addr string, tokens *Tokens, log *slog.Logger) 
 	return s
 }
 
-// chatHandler is an HTTP handler that already knows which chat the
-// capability belongs to.
-type chatHandler func(w http.ResponseWriter, r *http.Request, chat string)
+// chatHandler is an HTTP handler that already knows which conversation
+// (chat, thread) the capability belongs to.
+type chatHandler func(w http.ResponseWriter, r *http.Request, chat string, thread int)
 
-// withChat resolves the bearer capability to a chat folder and rejects
-// everything else with 401. The chat is the only authorization input.
+// withChat resolves the bearer capability to a conversation and rejects
+// everything else with 401. The capability is the only authorization
+// input.
 func (s *APIServer) withChat(h chatHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		auth := r.Header.Get("Authorization")
@@ -90,12 +93,12 @@ func (s *APIServer) withChat(h chatHandler) http.HandlerFunc {
 			http.Error(w, `{"error":"missing capability: send Authorization: Bearer $`+CapabilityEnv+`"}`, http.StatusUnauthorized)
 			return
 		}
-		chat, ok := s.tokens.Lookup(strings.TrimSpace(tok))
+		chat, thread, ok := s.tokens.Lookup(strings.TrimSpace(tok))
 		if !ok {
 			http.Error(w, `{"error":"invalid or expired capability"}`, http.StatusUnauthorized)
 			return
 		}
-		h(w, r, chat)
+		h(w, r, chat, thread)
 	}
 }
 
@@ -114,7 +117,7 @@ func (s *APIServer) Shutdown(ctx context.Context) error {
 	return s.server.Shutdown(ctx)
 }
 
-func (s *APIServer) handleSearch(w http.ResponseWriter, r *http.Request, chat string) {
+func (s *APIServer) handleSearch(w http.ResponseWriter, r *http.Request, chat string, thread int) {
 	q := r.URL.Query().Get("q")
 	k, _ := strconv.Atoi(r.URL.Query().Get("k"))
 	if k <= 0 {
@@ -125,7 +128,7 @@ func (s *APIServer) handleSearch(w http.ResponseWriter, r *http.Request, chat st
 		return
 	}
 
-	items, err := s.mem.Search(r.Context(), chat, q, k)
+	items, err := s.mem.SearchInThread(r.Context(), chat, thread, q, k)
 	if err != nil {
 		s.log.Error("memory api: search", slog.Any("err", err))
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err), http.StatusInternalServerError)
@@ -146,7 +149,10 @@ func (s *APIServer) handleSearch(w http.ResponseWriter, r *http.Request, chat st
 	writeJSON(w, results)
 }
 
-func (s *APIServer) handleAdd(w http.ResponseWriter, r *http.Request, chat string) {
+// handleAdd stores in thread 0 whatever the caller's thread: memories
+// the agent saves on purpose are shared by the chat's conversations
+// (D023).
+func (s *APIServer) handleAdd(w http.ResponseWriter, r *http.Request, chat string, _ int) {
 	if r.Method != http.MethodPost {
 		http.Error(w, `{"error":"POST required"}`, http.StatusMethodNotAllowed)
 		return
@@ -183,13 +189,13 @@ func (s *APIServer) handleAdd(w http.ResponseWriter, r *http.Request, chat strin
 	writeJSON(w, map[string]any{"id": id})
 }
 
-func (s *APIServer) handleList(w http.ResponseWriter, r *http.Request, chat string) {
+func (s *APIServer) handleList(w http.ResponseWriter, r *http.Request, chat string, thread int) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	if limit <= 0 {
 		limit = 20
 	}
 
-	items, err := s.mem.List(r.Context(), chat, limit)
+	items, err := s.mem.ListInThread(r.Context(), chat, thread, limit)
 	if err != nil {
 		s.log.Error("memory api: list", slog.Any("err", err))
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err), http.StatusInternalServerError)

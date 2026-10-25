@@ -120,7 +120,7 @@ type Config struct {
 	// Default: true. Set GOPOD_STREAM_ENABLED=false to disable.
 	StreamEnabled bool
 
-	// --- Agent admission control (D023) ---
+	// --- Agent admission control (D026) ---
 
 	// MaxAgents caps agent processes running at once across all chats.
 	// GOPOD_MAX_AGENTS, default 2, at least 1.

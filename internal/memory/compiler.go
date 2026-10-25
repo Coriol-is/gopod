@@ -34,8 +34,10 @@ var DefaultBudget = ContextBudget{
 // preferences and facts). Only if the structured slots under-fill
 // does it use a raw semantic fallback.
 //
-// Only the conversation_summary slot is scoped to thread (0 = main
-// conversation); every other slot is chat-wide.
+// Every slot reads only the rows conversation thread may see (D023,
+// visibleIn): main (thread 0) sees the whole chat, a thread sees thread
+// 0 rows plus its own, never a sibling thread's. The
+// conversation_summary slot is stricter: own conversation only.
 //
 // Returns "" if no relevant memories exist (agent runs context-free).
 func (m *Memory) CompileContext(ctx context.Context, chatFolder string, thread int, query string, budget ContextBudget) string {
@@ -50,25 +52,25 @@ func (m *Memory) CompileContext(ctx context.Context, chatFolder string, thread i
 
 	// 1. Pinned memories (always included regardless of query).
 	if budget.Pinned > 0 {
-		pinned := m.fetchPinned(ctx, chatFolder, budget.Pinned)
+		pinned := m.fetchPinned(ctx, chatFolder, thread, budget.Pinned)
 		selected = append(selected, pinned...)
 	}
 
 	// 2. Recent decisions (last 7 days).
 	if budget.Decisions > 0 {
-		decisions := m.fetchRecentByKind(ctx, chatFolder, 0, "decision", 7, budget.Decisions)
+		decisions := m.fetchRecentByKind(ctx, chatFolder, thread, "decision", 7, budget.Decisions)
 		selected = append(selected, dedupItems(selected, decisions)...)
 	}
 
 	// 3. Query-relevant preferences.
 	if budget.Preferences > 0 && query != "" {
-		prefs := m.fetchByKindSemantic(ctx, chatFolder, "preference", query, budget.Preferences)
+		prefs := m.fetchByKindSemantic(ctx, chatFolder, thread, "preference", query, budget.Preferences)
 		selected = append(selected, dedupItems(selected, prefs)...)
 	}
 
 	// 4. Query-relevant facts.
 	if budget.Facts > 0 && query != "" {
-		facts := m.fetchByKindSemantic(ctx, chatFolder, "fact", query, budget.Facts)
+		facts := m.fetchByKindSemantic(ctx, chatFolder, thread, "fact", query, budget.Facts)
 		selected = append(selected, dedupItems(selected, facts)...)
 	}
 
@@ -77,10 +79,11 @@ func (m *Memory) CompileContext(ctx context.Context, chatFolder string, thread i
 	total := budget.Pinned + budget.Decisions + budget.Preferences + budget.Facts
 	if len(selected) < total && budget.Fallback > 0 && query != "" {
 		remaining := total - len(selected) + budget.Fallback
-		fallback, _ := m.Search(ctx, chatFolder, query, remaining)
+		fallback, _ := m.SearchInThread(ctx, chatFolder, thread, query, remaining)
 		for _, f := range fallback {
-			// Summaries come only from the reserved, thread-scoped slot;
-			// the broad search spans threads and would leak them.
+			// Summaries come only from the reserved, own-conversation
+			// slot; the search sees main's (and, from main, every
+			// thread's) rows and would leak them.
 			if f.Kind == "conversation_summary" {
 				continue
 			}
@@ -95,15 +98,18 @@ func (m *Memory) CompileContext(ctx context.Context, chatFolder string, thread i
 	return formatContextBlock(selected)
 }
 
-func (m *Memory) fetchPinned(ctx context.Context, chatFolder string, limit int) []Item {
+func (m *Memory) fetchPinned(ctx context.Context, chatFolder string, thread int, limit int) []Item {
+	vis, visArgs := visibleIn("", thread)
+	args := append([]any{chatFolder}, visArgs...)
+	args = append(args, limit)
 	rows, err := m.store.DB().QueryContext(ctx, `
 		SELECT id, chat_folder, kind, IFNULL(title,''), content, IFNULL(source,''), created_at
 		  FROM memories
 		 WHERE chat_folder = ?
 		   AND IFNULL(status,'active') = 'active'
-		   AND pinned = 1
+		   AND pinned = 1`+vis+`
 		 ORDER BY created_at DESC
-		 LIMIT ?`, chatFolder, limit)
+		 LIMIT ?`, args...)
 	if err != nil {
 		return nil
 	}
@@ -112,8 +118,8 @@ func (m *Memory) fetchPinned(ctx context.Context, chatFolder string, limit int) 
 	return items
 }
 
-// fetchRecentByKind returns recent active items of one kind. thread
-// only applies to conversation_summary; other kinds are chat-wide.
+// fetchRecentByKind returns recent active items of one kind visible to
+// conversation thread. conversation_summary is limited to thread itself.
 func (m *Memory) fetchRecentByKind(ctx context.Context, chatFolder string, thread int, kind string, days, limit int) []Item {
 	cutoff := time.Now().Add(-time.Duration(days) * 24 * time.Hour).UnixMilli()
 	q := `
@@ -127,6 +133,10 @@ func (m *Memory) fetchRecentByKind(ctx context.Context, chatFolder string, threa
 	if kind == "conversation_summary" {
 		q += ` AND thread_id = ?`
 		args = append(args, thread)
+	} else {
+		vis, visArgs := visibleIn("", thread)
+		q += vis
+		args = append(args, visArgs...)
 	}
 	q += ` ORDER BY created_at DESC LIMIT ?`
 	args = append(args, limit)
@@ -139,12 +149,14 @@ func (m *Memory) fetchRecentByKind(ctx context.Context, chatFolder string, threa
 	return items
 }
 
-func (m *Memory) fetchByKindSemantic(ctx context.Context, chatFolder, kind, query string, limit int) []Item {
+func (m *Memory) fetchByKindSemantic(ctx context.Context, chatFolder string, thread int, kind, query string, limit int) []Item {
 	// Embed the query, then KNN search filtered by kind.
 	vecs, err := m.embedder.Embed(ctx, []string{query})
 	if err != nil || len(vecs) == 0 {
 		return nil
 	}
+	vis, visArgs := visibleIn("m", thread)
+	args := append([]any{float32sToBlob(vecs[0]), limit * 3, chatFolder, kind}, visArgs...)
 	rows, err := m.store.DB().QueryContext(ctx, `
 		SELECT m.id, m.chat_folder, m.kind, IFNULL(m.title,''), m.content,
 		       IFNULL(m.source,''), m.created_at, v.distance
@@ -154,9 +166,8 @@ func (m *Memory) fetchByKindSemantic(ctx context.Context, chatFolder, kind, quer
 		   AND v.k = ?
 		   AND m.chat_folder = ?
 		   AND m.kind = ?
-		   AND IFNULL(m.status,'active') = 'active'
-		 ORDER BY v.distance ASC`,
-		float32sToBlob(vecs[0]), limit*3, chatFolder, kind)
+		   AND IFNULL(m.status,'active') = 'active'`+vis+`
+		 ORDER BY v.distance ASC`, args...)
 	if err != nil {
 		return nil
 	}

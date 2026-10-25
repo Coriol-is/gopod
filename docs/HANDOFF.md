@@ -26,6 +26,10 @@ Also: CI workflow `.github/workflows/ci.yml` and the PR-based git flow in
 CLAUDE.md (main's ruleset needs 1 approval; PRs are merged with
 `gh pr merge --squash --admin`).
 **Before deploying, run the live checklist** (next section, item 00).
+**2026-10-25:** extracted memories are now scoped per conversation
+([D023](DECISIONS.md#d023--extracted-memories-are-scoped-per-conversation)):
+a thread sees main/manual/pinned rows plus its own, main sees all; existing
+rows stay shared (thread 0).
 **Previous session (2026-10-05):** production deploy + Codex harness.
 `main` (`b254e01`) is deployed on the production host via `docker compose`
 (data at `/opt/gopod/data`, live owner workspace at
@@ -313,6 +317,13 @@ Replaces env var secret injection — agents never see real keys.
 8 sub-steps (G1–G8), G1∥G2 can start in parallel.
 See [GATEWAY.md](GATEWAY.md) for full architecture.
 
+**Long code in final replies** ([D025](DECISIONS.md), spec part 3, branch
+`feat/collapse-long-code`): final replies collapse fenced blocks over 12
+lines into an expandable quote, send blocks over 60 lines / 3000 chars as
+documents (`internal/telegram/longcode.go`, `document.go`) with a note in
+the text, and the HTML chunker is tag-aware (`chunkhtml.go`). Live check
+pending: a 20-line and a 100-line block in a private chat and in a topic.
+
 ## What's next (in order — per [D018](DECISIONS.md))
 
 00. **Live checklist for the 2026-10-24 work** (nothing below has been run
@@ -574,7 +585,14 @@ don't get lost.)
   agent turn with a tool peaks at ~0.5-0.6 GB RSS; the host has ~1.8 GB
   available.
 
-- **Agent admission control landed (ROADMAP T8, D023, branch
+- **Deploy housekeeping (2026-10-25).** The deploy host (Raspberry Pi 4B,
+  117 GB disk) had 24.6 GB of Docker build cache, growing with every
+  `docker compose build`. After each deploy run `docker image prune -f` and
+  `docker builder prune -f --filter until=168h` (README, "Production
+  deployment"). Other projects' images on that host (nanoclaw, codex
+  assistant, honcho) are not gopod's: do not prune them.
+
+- **Agent admission control landed (ROADMAP T8, D026, branch
   feat/agent-gate, 2026-10-25).** Global agent gate in
   `internal/runner/gate.go` (Run/RunStream interactive, RunFresh
   background; `GOPOD_MAX_AGENTS`=2), MemAvailable check
