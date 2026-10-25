@@ -79,3 +79,20 @@ Security Review Progress:
 - [x] Step 3: Sweep current Sonar annotations and source call sites.
 - [x] Step 4: Triage source reachability, authorization and impact.
 - [x] Step 5: Record findings, limits and recommended disposition.
+
+## Follow-up fix
+
+Commit `9016ea1` removes the generic `capture(argv)` API entirely. Its replacement,
+`CanaryRuntime`, generates its own container namespace and exposes only typed
+create/start/version/auth/new/resume operations with lifecycle checks. Callers
+cannot supply an executable, container target or Docker flag array. Provider,
+image references, canonical mount paths and session UUIDs are validated; mount
+paths reject CSV syntax characters. Prompt data remains bounded stdin.
+
+The complex event parser is split into focused helpers, and exception assertions
+contain only the call under test. An independent reviewer approved this exact
+code revision for experimental use. No suppression or issue-status override was
+used; the updated source is submitted to the normal Sonar/CI checks.
+
+The False Positive disposition above describes the old reviewed revision, not
+a request to waive the gate on the replacement implementation.
