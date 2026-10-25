@@ -957,6 +957,34 @@ hang shutdown. Spec:
 
 ---
 
+## D030 — Preserve conversation continuity across manual provider changes
+
+**Date:** 2026-10-25
+**Status:** Accepted
+**Supersedes:** D022's provider switch clears main; narrows D028's destructive provider confirmation wording
+
+**Context.** The owner requested seamless manual switching, including thread
+isolation, before considering quota fallback. Provider CLI sessions are
+incompatible; the exhausted provider may be unable to summarize its history.
+
+**Decision.** Preserve native sessions on provider changes. Store a neutral
+SQLite transcript per `(chat folder, thread)` and replay a bounded JSON tail
+as historical data in the next provider's user prompt. Successful answers and
+the last successful provider are stored atomically. Switching waits for the
+chat's agent slot, checks container cleanup, and persists provider/model choice.
+`/clear` invalidates neutral history and all provider session mappings in its
+own thread; main and sibling threads remain isolated. Existing scoped memory
+continues to supply its normal context.
+
+**Consequences.** Manual switches require no call to the old model. Recent
+user/assistant context crosses harnesses and survives restart; full native tool
+state, old truncated detail and stopped partial replies do not. `/clear`
+retains native files and the existing audit history but never resumes them.
+Provider selection stays per chat. Automatic quota fallback is not implemented.
+Spec: [provider continuity](superpowers/specs/2026-10-25-provider-continuity.md).
+
+---
+
 ## Template for new ADRs
 
 ```

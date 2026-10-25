@@ -48,8 +48,8 @@ with the replay count (one notice per 2 minutes). `GOPOD_NOTIFY_LIFECYCLE=0`
 disables; compose `stop_grace_period: 30s`. Not verified live: on the Pi a
 `docker compose up -d` recreate should show both messages, and
 `docker kill -s KILL <container>` then `docker compose up -d` the crash one.
-**2026-10-25:** dynamic UX phase 4 (branch `feat/ux-phase4`, PR open, not
-merged, not verified live; checklist 0X): `control.Response.Buttons`
+**2026-10-25:** dynamic UX phase 4 (PR #29 merged at `d6f0e13`, not
+deployed or verified live; checklist 0X): `control.Response.Buttons`
 ([D028](DECISIONS.md)), `/model` and `/provider` pickers, confirmations for
 `/clear` and `/provider <name>` (`control.Confirm`, `CodeConfirm`), paged
 long command replies. Command buttons are in-memory tokens (`cc:`/`cf:`/
@@ -337,13 +337,19 @@ Additional completed work (post-milestone):
 
 ## What's in progress
 
-**Dynamic Telegram UX phase 4:** PR #29 (`feat/ux-phase4`) has review fixes
-and merges current main (`51cc974`, including PR #28 input context and
-PR #30 usage-limit handling). Integration build, vet, all tests and the control/Telegram race suite pass;
-independent review and CI gate its merge. No live phase 4 or phase 6 acceptance is claimed.
-Phase 6 is merged; its remaining work is the live checklist 0Y. The quota
-classification fix is merged; live recovery after the allowance resets
-remains unverified.
+**Provider continuity (CP-009, D030):** manual switching implemented with
+independent review, build/vet/full tests and targeted race tests. Native sessions
+are preserved, each `(chat folder, thread)` gets its own bounded recent
+user/assistant transcript in the new provider's prompt, and switching waits
+for an active run. `/clear` invalidates history and both provider session
+mappings in that thread only. Full transcript/tool-state migration and automatic
+quota fallback are out of scope. Tests use real SQLite and fake CLI processes;
+no live Claude/Codex switching or Pi deployment has been done.
+
+**Dynamic Telegram UX phases 4 and 6:** PR #29 (`d6f0e13`) and PR #28
+(`51cc974`) are merged after independent review and green CI. Live checklists
+0X/0Y remain open; PR #30 quota classification is also merged (`5a9af2a`).
+Live recovery after the allowance reset remains unverified.
 
 **Phase 7 — Streaming output** ([STREAMING.md](STREAMING.md)). ✅ **Done.**
 
@@ -488,6 +494,17 @@ pending: a 20-line and a 100-line block in a private chat and in a topic.
    second message in the same thread, keeps 👀); earlier messages of a
    batched turn keep 👀; elapsed time counts from the agent start, not from
    receipt; stall timers are not stopped by a shutdown mid-turn.
+0Z. **Manual provider continuity (CP-009, D030).** After deployment, establish
+   distinct facts/tasks in main and two private topics. Switch Claude → Codex,
+   ask each topic to continue and verify its own recent details and shared
+   files without sibling/main leakage. Switch back; verify native session ids
+   are retained and work performed with Codex is included. Restart gopod and
+   repeat. `/clear` topic A, switch both ways, verify A stays cleared while main
+   and topic B continue. During a slow turn, confirm a provider switch waits
+   for completion. A quota rejection must not require the old model to produce
+   a summary. Record the 48-message/3000-character/48000-byte bound: this is
+   recent-context continuity, not complete native tool transcript migration.
+
 0X. **Live checklist for dynamic Telegram UX, phase 4** (branch
    `feat/ux-phase4`; spec F7-F9, plan Tasks 9-11,
    [D028](DECISIONS.md), CONTROL.md §6.1; nothing run on a real bot yet;

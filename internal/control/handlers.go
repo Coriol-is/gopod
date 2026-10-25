@@ -155,12 +155,12 @@ func RegisterVoiceCommand(r *Router, setMode func(chatID int64, mode string)) {
 }
 
 // ProviderSwitchFunc is the callback for /provider command.
-type ProviderSwitchFunc func(chatFolder, providerName string) (string, error)
+type ProviderSwitchFunc func(ctx context.Context, chatFolder, providerName string) (string, error)
 
 // RegisterProviderCommand adds /provider for per-chat agent switching.
 // currentFn returns the chat's provider name; names are the providers a
 // picker offers. With no args /provider answers with a picker; a switch
-// clears the main conversation, so it asks to confirm first (D028).
+// affects the entire chat, so it asks to confirm first (D028/D030).
 func RegisterProviderCommand(r *Router, switchFn ProviderSwitchFunc, currentFn func(chatFolder string) string, names []string, chatFolderLookup func(chatID int64) string) {
 	r.Register("provider", "provider", "switch agent provider (claude, codex)", PermChatLocal,
 		func(ctx context.Context, cmd Command) (Response, error) {
@@ -171,12 +171,12 @@ func RegisterProviderCommand(r *Router, switchFn ProviderSwitchFunc, currentFn f
 			if len(cmd.Args) == 0 {
 				cur := currentFn(folder)
 				return Response{
-					Text:    "Current provider: " + cur + "\n\nUsage: /provider <name>\n\n/provider claude — Claude Code CLI (default)\n/provider codex — OpenAI Codex CLI\n\nSwitching clears the main conversation.",
+					Text:    "Current provider: " + cur + "\n\nUsage: /provider <name>\n\n/provider claude — Claude Code CLI (default)\n/provider codex — OpenAI Codex CLI\n\nSwitching preserves sessions and transfers recent context separately for each conversation.",
 					Buttons: pickerButtons("provider", names, cur),
 				}, nil
 			}
 			// Validate before asking: an unknown name or the current
-			// provider must not cost a confirmation (or a cleared session).
+			// provider must not cost a confirmation (or a provider change).
 			if !slices.Contains(names, cmd.Args[0]) {
 				return Response{
 					Text: fmt.Sprintf("unknown provider %q (available: %s)", cmd.Args[0], strings.Join(names, ", ")),
@@ -187,9 +187,9 @@ func RegisterProviderCommand(r *Router, switchFn ProviderSwitchFunc, currentFn f
 				return Response{Text: "Already using " + cmd.Args[0] + ". Nothing changed."}, nil
 			}
 			if !cmd.Confirmed {
-				return Confirm(cmd, "Switch this chat to "+cmd.Args[0]+"? The main conversation is cleared."), nil
+				return Confirm(cmd, "Switch this chat to "+cmd.Args[0]+"? Conversations keep their recent context."), nil
 			}
-			result, err := switchFn(folder, cmd.Args[0])
+			result, err := switchFn(ctx, folder, cmd.Args[0])
 			if err != nil {
 				return Response{Text: err.Error(), Code: 1}, nil
 			}

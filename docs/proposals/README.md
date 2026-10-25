@@ -77,3 +77,4 @@ Bullet list someone else can verify.
 | [CP-006](CP-006-yielding-maintenance-and-quiet-hours.md) | Maintenance yields to the user; quiet hours | proposed | S |
 | [CP-007](CP-007-store-backups.md) | Scheduled store backups on the production host | proposed | S |
 | [CP-008](CP-008-model-per-chat.md) | `/model` per chat | accepted | S |
+| [CP-009](CP-009-provider-continuity.md) | Continue conversations across providers | done | M |
