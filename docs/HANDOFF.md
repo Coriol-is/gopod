@@ -67,6 +67,11 @@ command replies and errors private, including every callback/page/failure path;
 there is no implementation or privacy-flag activation yet.
 
 ## What's in progress
+CP-017 [execution plan](superpowers/plans/2026-10-25-telegram-capability-diagnostics.md)
+is prepared in five tasks: safe DM tracer, cache, reports/help, integration, release.
+Initial scope is private-DM only until CP-019; no new query handlers or subscriptions.
+Planning does not change the accepted CP status or start implementation.
+
 No unmerged feature implementation is active. PR #43 is merged and deployed.
 The live extraction stall is addressed by a one-minute system-run deadline and
 same-chat foreground preemption; buffered user/system cancellation waits for a
