@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	"github.com/go-telegram/bot"
@@ -83,6 +84,16 @@ type cbQuery struct {
 	UserID    int64
 	Chat      store.RegisteredChat
 	Data      cbData
+	// answer answers the query now (once); nil outside the dispatcher.
+	answer func(toast string)
+}
+
+// answerNow answers the query before a slow action, so the client's
+// spinner stops; the dispatcher's final answer is then skipped.
+func (q cbQuery) answerNow(toast string) {
+	if q.answer != nil {
+		q.answer(toast)
+	}
 }
 
 // cbHandler acts on a pressed button. toast is shown to the user; on an
@@ -130,19 +141,25 @@ func (b *Bot) callbackHandler(ctx context.Context, _ *bot.Bot, upd *models.Updat
 	}
 	cq := upd.CallbackQuery
 	toast := ""
+	// answer answers the query once: early, from a handler about to run
+	// something slow (cbQuery.answerNow), or at the end.
+	var once sync.Once
+	answer := func(t string) { once.Do(func() { b.answerCallback(ctx, cq.ID, t) }) }
 	defer func() {
 		if r := recover(); r != nil {
 			b.log.Error("callback handler panicked",
 				slog.String("data", cq.Data), slog.Any("panic", r))
 			toast = cbToastFailed
 		}
-		b.answerCallback(ctx, cq.ID, toast)
+		answer(toast)
 	}()
-	toast = b.dispatchCallback(ctx, cq)
+	toast = b.dispatchCallback(ctx, cq, answer)
 }
 
 // dispatchCallback resolves and runs one callback, returning its toast.
-func (b *Bot) dispatchCallback(ctx context.Context, cq *models.CallbackQuery) string {
+// answer answers the query early (once); the toast of a handler that
+// used it is dropped.
+func (b *Bot) dispatchCallback(ctx context.Context, cq *models.CallbackQuery, answer func(string)) string {
 	data, ok := decodeCB(cq.Data)
 	if !ok {
 		return cbToastExpired
@@ -174,6 +191,7 @@ func (b *Bot) dispatchCallback(ctx context.Context, cq *models.CallbackQuery) st
 		UserID:    cq.From.ID,
 		Chat:      rc,
 		Data:      data,
+		answer:    answer,
 	}
 	toast, err := h(ctx, q)
 	if err != nil {

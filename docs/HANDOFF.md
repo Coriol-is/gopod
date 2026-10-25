@@ -12,7 +12,7 @@
 **Phase:** Core complete. gopod is a working personal Telegram
 Claude assistant with session continuity, long-term memory, voice,
 vision, scheduling, and multi-provider architecture ready for Codex.
-**Last updated:** 2026-10-24
+**Last updated:** 2026-10-25
 **Last working session (2026-10-24):** Telegram chat-UI parity, built
 autonomously through worktrees and PRs #3–#10 (agent implementer + separate
 reviewer per task, CI green, admin squash-merge). On `main`, **not deployed
@@ -44,7 +44,13 @@ merged, not verified live; checklist 0X): `control.Response.Buttons`
 `/clear` and `/provider <name>` (`control.Confirm`, `CodeConfirm`), paged
 long command replies. Command buttons are in-memory tokens (`cc:`/`cf:`/
 `cx:`/`pg:`), dispatched through the Router (`internal/telegram/cmdbuttons.go`,
-`pages.go`).
+`pages.go`). Review fixes resumed after the Claude session limit:
+pages are budgeted at 3800 rendered HTML bytes (including fence balancing),
+so Cyrillic/escaped output stays one message. Slow command callbacks are
+answered before dispatch; failed/spent confirmations lose their buttons.
+Unknown providers fail before confirmation and selecting the current provider
+is a no-op. Topic-gone command fallbacks retain their buttons in main (a
+subsequent press acts in main, per the source-message thread rule).
 **Previous session (2026-10-05):** production deploy + Codex harness.
 `main` (`b254e01`) is deployed on the production host via `docker compose`
 (data at `/opt/gopod/data`, live owner workspace at
@@ -472,11 +478,16 @@ pending: a 20-line and a 100-line block in a private chat and in a topic.
    (4) in a registered **non-owner** chat a command button for an
    owner-only command toasts "Not authorized." and the log has the
    Router's `permission denied` warn; (5) `/logs` (or `/recall` with many
-   hits) over 3000 characters arrives as one message with `‹ 1/N ›`; `›`
+   hits) over 3800 rendered HTML bytes arrives as one message with `‹ 1/N ›`; `›`
    and `‹` edit the same message, a code block cut by a page stays
    formatted; after a restart or 10 minutes a press toasts «Страницы
    устарели, повторите команду»; (6) after a restart every old picker and
-   confirmation toasts expired. Known limits: button labels and texts from
+   confirmation toasts expired; (7) unknown `/provider xyz` fails without
+   a question and selecting the current provider changes nothing; failed
+   Yes removes its buttons; a slow command stops the spinner before work;
+   a deleted-topic command fallback retains its buttons in main (where a
+   subsequent press acts). Include Cyrillic memories, escaped JSON logs,
+   and fenced code in paging checks. Known limits: button labels and texts from
    `internal/control` are English (Phase 5 moves strings); buttons in an
    unregistered chat toast «Этот чат не подключён» (slash commands work
    there, callbacks need a registered chat); `/chats unregister` and

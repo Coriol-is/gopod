@@ -171,12 +171,30 @@ func (r *Router) Register(name, slashName, description string, perm Perm, h Hand
 // calls the handler. Returns ErrUnknownCommand if the name is not
 // registered, or ErrNotAuthorized if the caller lacks permission.
 func (r *Router) Dispatch(ctx context.Context, cmd Command) (Response, error) {
+	e, resp, err := r.lookup(cmd)
+	if err != nil {
+		return resp, err
+	}
+	return e.handler(ctx, cmd)
+}
+
+// Check reports whether Dispatch would run cmd's handler: it returns
+// the same refusal (Response and ErrUnknownCommand or ErrNotAuthorized,
+// a denial logged) without running anything. A frontend uses it to
+// refuse quickly before a slow command; Dispatch checks again.
+func (r *Router) Check(cmd Command) (Response, error) {
+	_, resp, err := r.lookup(cmd)
+	return resp, err
+}
+
+// lookup finds cmd's handler and checks the caller's permission.
+func (r *Router) lookup(cmd Command) (entry, Response, error) {
 	r.mu.RLock()
 	e, ok := r.handlers[cmd.Name]
 	r.mu.RUnlock()
 
 	if !ok {
-		return Response{Text: "unknown command", Code: 1}, ErrUnknownCommand
+		return entry{}, Response{Text: "unknown command", Code: 1}, ErrUnknownCommand
 	}
 
 	if !r.checkPerm(e.perm, cmd.Caller) {
@@ -184,11 +202,11 @@ func (r *Router) Dispatch(ctx context.Context, cmd Command) (Response, error) {
 			slog.String("command", cmd.Name),
 			slog.String("perm", permString(e.perm)),
 			slog.Int64("chat_id", cmd.Caller.ChatID),
-			slog.Bool("is_owner", cmd.Caller.IsOwner))
-		return Response{Text: "Not authorized.", Code: 1}, ErrNotAuthorized
+			slog.Bool("is_owner", cmd.Caller.IsOwner),
+			slog.Bool("confirmed", cmd.Confirmed))
+		return entry{}, Response{Text: "Not authorized.", Code: 1}, ErrNotAuthorized
 	}
-
-	return e.handler(ctx, cmd)
+	return e, Response{}, nil
 }
 
 // List returns all registered commands sorted by name. Used by

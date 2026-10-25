@@ -242,14 +242,29 @@ func (b *Bot) buttonInChat(e cmdButton, q cbQuery) bool {
 
 // runButtonCommand dispatches cmd for a pressed button and shows the
 // result in the button's message.
+//
+// The Router's refusal (permission, unknown command) is checked first
+// and toasted; a picker stays as it was, a spent confirmation becomes
+// the refusal text without buttons. Otherwise the query is answered
+// before the command runs, so a slow command never leaves the client's
+// spinner hanging, and the message is edited to the result, or to a
+// failure text when the handler failed.
 func (b *Bot) runButtonCommand(ctx context.Context, q cbQuery, cmd control.Command) (string, error) {
-	resp, err := b.router.Dispatch(ctx, cmd)
-	if errors.Is(err, control.ErrNotAuthorized) || errors.Is(err, control.ErrUnknownCommand) {
-		// The Router logged a denial; the message stays as it was.
+	if resp, err := b.router.Check(cmd); err != nil {
+		if cmd.Confirmed {
+			b.editCommandText(ctx, q.ChatID, q.MessageID, resp.Text, nil)
+		}
 		return resp.Text, nil
 	}
+	q.answerNow("")
+	resp, err := b.router.Dispatch(ctx, cmd)
 	if err != nil {
-		return "", fmt.Errorf("button command %s: %w", cmd.Name, err)
+		text := resp.Text
+		if !errors.Is(err, control.ErrNotAuthorized) && !errors.Is(err, control.ErrUnknownCommand) {
+			text = cbToastFailed
+		}
+		b.editCommandText(ctx, q.ChatID, q.MessageID, text, nil)
+		return cbToastFailed, fmt.Errorf("button command %s: %w", cmd.Name, err)
 	}
 	b.editCommandMessage(ctx, q.ChatID, q.MessageID, resp)
 	return "", nil
@@ -263,7 +278,7 @@ func (b *Bot) sendCommandResponse(ctx context.Context, chatID int64, thread, rep
 		return
 	}
 	text, markup := b.commandMessage(chatID, resp)
-	_, _ = b.sendRendered(ctx, chatID, thread, replyTo, text, markdownToTelegramHTML, markup)
+	_, _ = b.sendRenderedOpts(ctx, chatID, thread, replyTo, text, markdownToTelegramHTML, markup, true)
 }
 
 // editCommandMessage replaces a command message (a picker, a

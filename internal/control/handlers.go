@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"runtime"
 	"runtime/debug"
+	"slices"
 	"strings"
 )
 
@@ -173,6 +174,17 @@ func RegisterProviderCommand(r *Router, switchFn ProviderSwitchFunc, currentFn f
 					Text:    "Current provider: " + cur + "\n\nUsage: /provider <name>\n\n/provider claude — Claude Code CLI (default)\n/provider codex — OpenAI Codex CLI\n\nSwitching clears the main conversation.",
 					Buttons: pickerButtons("provider", names, cur),
 				}, nil
+			}
+			// Validate before asking: an unknown name or the current
+			// provider must not cost a confirmation (or a cleared session).
+			if !slices.Contains(names, cmd.Args[0]) {
+				return Response{
+					Text: fmt.Sprintf("unknown provider %q (available: %s)", cmd.Args[0], strings.Join(names, ", ")),
+					Code: 1,
+				}, nil
+			}
+			if cmd.Args[0] == currentFn(folder) {
+				return Response{Text: "Already using " + cmd.Args[0] + ". Nothing changed."}, nil
 			}
 			if !cmd.Confirmed {
 				return Confirm(cmd, "Switch this chat to "+cmd.Args[0]+"? The main conversation is cleared."), nil

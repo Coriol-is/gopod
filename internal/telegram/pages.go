@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/go-telegram/bot/models"
 
@@ -20,10 +19,13 @@ import (
 )
 
 const (
-	// pageMaxRunes is a page's size in markdown runes: below the
-	// 4096-character message limit with room for the HTML rendering, so
-	// a page is always one message.
-	pageMaxRunes = 3000
+	// pageMaxHTMLBytes is a page's size limit measured as what is sent:
+	// the HTML rendering, in bytes. sendChunks splits at 4000 bytes of
+	// HTML, so a page under this always goes out as one message, also
+	// with the topic-gone note (threadGoneNote) in front of it. Cyrillic
+	// takes 2 bytes a character and &, <, > and quotes grow when escaped,
+	// which is why a count of markdown characters is not enough.
+	pageMaxHTMLBytes = 3800
 	// pagesTTL is how long the page buttons of a reply work.
 	pagesTTL = 10 * time.Minute
 )
@@ -37,77 +39,105 @@ type pagedReply struct {
 	expires time.Time
 }
 
-// splitPages cuts text into pages of at most limit runes on line
+// pageFits reports whether a page of markdown is one message once
+// rendered to HTML.
+func pageFits(md string) bool {
+	return len(markdownToTelegramHTML(md)) <= pageMaxHTMLBytes
+}
+
+// withLine returns lines plus line, never writing into lines' array.
+func withLine(lines []string, line string) []string {
+	out := make([]string, len(lines), len(lines)+1)
+	copy(out, lines)
+	return append(out, line)
+}
+
+// splitPages cuts text into pages that each fit (fits), on line
 // boundaries. A line longer than a page is cut by runes. A fenced code
 // block cut by a boundary is closed at the end of its page and reopened
-// (with its language) at the top of the next, so every page renders.
-func splitPages(text string, limit int) []string {
-	if utf8.RuneCountInString(text) <= limit {
+// (with its language) at the top of the next, so every page renders; a
+// page never ends with a lone fence opener (it moves to the next page),
+// and a reopened block is never emitted empty.
+func splitPages(text string, fits func(string) bool) []string {
+	if fits(text) {
 		return []string{text}
 	}
 	const fence = "```"
-	// Room for the closing fence a cut code block gets.
-	room := limit - len("\n"+fence)
+	render := func(lines []string, open bool) string {
+		s := strings.Join(lines, "\n")
+		if open {
+			s += "\n" + fence
+		}
+		return s
+	}
 	var pages []string
 	var cur []string
-	curLen := 0
 	inFence := false
 	fenceOpen := ""
+	openerLast := false // cur ends with the opener of the current block
+	fresh := false      // cur holds only a reopened opener
 	flush := func() {
-		page := strings.Join(cur, "\n")
-		if inFence {
-			page += "\n" + fence
+		if openerLast {
+			// Do not end a page with an opener: it starts the next one.
+			if rest := cur[:len(cur)-1]; len(rest) > 0 {
+				pages = append(pages, render(rest, false))
+			}
+			cur, openerLast, fresh = []string{fenceOpen}, true, false
+			return
 		}
-		pages = append(pages, page)
-		cur, curLen = nil, 0
+		pages = append(pages, render(cur, inFence))
+		cur, fresh = nil, false
 		if inFence {
-			cur, curLen = []string{fenceOpen}, utf8.RuneCountInString(fenceOpen)
+			cur, fresh = []string{fenceOpen}, true
 		}
 	}
 	for _, line := range strings.Split(text, "\n") {
-		for _, part := range cutRunes(line, room) {
-			n := utf8.RuneCountInString(part)
-			sep := 0
-			if len(cur) > 0 {
-				sep = 1
-			}
-			if len(cur) > 0 && curLen+sep+n > room {
-				flush()
-				if len(cur) > 0 {
-					sep = 1
-				} else {
-					sep = 0
-				}
-			}
-			cur = append(cur, part)
-			curLen += sep + n
+		isFence := isFence(line)
+		after := inFence != isFence
+		if len(cur) > 0 && !fresh && !fits(render(withLine(cur, line), after)) {
+			flush()
 		}
-		if t := strings.TrimSpace(line); strings.HasPrefix(t, fence) {
-			inFence = !inFence
-			if inFence {
-				fenceOpen = t
+		rest := line
+		for !fits(render(withLine(cur, rest), after)) {
+			// rest does not fit even on this page: cut the longest prefix
+			// that does and start a new page.
+			n := longestFit(rest, func(p string) bool { return fits(render(withLine(cur, p), inFence)) })
+			r := []rune(rest)
+			cur = append(cur, string(r[:n]))
+			openerLast, fresh = false, false
+			rest = string(r[n:])
+			flush()
+		}
+		cur = append(cur, rest)
+		openerLast = isFence && after
+		fresh = false
+		if isFence {
+			inFence = after
+			if after {
+				fenceOpen = strings.TrimSpace(line)
 			}
 		}
 	}
 	if len(cur) > 0 {
-		page := strings.Join(cur, "\n")
-		pages = append(pages, page)
+		pages = append(pages, render(cur, false))
 	}
 	return pages
 }
 
-// cutRunes splits s into pieces of at most n runes ("" stays one piece).
-func cutRunes(s string, n int) []string {
-	if utf8.RuneCountInString(s) <= n {
-		return []string{s}
-	}
-	var out []string
+// longestFit returns the largest rune count n ≥ 1 of s whose prefix
+// satisfies ok (1 when none does, so cutting always progresses).
+func longestFit(s string, ok func(string) bool) int {
 	r := []rune(s)
-	for len(r) > n {
-		out = append(out, string(r[:n]))
-		r = r[n:]
+	lo, hi := 1, len(r)
+	for lo < hi {
+		mid := (lo + hi + 1) / 2
+		if ok(string(r[:mid])) {
+			lo = mid
+		} else {
+			hi = mid - 1
+		}
 	}
-	return append(out, string(r))
+	return lo
 }
 
 // pageRow is the ‹ n/N › row of page (0-based) of total. The counter
@@ -147,7 +177,7 @@ func (b *Bot) commandMessage(chatID int64, resp control.Response) (string, model
 		text = cmdTextDone
 	}
 	rows := b.commandRows(chatID, resp.Buttons)
-	pages := splitPages(text, pageMaxRunes)
+	pages := splitPages(text, pageFits)
 	if len(pages) == 1 {
 		if len(rows) == 0 {
 			return text, nil
@@ -168,7 +198,8 @@ func (b *Bot) commandMessage(chatID int64, resp control.Response) (string, model
 }
 
 // pageButton handles ‹ › and n/N (pg:<token>:<n>): it edits the message
-// to page n of its reply.
+// to page n of its reply. Pressing the counter re-sends the page shown;
+// Telegram's "message is not modified" is only logged.
 func (b *Bot) pageButton(ctx context.Context, q cbQuery) (string, error) {
 	if len(q.Data.Args) != 2 {
 		return pagesToastExpired, nil

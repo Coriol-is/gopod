@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -118,8 +119,9 @@ func TestCommandButton_DispatchesThroughRouter(t *testing.T) {
 		t.Errorf("style = %q", btn.Style)
 	}
 	// The data holds a token, never the command or its args.
-	if strings.Contains(data, "pick") || strings.Contains(data, ":a") {
-		t.Errorf("command leaked into callback data %q", data)
+	token := strings.TrimPrefix(data, "cc:")
+	if decoded, err := hex.DecodeString(token); err != nil || len(decoded) != 6 {
+		t.Errorf("callback must hold only a random six-byte token: %q", data)
 	}
 
 	b.callbackHandler(ctx, b.api, cbUpdate("q1", streamChat, 7, 500, data))

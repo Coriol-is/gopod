@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -203,5 +204,80 @@ func TestConfirm_YesRechecksPerm(t *testing.T) {
 	}
 	if ran != 0 {
 		t.Fatal("confirmed owner-only command ran in a non-owner chat")
+	}
+	edit := lastCall(t, fake, "editMessageText")
+	if len(buttonsOf(t, edit)) != 0 || edit.Form["text"] != "Not authorized." {
+		t.Fatalf("refusal edit: %v", edit.Form)
+	}
+}
+
+func TestConfirm_ForeignPressDoesNotSpendPair(t *testing.T) {
+	for _, choice := range []int{0, 1} {
+		t.Run(fmt.Sprint(choice), func(t *testing.T) {
+			b, fake, r := newCommandFixture(t)
+			var mu sync.Mutex
+			cleared := 0
+			registerClear(r, &mu, &cleared)
+			ctx := context.Background()
+			b.dispatchSlash(ctx, slashMsg(streamChat, 0, "/clear"), "/clear")
+			buttons := buttonsOf(t, lastCall(t, fake, "sendMessage"))
+			b.callbackHandler(ctx, b.api, cbUpdate("foreign", groupChat, 0, 500, buttons[choice].CallbackData))
+			if toast := answeredOnce(t, fake, "foreign"); toast != cbToastNotYours {
+				t.Fatalf("toast %q", toast)
+			}
+			if len(fake.callsTo("editMessageText")) != 0 || cleared != 0 {
+				t.Fatal("foreign press acted")
+			}
+			b.callbackHandler(ctx, b.api, cbUpdate("owner", streamChat, 0, 500, buttons[0].CallbackData))
+			answeredOnce(t, fake, "owner")
+			if cleared != 1 {
+				t.Fatal("foreign press spent confirmation")
+			}
+		})
+	}
+}
+
+func TestConfirm_HandlerFailureRemovesButtonsAndAnswersEarly(t *testing.T) {
+	b, fake, r := newCommandFixture(t)
+	r.Register("fail", "fail", "", control.PermChatLocal, func(_ context.Context, cmd control.Command) (control.Response, error) {
+		if !cmd.Confirmed {
+			return control.Confirm(cmd, "Proceed?"), nil
+		}
+		answeredOnce(t, fake, "yes") // must be answered before the handler runs
+		return control.Response{}, fmt.Errorf("private failure details")
+	})
+	ctx := context.Background()
+	b.dispatchSlash(ctx, slashMsg(streamChat, 0, "/fail"), "/fail")
+	yes := buttonsOf(t, lastCall(t, fake, "sendMessage"))[0]
+	b.callbackHandler(ctx, b.api, cbUpdate("yes", streamChat, 0, 500, yes.CallbackData))
+	answeredOnce(t, fake, "yes")
+	edit := lastCall(t, fake, "editMessageText")
+	if len(buttonsOf(t, edit)) != 0 || edit.Form["text"] != cbToastFailed {
+		t.Fatalf("failure edit: %v", edit.Form)
+	}
+}
+
+func TestConfirm_TopicGoneKeepsButtons(t *testing.T) {
+	b, fake, r := newCommandFixture(t)
+	var mu sync.Mutex
+	cleared := 0
+	registerClear(r, &mu, &cleared)
+	old := fake.respond
+	fake.respond = func(method string, form map[string]string) (int, string) {
+		if method == "sendMessage" && form["message_thread_id"] == "7" {
+			return apiError(400, "Bad Request: message thread not found")
+		}
+		return old(method, form)
+	}
+	b.dispatchSlash(context.Background(), slashMsg(streamChat, 7, "/clear"), "/clear")
+	fallback := lastCall(t, fake, "sendMessage")
+	if fallback.Form["message_thread_id"] != "" && fallback.Form["message_thread_id"] != "0" {
+		t.Fatalf("not main fallback: %v", fallback.Form)
+	}
+	if len(buttonsOf(t, fallback)) != 2 {
+		t.Fatalf("confirmation lost buttons: %v", fallback.Form)
+	}
+	if cleared != 0 {
+		t.Fatal("fallback cleared without confirmation")
 	}
 }

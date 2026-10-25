@@ -148,6 +148,15 @@ func TestProvider_PickerAndConfirmation(t *testing.T) {
 		t.Fatalf("labels = %v", labels)
 	}
 
+	// Unknown and current providers are answered without a question.
+	if resp := call(false, "xyz"); resp.Code != 1 || len(resp.Buttons) != 0 ||
+		!strings.Contains(resp.Text, "unknown provider") || len(switched) != 0 {
+		t.Fatalf("unknown provider: %+v", resp)
+	}
+	if resp := call(false, "claude"); resp.Code != 0 || len(resp.Buttons) != 0 ||
+		!strings.Contains(resp.Text, "Already using claude") || len(switched) != 0 {
+		t.Fatalf("current provider: %+v", resp)
+	}
 	if resp := call(false, "codex"); resp.Code != CodeConfirm || len(switched) != 0 {
 		t.Fatalf("unconfirmed switch: %+v, switched %v", resp, switched)
 	}
