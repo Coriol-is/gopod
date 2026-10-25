@@ -87,3 +87,4 @@ Bullet list someone else can verify.
 | [CP-016](CP-016-telegram-topic-deletion.md) | Telegram topic deletion and conversation retirement (design only) | accepted | M |
 | [CP-017](CP-017-telegram-capability-diagnostics.md) | Telegram capability diagnostics and mode-aware guidance (design only) | accepted | M |
 | [CP-018](CP-018-per-thread-providers.md) | Provider selection per conversation (design only) | accepted | M |
+| [CP-019](CP-019-telegram-ephemeral-commands.md) | Private command/service/error replies in groups (design only) | accepted | M |
