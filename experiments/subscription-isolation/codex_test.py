@@ -41,6 +41,7 @@ class CodexBoundaryTests(unittest.TestCase):
         result = probe(mcp=True, image=os.environ.get("GOPOD_ISOLATION_TEST_IMAGE", "node:22-slim"))
         self.assertEqual(result["exit_code"], 0, result)
         self.assertTrue(result["mcp_roundtrip"], result)
+        self.assertTrue(result["external_file_proof"], result)
         self.assertEqual(len(result["requests"]), 2)
         self.assert_no_native_tools(result)
 
@@ -49,6 +50,7 @@ class CodexBoundaryTests(unittest.TestCase):
         result = probe(mcp=True, http_mcp=True, image=os.environ.get("GOPOD_ISOLATION_TEST_IMAGE", "node:22-slim"))
         self.assertEqual(result["exit_code"], 0, result)
         self.assertTrue(result["mcp_roundtrip"], result)
+        self.assertTrue(result["external_file_proof"], result)
         self.assertEqual(len(result["requests"]), 2)
         self.assert_no_native_tools(result)
 

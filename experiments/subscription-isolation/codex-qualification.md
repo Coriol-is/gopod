@@ -26,6 +26,9 @@ round trip over the capability-protected HTTP bridge used by the disposable
 subscription probe. HTTP MCP transport and per-tool approval configuration work
 with the synthetic provider as well as stdio; this does not establish real-model
 tool selection or the account's negotiated model/tool inventory.
+The follow-up additionally writes and reads a synthetic proof file through both
+transports (latest run: **5 tests passed in 5.426s**), matching the live canary's
+file-proof semantics rather than relying on stdout or a zero exit code alone.
 
 The exact observed tool inventory with MCP enabled was:
 

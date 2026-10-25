@@ -56,7 +56,7 @@ def probe(codex="codex", mcp=False, image="node:22-slim", native_attack=False, m
                 namespace = next((x for x in captured[-1]["tools"] if x.get("type") == "namespace" and x.get("name") == "mcp__group"), None)
                 name = "group_exec" if namespace else next(x["name"] for x in captured[-1]["tools"] if (x.get("name") or "").endswith("group_exec"))
                 output = [{"type": "function_call", "id": "fc_canary", "call_id": "call_canary",
-                           "name": name, "arguments": json.dumps({"command": "printf codex-mcp-ok"}), "status": "completed"}]
+                           "name": name, "arguments": json.dumps({"command": "printf codex-mcp-ok > codex-proof.txt; cat codex-proof.txt"}), "status": "completed"}]
                 if namespace:
                     output[0]["namespace"] = namespace["name"]
             if native_attack and len(captured) == 1:
@@ -149,6 +149,7 @@ def probe(codex="codex", mcp=False, image="node:22-slim", native_attack=False, m
                     "stderr_present": bool(result.stderr), "stdout_lines": len(result.stdout.splitlines()),
                     "mcp_roundtrip": tool_result_seen, "function_result_seen": function_result_seen,
                     "native_marker_created": (work / "native-bypass").exists(),
+                    "external_file_proof": (work / "codex-proof.txt").is_file() and (work / "codex-proof.txt").read_text() == "codex-mcp-ok",
                     "mcp_transport": "http" if http_mcp else "stdio"}
     finally:
         if bridge is not None:
