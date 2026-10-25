@@ -76,6 +76,8 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 
 	// Handle voice messages (I3): transcribe via Whisper, use text as prompt.
 	isVoice := false
+	caption := text
+	transcribedText := ""
 	if m.Voice != nil {
 		isVoice = true
 		transcript, err := b.transcribeVoice(dctx, m.Voice)
@@ -84,8 +86,9 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 			b.replyTo(ctx, m.Chat.ID, thread, m.ID, "Failed to transcribe voice message.")
 			return
 		}
-		if transcript != "" {
+		if strings.TrimSpace(transcript) != "" {
 			text = transcript
+			transcribedText = transcript
 			b.log.Debug("voice transcribed",
 				slog.Int("duration", m.Voice.Duration),
 				slog.Int("text_len", len(text)))
@@ -108,6 +111,7 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 			text += "\n\n[An audio file was attached but could not be transcribed]"
 		default:
 			if transcript = strings.TrimSpace(transcript); transcript != "" {
+				transcribedText = transcript
 				if text == "" {
 					text = transcript
 				} else {
@@ -181,6 +185,14 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 		var ok bool
 		if rc, ok = b.resolveRegistered(ctx, m); !ok {
 			return
+		}
+	}
+	// Label only successful transcripts, after raw slash/login handling.
+	// Keep typed audio captions separate from the automatically transcribed text.
+	if transcribedText != "" {
+		text = transcriptWithMetadata(m, transcribedText)
+		if m.Voice == nil && caption != "" {
+			text = caption + "\n\n" + text
 		}
 	}
 	b.enqueueTurn(ctx, m, rc, text, filePath, isVoice)

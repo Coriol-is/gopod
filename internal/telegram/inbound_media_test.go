@@ -228,7 +228,7 @@ func TestAudioFile_Transcribed(t *testing.T) {
 	m.Audio = &models.Audio{FileID: "a1", FileName: "memo.m4a", Duration: 3}
 	f.handle(m)
 	it := f.next(t)
-	if it.Text != "buy milk" {
+	if it.Text != "[Telegram input metadata: source=audio_file; transcription=automatic; duration_seconds=3]\n\nbuy milk" {
 		t.Errorf("queued text = %q, want the transcript", it.Text)
 	}
 	if it.IsVoice {
@@ -428,7 +428,7 @@ func TestVideoNote_Transcribed(t *testing.T) {
 	m.VideoNote = &models.VideoNote{FileID: "v1", Duration: 4, Length: 240}
 	f.handle(m)
 	it := f.next(t)
-	if it.Text != "hello there" || it.ThreadID != 7 {
+	if it.Text != "[Telegram input metadata: source=video_note; transcription=automatic; duration_seconds=4]\n\nhello there" || it.ThreadID != 7 {
 		t.Errorf("queued %q in thread %d, want the transcript in 7", it.Text, it.ThreadID)
 	}
 	if got := w.uploaded(); len(got) != 1 || got[0] != "video_note.mp4" {

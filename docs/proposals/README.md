@@ -81,3 +81,5 @@ Bullet list someone else can verify.
 | [CP-010](CP-010-quota-switch-confirmation.md) | Confirm switching after quota exhaustion | done | M |
 | [CP-011](CP-011-sandbox-runtime.md) | Sandbox runtime contract (design only) | accepted | L |
 | [CP-012](CP-012-provider-registry.md) | Provider registry and quota choices (design only) | accepted | M |
+| [CP-013](CP-013-transcript-provenance.md) | Speech transcript provenance | done | S |
+| [CP-014](CP-014-telegram-media-input.md) | Telegram media — three delivery queues (design only) | accepted | L |
