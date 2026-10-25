@@ -99,6 +99,11 @@ type Runner struct {
 	// acquireAgentSlot). The channel closes when the process is gone.
 	agentSlotsMu sync.Mutex
 	agentSlots   map[string]chan struct{}
+
+	// gate is the global agent admission gate (gate.go); nodeHeapMB
+	// caps Claude agents' V8 heap (0 = off). Set by SetAgentLimits.
+	gate       *agentGate
+	nodeHeapMB int
 }
 
 // SpawnDefaults captures the per-process defaults that go into every
@@ -154,6 +159,7 @@ func New(
 		activity:       make(map[string]time.Time),
 		turnCount:      make(map[convKey]int),
 		compactAfter:   30,
+		gate:           newGate(DefaultMaxAgents, DefaultMinAvailableMB, readMemAvailableMB, log),
 	}, nil
 }
 
@@ -264,7 +270,12 @@ func (r *Runner) Run(
 		return "", err
 	}
 	cmd := withModel(prov.RunCmd(prompt, opts.AppendSystemPrompt, ref), prov, r.ModelForChat(chatFolder))
+	releaseGate, err := r.admit(ctx, chatFolder, ClassInteractive)
+	if err != nil {
+		return "", err
+	}
 	res, err := r.execAgent(ctx, id, chatFolder, thread, prov, cmd)
+	releaseGate()
 	if announcesNewSession(prov, ref) {
 		var stderr string
 		if res != nil {
@@ -415,6 +426,13 @@ func (r *Runner) startStream(
 		cmd = ss.StructuredCmd(cmd)
 	}
 
+	// Acquire order: queue slot -> chat's agent slot -> gate (gate.go).
+	releaseGate, err := r.admit(ctx, chatFolder, ClassInteractive)
+	if err != nil {
+		releaseSlot()
+		return nil, err
+	}
+
 	// Restore config from backup if needed.
 	if restoreCmd := prov.RestoreConfigCmd(); restoreCmd != nil {
 		r.ex.Exec(ctx, id, restoreCmd, nil)
@@ -422,13 +440,15 @@ func (r *Runner) startStream(
 
 	pidFile, err := newAgentPidFile()
 	if err != nil {
+		releaseGate()
 		releaseSlot()
 		return nil, err
 	}
-	env, release := r.agentEnv(chatFolder, conv.thread)
+	env, release := r.agentExecEnv(chatFolder, conv.thread, prov)
 	handle, err := r.ex.ExecStream(ctx, id, wrapWithPidFile(pidFile, cmd), env)
 	if err != nil {
 		release()
+		releaseGate()
 		releaseSlot()
 		return nil, fmt.Errorf("runner: exec stream: %w", err)
 	}
@@ -485,6 +505,7 @@ func (r *Runner) startStream(
 		if !<-killed {
 			r.removePidFile(ctx, id, pidFile)
 		}
+		releaseGate() // the agent process is gone (exited or killed)
 		if capture {
 			r.captureSession(ctx, chatFolder, conv.thread, prov, stderr)
 		}
@@ -630,7 +651,12 @@ func (r *Runner) RunFresh(
 		return "", fmt.Errorf("runner: ensure %q: %w", chatFolder, err)
 	}
 	prov := r.ProviderForChat(chatFolder)
+	releaseGate, err := r.admit(ctx, chatFolder, ClassBackground)
+	if err != nil {
+		return "", err
+	}
 	res, err := r.execAgent(ctx, id, chatFolder, 0, prov, prov.RunFreshCmd(prompt))
+	releaseGate()
 	if err != nil {
 		return "", err
 	}
@@ -649,7 +675,7 @@ func (r *Runner) execAgent(ctx context.Context, containerID, chatFolder string, 
 		r.ex.Exec(ctx, containerID, restoreCmd, nil)
 	}
 
-	env, release := r.agentEnv(chatFolder, thread)
+	env, release := r.agentExecEnv(chatFolder, thread, prov)
 	defer release()
 	res, err := r.ex.Exec(ctx, containerID, cmd, env)
 	if err != nil {
