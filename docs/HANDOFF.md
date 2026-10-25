@@ -313,6 +313,13 @@ Replaces env var secret injection — agents never see real keys.
 8 sub-steps (G1–G8), G1∥G2 can start in parallel.
 See [GATEWAY.md](GATEWAY.md) for full architecture.
 
+**Long code in final replies** ([D025](DECISIONS.md), spec part 3, branch
+`feat/collapse-long-code`): final replies collapse fenced blocks over 12
+lines into an expandable quote, send blocks over 60 lines / 3000 chars as
+documents (`internal/telegram/longcode.go`, `document.go`) with a note in
+the text, and the HTML chunker is tag-aware (`chunkhtml.go`). Live check
+pending: a 20-line and a 100-line block in a private chat and in a topic.
+
 ## What's next (in order — per [D018](DECISIONS.md))
 
 00. **Live checklist for the 2026-10-24 work** (nothing below has been run
