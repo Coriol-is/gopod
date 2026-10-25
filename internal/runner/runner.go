@@ -93,6 +93,11 @@ type Runner struct {
 	// acquireAgentSlot). The channel closes when the process is gone.
 	agentSlotsMu sync.Mutex
 	agentSlots   map[string]chan struct{}
+
+	// gate is the global agent admission gate (gate.go); nodeHeapMB
+	// caps Claude agents' V8 heap (0 = off). Set by SetAgentLimits.
+	gate       *agentGate
+	nodeHeapMB int
 }
 
 // SpawnDefaults captures the per-process defaults that go into every
