@@ -293,6 +293,7 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 	var lastEditText string
 	var lastEdit, editHold time.Time
 	var lastDraftText string
+	var lastDraftAt time.Time // status clock of the last draft sent
 
 	// addChunk applies one answer chunk. Returns false when the turn
 	// had to be finished by drainAndSend.
@@ -386,9 +387,16 @@ loop:
 
 		case <-ticker.C:
 			if draftID != 0 {
-				// The header's clock changes the text by itself: drafts
-				// are free, so it goes out on the tick like any change.
+				// The header's clock changes the text by itself. Drafts
+				// share the per-peer budget of the typing action (20 per
+				// 5 s, 40 per 30 s), so a change of the clock alone goes
+				// out at most every headerDraftEvery; steps and answer
+				// text (dirty) still go on the tick.
 				text := view() + "❘" // ▍ cursor, never empty
+				clockOnly := !dirty && text != lastDraftText
+				if clockOnly && b.statusNow().Sub(lastDraftAt) < headerDraftEvery {
+					continue
+				}
 				if !dirty && text == lastDraftText && time.Since(lastDraft) < draftRefresh {
 					continue
 				}
@@ -398,6 +406,7 @@ loop:
 				err := b.sendDraftOpts(ctx, item.ChatID, item.ThreadID, draftID, text, stopOpts)
 				if err == nil {
 					lastDraft = time.Now()
+					lastDraftAt = b.statusNow()
 					lastDraftText = text
 					dirty = false
 					continue
@@ -423,12 +432,12 @@ loop:
 			// Edit path: a changed view goes out on the tick; a change
 			// of the header's clock alone at most every headerEditEvery.
 			// Every edit carries kb, so the Stop button stays.
+			now := b.statusNow() // before view: the text is never older
 			v := view()
 			if v == "" || time.Now().Before(editHold) {
 				continue
 			}
 			text := v + "❘"
-			now := b.statusNow()
 			headerOnly := !dirty && !answering && now.Sub(lastEdit) >= headerEditEvery
 			if text == lastEditText || !dirty && !headerOnly {
 				dirty = false

@@ -156,7 +156,12 @@ func TestEditPathHeaderEvery5s(t *testing.T) {
 		t.Fatalf("header-only edit before 5 s: %d edits, then %d", n, m)
 	}
 	clock.Advance(time.Second)
-	waitFor(t, "header edit at 5 s", editShowing("⏳ 0:05 · 1 шаг\n✏️ a.go\n❘"))
+	if !waitForOK(editShowing("⏳ 0:05 · 1 шаг\n✏️ a.go\n❘")) {
+		for _, c := range fake.callsTo("editMessageText") {
+			t.Logf("edit %q", c.Form["text"])
+		}
+		t.Fatal("timed out waiting for header edit at 5 s")
+	}
 	time.Sleep(60 * time.Millisecond)
 	edits := fake.callsTo("editMessageText")
 	if len(edits) != n+1 {
@@ -261,5 +266,137 @@ func TestQueueWaitDraftShowsPosition(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	if m := len(fake.callsTo("sendMessageDraft")); m != n {
 		t.Errorf("queue draft after stopQueueWaits: %d then %d", n, m)
+	}
+}
+
+func waitForOK(cond func() bool) bool {
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return true
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	return false
+}
+
+// blockingQueue is a queue whose handler holds every batch until the
+// test ends.
+func blockingQueue(t *testing.T, b *Bot, maxConc int) *queue.Queue {
+	t.Helper()
+	release := make(chan struct{})
+	q := queue.New(t.Context(), func(ctx context.Context, items []queue.Item) error {
+		select {
+		case <-release:
+		case <-ctx.Done():
+		}
+		return nil
+	}, maxConc, nil, b.log)
+	t.Cleanup(func() { close(release); q.Close() })
+	return q
+}
+
+// An ordinary turn in an idle chat never shows a queue position: no
+// draft, and nothing for the starting turn to wait on.
+func TestQueueWait_IdleChatNoDraft(t *testing.T) {
+	fake := &fakeTelegram{}
+	okDrafts(fake, "555")
+	b := newFakeBot(t, fake)
+	b.streamEnabled = true
+	b.streamTick = 10 * time.Millisecond
+	b.queue = blockingQueue(t, b, 10)
+	item := queue.Item{ID: 1, ChatID: streamChat, ThreadID: 2, Folder: "owner"}
+	b.queue.Enqueue(t.Context(), item)
+	b.startQueueWait(t.Context(), item) // Position may still say 1 here
+	start := time.Now()
+	b.stopQueueWaits(streamChat, 2)
+	if d := time.Since(start); d > 100*time.Millisecond {
+		t.Errorf("turn start waited %v for a queue draft", d)
+	}
+	time.Sleep(60 * time.Millisecond)
+	if n := len(fake.callsTo("sendMessageDraft")); n != 0 {
+		t.Errorf("idle chat: %d queue drafts", n)
+	}
+}
+
+// All agent slots taken by another chat: the turn waits, but not behind
+// a conversation of its own chat, so no position is shown.
+func TestQueueWait_SemaphoreFullNoDraft(t *testing.T) {
+	fake := &fakeTelegram{}
+	okDrafts(fake, "555")
+	b := newFakeBot(t, fake)
+	b.streamEnabled = true
+	b.streamTick = 10 * time.Millisecond
+	b.queue = blockingQueue(t, b, 1)
+	b.queue.Enqueue(t.Context(), queue.Item{ID: 1, ChatID: 42, Folder: "other"})
+	waitFor(t, "other chat running", func() bool { return b.queue.Position("other", 1) == 0 })
+	item := queue.Item{ID: 2, ChatID: streamChat, ThreadID: 2, Folder: "owner"}
+	b.queue.Enqueue(t.Context(), item)
+	if p := b.queue.Position("owner", 2); p != 1 {
+		t.Fatalf("position = %d, want 1 (waiting for a slot)", p)
+	}
+	b.startQueueWait(t.Context(), item)
+	time.Sleep(60 * time.Millisecond)
+	if n := len(fake.callsTo("sendMessageDraft")); n != 0 {
+		t.Errorf("semaphore full: %d queue drafts", n)
+	}
+}
+
+// A queue draft stuck on the network does not hold up the turn start.
+func TestQueueWait_StopIsBounded(t *testing.T) {
+	fake := &fakeTelegram{}
+	hang := make(chan struct{})
+	defer close(hang)
+	fake.respond = func(method string, _ map[string]string) (int, string) {
+		if method == "sendMessageDraft" {
+			<-hang
+		}
+		return http.StatusOK, `{"ok":true,"result":true}`
+	}
+	b := newFakeBot(t, fake)
+	b.streamEnabled = true
+	b.streamTick = 10 * time.Millisecond
+	b.queue = blockingQueue(t, b, 10)
+	running := queue.Item{ID: 1, ChatID: streamChat, ThreadID: 1, Folder: "owner"}
+	b.queue.Enqueue(t.Context(), running)
+	waitFor(t, "running", func() bool { return b.queue.Position("owner", 1) == 0 })
+	defer b.markThreadBusy(running)()
+	item := queue.Item{ID: 2, ChatID: streamChat, ThreadID: 2, Folder: "owner"}
+	b.queue.Enqueue(t.Context(), item)
+	b.startQueueWait(t.Context(), item)
+	waitFor(t, "draft in flight", func() bool { return len(fake.callsTo("sendMessageDraft")) == 1 })
+	start := time.Now()
+	b.stopQueueWaits(streamChat, 2)
+	if d := time.Since(start); d > time.Second {
+		t.Errorf("stopQueueWaits waited %v on a hung draft", d)
+	}
+}
+
+// A 60 s tool-only turn: the clock alone changes the draft every
+// second, but drafts go out at most every 3 s, well under the per-peer
+// 40 per 30 s shared with the typing action (every 4 s).
+func TestDraftHeaderBudget(t *testing.T) {
+	fake := &fakeTelegram{}
+	okDrafts(fake, "555")
+	b, item := newStreamFixture(t, fake)
+	clock := newManualClock()
+	b.reactClock = clock
+	s := newStructuredStream()
+	done := make(chan error, 1)
+	go func() { done <- b.streamReply(t.Context(), item, s.stream()) }()
+	s.progress <- runner.ProgressEvent{Tool: "Bash", Detail: "sleep 60"}
+	waitFor(t, "step", draftShowing(fake, "⚙️ sleep 60"))
+	before := len(fake.callsTo("sendMessageDraft"))
+	for i := 0; i < 60; i++ {
+		clock.Advance(time.Second)
+		time.Sleep(15 * time.Millisecond) // at least one tick
+	}
+	n := len(fake.callsTo("sendMessageDraft")) - before
+	if n > 21 || n < 15 {
+		t.Errorf("clock-only drafts in 60 s = %d, want about 20", n)
+	}
+	s.finish("ok")
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }

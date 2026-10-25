@@ -1,7 +1,9 @@
 package telegram
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -13,6 +15,7 @@ import (
 
 	"github.com/go-telegram/bot"
 
+	"github.com/Coriol-is/gopod/internal/control"
 	"github.com/Coriol-is/gopod/internal/queue"
 	"github.com/Coriol-is/gopod/internal/runner"
 )
@@ -360,5 +363,102 @@ func TestStatusReactions_StoppedTurn(t *testing.T) {
 	s.finish("")
 	if got := reactionsOf(fake); len(got) != 1 || got[0] != "👌" {
 		t.Fatalf("a stopped turn ends on stopped: %q", got)
+	}
+}
+
+// A final state refused with a long 429 is given up, and the reactor
+// released: a new turn on the same message gets a fresh one.
+func TestStatusReactor_LostFinalReleases(t *testing.T) {
+	fake := &fakeTelegram{}
+	limited := true
+	var mu sync.Mutex
+	fake.respond = func(method string, _ map[string]string) (int, string) {
+		mu.Lock()
+		defer mu.Unlock()
+		if method == "setMessageReaction" && limited {
+			return apiError(http.StatusTooManyRequests, "Too Many Requests: retry after 30")
+		}
+		return http.StatusOK, `{"ok":true,"result":true}`
+	}
+	b := newFakeBot(t, fake)
+	clock := newManualClock()
+	b.reactClock = clock
+	old := b.newStatusReactor(streamChat, 10)
+	old.Set(stError)
+	mu.Lock()
+	limited = false
+	mu.Unlock()
+	fresh := b.newStatusReactor(streamChat, 10)
+	if fresh == old {
+		t.Fatal("a finished reactor must not be reused by the next turn")
+	}
+	fresh.Set(stQueued)
+	clock.Advance(0)
+	if got := reactionsOf(fake); len(got) != 2 || got[1] != "👀" {
+		t.Fatalf("the new turn's state is written: %q", got)
+	}
+}
+
+// A late queued state (a Retry's, racing the worker) never sets a
+// running message back to 👀.
+func TestStatusReactor_LateQueuedIgnored(t *testing.T) {
+	f := newReactorFixture()
+	f.r.Set(stThinking)
+	f.clock.Advance(0)
+	f.r.Set(stQueued)
+	f.clock.Advance(time.Second)
+	if got := f.got(); len(got) != 1 || got[0] != "🤔" {
+		t.Fatalf("queued after thinking: %q", got)
+	}
+}
+
+// /compact answered with a logical error (Code != 0, nil error) ends on
+// the error reaction, not done.
+func TestCompactLogicalErrorIsNotDone(t *testing.T) {
+	fake := threadFake()
+	b, _ := newStreamFixture(t, fake)
+	b.ownerChatID = streamChat
+	r := control.New(b.log)
+	control.RegisterSessionCommands(r,
+		func(context.Context, string, int, bool) (string, error) { return "", nil },
+		func(int64) string { return "" }) // not registered
+	b.router = r
+	b.dispatchSlash(t.Context(), threadedMsg(0, "/compact"), "/compact")
+	got := reactionsOf(fake)
+	if len(got) == 0 || got[len(got)-1] != "😱" {
+		t.Fatalf("reactions = %q, want ending on 😱", got)
+	}
+	for _, e := range got {
+		if e == "👍" {
+			t.Fatalf("a refused /compact got done: %q", got)
+		}
+	}
+}
+
+// Retry's 👀 goes through the reactor.
+func TestRetryReactsQueuedThroughReactor(t *testing.T) {
+	fake := &fakeTelegram{respond: okResponder}
+	b := newCallbackFixture(t, fake)
+	b.registerCallbacks()
+	withQueue(t, b)
+	id := failedTurn(t, b, streamChat)
+	b.callbackHandler(t.Context(), b.api, cbUpdate("q1", streamChat, 9, 99, fmt.Sprintf("rt:%d", id)))
+	waitFor(t, "queued reaction", func() bool {
+		got := reactionsOf(fake)
+		return len(got) == 1 && got[0] == "👀"
+	})
+	b.statusMu.Lock()
+	r := b.statuses[statusKey{streamChat, 20}]
+	b.statusMu.Unlock()
+	if r == nil {
+		t.Fatal("the retried message has a reactor")
+	}
+	r.Set(stThinking)
+	r.Set(stQueued) // nothing moves it back
+	r.mu.Lock()
+	want := r.want
+	r.mu.Unlock()
+	if want != stThinking {
+		t.Errorf("want = %d after a late queued", want)
 	}
 }

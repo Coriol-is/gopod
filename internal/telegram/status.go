@@ -104,6 +104,7 @@ type statusReactor struct {
 	lastWrite time.Time
 	pending   func() bool // the debounce timer, nil when none
 	stall     func() bool // the stall timer, nil when none
+	stallGen  int         // bumped on every arm of the stall timer
 	done      bool        // a final state was set: later Sets are ignored
 	dead      bool        // the message refuses reactions: no more writes
 }
@@ -124,9 +125,12 @@ func (b *Bot) newStatusReactor(chatID int64, msgID int) *statusReactor {
 	k := statusKey{chatID, msgID}
 	b.statusMu.Lock()
 	defer b.statusMu.Unlock()
-	if r := b.statuses[k]; r != nil {
+	if r := b.statuses[k]; r != nil && !r.finished() {
 		return r
 	}
+	// A finished reactor still in the map (its final write is pending
+	// or was lost) belongs to the previous turn: the new turn on the
+	// same message (Retry, Regenerate) gets a fresh one.
 	if b.statuses == nil {
 		b.statuses = make(map[statusKey]*statusReactor)
 	}
@@ -156,6 +160,13 @@ func (b *Bot) newStatusReactor(chatID int64, msgID int) *statusReactor {
 	return r
 }
 
+// finished reports whether a final state was set.
+func (r *statusReactor) finished() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.done
+}
+
 // turnStatus is the reactor of the turn's user message.
 func (b *Bot) turnStatus(item queue.Item) *statusReactor {
 	return b.newStatusReactor(item.ChatID, item.MessageID)
@@ -182,7 +193,8 @@ func (r *statusReactor) Set(s turnState) {
 		return
 	}
 	r.mu.Lock()
-	if r.done {
+	if r.done || s == stQueued && r.active > stQueued {
+		// Final, or a late queued (a Retry's) after the turn started.
 		r.mu.Unlock()
 		return
 	}
@@ -247,9 +259,13 @@ func (r *statusReactor) armStallLocked(d time.Duration, s turnState) {
 	if r.stall != nil {
 		r.stall()
 	}
+	// A timer that already fired cannot be stopped: its callback checks
+	// the generation and does nothing once re-armed.
+	r.stallGen++
+	gen := r.stallGen
 	r.stall = r.clock.AfterFunc(d, func() {
 		r.mu.Lock()
-		if r.done {
+		if r.done || gen != r.stallGen {
 			r.mu.Unlock()
 			return
 		}
@@ -302,35 +318,40 @@ func (r *statusReactor) flush() {
 		return
 	}
 	r.log.Debug("status reaction failed", slog.String("emoji", stateEmoji[s]), slog.Any("err", err))
+	// r.release takes the Bot's statusMu, which newStatusReactor holds
+	// while it takes r.mu: release only after r.mu is unlocked.
+	if r.failed(err, final) {
+		r.release()
+	}
+}
+
+// failed records a failed write; true when a final state is given up,
+// so the reactor must be released (a new turn on the message then gets
+// a fresh one).
+func (r *statusReactor) failed(err error, final bool) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.shown = stNone // unknown: a later state is written again
 	if wait, ok := retryAfter(err); ok {
-		if final && wait <= reactFinalRetryMax {
-			// The final state must land: try once more after the wait.
-			r.clock.AfterFunc(wait, func() {
-				r.mu.Lock()
-				r.done = true
-				r.mu.Unlock()
-				r.flushOnce()
-			})
-			return
-		}
 		if !final {
 			// The latest state, once the wait is over.
 			r.lastWrite = r.clock.Now().Add(wait - reactDebounce)
 			r.scheduleLocked()
+			return false
 		}
-		return
+		if wait <= reactFinalRetryMax {
+			// The final state must land: try once more after the wait.
+			r.clock.AfterFunc(wait, r.flushOnce)
+			return false
+		}
+		return true
 	}
 	if reactionRefused(err) {
 		// No rights in a group, reactions off, message or topic gone:
 		// stop writing to this message for good.
 		r.dead = true
 	}
-	if final {
-		r.release()
-	}
+	return final
 }
 
 // flushOnce is the final state's single 429 retry.

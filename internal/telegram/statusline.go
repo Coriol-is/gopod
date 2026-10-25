@@ -25,6 +25,9 @@ const (
 	// headerEditEvery is the edit path's header-only edit interval: an
 	// edit costs rate-limit budget, a draft does not.
 	headerEditEvery = 5 * time.Second
+	// headerDraftEvery is the draft path's clock-only interval: drafts
+	// cost no edit budget but share the typing action's per-peer limit.
+	headerDraftEvery = 3 * time.Second
 )
 
 // statusHeader renders the header line (without a newline). pos > 0 is
@@ -95,15 +98,36 @@ func (b *Bot) threadBusy(chatID int64, thread int) bool {
 	return b.busyThreads[chatThread{chatID, thread}] > 0
 }
 
-// queueWaiter is one waiting turn's queue-position draft loop.
-type queueWaiter struct {
-	quit chan struct{}
-	done chan struct{}
-	once sync.Once
+// otherThreadBusy reports whether a turn of the chat streams in another
+// thread than thread: the only case where a turn of this thread waits
+// "behind another conversation of the chat". An idle chat, or one whose
+// next batch only waits for a global agent slot, has none.
+func (b *Bot) otherThreadBusy(chatID int64, thread int) bool {
+	b.statusMu.Lock()
+	defer b.statusMu.Unlock()
+	for k, n := range b.busyThreads {
+		if k.chat == chatID && k.thread != thread && n > 0 {
+			return true
+		}
+	}
+	return false
 }
 
+// queueWaiter is one waiting turn's queue-position draft loop.
+type queueWaiter struct {
+	quit   chan struct{}
+	done   chan struct{}
+	once   sync.Once
+	cancel context.CancelFunc // cuts a draft request in flight
+}
+
+// stop ends the loop and waits for it; a draft request in flight is
+// cancelled, so a starting turn never waits on the network for it.
 func (w *queueWaiter) stop() {
-	w.once.Do(func() { close(w.quit) })
+	w.once.Do(func() {
+		close(w.quit)
+		w.cancel()
+	})
 	<-w.done
 }
 
@@ -118,14 +142,15 @@ func (b *Bot) startQueueWait(ctx context.Context, item queue.Item) {
 	if b.queue == nil || !b.streamEnabled || item.ID == 0 || !b.draftsSupported(item.ChatID) {
 		return
 	}
-	if b.queue.Position(item.Folder, item.ID) == 0 {
+	if b.queue.Position(item.Folder, item.ID) == 0 || !b.otherThreadBusy(item.ChatID, item.ThreadID) {
 		return
 	}
 	tick := b.streamTick
 	if tick <= 0 {
 		tick = time.Second
 	}
-	w := &queueWaiter{quit: make(chan struct{}), done: make(chan struct{})}
+	ctx, cancel := context.WithCancel(ctx)
+	w := &queueWaiter{quit: make(chan struct{}), done: make(chan struct{}), cancel: cancel}
 	k := chatThread{item.ChatID, item.ThreadID}
 	b.statusMu.Lock()
 	if b.queueWaits == nil {
@@ -136,6 +161,7 @@ func (b *Bot) startQueueWait(ctx context.Context, item queue.Item) {
 
 	go func() {
 		defer close(w.done)
+		defer cancel()
 		defer b.forgetQueueWaiter(k, w)
 		ticker := time.NewTicker(tick)
 		defer ticker.Stop()
@@ -143,13 +169,23 @@ func (b *Bot) startQueueWait(ctx context.Context, item queue.Item) {
 		shown := 0
 		var sentAt, hold time.Time
 		for {
+			// The first look is one tick after the enqueue, so a turn
+			// that starts at once never shows a position.
+			select {
+			case <-w.quit:
+				return
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
 			pos := b.queue.Position(item.Folder, item.ID)
 			if pos == 0 {
 				return
 			}
 			// The same thread streams another turn: its draft is there.
 			due := pos != shown || time.Since(sentAt) >= draftRefresh
-			if due && !b.threadBusy(item.ChatID, item.ThreadID) && !time.Now().Before(hold) {
+			if due && !b.threadBusy(item.ChatID, item.ThreadID) &&
+				b.otherThreadBusy(item.ChatID, item.ThreadID) && !time.Now().Before(hold) {
 				select {
 				case <-w.quit:
 					return
@@ -168,13 +204,6 @@ func (b *Bot) startQueueWait(ctx context.Context, item queue.Item) {
 					b.log.Debug("queue draft failed",
 						slog.Int64("chat_id", item.ChatID), slog.Any("err", err))
 				}
-			}
-			select {
-			case <-w.quit:
-				return
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
 			}
 		}
 	}()

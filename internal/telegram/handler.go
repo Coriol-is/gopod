@@ -236,7 +236,11 @@ func (b *Bot) dispatchSlash(ctx context.Context, m *models.Message, text string)
 		b.replyTo(ctx, m.Chat.ID, thread, m.ID, resp.Text)
 		return
 	}
-	status.Set(stDone)
+	if resp.Code != 0 {
+		status.Set(stError) // e.g. "Chat not registered.": not done
+	} else {
+		status.Set(stDone)
+	}
 	if resp.Text != "" {
 		b.replyTo(ctx, m.Chat.ID, thread, m.ID, resp.Text)
 	}

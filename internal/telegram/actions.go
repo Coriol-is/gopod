@@ -77,9 +77,9 @@ func (b *Bot) retryTurn(ctx context.Context, q cbQuery) (string, error) {
 	}
 	b.log.Info("turn retried by user",
 		slog.Int64("turn", turnID), slog.Int64("chat_id", q.ChatID), slog.Int("thread", q.ThreadID))
-	if item.MessageID > 0 {
-		b.react(ctx, item.ChatID, item.MessageID, emojiThinking)
-	}
+	// Through the reactor, so a worker that already started the turn
+	// (🤔) is not set back to queued.
+	b.newStatusReactor(item.ChatID, item.MessageID).Set(stQueued)
 	b.clearKeyboard(ctx, q.ChatID, q.MessageID)
 	return retryToastQueued, nil
 }
