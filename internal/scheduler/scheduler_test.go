@@ -256,3 +256,52 @@ func TestRunTaskEnqueueFailureFinalizesLogRow(t *testing.T) {
 		t.Errorf("handler calls = %d, want 0", n)
 	}
 }
+
+func TestStaleTaskSnapshotCannotRevivePausedOrUpdatedTask(t *testing.T) {
+	for _, mode := range []string{"paused", "cancelled", "deleted", "updated"} {
+		t.Run(mode, func(t *testing.T) {
+			st := openTestStore(t)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			now := time.Now().UnixMilli()
+			task := store.TaskRecord{ID: "snapshot", ChatFolder: "alice", Prompt: "old prompt", ScheduleType: "interval", ScheduleValue: "1h", NextRun: now - 1, Status: "active"}
+			if _, err := st.CreateTask(ctx, task); err != nil {
+				t.Fatal(err)
+			}
+			switch mode {
+			case "paused":
+				st.UpdateTaskStatus(ctx, task.ID, "paused", 0, 0)
+			case "cancelled":
+				st.UpdateTaskStatus(ctx, task.ID, "done", 0, 0)
+			case "deleted":
+				st.DeleteTask(ctx, task.ID)
+			case "updated":
+				updated := task
+				updated.Prompt = "new prompt"
+				updated.NextRun = now + time.Hour.Milliseconds()
+				st.UpdateTaskDefinition(ctx, updated)
+			}
+			var runs atomic.Int32
+			q := queue.New(ctx, func(context.Context, []queue.Item) error { runs.Add(1); return nil }, 1, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			defer q.Close()
+			s := New(st, q, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			s.runTask(ctx, task, now)
+			if runs.Load() != 0 || q.Pending() != 0 || q.ActiveChats() != 0 {
+				t.Fatal("stale snapshot dispatched")
+			}
+			current, err := st.GetTask(ctx, task.ID)
+			if mode == "deleted" {
+				if !errors.Is(err, store.ErrTaskNotFound) {
+					t.Fatal("deleted task reappeared")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if mode == "paused" && current.Status != "paused" || mode == "cancelled" && current.Status != "done" || mode == "updated" && (current.Prompt != "new prompt" || current.NextRun <= now) {
+				t.Fatalf("stale snapshot overwrote mutation: %+v", current)
+			}
+		})
+	}
+}

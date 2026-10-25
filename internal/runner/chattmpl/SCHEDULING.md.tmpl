@@ -1,0 +1,107 @@
+# Scheduling tasks through gopod
+
+This guide applies to chat workspace `{{.ChatFolder}}`. Use filesystem IPC;
+do not guess formats or write SQLite. The host derives authorization from this
+chat's `/workspace/ipc` mount, not from fields an agent supplies.
+
+## Create a recurring task
+
+Write one JSON object atomically into `/workspace/ipc/tasks/<unique-name>.json`:
+
+```json
+{"op":"schedule","taskId":"daily-review","prompt":"Review my project notes and write the result to /workspace/chat/daily-review.md.","scheduleType":"cron","scheduleValue":"CRON_TZ=Europe/Belgrade 0 9 * * *"}
+```
+
+This means 09:00 Belgrade local time, including DST. For Moscow use
+`CRON_TZ=Europe/Moscow 0 9 * * *`. Confirm the user's intended timezone instead
+of guessing it or hardcoding a UTC offset. Cron without CRON_TZ uses the gopod
+process timezone (the reference deployment is UTC), not Telegram/device time.
+`GOPOD_TIMEZONE` is not implemented. Five cron fields are minute/hour/day/month/weekday.
+
+For relative recurrence use `"scheduleType":"interval","scheduleValue":"24h"`.
+The host polls due schedules about once per minute; queue/admission waits can
+delay execution further. This is not an exact-second timer. Intervals must be
+at least 1ms, the stored timestamp resolution. `24h` means 24 elapsed hours, not necessarily the same wall-clock hour across DST.
+For one future execution use `"scheduleType":"once"` and an RFC3339 timestamp
+with offset, such as `2027-01-02T09:00:00+01:00`.
+
+Fields are camelCase. Required: `op`, `prompt`, `scheduleType`, `scheduleValue`.
+`taskId` is recommended and must be unique; repeating the same id and definition
+is idempotent. Omit `targetChatFolder` for this chat. Only the owner namespace
+may target another registered folder. Never send `type:"schedule_task"`,
+`chat_folder`, `chat_jid`, `targetJid` or snake_case schedule fields.
+
+Publish a completed file, not partially written JSON. For example:
+
+```javascript
+// Run with: node --input-type=module
+import { writeFile, rename } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+const request = { op: 'list' };
+const name = randomUUID();
+const final = `/workspace/ipc/tasks/${name}.json`;
+const tmp = `/workspace/ipc/tasks/${name}.tmp`;
+await writeFile(tmp, JSON.stringify(request), { flag: 'wx', mode: 0o600 });
+await rename(tmp, final);
+console.log(`/workspace/ipc/results/${name}.result.json`);
+```
+
+## Verify the result
+
+Wait for `/workspace/ipc/results/<unique-name>.result.json`. It reports
+`status:"ok"` with the task id/definition/`nextRun` (Unix milliseconds), or
+`status:"error"` with an actionable reason. Do not claim a task exists until
+its successful receipt shows a nonzero nextRun for an active schedule. The
+original request moves to `.processed` or `.failed`; the reason is in results.
+Request results are committed with task mutations in a host-owned SQLite
+journal. While retained, reusing a filename with identical payload replays the same result; a
+different payload under that filename is rejected. Never treat an agent-edited
+result file as proof of a new operation. Unarchived results are protected; a
+full pending backlog stops new mutations until archive/result access is repaired.
+Do not reuse old acknowledged filenames after retention. Receipts/archives have bounded retention: copy important confirmations into
+this chat workspace if needed. Use a new filename for each new operation.
+
+## Inspect and manage
+
+```json
+{"op":"list"}
+{"op":"get","taskId":"daily-review"}
+{"op":"pause","taskId":"daily-review"}
+{"op":"resume","taskId":"daily-review"}
+{"op":"update","taskId":"daily-review","prompt":"Updated instructions","scheduleType":"cron","scheduleValue":"CRON_TZ=Europe/Belgrade 0 10 * * *"}
+{"op":"cancel","taskId":"daily-review"}
+{"op":"delete","taskId":"daily-review"}
+```
+
+Pause stops future runs; resume recomputes the next future time. Cancel marks
+a task done; delete removes its schedule. These do not stop an already-running
+agent. A completed task cannot resume: create a new task. Receipts and `/tasks list` show full ids; use the exact id. Management is restricted to
+this chat's tasks unless the host identifies the source namespace as owner.
+Telegram users can also use `/tasks`, `/tasks add ...`, `/tasks pause <id>`,
+`/tasks resume <id>` and `/tasks cancel <id>` (the last deletes the schedule).
+
+## Result delivery is explicit
+
+Scheduled runs are background work in main (thread 0). Returning text on stdout
+does not automatically send a Telegram digest or notification. If delivery is
+wanted, include an explicit step in the task prompt to write a message request:
+
+```json
+{"chatJid":"tg:<the actual chat id>","text":"The completed result"}
+```
+
+Publish it atomically to `/workspace/ipc/messages/<unique-name>.json`, then
+check `.processed`/`.failed`. Use the actual `chatJid` returned by a task receipt,
+never a guessed id. Cross-chat sending is owner-only. Do not claim delivery
+merely because a task was scheduled or its model run completed.
+
+## Database and source access
+
+The owner may see `/workspace/store/store.sqlite` as a read-write file bind,
+but its parent directory is on the read-only root filesystem. SQLite WAL needs
+adjacent sidecar files; the file bind is not a working database mutation API.
+Do not remount it or use direct SQL for scheduling. Existing CLAUDE.md/AGENTS.md
+may contain stale RW/source-checkout claims; this IPC guide reflects the actual
+supported path. `/workspace/project` is deployment-specific and may not contain
+source code. The server validates schedules and scope independently of this
+agent-writable guide. No credentials belong in requests, receipts or logs.

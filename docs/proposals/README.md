@@ -83,3 +83,4 @@ Bullet list someone else can verify.
 | [CP-012](CP-012-provider-registry.md) | Provider registry and quota choices (design only) | accepted | M |
 | [CP-013](CP-013-transcript-provenance.md) | Speech transcript provenance | done | S |
 | [CP-014](CP-014-telegram-media-input.md) | Telegram media — three delivery queues (design only) | accepted | L |
+| [CP-015](CP-015-agent-scheduling.md) | Generic agent scheduling and IPC receipts | done | M |

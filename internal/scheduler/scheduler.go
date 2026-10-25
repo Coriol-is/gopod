@@ -126,6 +126,14 @@ func (s *Scheduler) poll(ctx context.Context) {
 }
 
 func (s *Scheduler) runTask(ctx context.Context, t store.TaskRecord, now int64) {
+	release := LockTasks(s.store)
+	defer release()
+	current, err := s.store.GetTask(ctx, t.ID)
+	if err != nil || current.Status != "active" || current.NextRun <= 0 || current.NextRun > now {
+		return
+	}
+	t = current
+
 	// slot is the task's scheduled time. It is stable across polls and
 	// crashes, unlike now, so it keys both the log row and the queue
 	// dedup. GetDueTasks only returns tasks with next_run set.
@@ -251,9 +259,12 @@ func ValidateCron(expr string) error {
 
 // ValidateInterval checks whether s is a valid Go duration string.
 func ValidateInterval(s string) error {
-	_, err := time.ParseDuration(s)
+	d, err := time.ParseDuration(s)
 	if err != nil {
 		return fmt.Errorf("invalid interval: %w", err)
+	}
+	if d < time.Millisecond {
+		return fmt.Errorf("interval must be at least 1ms (stored time resolution)")
 	}
 	return nil
 }

@@ -293,6 +293,7 @@ func EnsureChatDirs(p Paths, chatFolder string, isOwner bool, log *slog.Logger) 
 		ipcDir,
 		filepath.Join(ipcDir, "messages"),
 		filepath.Join(ipcDir, "tasks"),
+		filepath.Join(ipcDir, "results"),
 		filepath.Join(ipcDir, "input"),
 		filepath.Join(ipcDir, ".processed"),
 		filepath.Join(ipcDir, ".failed"),

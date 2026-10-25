@@ -66,7 +66,7 @@ func (s *Store) CreateTask(ctx context.Context, t TaskRecord) (string, error) {
 		   next_run, last_run, status, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
-	if _, err := s.db.ExecContext(ctx, stmt,
+	if _, err := s.taskDB(ctx).ExecContext(ctx, stmt,
 		t.ID, t.ChatFolder, t.ChatJID, t.Prompt,
 		t.ScheduleType, t.ScheduleValue,
 		t.NextRun, nullableInt64(t.LastRun),
@@ -84,7 +84,7 @@ func (s *Store) GetTask(ctx context.Context, id string) (TaskRecord, error) {
 		       next_run, IFNULL(last_run, 0), status, created_at
 		  FROM scheduled_tasks WHERE id = ?`
 	var t TaskRecord
-	err := s.db.QueryRowContext(ctx, q, id).Scan(
+	err := s.taskDB(ctx).QueryRowContext(ctx, q, id).Scan(
 		&t.ID, &t.ChatFolder, &t.ChatJID, &t.Prompt,
 		&t.ScheduleType, &t.ScheduleValue,
 		&t.NextRun, &t.LastRun, &t.Status, &t.CreatedAt,
@@ -107,7 +107,7 @@ func (s *Store) ListTasksByChat(ctx context.Context, chatFolder string) ([]TaskR
 		  FROM scheduled_tasks
 		 WHERE chat_folder = ?
 		 ORDER BY created_at ASC`
-	rows, err := s.db.QueryContext(ctx, q, chatFolder)
+	rows, err := s.taskDB(ctx).QueryContext(ctx, q, chatFolder)
 	if err != nil {
 		return nil, fmt.Errorf("store: ListTasksByChat: %w", err)
 	}
@@ -124,7 +124,7 @@ func (s *Store) GetDueTasks(ctx context.Context, now int64) ([]TaskRecord, error
 		  FROM scheduled_tasks
 		 WHERE status = 'active' AND next_run > 0 AND next_run <= ?
 		 ORDER BY next_run ASC`
-	rows, err := s.db.QueryContext(ctx, q, now)
+	rows, err := s.taskDB(ctx).QueryContext(ctx, q, now)
 	if err != nil {
 		return nil, fmt.Errorf("store: GetDueTasks: %w", err)
 	}
@@ -138,7 +138,7 @@ func (s *Store) UpdateTaskStatus(ctx context.Context, id, status string, nextRun
 		UPDATE scheduled_tasks
 		   SET status = ?, next_run = ?, last_run = ?
 		 WHERE id = ?`
-	res, err := s.db.ExecContext(ctx, stmt, status, nextRun, lastRun, id)
+	res, err := s.taskDB(ctx).ExecContext(ctx, stmt, status, nextRun, lastRun, id)
 	if err != nil {
 		return fmt.Errorf("store: UpdateTaskStatus: %w", err)
 	}
@@ -154,7 +154,7 @@ func (s *Store) LogTaskRun(ctx context.Context, log TaskRunLog) error {
 	const stmt = `
 		INSERT INTO task_run_logs (task_id, run_at, duration_ms, status, result, error)
 		VALUES (?, ?, ?, ?, ?, ?)`
-	if _, err := s.db.ExecContext(ctx, stmt,
+	if _, err := s.taskDB(ctx).ExecContext(ctx, stmt,
 		log.TaskID, log.RunAt, log.DurationMs,
 		log.Status, nullableString(log.Result), nullableString(log.Error),
 	); err != nil {
@@ -166,7 +166,7 @@ func (s *Store) LogTaskRun(ctx context.Context, log TaskRunLog) error {
 // SetTaskRunTurn links a task_run_logs row to the turn that executes it.
 // Rows are addressed by (task_id, run_at), unique per scheduled slot.
 func (s *Store) SetTaskRunTurn(ctx context.Context, taskID string, runAt, turnID int64) error {
-	res, err := s.db.ExecContext(ctx,
+	res, err := s.taskDB(ctx).ExecContext(ctx,
 		`UPDATE task_run_logs SET turn_id = ? WHERE task_id = ? AND run_at = ?`,
 		turnID, taskID, runAt)
 	if err != nil {
@@ -185,7 +185,7 @@ func (s *Store) SetTaskRunTurn(ctx context.Context, taskID string, runAt, turnID
 // FinishTaskRun records the outcome of a task run that was logged as
 // "running" when it was enqueued.
 func (s *Store) FinishTaskRun(ctx context.Context, taskID string, runAt int64, status string, durationMs int64, errText string) error {
-	res, err := s.db.ExecContext(ctx,
+	res, err := s.taskDB(ctx).ExecContext(ctx,
 		`UPDATE task_run_logs SET status = ?, duration_ms = ?, error = ?
 		  WHERE task_id = ? AND run_at = ?`,
 		status, durationMs, nullableString(errText), taskID, runAt)
@@ -207,7 +207,7 @@ func (s *Store) GetTaskRun(ctx context.Context, taskID string, runAt int64) (Tas
 	var l TaskRunLog
 	var dur, turnID sql.NullInt64
 	var result, errText sql.NullString
-	err := s.db.QueryRowContext(ctx,
+	err := s.taskDB(ctx).QueryRowContext(ctx,
 		`SELECT task_id, run_at, duration_ms, status, result, error, turn_id
 		   FROM task_run_logs WHERE task_id = ? AND run_at = ?`, taskID, runAt).
 		Scan(&l.TaskID, &l.RunAt, &dur, &l.Status, &result, &errText, &turnID)
@@ -226,7 +226,7 @@ func (s *Store) GetTaskRun(ctx context.Context, taskID string, runAt int64) (Tas
 
 // DeleteTask removes a task. No error if it doesn't exist.
 func (s *Store) DeleteTask(ctx context.Context, id string) error {
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM scheduled_tasks WHERE id = ?`, id); err != nil {
+	if _, err := s.taskDB(ctx).ExecContext(ctx, `DELETE FROM scheduled_tasks WHERE id = ?`, id); err != nil {
 		return fmt.Errorf("store: DeleteTask: %w", err)
 	}
 	return nil
@@ -246,4 +246,21 @@ func scanTasks(rows *sql.Rows) ([]TaskRecord, error) {
 		out = append(out, t)
 	}
 	return out, rows.Err()
+}
+
+// UpdateTaskDefinition changes an existing task without allowing its ownership
+// or destination to move. The caller has already validated its source scope.
+func (s *Store) UpdateTaskDefinition(ctx context.Context, t TaskRecord) error {
+	res, err := s.taskDB(ctx).ExecContext(ctx, `UPDATE scheduled_tasks SET prompt=?,schedule_type=?,schedule_value=?,next_run=? WHERE id=? AND chat_folder=?`, t.Prompt, t.ScheduleType, t.ScheduleValue, t.NextRun, t.ID, t.ChatFolder)
+	if err != nil {
+		return fmt.Errorf("store: update task definition: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrTaskNotFound
+	}
+	return nil
 }

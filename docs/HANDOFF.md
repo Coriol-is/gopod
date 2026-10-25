@@ -46,6 +46,21 @@ This is planning only. Actual hidden URL/update fields from the supplied Guest
 card are not captured; do not infer them from the screenshot. Gopod's own guest
 query participation requires a separate authorization/reply namespace.
 
+**Agent scheduling (CP-015):** generic recurring-task capability, not a manually
+created digest. Agents read `/workspace/chat/SCHEDULING.md` (seeded if missing
+for existing/new chats, without replacing custom identity files) and use exact
+IPC operations with source-scoped result receipts. Initial `next_run` is now
+computed; explicit IANA cron zones work in Alpine via embedded tzdata. Agents
+can inspect/update/pause/resume/cancel/delete their tasks; cancel is scoped.
+Task mutations and host-trusted replay results commit atomically. Dispatch
+refresh and task mutations are coordinated, and nonregular IPC files are
+rejected without blocking. Full task ids are usable from `/tasks list`.
+Schedule stdout remains silent; explicit IPC message delivery is documented.
+Owner DB-file RW does not provide a writable WAL directory or a supported
+scheduling API. Source/test work is complete; independent review/CI gate final
+merge and deployment. No live schedules were created for this investigation.
+See [the capability spec](superpowers/specs/2026-10-25-agent-scheduling.md).
+
 **Earlier working session (2026-10-24):** Telegram chat-UI parity, built
 autonomously through worktrees and PRs #3–#10 (agent implementer + separate
 reviewer per task, CI green, admin squash-merge). Now included in deployed
@@ -541,6 +556,16 @@ pending: a 20-line and a 100-line block in a private chat and in a topic.
    second message in the same thread, keeps 👀); earlier messages of a
    batched turn keep 👀; elapsed time counts from the agent start, not from
    receipt; stall timers are not stopped by a shutdown mid-turn.
+0R. **Generic agent scheduling (CP-015).** After deployment, verify the additive
+   guide is readable in an existing chat without overwriting its CLAUDE/AGENTS.
+   Submit a read-only IPC list request and inspect its result receipt; submit an
+   invalid operation and verify a machine-readable reason and failed archive.
+   These probes must not create any schedule. Local integration/race tests
+   cover create/manage, positive nextRun, IANA zones/DST, replay after archive
+   failure/restart, malformed/FIFO input and cross-chat denial. A real user task
+   can subsequently validate execution and explicitly requested delivery; do
+   not create a FreeFeed or other recurring job just to complete this audit.
+
 0Q. **Confirmed quota fallback (CP-010, D031).** After deployment, trigger a
    known quota rejection in a private topic: verify the named-provider question
    says the whole chat changes, no change before Yes, Cancel leaves it alone,

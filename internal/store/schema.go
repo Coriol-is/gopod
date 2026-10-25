@@ -22,6 +22,10 @@ import (
 // row in router_state and a migrations runner here. For now everything
 // is additive and IF NOT EXISTS keeps re-runs safe.
 var schemaStatements = []string{
+	`CREATE TABLE IF NOT EXISTS ipc_task_requests (
+ source_folder TEXT NOT NULL,request_file TEXT NOT NULL,payload_hash TEXT NOT NULL,
+ result_json BLOB NOT NULL,created_at INTEGER NOT NULL, archived INTEGER NOT NULL DEFAULT 0,
+ PRIMARY KEY(source_folder,request_file))`,
 	`CREATE TABLE IF NOT EXISTS conversation_history (
  id INTEGER PRIMARY KEY AUTOINCREMENT,
  chat_folder TEXT NOT NULL,

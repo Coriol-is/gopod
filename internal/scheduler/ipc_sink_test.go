@@ -47,6 +47,9 @@ func TestIPCSink_Schedule_PersistsTask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetTask: %v", err)
 	}
+	if got.NextRun <= got.CreatedAt {
+		t.Fatalf("accepted IPC schedule will never run: next=%d created=%d", got.NextRun, got.CreatedAt)
+	}
 	if got.Prompt != "ping" {
 		t.Errorf("Prompt = %q, want ping", got.Prompt)
 	}
