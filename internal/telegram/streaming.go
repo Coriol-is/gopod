@@ -691,27 +691,10 @@ func (b *Bot) finishStoppedEdit(ctx context.Context, item queue.Item, stream *ru
 	return queue.ErrStopped
 }
 
-// handleStreamError handles errors from a streaming agent run.
-// Mirrors the error classification in runAgentSync.
+// handleStreamError handles errors from a streaming agent run: a
+// humane reply from the error table (errors.go), as on the sync path.
 func (b *Bot) handleStreamError(ctx context.Context, item queue.Item, err error) {
-	if item.MessageID > 0 {
-		b.react(ctx, item.ChatID, item.MessageID, emojiError)
-	}
-	if errors.Is(err, runner.ErrSessionExpired) {
-		b.replyTo(ctx, item.ChatID, item.ThreadID, item.MessageID,
-			"Session expired. Run /login to re-authenticate.")
-		return
-	}
-	if errors.Is(err, runner.ErrNotLoggedIn) {
-		b.replyTo(ctx, item.ChatID, item.ThreadID, item.MessageID,
-			"Not authenticated. Run /login to sign in.")
-		return
-	}
-	b.log.Error("streaming agent run failed",
-		slog.String("chat_folder", item.Folder),
-		slog.Any("err", err))
-	b.replyTo(ctx, item.ChatID, item.ThreadID, item.MessageID,
-		"Something went wrong. Check gopod logs for details.")
+	b.replyError(ctx, item, err)
 }
 
 // drainAndSend is the fallback path: drain a streaming AgentStream

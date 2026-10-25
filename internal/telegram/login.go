@@ -103,8 +103,13 @@ func (b *Bot) loginHandlerReal(ctx context.Context, _ *bot.Bot, update *models.U
 	}
 	m := update.Message
 	b.persistMessage(ctx, m)
-	thread := inboundThreadID(m)
+	b.startLogin(ctx, m, inboundThreadID(m))
+}
 
+// startLogin runs the /login flow for the chat of m, answering in
+// thread. The /login command and the login button (actions.go) share
+// it; m is the command message or the message carrying the button.
+func (b *Bot) startLogin(ctx context.Context, m *models.Message, thread int) {
 	if b.runner == nil {
 		b.replyText(ctx, m.Chat.ID, thread,
 			"Runner is not available. Is Docker running?")

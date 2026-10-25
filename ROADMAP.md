@@ -177,7 +177,7 @@ Spec: [docs/superpowers/specs/2026-10-24-telegram-threads-and-drafts-design.md](
 | T9 | Enable the memory cgroup on the Pi so the per-container RAM limit is enforced (`cgroup_enable=memory cgroup_memory=1` in the boot cmdline + host reboot), then set the agent cap to ~1 GB | ⏸️ | **Backlog, not implemented** (owner, 2026-10-25). Today the 4 GiB limit in code is ignored on the deploy host (`docker inspect` shows `mem=0`) |
 | T6 | Inline keyboards (Regenerate / Copy / pickers, confirmations) | ⬜ | Spec: [docs/superpowers/specs/2026-10-25-telegram-dynamic-ux-design.md](docs/superpowers/specs/2026-10-25-telegram-dynamic-ux-design.md) (F1-F9), plan phases 1, 2, 4 |
 | T7 | Rich messages (`sendRichMessage`: tables, thinking/details blocks) | ⬜ | Same spec, F13; plan phase 7, behind `GOPOD_RICH_REPLIES`; verify in private chats first |
-| T10 | Callback layer, Stop button on the edit path, humane errors with Retry | ⬜ | Dynamic UX plan phase 1 (`docs/superpowers/plans/2026-10-25-telegram-dynamic-ux-plan.md`); ADR D028 |
+| T10 | Callback layer, Stop button on the edit path, humane errors with Retry | 🟦 | Dynamic UX plan phase 1 (`docs/superpowers/plans/2026-10-25-telegram-dynamic-ux-plan.md`), branch `feat/ux-phase1`: unit-tested, live check HANDOFF 0U pending; ADR D028 comes with plan Task 9 |
 | T11 | Reply actions under the newest reply: Regenerate, Copy, Steps, As file | ⬜ | Plan phase 2; owner Q1, Q2 |
 | T12 | Visible state: status reactions, elapsed time and queue position in the draft | ⬜ | Plan phase 3; needs PR #22 (D024); owner Q3 |
 | T13 | Command buttons: model/provider pickers, confirmations, paged outputs | ⬜ | Plan phase 4; `control.Response.Buttons`; owner Q6 |

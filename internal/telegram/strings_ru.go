@@ -17,3 +17,24 @@ const (
 	stopToastStopping = "Останавливаю…"
 	stopToastFinished = "Уже завершено"
 )
+
+// Retry and login buttons (actions.go, errors.go).
+const (
+	btnRetry = "🔁 Повторить"
+	btnLogin = "🔑 Войти"
+
+	cbToastNotYours    = "Эта кнопка не для этого чата"
+	retryToastQueued   = "Повторяю запрос"
+	retryToastAlready  = "Уже повторяю"
+	loginToastStarting = "Запускаю вход…"
+)
+
+// Error replies (errors.go): what happened and what to do next. Never
+// the error text itself: no stderr, paths or tokens reach the chat.
+const (
+	errTextAuthExpired = "Сессия агента истекла. Нажмите «Войти» или отправьте /login."
+	errTextNotLoggedIn = "Агент не авторизован. Нажмите «Войти» или отправьте /login."
+	errTextAgentFailed = "Агент не смог ответить: запуск завершился ошибкой. Можно повторить запрос."
+	errTextBusy        = "Агент сейчас занят. Повторите запрос чуть позже."
+	errTextDelivery    = "Не удалось доставить ответ. Можно повторить запрос."
+)

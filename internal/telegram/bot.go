@@ -129,6 +129,16 @@ type Bot struct {
 	// callbacks maps a callback act to its handler (callback.go).
 	cbMu      sync.RWMutex
 	callbacks map[string]cbHandler
+
+	// errMu guards errShown, the last time each (chat, error kind)
+	// reply went out (errors.go cooldown), and retried, the turns a
+	// Retry button already re-enqueued (actions.go).
+	errMu    sync.Mutex
+	errShown map[errCooldownKey]time.Time
+	retried  map[int64]time.Time
+
+	// now is the clock of the error cooldown; nil means time.Now.
+	now func() time.Time
 }
 
 // allowedUpdates is the explicit getUpdates allowed_updates list. Before
