@@ -68,6 +68,14 @@ func (ls *loginSessions) reserve(chatID int64) bool {
 	return true
 }
 
+// isStarting reports whether chatID's login slot is reserved by a start
+// that has not stored its session yet.
+func (ls *loginSessions) isStarting(chatID int64) bool {
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
+	return ls.starting[chatID]
+}
+
 // release gives up a reservation whose login did not start.
 func (ls *loginSessions) release(chatID int64) {
 	ls.mu.Lock()
@@ -148,7 +156,11 @@ func (b *Bot) startLogin(ctx context.Context, m *models.Message, thread int) {
 	// Refuse if a login is active or being started: claimed atomically
 	// before the slow container start, so two quick presses run one.
 	if !b.logins.reserve(m.Chat.ID) {
-		b.replyText(ctx, m.Chat.ID, thread, loginTextAlready)
+		text := loginTextAlready
+		if b.logins.isStarting(m.Chat.ID) {
+			text = loginTextStarting
+		}
+		b.replyText(ctx, m.Chat.ID, thread, text)
 		return
 	}
 	b.loginReserved(ctx, m, thread, rc)
@@ -161,9 +173,14 @@ func (b *Bot) loginReserved(ctx context.Context, m *models.Message, thread int, 
 	if run == nil {
 		run = b.runLogin
 	}
-	if !run(ctx, m, thread, rc) {
-		b.logins.release(m.Chat.ID)
-	}
+	// Deferred, so a panic in run cannot keep the slot forever.
+	stored := false
+	defer func() {
+		if !stored {
+			b.logins.release(m.Chat.ID)
+		}
+	}()
+	stored = run(ctx, m, thread, rc)
 }
 
 // loginFailed logs a failed login start and tells the user without the

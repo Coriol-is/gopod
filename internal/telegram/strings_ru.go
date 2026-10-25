@@ -28,6 +28,7 @@ const (
 	retryToastAlready  = "Уже повторяю"
 	loginToastStarting = "Запускаю вход…"
 	loginToastAlready  = "Вход уже запущен"
+	loginToastInStart  = "Вход запускается, подождите…"
 	retryToastFailed   = "Не получилось повторить, попробуйте ещё раз"
 )
 
@@ -35,6 +36,8 @@ const (
 const (
 	loginTextAlready = "Вход уже запущен в этом чате. Вставьте код из браузера или дождитесь окончания сессии."
 	loginTextFailed  = "Не удалось запустить вход. Попробуйте /login ещё раз чуть позже."
+	// The login is still starting (container, CLI): no URL yet.
+	loginTextStarting = "Вход ещё запускается, подождите ссылку…"
 )
 
 // Error replies (errors.go): what happened and what to do next. Never

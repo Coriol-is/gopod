@@ -120,6 +120,9 @@ func (b *Bot) loginCallback(ctx context.Context, q cbQuery) (string, error) {
 	// The slot is claimed here, before answering, so a second press
 	// (or /login) while this one starts gets a toast, not a second exec.
 	if !b.logins.reserve(q.ChatID) {
+		if b.logins.isStarting(q.ChatID) {
+			return loginToastInStart, nil
+		}
 		return loginToastAlready, nil
 	}
 	b.clearKeyboard(ctx, q.ChatID, q.MessageID)

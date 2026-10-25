@@ -207,18 +207,26 @@ func TestLoginCallback_ConcurrentPressesStartOne(t *testing.T) {
 	wg.Wait()
 	waitFor(t, "login started", func() bool { return stub.calls.Load() == 1 })
 	toasts := answeredOnce(t, fake, "q1") + "|" + answeredOnce(t, fake, "q2")
-	if !strings.Contains(toasts, loginToastStarting) || !strings.Contains(toasts, loginToastAlready) {
+	if !strings.Contains(toasts, loginToastStarting) || !strings.Contains(toasts, loginToastInStart) {
 		t.Fatalf("toasts = %q, want one start and one refusal", toasts)
 	}
 	// The press takes the 🔑 button off the reply.
 	if m := fake.callsTo("editMessageReplyMarkup"); len(m) != 1 || !cleared(t, m[0]) {
 		t.Fatalf("keyboard clears = %+v", m)
 	}
-	// /login while it starts is refused too.
+	// /login while it starts is refused too, saying it is starting.
 	b.startLogin(ctx, &models.Message{ID: 5, Chat: models.Chat{ID: streamChat}}, 0)
 	if stub.calls.Load() != 1 {
 		t.Fatal("/login started a second login")
 	}
+	waitFor(t, "starting notice", func() bool {
+		for _, c := range fake.callsTo("sendMessage") {
+			if c.Form["text"] == loginTextStarting {
+				return true
+			}
+		}
+		return false
+	})
 
 	// The start fails: the slot is released and a new press starts again.
 	stub.results <- false
@@ -262,4 +270,29 @@ func TestLoginFailed_NoErrorText(t *testing.T) {
 	if len(sends) != 1 || sends[0].Form["text"] != loginTextFailed || sends[0].Form["message_thread_id"] != "7" {
 		t.Fatalf("sends = %+v", sends)
 	}
+}
+
+// A panic while starting a login must not keep the chat's slot.
+func TestLoginReserved_PanicReleasesSlot(t *testing.T) {
+	fake := &fakeTelegram{respond: okResponder}
+	b := newCallbackFixture(t, fake)
+	b.registerCallbacks()
+	b.loginRun = func(context.Context, *models.Message, int, store.RegisteredChat) bool {
+		panic("exec exploded")
+	}
+	if !b.logins.reserve(streamChat) {
+		t.Fatal("reserve")
+	}
+	func() {
+		defer func() { _ = recover() }()
+		b.loginReserved(context.Background(), &models.Message{Chat: models.Chat{ID: streamChat}}, 0, store.RegisteredChat{Folder: "owner"})
+	}()
+
+	stub := stubLogin(b)
+	b.callbackHandler(context.Background(), b.api, cbUpdate("q1", streamChat, 0, 99, "lg"))
+	if toast := answeredOnce(t, fake, "q1"); toast != loginToastStarting {
+		t.Fatalf("press after a panicked start: toast %q", toast)
+	}
+	waitFor(t, "login started", func() bool { return stub.calls.Load() == 1 })
+	stub.results <- false
 }
