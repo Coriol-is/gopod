@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 )
 
@@ -135,6 +136,33 @@ func (r *Runner) removePidFile(ctx context.Context, containerID, pidFile string)
 // so the next turn never runs a second agent on the same session while
 // the old one is still shutting down.
 func (r *Runner) acquireAgentSlot(ctx context.Context, chatFolder string) (func(), error) {
+	return r.acquireSlot(ctx, chatFolder, nil)
+}
+
+func (r *Runner) acquireBackgroundSlot(ctx context.Context, folder string, cancel context.CancelFunc) (func(), error) {
+	return r.acquireSlot(ctx, folder, cancel)
+}
+
+// A foreground waiter cancels only background work in the same chat. Its
+// successor cannot take the slot until background process cleanup has finished.
+func (r *Runner) acquireSlot(ctx context.Context, chatFolder string, backgroundCancel context.CancelFunc) (func(), error) {
+	interactive := backgroundCancel == nil
+	if interactive {
+		r.agentSlotsMu.Lock()
+		if r.interactiveWaiters == nil {
+			r.interactiveWaiters = make(map[string]int)
+		}
+		r.interactiveWaiters[chatFolder]++
+		r.agentSlotsMu.Unlock()
+		defer func() {
+			r.agentSlotsMu.Lock()
+			r.interactiveWaiters[chatFolder]--
+			if r.interactiveWaiters[chatFolder] == 0 {
+				delete(r.interactiveWaiters, chatFolder)
+			}
+			r.agentSlotsMu.Unlock()
+		}()
+	}
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil, fmt.Errorf("runner: acquiring agent slot: %w", err)
@@ -143,19 +171,37 @@ func (r *Runner) acquireAgentSlot(ctx context.Context, chatFolder string) (func(
 		if r.agentSlots == nil {
 			r.agentSlots = make(map[string]chan struct{})
 		}
+		if !interactive && r.interactiveWaiters[chatFolder] > 0 {
+			r.agentSlotsMu.Unlock()
+			return nil, fmt.Errorf("runner: background yielded to user: %w", context.Canceled)
+		}
 		busy, ok := r.agentSlots[chatFolder]
 		if !ok {
 			done := make(chan struct{})
 			r.agentSlots[chatFolder] = done
+			if !interactive {
+				if r.backgroundCancels == nil {
+					r.backgroundCancels = make(map[string]context.CancelFunc)
+				}
+				r.backgroundCancels[chatFolder] = backgroundCancel
+			}
 			r.agentSlotsMu.Unlock()
+			var once sync.Once
 			return func() {
-				r.agentSlotsMu.Lock()
-				delete(r.agentSlots, chatFolder)
-				r.agentSlotsMu.Unlock()
-				close(done)
+				once.Do(func() {
+					r.agentSlotsMu.Lock()
+					delete(r.agentSlots, chatFolder)
+					delete(r.backgroundCancels, chatFolder)
+					r.agentSlotsMu.Unlock()
+					close(done)
+				})
 			}, nil
 		}
+		cancel := r.backgroundCancels[chatFolder]
 		r.agentSlotsMu.Unlock()
+		if interactive && cancel != nil {
+			cancel()
+		}
 		select {
 		case <-busy:
 		case <-ctx.Done():

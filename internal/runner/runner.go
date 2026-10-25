@@ -97,8 +97,10 @@ type Runner struct {
 
 	// agentSlots marks chats with a streamed agent process alive (see
 	// acquireAgentSlot). The channel closes when the process is gone.
-	agentSlotsMu sync.Mutex
-	agentSlots   map[string]chan struct{}
+	agentSlotsMu       sync.Mutex
+	agentSlots         map[string]chan struct{}
+	backgroundCancels  map[string]context.CancelFunc
+	interactiveWaiters map[string]int
 
 	// gate is the global agent admission gate (gate.go); nodeHeapMB
 	// caps Claude agents' V8 heap (0 = off). Set by SetAgentLimits.
@@ -287,7 +289,7 @@ func (r *Runner) Run(
 		releaseGate()
 		return "", err
 	}
-	res, err := r.execAgent(ctx, id, chatFolder, thread, prov, cmd)
+	res, err := r.execAgentWithCancel(ctx, id, chatFolder, thread, prov, cmd)
 	releaseGate()
 	if announcesNewSession(prov, ref) {
 		var stderr string
@@ -702,7 +704,9 @@ func (r *Runner) RunFresh(
 	allowlist *mountsec.Allowlist,
 	prompt string,
 ) (string, error) {
-	releaseSlot, err := r.acquireAgentSlot(ctx, chatFolder)
+	ctx, cancel := context.WithTimeout(ctx, freshRunTimeout)
+	defer cancel()
+	releaseSlot, err := r.acquireBackgroundSlot(ctx, chatFolder, cancel)
 	if err != nil {
 		return "", err
 	}
@@ -716,7 +720,7 @@ func (r *Runner) RunFresh(
 	if err != nil {
 		return "", err
 	}
-	res, err := r.execAgent(ctx, id, chatFolder, 0, prov, prov.RunFreshCmd(prompt))
+	res, err := r.execAgentWithCancel(ctx, id, chatFolder, 0, prov, prov.RunFreshCmd(prompt))
 	releaseGate()
 	if err != nil {
 		return "", err
@@ -933,6 +937,9 @@ func (r *Runner) CompactSession(ctx context.Context, chatFolder string, thread i
 		return "nothing to compact (0 turns)", nil
 	}
 	if err := r.compactFn(ctx, chatFolder, thread); err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return "", fmt.Errorf("runner: compaction interrupted; context preserved: %w", err)
+		}
 		r.log.Warn("compact summarize failed, clearing anyway",
 			slog.String("chat", chatFolder), slog.Int("thread", thread), slog.Any("err", err))
 	}
