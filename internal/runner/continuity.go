@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -43,6 +44,17 @@ func (r *Runner) markConversationProvider(ctx context.Context, folder string, th
 // SwitchChatProvider waits for the active run, then changes the harness without
 // clearing any session. The same slot covers sync, stream and background runs.
 func (r *Runner) SwitchChatProvider(ctx context.Context, folder string, p AgentProvider) error {
+	return r.switchChatProvider(ctx, folder, "", p)
+}
+
+// ErrProviderChanged rejects a stale fallback offer without overriding a newer choice.
+var ErrProviderChanged = errors.New("runner: provider changed since quota offer")
+
+func (r *Runner) SwitchChatProviderIfCurrent(ctx context.Context, folder, expected string, p AgentProvider) error {
+	return r.switchChatProvider(ctx, folder, expected, p)
+}
+
+func (r *Runner) switchChatProvider(ctx context.Context, folder, expected string, p AgentProvider) error {
 	release, err := r.acquireAgentSlot(ctx, folder)
 	if err != nil {
 		return err
@@ -52,6 +64,9 @@ func (r *Runner) SwitchChatProvider(ctx context.Context, folder string, p AgentP
 	defer r.unlockChat(folder)
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	if expected != "" && r.ProviderForChat(folder).Name() != expected {
+		return ErrProviderChanged
 	}
 	if r.ProviderForChat(folder).Name() == p.Name() {
 		return nil

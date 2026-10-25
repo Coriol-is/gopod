@@ -50,13 +50,15 @@ func (k errKind) String() string {
 }
 
 // errCooldown is how long a repeat of the same error kind in the same
-// chat gets no reply of its own.
+// chat gets no reply of its own. Quota notices use the failed turn id so
+// another topic or the fallback attempt still receives its own notification.
 const errCooldown = 60 * time.Second
 
 // errCooldownKey names one (chat, kind) cooldown.
 type errCooldownKey struct {
-	chat int64
-	kind errKind
+	chat      int64
+	kind      errKind
+	quotaTurn int64 // quota notices are per failed turn, including the fallback attempt
 }
 
 // errReply is one row of the error table: the text and the button.
@@ -101,9 +103,16 @@ func (b *Bot) replyError(ctx context.Context, item queue.Item, err error) {
 		slog.Int64("turn", item.ID),
 		slog.String("kind", kind.String()),
 		slog.Any("err", err))
-	if !b.errCooldownPass(item.ChatID, kind) {
+	quotaTurn := int64(0)
+	if kind == errUsageLimit {
+		quotaTurn = item.ID
+	}
+	if !b.errCooldownPass(item.ChatID, kind, quotaTurn) {
 		b.log.Debug("error reply suppressed by cooldown",
 			slog.Int64("chat_id", item.ChatID), slog.String("kind", kind.String()))
+		return
+	}
+	if kind == errUsageLimit && b.offerProviderFallback(ctx, item, err) {
 		return
 	}
 	row := errReplies[kind]
@@ -131,9 +140,9 @@ func (b *Bot) canRetry(item queue.Item) bool {
 
 // errCooldownPass reports whether an error reply of kind may go out in
 // chatID now, and if so starts that pair's cooldown.
-func (b *Bot) errCooldownPass(chatID int64, kind errKind) bool {
+func (b *Bot) errCooldownPass(chatID int64, kind errKind, quotaTurn int64) bool {
 	now := b.clock()
-	k := errCooldownKey{chatID, kind}
+	k := errCooldownKey{chat: chatID, kind: kind, quotaTurn: quotaTurn}
 	b.errMu.Lock()
 	defer b.errMu.Unlock()
 	if last, ok := b.errShown[k]; ok && now.Sub(last) < errCooldown {

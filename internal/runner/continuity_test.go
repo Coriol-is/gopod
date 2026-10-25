@@ -254,3 +254,27 @@ func TestProviderSwitchExcludesEnsureLifecycle(t *testing.T) {
 		t.Fatal("lifecycle lock leaked")
 	}
 }
+
+func TestQuotaSwitchExpectedProviderIsCheckedBeforeMutation(t *testing.T) {
+	h := newConvHarness(t, NewClaudeProvider("img"))
+	s := continuityTestStore(t)
+	h.r.SetStore(s)
+	h.r.SetChatModel(convChat, "opus")
+	err := h.r.SwitchChatProviderIfCurrent(context.Background(), convChat, "codex", NewClaudeProvider("img"))
+	if !errors.Is(err, ErrProviderChanged) {
+		t.Fatalf("stale offer allowed: %v", err)
+	}
+	if h.r.ModelForChat(convChat) != "opus" {
+		t.Fatal("stale offer reset model")
+	}
+	saved, _ := s.GetState(context.Background(), "provider:"+convChat)
+	if saved != "" {
+		t.Fatal("stale offer changed persistent choice")
+	}
+	if err = h.r.SwitchChatProviderIfCurrent(context.Background(), convChat, "claude", NewCodexProvider("img-codex")); err != nil {
+		t.Fatal(err)
+	}
+	if h.r.ProviderForChat(convChat).Name() != "codex" || h.r.ModelForChat(convChat) != "" {
+		t.Fatal("valid offer failed")
+	}
+}

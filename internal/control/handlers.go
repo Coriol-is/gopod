@@ -28,6 +28,9 @@ func helpHandler(r *Router) Handler {
 		var sb strings.Builder
 		sb.WriteString("**gopod commands**\n\n")
 		for _, c := range cmds {
+			if c.SlashName == "" {
+				continue
+			}
 			if c.Perm == PermOwnerOnly && !cmd.Caller.IsOwner {
 				continue
 			}

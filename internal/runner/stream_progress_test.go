@@ -279,6 +279,10 @@ func TestStartStreamStructuredUsageLimit(t *testing.T) {
 	if !errors.Is(c.result.Err, ErrUsageLimit) {
 		t.Fatalf("err = %v", c.result.Err)
 	}
+	var quota *UsageLimitError
+	if !errors.As(c.result.Err, &quota) || quota.Provider != "claude" {
+		t.Fatalf("quota origin lost: %v", c.result.Err)
+	}
 	if c.text != "" {
 		t.Fatalf("quota text streamed: %q", c.text)
 	}

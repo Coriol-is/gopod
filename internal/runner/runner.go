@@ -576,7 +576,7 @@ func (r *Runner) startStream(
 		if execErr != nil {
 			if ee, ok := execErr.(*ExecError); ok && ee.Code != 0 {
 				if isUsageLimit(stderr, authOut) {
-					result <- RunResult{Err: ErrUsageLimit}
+					result <- RunResult{Err: &UsageLimitError{Provider: prov.Name()}}
 					return
 				}
 				if prov.IsNotLoggedInError(stderr, authOut) {
@@ -745,7 +745,7 @@ func (r *Runner) execAgent(ctx context.Context, containerID, chatFolder string, 
 	if res.ExitCode != 0 {
 		stderr := strings.TrimSpace(res.Stderr)
 		if isUsageLimit(stderr, res.Stdout) {
-			return res, ErrUsageLimit
+			return res, &UsageLimitError{Provider: prov.Name()}
 		}
 		if prov.IsNotLoggedInError(stderr, res.Stdout) {
 			return res, r.classifyAuthError(ctx, containerID)

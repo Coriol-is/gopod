@@ -209,6 +209,7 @@ index there is the registry. A CP becomes a row above when it ships.
 | CP-007 | Scheduled store backups on the production host | proposed |
 | CP-008 | `/model` per chat | accepted |
 | CP-009 | Continue conversations across providers | done |
+| CP-010 | Confirm switching after quota exhaustion | done |
 
 Suggested order: CP-001 → CP-005 → CP-002 → CP-003 → CP-004 → CP-006 → CP-007.
 

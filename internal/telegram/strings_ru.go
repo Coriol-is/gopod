@@ -87,3 +87,10 @@ const (
 	btnPageNext       = "›"
 	pagesToastExpired = "Страницы устарели, повторите команду"
 )
+
+// Quota fallback is offered, never executed without a single-use confirmation.
+const (
+	quotaSwitchQuestion = "Достигнут лимит %s. Переключить весь чат на %s и один раз повторить этот запрос в текущей теме? Контекст сохранится. Для второго провайдера может понадобиться /login."
+	btnSwitchContinue   = "Переключить и продолжить"
+	btnFallbackCancel   = "Отмена"
+)
