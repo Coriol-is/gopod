@@ -157,6 +157,11 @@ type Bot struct {
 	// rows is the reply action row state (replyrow.go), under rowMu.
 	rowMu sync.Mutex
 	rows  replyRow
+
+	// cmdBtns maps a command button's token to its command
+	// (cmdbuttons.go), under btnMu.
+	btnMu   sync.Mutex
+	cmdBtns map[string]cmdButton
 }
 
 // allowedUpdates is the explicit getUpdates allowed_updates list. Before

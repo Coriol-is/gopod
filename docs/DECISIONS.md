@@ -936,6 +936,27 @@ hang shutdown. Spec:
 
 ---
 
+## D028 — Inline-button callbacks: one layer, buttons are Router commands
+
+**Date:** 2026-10-25
+**Status:** Accepted
+**Extends:** D011 (control plane), D012 (secrets), D022 (threads)
+
+**Context.** The dynamic Telegram UX (spec `docs/superpowers/specs/2026-10-25-telegram-dynamic-ux-design.md`, F1, F7-F9) puts inline buttons on gopod's messages: turn actions (Stop, Retry, Regenerate) and settings (model/provider pickers, confirmations, paged command output). A button press is a new way into gopod, so it must not open a second authorization path next to the Router, and `callback_data` is 64 bytes of client-supplied text.
+
+**Decision.**
+- **One dispatcher.** Every `callback_query` goes to `telegram.callbackHandler` (`internal/telegram/callback.go`), which routes by the act prefix of `act:arg:...` to a handler registered with `onCallback` (one line per act, append-only). Every query is answered exactly once, also on an unknown act, an unregistered chat, an error or a panic; an inaccessible message (older than 48 h) only toasts.
+- **Authorization from the message, never from the data.** The chat is the chat of the message carrying the button (`CallbackQuery.Message`), which must be a registered chat; the thread is that message's topic. Callback data is a routing hint, like `thread_id` in D022.
+- **Data rules.** Callback data holds ids only (turn ids, random tokens, page numbers), at most 64 bytes, asserted in tests. No command names with arguments, no text, paths or secrets.
+- **Buttons that change settings are Router commands.** `control.Response.Buttons [][]control.Button{Label, Command, Args, Style, Confirmed}` is the frontend-agnostic way for a handler to offer follow-up commands. Telegram shows each as `cc:<token>` (token: 12 random hex characters, in memory 10 min, bound to the chat it was shown in); a press dispatches `Command{Name, Args}` through `Router.Dispatch` with a `Caller` built from the callback exactly as `dispatchSlash` builds one (`IsOwner` = chat is `GOPOD_OWNER_CHAT_ID`), so `Perm` applies as for a typed command, and the button's message is edited in place to the result. A Router refusal is a toast and changes nothing. Text frontends print the buttons (`control.FormatText`).
+- **Confirmations.** A risky command without `Command.Confirmed` answers `control.Confirm(cmd, question)`: `Code = control.CodeConfirm` and a Yes (`danger`, `Confirmed`)/Cancel pair. Telegram shows Yes as `cf:<token>` and Cancel as `cx:<token>`, valid 5 min and single-use as a pair: either press consumes both, so Yes runs at most once. Yes re-dispatches through the Router with `Confirmed = true`; the Router checks `Perm` again on that dispatch (`Confirmed` skips the question, never a check). The CLI confirms with `--yes` (`control.ParseConfirmFlag`). Confirmed per owner Q6: `/clear` and `/provider <name>`; `/chats unregister` and `/container restart|stop` do not exist yet and must confirm when added.
+- **Pages.** A command reply longer than one message is one message with `‹ n/N ›` buttons (`pg:<token>:<n>`), split on line boundaries, edited in place; the pages stay in memory 10 min.
+- **State in memory, durable ids where it matters.** Tokens and pages are forgotten on restart (the press toasts "expired"); turn actions carry the turn id and survive restarts through the `turns` table.
+
+**Consequences.** A new settings button is a new `control.Button` in a handler's Response, not Telegram code. Anyone in a registered group can press its buttons, which equals typing there; owner-only commands are still refused by the Router. A restart invalidates every open picker, confirmation and page. Command buttons in an unregistered chat toast "not registered" (callbacks require a registered chat, slash commands do not). Button labels written by control handlers are in English like their texts until the strings move (plan Phase 5).
+
+---
+
 ## Template for new ADRs
 
 ```

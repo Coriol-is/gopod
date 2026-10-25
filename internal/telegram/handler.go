@@ -241,9 +241,7 @@ func (b *Bot) dispatchSlash(ctx context.Context, m *models.Message, text string)
 	} else {
 		status.Set(stDone)
 	}
-	if resp.Text != "" {
-		b.replyTo(ctx, m.Chat.ID, thread, m.ID, resp.Text)
-	}
+	b.sendCommandResponse(ctx, m.Chat.ID, thread, m.ID, resp)
 }
 
 func userID(u *models.User) int64 {

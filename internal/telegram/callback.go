@@ -117,6 +117,7 @@ func (b *Bot) registerCallbacks() {
 	b.onCallback("mb", b.backRow)       // ‹ in the More row
 	b.onCallback("st2", b.showSteps)    // 🧭 in the More row
 	b.onCallback("af", b.asFile)        // 📄 in the More row
+	b.onCallback("cc", b.commandButton) // a control.Button (pickers, D028)
 }
 
 // callbackHandler is the dispatcher for every callback_query.

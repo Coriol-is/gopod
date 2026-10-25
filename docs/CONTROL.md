@@ -89,8 +89,28 @@ type Response struct {
     Text     string         // pre-rendered text suitable for any frontend
     Markdown string         // optional richer rendering
     Data     map[string]any // structured payload (used by CLI --json, future HTTP)
-    Code     int            // exit-code-style: 0 = OK, non-zero = error
+    Code     int            // exit-code-style: 0 = OK, CodeConfirm = asks to confirm, other non-zero = error
+    Buttons  [][]Button     // optional follow-up commands, in rows (D028)
 }
+
+// A Button offers a follow-up command. Pressing it dispatches Command
+// with Args through the Router as a new Command from the same caller,
+// so Perm applies exactly as to a typed command. Command "" dismisses
+// (the Cancel of a confirmation). Args are names and ids, never secrets.
+type Button struct {
+    Label     string
+    Command   string   // canonical name, e.g. "model"; "" = dismiss
+    Args      []string
+    Style     string   // "", "primary", "danger", "success" (a hint)
+    Confirmed bool     // dispatch with Command.Confirmed: the Yes of a confirmation
+}
+
+const CodeConfirm = 2 // the command asks to confirm; nothing changed yet
+
+// Command.Confirmed bool: set by a confirmation's Yes button or the CLI
+// --yes flag. A confirmable handler without it returns
+// Confirm(cmd, question) instead of acting. It skips the question only:
+// the Router checks Perm on every Dispatch.
 
 // Router is the central dispatch table. One per process.
 type Router struct { ... }
@@ -101,6 +121,13 @@ func (r *Router) Register(name string, perm Perm, h Handler)
 func (r *Router) Dispatch(ctx context.Context, cmd Command) (Response, error)
 func (r *Router) List() []CommandInfo            // for /help, gopod help
 ```
+
+The code is the source of truth where this sketch differs (`Args` is a
+`[]string`, `Register` also takes the slash name and description, there is
+no `Markdown` field). Frontends without buttons print them with
+`control.FormatText(resp)`: the text, then `[label]  command args` per
+button, or for `CodeConfirm` a hint to re-run with `--yes`
+(`control.ParseConfirmFlag` strips `--yes`/`-y` from CLI args).
 
 `Deps` carries the handles every handler needs: store, queue, runner,
 scheduler, skills loader, memory store, telegram sender (for replies that
