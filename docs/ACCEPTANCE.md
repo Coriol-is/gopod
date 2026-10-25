@@ -1,11 +1,12 @@
 # Live acceptance register
 
-Last reconciled: 2026-10-25. Application deployed: `18e0c86`.
+Last reconciled: 2026-10-25. Application deployed: `f1f4532`.
 Code merged/deployed is distinct from a real-client scenario being accepted.
 Items below are pending unless explicit evidence is linked. Do not infer a pass
 from unit tests, CLI --help/version, startup notices or a green CI job.
 
 ## Verified operational baseline
+- [CP-017 rollout](deployments/2026-10-25-f1f4532.md): running revision/polling, integrity, preserved counts/schedule and read-only getMe/private-menu checks verified. Real diagnostic client behavior remains A18.
 - [18e0c86 starvation fix](deployments/2026-10-25-18e0c86.md): real Pi Docker
   background-preemption test PASS, deployed version/image, startup/integrity,
   preserved sessions/history/tasks and no pending/running turns. Actual user/model
