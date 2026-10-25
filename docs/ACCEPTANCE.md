@@ -1,11 +1,12 @@
 # Live acceptance register
 
-Last reconciled: 2026-10-25. Application deployed: `f1f4532`.
+Last reconciled: 2026-10-25. Application deployed: `0a25267`.
 Code merged/deployed is distinct from a real-client scenario being accepted.
 Items below are pending unless explicit evidence is linked. Do not infer a pass
 from unit tests, CLI --help/version, startup notices or a green CI job.
 
 ## Verified operational baseline
+- [Startup readiness rollout](deployments/2026-10-25-0a25267.md): actual selected Claude container starts automatically, CLI/local auth ready, management quota honestly unknown; database/schedule preserved. Live Codex quota remains A19.
 - [CP-017 rollout](deployments/2026-10-25-f1f4532.md): running revision/polling, integrity, preserved counts/schedule and read-only getMe/private-menu checks verified. Real diagnostic client behavior remains A18.
 - [18e0c86 starvation fix](deployments/2026-10-25-18e0c86.md): real Pi Docker
   background-preemption test PASS, deployed version/image, startup/integrity,
@@ -54,7 +55,7 @@ extraction (fixed/deployed in 18e0c86; real user/model follow-up pending), docum
 | A14 | Memory capability from agent | Authenticated real skill request derives chat/thread from per-exec capability; no cross-scope query authority. Missing-token401 and unit tests already pass |
 | A15 | Long code delivery | Real 20/100-line snippets in main/topic: collapse/document thresholds, balanced HTML, last-message buttons and no lost content |
 | A16 | Resource envelope | Observe actual new native CLI memory and admission behavior on Pi; accepted NODE_OPTIONS is not proof of a V8/RAM cap. Host memory-cgroup/reboot remains a separately controlled operational item |
-| A19 | Startup runtime and management readiness | Restart restores owner provider/model, starts matching container, reports CLI/auth and leaves sessions/history/tasks unchanged. Codex subscription management quota and negative/unknown paths need live evidence; no model request or inferred quota recovery. Current feature branch automated tests only until rollout recorded |
+| A19 | Startup runtime and management readiness | Restart restores owner provider/model, starts matching container, reports CLI/auth and leaves sessions/history/tasks unchanged. Codex subscription management quota and negative/unknown paths need live evidence; no model request or inferred quota recovery. Selected Claude startup verified by [rollout](deployments/2026-10-25-0a25267.md); live Codex quota/failure paths remain pending |
 | A18 | Telegram capability diagnostics | Owner/private summary + doctor/refresh match read-only getMe; registered nonowner summary/doctor denial; group silence, private menu, stale/cooldown and no-model behavior. Automated fixtures passed; real-client checks pending |
 | A17 | Compaction correctness | Confirm source context reaches summarization, restart counters and serialization semantics; investigate old review notes before treating /compact as qualified |
 

@@ -11,15 +11,18 @@ Core Telegram assistant, Docker runtime, Claude/Codex native sessions,
 conversation-scoped history, memory, voice, scheduler and filesystem IPC are
 implemented. No other runtime, channel, guest agent or bot-to-bot peer is enabled.
 
-Reference Pi runs application **f1f4532**, deployed 2026-10-25 19:00 UTC.
+Reference Pi runs application **0a25267**, deployed 2026-10-25 19:24 UTC.
+[Startup deployment evidence](deployments/2026-10-25-0a25267.md): controller
+automatically created the selected Claude owner runtime; CLI2.1.310/auth ready.
+Management correctly reports Claude quota unknown/unsupported; no model call.
 [CP-017 deployment evidence](deployments/2026-10-25-f1f4532.md): private diagnostics
 activated, read-only getMe/menu checks passed; actual client acceptance A18 pending.
 Claude Code2.1.310 and Codex CLI 0.164.0 agent tags remain unchanged. Build/review/CI,
 full tests and runner/Telegram/queue races passed. A real no-network Docker
 preemption test passed on the Pi: a silent background shell was gone before a
 foreground waiter reused the slot (no model request). Running version/image,
-startup/integrity verified. Latest CP-017 rollout preserved sessions 12, history 90, task 1;
-restarts 0, OOMKilled false, no unfinished user turns.
+startup/integrity verified. Latest startup rollout preserved its immediate preactivation sessions 10, history 26, task 1;
+restarts 0, OOMKilled false, no unfinished user turns at the post-ready verification snapshot.
 [Background-preemption deployment evidence](deployments/2026-10-25-18e0c86.md) records backup,
 rollback, tests and limits. New authenticated Codex replies were observed before
 this fix; real multi-topic/model acceptance after it remains open. Native
@@ -70,11 +73,12 @@ there is no implementation or privacy-flag activation yet.
 
 ## What's in progress
 CP-017 initial private-DM slice is reviewed, merged and deployed as f1f4532.
-A separate owner-startup runtime/self-diagnostic slice is being implemented;
+The separate owner-startup runtime/self-diagnostic slice is merged and deployed;
 see [startup contract](STARTUP.md) and D035. It restores selections before
 recovery, warms the selected owner image, checks CLI/local auth and performs a
 Codex management-only quota observation where supported. No model call or
-automatic provider switch is included; new slice not yet deployed.
+automatic provider switch is included. Actual selected Claude startup is
+verified; live Codex subscription quota and failure cases remain A19.
 `/telegram` reads cached observations for registered private chats; owner chat alone
 can use `/telegram doctor` and explicit `refresh`. Static `/help guest|inline|topics`
 works without model/container/media processing. New commands silently suppress all
