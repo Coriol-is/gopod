@@ -61,13 +61,19 @@ func (b *Bot) turnKeyboard(turnID int64) models.ReplyMarkup {
 // clearKeyboard removes a message's inline keyboard without touching its
 // text. Best-effort: a failure is logged only.
 func (b *Bot) clearKeyboard(ctx context.Context, chatID int64, msgID int) {
+	b.setKeyboard(ctx, chatID, msgID, noKeyboard())
+}
+
+// setKeyboard replaces a message's inline keyboard without touching its
+// text. Best-effort: a failure is logged only.
+func (b *Bot) setKeyboard(ctx context.Context, chatID int64, msgID int, markup models.ReplyMarkup) {
 	_, err := b.api.EditMessageReplyMarkup(ctx, &bot.EditMessageReplyMarkupParams{
 		ChatID:      chatID,
 		MessageID:   msgID,
-		ReplyMarkup: noKeyboard(),
+		ReplyMarkup: markup,
 	})
 	if err != nil {
-		b.log.Debug("clear keyboard failed",
+		b.log.Debug("set keyboard failed",
 			slog.Int64("chat_id", chatID), slog.Int("msg_id", msgID), slog.Any("err", err))
 	}
 }

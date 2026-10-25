@@ -318,7 +318,7 @@ func (b *Bot) deliverSyncReply(ctx context.Context, item queue.Item, reply strin
 	if mode != "voice" || stripCodeBlocks(reply) != reply {
 		sent, _ := b.sendFinal(ctx, item.ChatID, item.ThreadID, item.MessageID, reply, b.replyMarkup(item, reply))
 		b.recordReply(ctx, item, sent, reply)
-		b.noteReply(ctx, item, sent, true)
+		b.noteReply(ctx, item, sent, reply)
 	}
 }
 

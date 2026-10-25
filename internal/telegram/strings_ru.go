@@ -58,4 +58,12 @@ const (
 	btnSteps      = "🧭 Шаги"
 	btnAsFile     = "📄 Файлом"
 	btnBack       = "‹ Назад"
+
+	regenToastQueued  = "Готовлю другой ответ"
+	regenToastAlready = "Уже готовлю другой ответ"
+	regenToastFailed  = "Не получилось запросить другой ответ, попробуйте ещё раз"
+	stepsToastNone    = "Шаги этого ответа не сохранились"
+	fileToastGone     = "Текст этого ответа больше недоступен"
+	fileToastFailed   = "Не получилось отправить файл, попробуйте ещё раз"
+	stepsHeader       = "Шаги агента:"
 )

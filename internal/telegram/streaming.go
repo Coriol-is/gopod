@@ -365,7 +365,9 @@ loop:
 			}
 			// Text before a tool step was narration: the answer (and
 			// what a stop delivers) starts again after it.
-			steps = append(steps, progressLine(ev))
+			line := progressLine(ev)
+			b.logStep(item, line) // for the Steps button (replyrow.go)
+			steps = append(steps, line)
 			if len(steps) > progressShown {
 				steps = steps[len(steps)-progressShown:]
 			}
@@ -479,7 +481,7 @@ loop:
 				slog.Int64("turn", item.ID), slog.Any("err", err))
 		}
 		b.recordReply(ctx, item, sent, finalText)
-		b.noteReply(ctx, item, sent, true)
+		b.noteReply(ctx, item, sent, finalText)
 	case !overflow:
 		// Everything fits in the placeholder. Oversized code goes out as
 		// documents first; the reply in main keeps their notes.
@@ -492,7 +494,7 @@ loop:
 			break
 		}
 		b.recordReply(ctx, item, placeholder, finalText)
-		b.noteReply(ctx, item, placeholder, true)
+		b.noteReply(ctx, item, placeholder, finalText)
 	default:
 		// Overflow: finalize the last placeholder with the remaining
 		// text, then send the full formatted response as a new reply.
@@ -509,7 +511,7 @@ loop:
 		}
 		sent, _ := b.sendFinal(ctx, item.ChatID, item.ThreadID, item.MessageID, finalText, b.replyMarkup(item, finalText))
 		b.recordReply(ctx, item, sent, finalText)
-		b.noteReply(ctx, item, sent, true)
+		b.noteReply(ctx, item, sent, finalText)
 	}
 
 	if item.MessageID > 0 {
@@ -565,7 +567,7 @@ func (b *Bot) replyInMain(ctx context.Context, item queue.Item, text string) err
 			slog.Int64("turn", item.ID), slog.Any("err", err))
 	}
 	b.recordReply(ctx, item, sent, text)
-	b.noteReply(ctx, item, sent, false) // the topic-gone fallback has no row
+	b.noteBareReply(ctx, item, sent) // the topic-gone fallback has no row
 	return nil
 }
 
@@ -665,7 +667,7 @@ func (b *Bot) finishStopped(ctx context.Context, item queue.Item, stream *runner
 	}
 	sent, _ := b.sendFinal(ctx, item.ChatID, item.ThreadID, item.MessageID, text, nil)
 	b.recordReply(ctx, item, sent, text)
-	b.noteReply(ctx, item, sent, false) // a stopped reply has no row
+	b.noteBareReply(ctx, item, sent) // a stopped reply has no row
 	if item.MessageID > 0 {
 		b.react(ctx, item.ChatID, item.MessageID, emojiDone)
 	}
@@ -698,7 +700,7 @@ func (b *Bot) finishStoppedEdit(ctx context.Context, item queue.Item, stream *ru
 			}
 		} else {
 			b.recordReply(ctx, item, placeholder, text)
-			b.noteReply(ctx, item, placeholder, false)
+			b.noteBareReply(ctx, item, placeholder)
 		}
 	} else {
 		if tail != "" {
@@ -708,7 +710,7 @@ func (b *Bot) finishStoppedEdit(ctx context.Context, item queue.Item, stream *ru
 		}
 		sent, _ := b.sendFinal(ctx, item.ChatID, item.ThreadID, item.MessageID, text, nil)
 		b.recordReply(ctx, item, sent, text)
-		b.noteReply(ctx, item, sent, false)
+		b.noteBareReply(ctx, item, sent)
 	}
 	if item.MessageID > 0 {
 		b.react(ctx, item.ChatID, item.MessageID, emojiDone)
@@ -742,7 +744,7 @@ func (b *Bot) drainAndSend(ctx context.Context, item queue.Item, stream *runner.
 	}
 	sent, _ := b.sendFinal(ctx, item.ChatID, item.ThreadID, item.MessageID, text, b.replyMarkup(item, text))
 	b.recordReply(ctx, item, sent, text)
-	b.noteReply(ctx, item, sent, true)
+	b.noteReply(ctx, item, sent, text)
 	b.maybeVoiceReply(ctx, item, text)
 }
 
