@@ -22,7 +22,7 @@ full tests and runner/Telegram/queue races passed. A real no-network Docker
 preemption test passed on the Pi: a silent background shell was gone before a
 foreground waiter reused the slot (no model request). Running version/image,
 startup/integrity verified. Latest startup rollout preserved its immediate preactivation sessions 10, history 26, task 1;
-restarts 0, OOMKilled false, no unfinished user turns.
+restarts 0, OOMKilled false, no unfinished user turns at the post-ready verification snapshot.
 [Background-preemption deployment evidence](deployments/2026-10-25-18e0c86.md) records backup,
 rollback, tests and limits. New authenticated Codex replies were observed before
 this fix; real multi-topic/model acceptance after it remains open. Native
