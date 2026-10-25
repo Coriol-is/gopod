@@ -89,3 +89,16 @@ func TestParseLevel(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadProgressFlag(t *testing.T) {
+	for val, want := range map[string]bool{"": true, "1": true, "true": true, "0": false, "false": false, "OFF": false, "no": false, "junk": true} {
+		t.Setenv("GOPOD_PROGRESS", val)
+		cfg, err := Load(false)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if cfg.ProgressEnabled != want {
+			t.Errorf("GOPOD_PROGRESS=%q: ProgressEnabled = %v, want %v", val, cfg.ProgressEnabled, want)
+		}
+	}
+}
