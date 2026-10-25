@@ -276,6 +276,14 @@ direct `time.Time` math. The scheduler polls SQLite every 60s (mirrors
 `SCHEDULER_POLL_INTERVAL`), computes `next_run` after each run, and pushes work
 through the same per-chat queue as messages.
 
+### Future runtime/provider extensibility (design only)
+
+[CP-011 runtime spec](superpowers/specs/2026-10-25-sandbox-runtime.md) and
+[CP-012 registry spec](superpowers/specs/2026-10-25-provider-registry.md) separate
+agent behaviour from sandbox lifecycle. Implementation is deferred; Docker is
+still the only runtime. `agentExecer` is only an exec test seam, and current
+`GOPOD_NO_CONTAINER=1` disables the runner rather than launching a subprocess.
+
 ### 4.5 Container runtime
 
 **Choice:** Docker via [`github.com/docker/docker/client`](https://pkg.go.dev/github.com/docker/docker/client)
@@ -288,7 +296,8 @@ through the same per-chat queue as messages.
   `github.com/docker/docker/pkg/stdcopy.StdCopy`
 - Bind mounts via `mount.Mount{Type: mount.TypeBind, Source, Target, ReadOnly}`
 
-Fallback: subprocess mode (no container). When `GOPOD_NO_CONTAINER=1`, spawn
+**Unimplemented original design (not current behaviour):** subprocess mode.
+Current `GOPOD_NO_CONTAINER=1` disables the runner. The original plan was to spawn
 the Claude CLI directly with a working directory under `chats/<folder>/`.
 Useful for dev and for users who don't want Docker. Document the lost isolation.
 

@@ -1013,6 +1013,31 @@ automatic switch-back or quota polling. Spec:
 
 ---
 
+## D032 — Separate sandbox runtimes and agent provider registration
+
+**Date:** 2026-10-25
+**Status:** Proposed — design saved, implementation not authorized by this ADR
+
+**Context.** The owner asked to save specs for extending sandbox/runtime and
+provider support, then deploy the existing Docker code. A concrete Docker
+lifecycle and duplicated Claude/Codex choices currently limit extensibility.
+
+**Proposal.** Keep agent CLI/auth/session behaviour in registered providers;
+move allocation, isolation, execution, Stop and resource cleanup behind a runtime
+contract. Qualify Docker first without behaviour changes. Preserve per-chat
+runtime/provider selection and per-thread context. Additional backends/providers
+and operational changes require separate implementation acceptance.
+
+**Consequences if accepted.** A later ADR/implementation will supersede the
+Docker-only constraint only for qualified adapters. This proposal does not
+change current runtime support, enable subprocess execution, select vendors,
+or authorize unattended fallback or new service spending.
+
+Specs: [sandbox runtime](superpowers/specs/2026-10-25-sandbox-runtime.md) and
+[provider registry](superpowers/specs/2026-10-25-provider-registry.md).
+
+---
+
 ## Template for new ADRs
 
 ```

@@ -79,3 +79,5 @@ Bullet list someone else can verify.
 | [CP-008](CP-008-model-per-chat.md) | `/model` per chat | accepted | S |
 | [CP-009](CP-009-provider-continuity.md) | Continue conversations across providers | done | M |
 | [CP-010](CP-010-quota-switch-confirmation.md) | Confirm switching after quota exhaustion | done | M |
+| [CP-011](CP-011-sandbox-runtime.md) | Sandbox runtime contract (design only) | accepted | L |
+| [CP-012](CP-012-provider-registry.md) | Provider registry and quota choices (design only) | accepted | M |
