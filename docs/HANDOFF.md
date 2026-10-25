@@ -11,14 +11,16 @@ Core Telegram assistant, Docker runtime, Claude/Codex native sessions,
 conversation-scoped history, memory, voice, scheduler and filesystem IPC are
 implemented. No other runtime, channel, guest agent or bot-to-bot peer is enabled.
 
-Reference Pi runs application **18e0c86**, deployed 2026-10-25 17:30 UTC.
+Reference Pi runs application **f1f4532**, deployed 2026-10-25 19:00 UTC.
+[CP-017 deployment evidence](deployments/2026-10-25-f1f4532.md): private diagnostics
+activated, read-only getMe/menu checks passed; actual client acceptance A18 pending.
 Claude Code2.1.310 and Codex CLI 0.164.0 agent tags remain unchanged. Build/review/CI,
 full tests and runner/Telegram/queue races passed. A real no-network Docker
 preemption test passed on the Pi: a silent background shell was gone before a
 foreground waiter reused the slot (no model request). Running version/image,
-startup, integrity and preserved counts verified: sessions 11, history 68, task 1;
+startup/integrity verified. Latest CP-017 rollout preserved sessions 12, history 90, task 1;
 restarts 0, OOMKilled false, no unfinished user turns.
-[Latest deployment evidence](deployments/2026-10-25-18e0c86.md) records backup,
+[Background-preemption deployment evidence](deployments/2026-10-25-18e0c86.md) records backup,
 rollback, tests and limits. New authenticated Codex replies were observed before
 this fix; real multi-topic/model acceptance after it remains open. Native
 Claude's NODE_OPTIONS acceptance is not a qualified memory cap.
@@ -67,7 +69,8 @@ command replies and errors private, including every callback/page/failure path;
 there is no implementation or privacy-flag activation yet.
 
 ## What's in progress
-CP-017 initial private-DM slice is implemented; reviewed release/activation is in progress.
+CP-017 initial private-DM slice is reviewed, merged and deployed as f1f4532.
+No active feature implementation remains.
 `/telegram` reads cached observations for registered private chats; owner chat alone
 can use `/telegram doctor` and explicit `refresh`. Static `/help guest|inline|topics`
 works without model/container/media processing. New commands silently suppress all
@@ -122,6 +125,11 @@ unreviewed proposal. Pending proposed CP-002–007 still need their bounded desi
   only. No peer contacted; enablement unknown, peer trust/loop budgets absent.
 - New advanced interfaces do not imply per-thread filesystem secrecy: workspace
   and container stay chat-shared, turns serialize per chat.
+
+Separate [table-rendering analysis](research/2026-10-25-telegram-table-rendering.md)
+recommends a bounded Markdown-table parser with lossless row cards, then a native
+Rich Table client spike. SDK already supports Rich Tables; no formatter change
+is implemented or implicitly approved by that research.
 
 ## Open questions / blockers
 No open implementation decision for the initial CP-017 slice. Implementation-specific choices
