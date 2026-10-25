@@ -111,6 +111,13 @@ GOPOD_GID=1000
 
 docker compose build
 docker compose up -d
+
+# Housekeeping after every build: every rebuild adds layers to the Docker
+# build cache (it reached ~25 GB on a Raspberry Pi). Drop dangling images and
+# cache older than a week; recent cache keeps rebuilds fast. Only touches
+# gopod's own leftovers; do not run `docker system prune -a` on a shared host.
+docker image prune -f
+docker builder prune -f --filter until=168h
 ```
 
 gopod runs inside a container managing agent containers as siblings
