@@ -567,7 +567,8 @@ func (b *Bot) replyInMain(ctx context.Context, item queue.Item, text string) err
 			slog.Int64("turn", item.ID), slog.Any("err", err))
 	}
 	b.recordReply(ctx, item, sent, text)
-	b.noteBareReply(ctx, item, sent) // the topic-gone fallback has no row
+	// The topic-gone fallback has no row and is main's newest reply.
+	b.newestReply(ctx, item.ChatID, 0, sent, false)
 	return nil
 }
 

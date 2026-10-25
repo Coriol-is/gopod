@@ -494,7 +494,8 @@ func (b *Bot) sendFormattedErr(ctx context.Context, chatID int64, thread int, re
 // sendRendered is sendFormattedErr with the markdown-to-HTML renderer
 // as a parameter: the final reply renders with finalReplyHTML. markup
 // (nil for none) goes on the last chunk only: the final reply's action
-// row sits under the end of the reply.
+// row sits under the end of the reply. The reply redirected to main from
+// a gone topic gets none.
 func (b *Bot) sendRendered(ctx context.Context, chatID int64, thread int, replyToMsgID int, text string, render func(string) string, markup models.ReplyMarkup) (int, error) {
 	if !b.threadGone(chatID, thread) {
 		id, err := b.sendChunks(ctx, chatID, thread, replyToMsgID, text, render, markup)
@@ -502,7 +503,8 @@ func (b *Bot) sendRendered(ctx context.Context, chatID int64, thread int, replyT
 			return id, err
 		}
 	}
-	return b.sendChunks(ctx, chatID, 0, 0, threadGoneNote+text, render, markup)
+	// The topic-gone fallback in main carries no buttons (replyrow.go).
+	return b.sendChunks(ctx, chatID, 0, 0, threadGoneNote+text, render, nil)
 }
 
 // sendChunks sends text as HTML chunks into thread, falling back to
@@ -540,15 +542,41 @@ func (b *Bot) sendChunks(ctx context.Context, chatID int64, thread int, replyToM
 		if err == nil && sent != nil {
 			last = sent.ID
 		}
+		fatal := func(err error) bool {
+			return errors.As(err, new(*bot.TooManyRequestsError)) || (thread != 0 && isThreadGone(err))
+		}
+		if err != nil && params.ReplyMarkup != nil && !fatal(err) {
+			// The keyboard may be what Telegram refused: send this same
+			// HTML chunk again without it. Buttons are a convenience;
+			// the formatted text is not, and earlier chunks are out.
+			b.log.Warn("reply keyboard refused, sending the chunk without it",
+				slog.Int64("chat_id", chatID), slog.Any("err", err))
+			params.ReplyMarkup = nil
+			sent, err = b.api.SendMessage(ctx, params)
+			if err == nil {
+				if sent != nil {
+					last = sent.ID
+				}
+				continue
+			}
+		}
 		if err != nil {
-			if errors.As(err, new(*bot.TooManyRequestsError)) || (thread != 0 && isThreadGone(err)) {
+			if fatal(err) {
 				return last, fmt.Errorf("sendMessage: %w", err)
 			}
-			// Fallback: send as plain text.
+			// Fallback: send as plain text, only what has not gone out:
+			// the whole markdown when no chunk was delivered, else the
+			// remaining HTML chunks with their tags stripped.
 			b.log.Debug("HTML send failed, falling back to plain text",
 				slog.Int64("chat_id", chatID),
 				slog.Any("err", err))
 			plainChunks := chunkString(text, maxLen)
+			if i > 0 {
+				plainChunks = nil
+				for _, rest := range chunks[i:] {
+					plainChunks = append(plainChunks, htmlToPlain(rest))
+				}
+			}
 			for j, pc := range plainChunks {
 				pp := &bot.SendMessageParams{
 					ChatID:          chatID,

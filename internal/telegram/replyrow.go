@@ -11,7 +11,8 @@ package telegram
 // not part of the durable turn (D020): after a restart the next reply
 // cannot clear the previous row, which then stays (its buttons still
 // work: Regenerate loads the turn from the store). A failed clear is
-// logged, never retried by the queue.
+// logged, never retried by the queue. A reply redirected to main from a
+// gone topic has no row and counts as main's newest reply.
 
 import (
 	"context"
@@ -71,31 +72,41 @@ func (b *Bot) replyMarkup(item queue.Item, text string) models.ReplyMarkup {
 	return &kb
 }
 
-// noteReply runs after recordReply for a final reply that carries the
+// noteReply runs after recordReply for a final reply sent with the
 // action row: msgID (0 = nothing delivered, no-op) is now the newest
 // reply of the turn's conversation, its text is kept for As file, and
-// the previous reply's row in that conversation is removed.
+// the previous reply's row in that conversation is removed. A reply
+// whose topic is gone went to main without the row (sendRendered): it
+// is recorded as noteBareReply records it.
 func (b *Bot) noteReply(ctx context.Context, item queue.Item, msgID int, text string) {
-	b.newestReply(ctx, item, msgID, true)
 	if msgID != 0 && item.ID != 0 {
 		b.rememberTurn(item, func(m *turnMemo) { m.reply = text })
 	}
-}
-
-// noteBareReply is noteReply for a final reply without the row (stopped,
-// topic-gone fallback): it is the newest reply all the same, so the
-// previous row goes.
-func (b *Bot) noteBareReply(ctx context.Context, item queue.Item, msgID int) {
-	b.newestReply(ctx, item, msgID, false)
-}
-
-// newestReply records msgID as the newest reply of the turn's
-// conversation and clears the previous reply's row.
-func (b *Bot) newestReply(ctx context.Context, item queue.Item, msgID int, withRow bool) {
-	if msgID == 0 || item.ChatID == 0 {
+	if item.ThreadID != 0 && b.threadGone(item.ChatID, item.ThreadID) {
+		b.newestReply(ctx, item.ChatID, 0, msgID, false)
 		return
 	}
-	key := chatThread{item.ChatID, item.ThreadID}
+	b.newestReply(ctx, item.ChatID, item.ThreadID, msgID, true)
+}
+
+// noteBareReply is noteReply for a final reply without the row (stopped):
+// it is the newest reply all the same, so the previous row goes. A reply
+// redirected from a gone topic is in main, so it is main's newest reply.
+func (b *Bot) noteBareReply(ctx context.Context, item queue.Item, msgID int) {
+	thread := item.ThreadID
+	if thread != 0 && b.threadGone(item.ChatID, thread) {
+		thread = 0
+	}
+	b.newestReply(ctx, item.ChatID, thread, msgID, false)
+}
+
+// newestReply records msgID as the newest reply of (chat, thread) and
+// clears the previous reply's row there.
+func (b *Bot) newestReply(ctx context.Context, chatID int64, thread int, msgID int, withRow bool) {
+	if msgID == 0 || chatID == 0 {
+		return
+	}
+	key := chatThread{chatID, thread}
 	now := b.clock()
 	b.rowMu.Lock()
 	prev := b.rows.last[key]
@@ -112,7 +123,7 @@ func (b *Bot) newestReply(ctx context.Context, item queue.Item, msgID int, withR
 	}
 	b.rowMu.Unlock()
 	if prev.msgID != 0 && prev.msgID != msgID {
-		b.clearKeyboard(context.WithoutCancel(ctx), item.ChatID, prev.msgID)
+		b.clearKeyboard(context.WithoutCancel(ctx), chatID, prev.msgID)
 	}
 }
 
