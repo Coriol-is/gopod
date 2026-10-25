@@ -310,3 +310,113 @@ func TestStreamNotStartedClearsStopButton(t *testing.T) {
 		t.Fatalf("stopped edit = %+v", edits)
 	}
 }
+
+// kbButtons flattens a keyboard's rows.
+func kbButtons(kb models.InlineKeyboardMarkup) []models.InlineKeyboardButton {
+	var out []models.InlineKeyboardButton
+	for _, row := range kb.InlineKeyboard {
+		out = append(out, row...)
+	}
+	return out
+}
+
+// copyButton returns the keyboard's copy_text button, nil when none.
+func copyButton(kb models.InlineKeyboardMarkup) *models.InlineKeyboardButton {
+	for _, b := range kbButtons(kb) {
+		if b.CopyText != nil {
+			return &b
+		}
+	}
+	return nil
+}
+
+func TestReplyKeyboard_CopyOnlyWhenShort(t *testing.T) {
+	short := replyKeyboard(42, "  короткий ответ  ")
+	if len(short.InlineKeyboard) != 1 {
+		t.Fatalf("rows = %d, want one row", len(short.InlineKeyboard))
+	}
+	c := copyButton(short)
+	if c == nil || c.CopyText.Text != "короткий ответ" || c.CallbackData != "" {
+		t.Fatalf("short reply copy button = %+v", c)
+	}
+	data := []string{}
+	for _, b := range kbButtons(short) {
+		if b.CallbackData != "" {
+			data = append(data, b.CallbackData)
+		}
+	}
+	if strings.Join(data, ",") != "rg:42,mo:42" {
+		t.Fatalf("callback data = %v", data)
+	}
+
+	// 256 characters is the Bot API limit for CopyTextButton.text; it
+	// counts UTF-16 units, so 128 astral emoji are the limit as well.
+	if copyButton(replyKeyboard(1, strings.Repeat("я", 256))) == nil {
+		t.Error("256-character reply has no copy button")
+	}
+	if copyButton(replyKeyboard(1, strings.Repeat("я", 257))) != nil {
+		t.Error("257-character reply has a copy button")
+	}
+	if copyButton(replyKeyboard(1, strings.Repeat("😀", 129))) != nil {
+		t.Error("258 UTF-16 units copyable")
+	}
+	if copyButton(replyKeyboard(1, "   ")) != nil {
+		t.Error("blank reply copyable")
+	}
+
+	// A long reply whose only code block fits copies the code.
+	code := "Вот команда, которая всё делает:\n\n```sh\ngo test ./...\n```\n\n" + strings.Repeat("Пояснение. ", 40)
+	c = copyButton(replyKeyboard(1, code))
+	if c == nil || c.CopyText.Text != "go test ./..." {
+		t.Fatalf("single code block copy = %+v", c)
+	}
+	// Two blocks: nothing to pick.
+	two := code + "\n```go\nfmt.Println()\n```\n"
+	if copyButton(replyKeyboard(1, two)) != nil {
+		t.Error("reply with two code blocks copyable")
+	}
+	// One block too long to copy.
+	big := strings.Repeat("Текст. ", 50) + "\n```\n" + strings.Repeat("x", 300) + "\n```\n"
+	if copyButton(replyKeyboard(1, big)) != nil {
+		t.Error("oversized code block copyable")
+	}
+}
+
+func TestReplyKeyboard_AllDataUnder64Bytes(t *testing.T) {
+	const maxID = int64(1<<63 - 1)
+	for _, kb := range []models.InlineKeyboardMarkup{
+		replyKeyboard(maxID, "x"), moreKeyboard(maxID),
+	} {
+		for _, b := range kbButtons(kb) {
+			if len(b.CallbackData) > cbMaxBytes {
+				t.Errorf("%q: %d bytes", b.CallbackData, len(b.CallbackData))
+			}
+			if b.CallbackData == "" && b.CopyText == nil {
+				t.Errorf("button %q does nothing", b.Text)
+			}
+			if _, ok := decodeCB(b.CallbackData); b.CallbackData != "" && !ok {
+				t.Errorf("%q does not decode", b.CallbackData)
+			}
+		}
+	}
+}
+
+func TestMoreKeyboard_BackRestores(t *testing.T) {
+	more := moreKeyboard(7)
+	var data []string
+	for _, b := range kbButtons(more) {
+		data = append(data, b.CallbackData)
+	}
+	if strings.Join(data, ",") != "st2:7,af:7,mb:7" {
+		t.Fatalf("more data = %v", data)
+	}
+	if len(more.InlineKeyboard) != 1 {
+		t.Fatalf("more rows = %d, want 1 (swapped in place of the action row)", len(more.InlineKeyboard))
+	}
+	// Back's data names the same turn whose action row it restores.
+	back := kbButtons(more)[2]
+	d, _ := decodeCB(back.CallbackData)
+	if d.Act != "mb" || d.Args[0] != "7" {
+		t.Fatalf("back = %+v", d)
+	}
+}

@@ -49,3 +49,13 @@ const (
 	errTextBusy        = "Агент сейчас занят. Повторите запрос чуть позже."
 	errTextDelivery    = "Не удалось доставить ответ. Можно повторить запрос."
 )
+
+// Reply action row under the newest reply (keyboard.go, replyactions.go).
+const (
+	btnRegenerate = "🔁 Заново"
+	btnCopy       = "📋 Копировать"
+	btnMore       = "⋯"
+	btnSteps      = "🧭 Шаги"
+	btnAsFile     = "📄 Файлом"
+	btnBack       = "‹ Назад"
+)
