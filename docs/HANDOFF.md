@@ -13,8 +13,8 @@
 Claude assistant with session continuity, long-term memory, voice,
 vision, scheduling, and multi-provider architecture ready for Codex.
 **Last updated:** 2026-10-25
-**Current deployment (2026-10-25 15:44 UTC):** reference Pi host runs
-`1e0a21b` (PR #35), including voice provenance metadata (PR #34), generic agent
+**Current deployment (2026-10-25 16:10 UTC):** reference Pi host runs
+`7bfd994` (PR #37), including voice provenance metadata (PR #34), generic agent
 scheduling, provider continuity and confirmed quota switching. Running version
 and image id verified, schema/integrity and memory API unauthenticated 401
 checked, Telegram polling/startup notice confirmed; restarts 0, OOMKilled false.
@@ -23,11 +23,12 @@ skill; custom CLAUDE/AGENTS files were not overwritten. Read-only IPC list and
 invalid-op probes returned correct source-scoped receipts/archives; scheduled
 count stayed 0. Read-only IPC roundtrips also passed from both actual agent
 images as UID 1000 using the real mounted IPC path. Backup, rollback and evidence:
-[latest deployment report](deployments/2026-10-25-1e0a21b.md).
+[latest deployment report](deployments/2026-10-25-7bfd994.md).
+Earlier scheduling-only probes are recorded in the 1e0a21b report.
 Detailed client acceptance remains open (0X/0Y/0Z/0Q and real voice/task execution).
 Earlier `a9146f0` delivery evidence remains in its dated report.
 
-**IPC delivery correction (2026-10-25, in progress):** the owner's live
+**IPC delivery correction (2026-10-25, deployed):** the owner's live
 `delivery-test-1792943974.json` failed because IPCSink parsed canonical
 `tg:89160926` as an integer. The adapter now removes the transport prefix at
 its API boundary (legacy numeric ids retained), splits long plain text into
@@ -37,10 +38,13 @@ terminal errors and pending retries. These are not an exactly-once outbox;
 network/crash delivery ambiguity remains explicit. Terminal outcomes are retained
 in process while archive moves fail, preventing deterministic resend loops. Request reads are bounded
 and reject nonregular/symlink files. The guide documents receipt paths and
-failure semantics. The user-created `freefeed-daily-digest` is active at 09:00
-Europe/Belgrade; this fix does not create, pause or change its schedule.
-Local build/vet/full tests and IPC/Telegram race checks pass. Independent review
-confirmed the archive-retry fix; CI and deployment verification pending.
+failure semantics. The user-created `freefeed-daily-digest` changed to paused through another
+actor during investigation; its 09:00 Europe/Belgrade cron is unchanged. This
+fix does not create, pause, resume or change a task.
+Local build/vet/full tests, scoped races, independent review and CI passed.
+PR #37 is merged and deployed. A real canonical-JID message returned ok and
+.processed; an invalid JID returned an error receipt and .failed. No model/digest
+run was invoked; user-visible reading and real recurring execution remain open.
 
 **Extensibility specs saved (design only):** CP-011 sandbox runtime and CP-012
 provider registry separate agent behaviour from execution backend lifecycle.
