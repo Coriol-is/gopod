@@ -1,10 +1,146 @@
 package telegram
 
 import (
+	"context"
+	"log/slog"
+	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-telegram/bot/models"
+
+	"github.com/Coriol-is/gopod/internal/store"
 )
+
+// albumWindow is how long an album waits for its next item. Telegram
+// delivers an album as one message per item, all with one
+// media_group_id, usually within a few hundred milliseconds.
+const albumWindow = time.Second
+
+// albumKey names one album being collected.
+type albumKey struct {
+	chat  int64
+	group string
+}
+
+// albumBuf is an album being collected: its messages so far, the chat
+// it belongs to, and the timer that flushes it.
+type albumBuf struct {
+	ctx  context.Context
+	rc   store.RegisteredChat
+	msgs []*models.Message
+	stop func() bool
+}
+
+// collectAlbum adds m, one item of an album, to its album, and
+// (re)starts the album's window: one albumWindow after the last item
+// arrives the album becomes one turn (flushAlbum). Unregistered chats
+// are dropped here, like single photos.
+func (b *Bot) collectAlbum(ctx context.Context, m *models.Message) {
+	rc, ok := b.resolveRegistered(ctx, m)
+	if !ok {
+		return
+	}
+	clock := b.albumClock
+	if clock == nil {
+		clock = realClock{}
+	}
+	k := albumKey{m.Chat.ID, m.MediaGroupID}
+
+	b.albumMu.Lock()
+	defer b.albumMu.Unlock()
+	if b.albums == nil {
+		b.albums = make(map[albumKey]*albumBuf)
+	}
+	a := b.albums[k]
+	if a == nil {
+		a = &albumBuf{ctx: ctx, rc: rc}
+		b.albums[k] = a
+	} else if a.stop != nil {
+		a.stop()
+	}
+	a.msgs = append(a.msgs, m)
+	a.stop = clock.AfterFunc(albumWindow, func() { b.flushAlbum(k, a) })
+}
+
+// flushAlbum takes album a out of collection and queues it. A timer
+// that fires after another item restarted the window finds the album
+// gone or already taken and does nothing.
+func (b *Bot) flushAlbum(k albumKey, a *albumBuf) {
+	b.albumMu.Lock()
+	if b.albums[k] != a {
+		b.albumMu.Unlock()
+		return
+	}
+	delete(b.albums, k)
+	msgs := a.msgs
+	b.albumMu.Unlock()
+
+	sort.Slice(msgs, func(i, j int) bool { return msgs[i].ID < msgs[j].ID })
+	b.enqueueAlbum(a.ctx, a.rc, msgs)
+}
+
+// enqueueAlbum downloads every photo and document of an album and
+// queues one turn for it, answering the first item. The prompt is the
+// album's caption (Telegram puts it on one item) followed by the list
+// of uploaded paths. Items of other kinds (video, audio) are skipped.
+func (b *Bot) enqueueAlbum(ctx context.Context, rc store.RegisteredChat, msgs []*models.Message) {
+	first := msgs[0]
+	thread := inboundThreadID(first)
+	var caption string
+	var paths []string
+	failed := 0
+	for _, m := range msgs {
+		if caption == "" {
+			caption = strings.TrimSpace(messageText(m))
+		}
+		var p string
+		var err error
+		switch {
+		case len(m.Photo) > 0:
+			_, p, err = b.downloadPhoto(ctx, rc.Folder, m.Photo)
+		case m.Document != nil:
+			_, p, err = b.downloadDocument(ctx, rc.Folder, m.Document)
+		default:
+			b.log.Debug("album item of unsupported kind skipped",
+				slog.Int64("chat_id", m.Chat.ID), slog.Int("msg_id", m.ID))
+			continue
+		}
+		if err != nil {
+			failed++
+			b.log.Error("download album item failed",
+				slog.Int64("chat_id", m.Chat.ID), slog.Int("msg_id", m.ID), slog.Any("err", err))
+			continue
+		}
+		paths = append(paths, p)
+	}
+	if len(paths) == 0 {
+		if failed > 0 {
+			b.replyTo(ctx, first.Chat.ID, thread, first.ID, "Failed to download album.")
+			return
+		}
+		if caption == "" {
+			return // nothing the agent could use
+		}
+	}
+
+	text := caption
+	if len(paths) > 0 {
+		if text == "" {
+			text = "The user sent an album. Look at the attached files."
+		}
+		text += "\n\n[Album attached: " + strings.Join(paths, ", ") + "]"
+		if failed > 0 {
+			text += "\n[" + strconv.Itoa(failed) + " more item(s) could not be downloaded]"
+		}
+	}
+	filePath := ""
+	if len(paths) > 0 {
+		filePath = paths[0]
+	}
+	b.enqueueTurn(ctx, first, rc, text, filePath, false)
+}
 
 // replyContextMax is how many runes of a replied-to or quoted message
 // go into the prompt header.

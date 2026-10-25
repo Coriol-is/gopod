@@ -157,6 +157,16 @@ type Bot struct {
 	// rows is the reply action row state (replyrow.go), under rowMu.
 	rowMu sync.Mutex
 	rows  replyRow
+
+	// albums holds media groups being collected (inbound_context.go);
+	// albumClock is their window's clock, nil means the real one.
+	albumMu    sync.Mutex
+	albums     map[albumKey]*albumBuf
+	albumClock reactClock
+
+	// whisperURL is the transcription endpoint; "" means OpenAI's.
+	// Tests point it at a fake.
+	whisperURL string
 }
 
 // allowedUpdates is the explicit getUpdates allowed_updates list. Before

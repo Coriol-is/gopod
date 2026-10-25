@@ -51,6 +51,13 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 	// answer to it below goes back into that topic.
 	thread := inboundThreadID(m)
 
+	// An album arrives as one message per item: collect them into one
+	// turn (inbound_context.go).
+	if m.MediaGroupID != "" {
+		b.collectAlbum(ctx, m)
+		return
+	}
+
 	// Handle voice messages (I3): transcribe via Whisper, use text as prompt.
 	isVoice := false
 	if m.Voice != nil {
@@ -66,6 +73,25 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 			b.log.Debug("voice transcribed",
 				slog.Int("duration", m.Voice.Duration),
 				slog.Int("text_len", len(text)))
+		}
+	}
+
+	// Audio files and video notes are transcribed like voice, but the
+	// reply stays text: they are not the user talking to the bot. A
+	// caption stays the prompt, with the transcript attached.
+	if m.Audio != nil || m.VideoNote != nil {
+		transcript, err := b.transcribeAudio(ctx, m)
+		if err != nil {
+			b.log.Error("audio transcription failed", slog.Any("err", err))
+			b.replyTo(ctx, m.Chat.ID, thread, m.ID, "Failed to transcribe audio.")
+			return
+		}
+		if transcript = strings.TrimSpace(transcript); transcript != "" {
+			if text == "" {
+				text = transcript
+			} else {
+				text += "\n\n[Transcript of the attached audio: " + transcript + "]"
+			}
 		}
 	}
 
@@ -137,6 +163,13 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 	if !ok {
 		return
 	}
+	b.enqueueTurn(ctx, m, rc, text, filePath, isVoice)
+}
+
+// enqueueTurn queues text as the agent turn answering m, with the
+// header of what m points at (reply, quote, forward) above it.
+func (b *Bot) enqueueTurn(ctx context.Context, m *models.Message, rc store.RegisteredChat, text, filePath string, isVoice bool) {
+	thread := inboundThreadID(m)
 
 	// Instant acknowledgement: the queued reaction (👀) so the user
 	// knows the message was received, even before container spawns

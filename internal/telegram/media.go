@@ -8,11 +8,15 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
+
+// uploadSeq numbers downloaded photos within the process.
+var uploadSeq atomic.Int64
 
 // downloadPhoto downloads the highest-resolution photo from a Telegram
 // message and saves it to the chat's uploads directory. Returns the
@@ -49,7 +53,9 @@ func (b *Bot) downloadPhoto(ctx context.Context, chatFolder string, photos []mod
 	if ext == "" {
 		ext = ".jpg"
 	}
-	filename := fmt.Sprintf("%d%s", time.Now().UnixMilli(), ext)
+	// The sequence keeps an album's photos, downloaded within one
+	// millisecond, from overwriting each other.
+	filename := fmt.Sprintf("%d-%d%s", time.Now().UnixMilli(), uploadSeq.Add(1), ext)
 
 	uploadsDir := filepath.Join(b.chatDir(chatFolder), "uploads")
 	if err := os.MkdirAll(uploadsDir, 0o755); err != nil {
