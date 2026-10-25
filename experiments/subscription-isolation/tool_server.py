@@ -201,6 +201,20 @@ def dispatch(request, executor):
     return {"jsonrpc": "2.0", "id": request["id"], "result": result}
 
 
+def response_for(line, executor):
+    request = None
+    try:
+        request = json.loads(line)
+        if not isinstance(request, dict):
+            raise ValueError("object required")
+        return dispatch(request, executor)
+    except Exception:
+        # Never echo malformed input, host paths or Docker diagnostics.
+        identifier = request.get("id") if isinstance(request, dict) else None
+        return {"jsonrpc": "2.0", "id": identifier,
+                "error": {"code": -32602, "message": "Request rejected or execution unavailable"}}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workspace", required=True)
@@ -212,18 +226,7 @@ def main():
     for line in request_lines(executor):
         if line is None:
             return 2
-        request = None
-        try:
-            if len(line) > REQUEST_LIMIT:
-                return 2  # Do not continue on a partially consumed frame.
-            request = json.loads(line)
-            if not isinstance(request, dict):
-                raise ValueError("object required")
-            response = dispatch(request, executor)
-        except Exception:
-            # Never echo malformed input, host paths or Docker diagnostics.
-            response = {"jsonrpc": "2.0", "id": request.get("id") if isinstance(request, dict) else None,
-                        "error": {"code": -32602, "message": "Request rejected or execution unavailable"}}
+        response = response_for(line, executor)
         if response is not None:
             print(json.dumps(response), flush=True)
     return 128 + executor.cancel_signal if executor.cancel_signal is not None else 0

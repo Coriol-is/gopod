@@ -9,10 +9,16 @@ import time
 import unittest
 from unittest import mock
 
-from tool_server import ARGUMENT_HINT, Executor, OUTPUT_LIMIT, REQUEST_LIMIT, dispatch
+from tool_server import ARGUMENT_HINT, Executor, OUTPUT_LIMIT, REQUEST_LIMIT, dispatch, response_for
 
 
 class ProtocolTests(unittest.TestCase):
+    def test_malformed_frames_have_only_generic_errors(self):
+        for frame in (b'private-invalid-json', b'[]', b'{"id":1,"method":"tools/call","params":null}'):
+            response = response_for(frame, None)
+            self.assertEqual(response['error']['code'], -32602)
+            self.assertNotIn('private-', json.dumps(response))
+
     def test_only_fixed_tool_is_advertised(self):
         result = dispatch({"id": 1, "method": "tools/list"}, None)
         self.assertEqual([x["name"] for x in result["result"]["tools"]], ["group_exec"])
