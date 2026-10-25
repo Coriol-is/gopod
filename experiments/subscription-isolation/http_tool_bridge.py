@@ -16,6 +16,42 @@ from tool_server import Executor, REQUEST_LIMIT, dispatch
 class BridgeServer(ThreadingHTTPServer):
     daemon_threads = True
     block_on_close = False
+    max_workers = 8
+    request_timeout = 5
+
+    def __init__(self, *args, **kwargs):
+        self._admission = threading.BoundedSemaphore(self.max_workers)
+        self.worker_condition = threading.Condition()
+        self.active_workers = 0
+        super().__init__(*args, **kwargs)
+
+    def _release_worker(self):
+        with self.worker_condition:
+            self._admission.release()
+            self.active_workers -= 1
+            self.worker_condition.notify_all()
+
+    def process_request(self, request, client_address):
+        # Admission precedes thread creation and header/auth parsing. An idle
+        # unauthenticated socket cannot allocate unbounded Python workers.
+        if not self._admission.acquire(blocking=False):
+            self.shutdown_request(request)
+            return
+        with self.worker_condition:
+            self.active_workers += 1
+            self.worker_condition.notify_all()
+        try:
+            super().process_request(request, client_address)
+        except Exception:
+            self._release_worker()
+            self.shutdown_request(request)
+            raise
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._release_worker()
 
     def close(self):
         self.executor.cancel_signal = 15
@@ -52,7 +88,7 @@ def start_bridge(workspace, image, bind="127.0.0.1"):
 
         def setup(self):
             super().setup()
-            self.connection.settimeout(5)
+            self.connection.settimeout(self.server.request_timeout)
 
         def log_message(self, _format, *_args):
             pass

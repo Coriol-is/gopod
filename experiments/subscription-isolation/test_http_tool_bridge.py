@@ -2,6 +2,7 @@ from contextlib import redirect_stderr
 import http.client
 import io
 import json
+import socket
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -74,6 +75,40 @@ class BridgeTests(unittest.TestCase):
     def test_bind_is_explicit(self):
         with self.assertRaises(ValueError):
             start_bridge(self.workspace.name, "node:22-slim", bind="192.0.2.1")
+
+    def test_idle_saturation_is_bounded_and_recovers(self):
+        sockets = []
+        self.addCleanup(lambda: [connection.close() for connection in sockets])
+        for count in range(1, self.server.max_workers + 1):
+            connection = socket.create_connection(("127.0.0.1", self.parsed.port), timeout=2)
+            sockets.append(connection)
+            with self.server.worker_condition:
+                self.assertTrue(self.server.worker_condition.wait_for(
+                    lambda: self.server.active_workers == count, timeout=2))
+        overflow = socket.create_connection(("127.0.0.1", self.parsed.port), timeout=2)
+        self.addCleanup(overflow.close)
+        try:
+            self.assertEqual(overflow.recv(1), b"")
+        except ConnectionResetError:
+            pass
+        self.assertEqual(self.server.active_workers, self.server.max_workers)
+        sockets.pop().close()
+        with self.server.worker_condition:
+            self.assertTrue(self.server.worker_condition.wait_for(
+                lambda: self.server.active_workers < self.server.max_workers, timeout=2))
+        self.assertEqual(self.request()[0], 200)
+
+    def test_idle_timeout_releases_admission(self):
+        self.server.request_timeout = 0.2
+        idle = socket.create_connection(("127.0.0.1", self.parsed.port), timeout=2)
+        self.addCleanup(idle.close)
+        with self.server.worker_condition:
+            self.assertTrue(self.server.worker_condition.wait_for(
+                lambda: self.server.active_workers == 1, timeout=2))
+            self.assertTrue(self.server.worker_condition.wait_for(
+                lambda: self.server.active_workers == 0, timeout=2))
+        self.assertEqual(idle.recv(1), b"")
+        self.assertEqual(self.request()[0], 200)
 
 
 if __name__ == "__main__":
