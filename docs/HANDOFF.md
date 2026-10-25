@@ -13,10 +13,27 @@
 Claude assistant with session continuity, long-term memory, voice,
 vision, scheduling, and multi-provider architecture ready for Codex.
 **Last updated:** 2026-10-25
-**Last working session (2026-10-24):** Telegram chat-UI parity, built
+**Current deployment (2026-10-25 14:37 UTC):** reference Pi host runs
+`a9146f0` (PR #32), including native-context continuity, confirmed quota
+switch-and-retry and dynamic UX phases 4/6. Version and image id verified from
+running container; SQLite integrity/schema and memory API unauthenticated 401
+checked; Telegram startup notification sent and one new real Claude turn has a
+persisted Telegram reply id. Container running, restarts 0, OOMKilled false.
+Detailed client acceptance remains open (0X/0Y/0Z/0Q). Backup, rollback image
+and evidence: [deployment report](deployments/2026-10-25-a9146f0.md).
+
+**Extensibility specs saved (design only):** CP-011 sandbox runtime and CP-012
+provider registry separate agent behaviour from execution backend lifecycle.
+Both specs are saved under `docs/superpowers/specs/`; proposed D032 changes no
+current runtime support. Docker remains the sole backend; no additional agent,
+remote service or implementation was added. `GOPOD_NO_CONTAINER=1` is now
+accurately documented as disabling the runner, not a working subprocess fallback.
+
+**Earlier working session (2026-10-24):** Telegram chat-UI parity, built
 autonomously through worktrees and PRs #3–#10 (agent implementer + separate
-reviewer per task, CI green, admin squash-merge). On `main`, **not deployed
-and not verified live**: native streaming via `sendMessageDraft`, Stop
+reviewer per task, CI green, admin squash-merge). Now included in deployed
+`a9146f0`, with detailed live acceptance still open: native streaming via
+`sendMessageDraft`, Stop
 button, and parallel conversations per private-chat thread (one agent session
 per `(chat, thread)`). Design and open items: [D021](DECISIONS.md#d021--stop-and-native-streaming),
 [D022](DECISIONS.md#d022--conversations-one-agent-session-per-chat-thread),
@@ -32,8 +49,8 @@ gopod restart count 0, OOMKilled=false. PR #30 is merged on main
 (`5a9af2a`). The runner now classifies the known
 session/usage-limit CLI response separately on failed streaming and sync runs;
 Telegram explains the quota rather than a generic agent failure. No automatic
-retry or provider switch. Live end-to-end recovery after the allowance resets
-has not been verified.
+retry or provider switch without confirmation. A real Claude turn completed
+after the later deployment; voice/quota-specific acceptance remains open.
 
 **2026-10-25:** confirmed quota fallback (CP-010, D031). A recognized
 provider usage-limit rejection offers Switch and continue / Cancel in the
@@ -42,10 +59,11 @@ queues one retry with the original thread/text/voice/file metadata. Existing
 command-token single-use/expiry applies; chat/folder/thread and expected-provider
 checks prevent foreign or stale actions. The target's own quota error reports
 without another switch offer. Ordinary agent/network/login errors do not offer
-a switch. Native sessions and bounded context use D030. Not deployed or live
-verified. No unattended fallback or switch-back is implemented.
+a switch. Native sessions and bounded context use D030. Deployed in `a9146f0`; real
+quota-confirmation acceptance is still pending. No unattended fallback or
+switch-back is implemented.
 
-**Before deploying, run the live checklist** (next section, item 00).
+**Live acceptance checklist remains open** (next section, item 00 and 0X–0Q).
 **2026-10-25:** extracted memories are now scoped per conversation
 ([D023](DECISIONS.md#d023--extracted-memories-are-scoped-per-conversation)):
 a thread sees main/manual/pinned rows plus its own, main sees all; existing
@@ -55,11 +73,13 @@ rows stay shared (thread 0).
 owner and chats with unfinished turns "🔄 Перезапускаюсь…" (3 s bound), on
 startup tells the owner "✅ Снова на связи" or "⚠️ Был неожиданный перезапуск"
 with the replay count (one notice per 2 minutes). `GOPOD_NOTIFY_LIFECYCLE=0`
-disables; compose `stop_grace_period: 30s`. Not verified live: on the Pi a
+disables; compose `stop_grace_period: 30s`. Startup notice after a graceful
+restart was verified during the 2026-10-25 deploy; visible shutdown-notice and
+crash/replay variants remain open. On the Pi a
 `docker compose up -d` recreate should show both messages, and
 `docker kill -s KILL <container>` then `docker compose up -d` the crash one.
-**2026-10-25:** dynamic UX phase 4 (PR #29 merged at `d6f0e13`, not
-deployed or verified live; checklist 0X): `control.Response.Buttons`
+**2026-10-25:** dynamic UX phase 4 (PR #29 merged at `d6f0e13`, deployed in
+`a9146f0`; detailed live checklist 0X remains open): `control.Response.Buttons`
 ([D028](DECISIONS.md)), `/model` and `/provider` pickers, confirmations for
 `/clear` and `/provider <name>` (`control.Confirm`, `CodeConfirm`), paged
 long command replies. Command buttons are in-memory tokens (`cc:`/`cf:`/
@@ -80,9 +100,9 @@ are transcribed like voice. Review fixes reject media before downloading or
 transcribing for unregistered chats, sanitize and distinguish upload names,
 and drain inbound handlers plus pending/in-flight album downloads on graceful
 shutdown. Obsolete timer callbacks cannot shorten a restarted album window.
-Unit-tested only; live checklist 0Y.
+Deployed in `a9146f0`; detailed media live checklist 0Y remains open.
 **Previous session (2026-10-05):** production deploy + Codex harness.
-`main` (`b254e01`) is deployed on the production host via `docker compose`
+`main` (`b254e01`) was deployed on the production host via `docker compose`
 (data at `/opt/gopod/data`, live owner workspace at
 `/opt/gopod/repo/chats/owner`). Found and fixed in that pass: the
 `Dockerfile` build stage was `golang:1.25-alpine` while `go.mod` had moved
@@ -354,12 +374,12 @@ user/assistant transcript in the new provider's prompt, and switching waits
 for an active run. `/clear` invalidates history and both provider session
 mappings in that thread only. Full transcript/tool-state migration and automatic
 quota fallback are out of scope. Tests use real SQLite and fake CLI processes;
-no live Claude/Codex switching or Pi deployment has been done.
+deployed in `a9146f0`, but live Claude/Codex switch acceptance remains open.
 
 **Dynamic Telegram UX phases 4 and 6:** PR #29 (`d6f0e13`) and PR #28
 (`51cc974`) are merged after independent review and green CI. Live checklists
 0X/0Y remain open; PR #30 quota classification is also merged (`5a9af2a`).
-Live recovery after the allowance reset remains unverified.
+A real post-deploy Claude turn completed; detailed voice/quota recovery remains open.
 
 **Phase 7 — Streaming output** ([STREAMING.md](STREAMING.md)). ✅ **Done.**
 

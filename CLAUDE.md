@@ -39,7 +39,8 @@ drops everything else.
 - **One channel: Telegram.** Library: [`go-telegram/bot`](https://github.com/go-telegram/bot).
   No channel registry. No abstraction over messaging providers.
 - **One runtime: Docker** via the official `docker/docker/client` Go SDK,
-  with a `GOPOD_NO_CONTAINER=1` subprocess fallback for dev only.
+  with `GOPOD_NO_CONTAINER=1` disabling the runner. The originally planned
+  dev subprocess fallback is not implemented.
 - **Single SQLite file** for everything: chats, messages, tasks, sessions,
   state, memories, vectors. `data/store.sqlite`.
 - **Per-chat isolation by path.** Authorization is enforced from the path of
