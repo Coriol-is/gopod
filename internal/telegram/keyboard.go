@@ -32,6 +32,20 @@ func noKeyboard() models.ReplyMarkup {
 	return &models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{}}
 }
 
+// hasButtons reports a markup that shows at least one inline button.
+func hasButtons(m models.ReplyMarkup) bool {
+	kb, ok := m.(*models.InlineKeyboardMarkup)
+	if !ok || kb == nil {
+		return false
+	}
+	for _, row := range kb.InlineKeyboard {
+		if len(row) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // turnKeyboard is the markup of a turn's placeholder while it streams:
 // the Stop button when the turn is in flight (registerInflight), else
 // none. Every text edit of the placeholder carries it, so text and
@@ -115,11 +129,13 @@ func moreKeyboard(turnID int64) models.InlineKeyboardMarkup {
 	}}}
 }
 
-// copyable returns what 📋 copies: the whole reply when it fits the
-// copy_text limit, else the body of its only fenced code block when
-// that fits. ok is false when neither does (no copy button).
+// copyable returns what 📋 copies: the whole reply as the user sees it
+// (markup removed) when it fits the copy_text limit, else the body of
+// its only fenced code block when that fits. ok is false when neither
+// does (no copy button).
 func copyable(reply string) (string, bool) {
-	if t := strings.TrimSpace(reply); fitsCopy(t) {
+	// The rendered text, not the markdown: **bold** copies as bold.
+	if t := strings.TrimSpace(htmlToPlain(markdownToTelegramHTML(reply))); fitsCopy(t) {
 		return t, true
 	}
 	var blocks []string

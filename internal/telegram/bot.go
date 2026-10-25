@@ -143,6 +143,10 @@ type Bot struct {
 	// loginRun starts a reserved login and reports whether a session
 	// was stored; nil means runLogin. Tests stub it (login.go).
 	loginRun func(ctx context.Context, m *models.Message, thread int, rc store.RegisteredChat) bool
+
+	// rows is the reply action row state (replyrow.go), under rowMu.
+	rowMu sync.Mutex
+	rows  replyRow
 }
 
 // allowedUpdates is the explicit getUpdates allowed_updates list. Before

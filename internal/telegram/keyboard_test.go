@@ -138,8 +138,11 @@ func TestFinalEditRemovesKeyboard(t *testing.T) {
 	}
 	edits := fake.callsTo("editMessageText")
 	final := edits[len(edits)-1]
-	if !strings.Contains(final.Form["text"], "<b>done</b>") || !cleared(t, final) {
-		t.Fatalf("final edit = %v, want the reply with the keyboard removed", final.Form)
+	// The Stop button goes; the reply's action row takes its place in
+	// the same call (replyrow.go).
+	if !strings.Contains(final.Form["text"], "<b>done</b>") || hasStop(t, final, item.ID) ||
+		!strings.Contains(final.Form["reply_markup"], `"copy_text":{"text":"done"}`) {
+		t.Fatalf("final edit = %v, want the reply with the Stop button removed", final.Form)
 	}
 }
 

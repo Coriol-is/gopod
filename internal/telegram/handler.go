@@ -316,8 +316,9 @@ func (b *Bot) deliverSyncReply(ctx context.Context, item queue.Item, reply strin
 
 	mode := b.getReplyMode(item.ChatID, item.IsVoice)
 	if mode != "voice" || stripCodeBlocks(reply) != reply {
-		sent, _ := b.sendFinal(ctx, item.ChatID, item.ThreadID, item.MessageID, reply)
+		sent, _ := b.sendFinal(ctx, item.ChatID, item.ThreadID, item.MessageID, reply, b.replyMarkup(item, reply))
 		b.recordReply(ctx, item, sent, reply)
+		b.noteReply(ctx, item, sent, true)
 	}
 }
 
@@ -487,19 +488,21 @@ func (b *Bot) sendFormatted(ctx context.Context, chatID int64, thread int, reply
 // (the original message went with the topic). Chunks already delivered
 // into the topic went with it too, so the full text is resent.
 func (b *Bot) sendFormattedErr(ctx context.Context, chatID int64, thread int, replyToMsgID int, text string) (int, error) {
-	return b.sendRendered(ctx, chatID, thread, replyToMsgID, text, markdownToTelegramHTML)
+	return b.sendRendered(ctx, chatID, thread, replyToMsgID, text, markdownToTelegramHTML, nil)
 }
 
 // sendRendered is sendFormattedErr with the markdown-to-HTML renderer
-// as a parameter: the final reply renders with finalReplyHTML.
-func (b *Bot) sendRendered(ctx context.Context, chatID int64, thread int, replyToMsgID int, text string, render func(string) string) (int, error) {
+// as a parameter: the final reply renders with finalReplyHTML. markup
+// (nil for none) goes on the last chunk only: the final reply's action
+// row sits under the end of the reply.
+func (b *Bot) sendRendered(ctx context.Context, chatID int64, thread int, replyToMsgID int, text string, render func(string) string, markup models.ReplyMarkup) (int, error) {
 	if !b.threadGone(chatID, thread) {
-		id, err := b.sendChunks(ctx, chatID, thread, replyToMsgID, text, render)
+		id, err := b.sendChunks(ctx, chatID, thread, replyToMsgID, text, render, markup)
 		if !b.checkThreadGone(chatID, thread, err) {
 			return id, err
 		}
 	}
-	return b.sendChunks(ctx, chatID, 0, 0, threadGoneNote+text, render)
+	return b.sendChunks(ctx, chatID, 0, 0, threadGoneNote+text, render, markup)
 }
 
 // sendChunks sends text as HTML chunks into thread, falling back to
@@ -509,7 +512,7 @@ func (b *Bot) sendRendered(ctx context.Context, chatID int64, thread int, replyT
 // attempt is returned as is: the plain-text fallback is for markup
 // Telegram rejects and would only hit the same rate limit. So is a
 // thread-gone error, which the plain text would hit as well.
-func (b *Bot) sendChunks(ctx context.Context, chatID int64, thread int, replyToMsgID int, text string, render func(string) string) (int, error) {
+func (b *Bot) sendChunks(ctx context.Context, chatID int64, thread int, replyToMsgID int, text string, render func(string) string, markup models.ReplyMarkup) (int, error) {
 	const maxLen = 4000
 	last := 0
 	htmlText := render(text)
@@ -521,6 +524,9 @@ func (b *Bot) sendChunks(ctx context.Context, chatID int64, thread int, replyToM
 			MessageThreadID: thread,
 			Text:            c,
 			ParseMode:       models.ParseModeHTML,
+		}
+		if i == len(chunks)-1 {
+			params.ReplyMarkup = markup
 		}
 		// Reply threading: only the first chunk replies to the original message.
 		if i == 0 && replyToMsgID > 0 {
@@ -543,12 +549,24 @@ func (b *Bot) sendChunks(ctx context.Context, chatID int64, thread int, replyToM
 				slog.Int64("chat_id", chatID),
 				slog.Any("err", err))
 			plainChunks := chunkString(text, maxLen)
-			for _, pc := range plainChunks {
-				sent, err := b.api.SendMessage(ctx, &bot.SendMessageParams{
+			for j, pc := range plainChunks {
+				pp := &bot.SendMessageParams{
 					ChatID:          chatID,
 					MessageThreadID: thread,
 					Text:            pc,
-				})
+				}
+				if j == len(plainChunks)-1 {
+					pp.ReplyMarkup = markup
+				}
+				sent, err := b.api.SendMessage(ctx, pp)
+				if err != nil && pp.ReplyMarkup != nil && !errors.As(err, new(*bot.TooManyRequestsError)) {
+					// A refused keyboard never costs the reply: the
+					// buttons are a convenience, the text is not.
+					b.log.Warn("reply keyboard refused, sending without it",
+						slog.Int64("chat_id", chatID), slog.Any("err", err))
+					pp.ReplyMarkup = nil
+					sent, err = b.api.SendMessage(ctx, pp)
+				}
 				if err != nil {
 					b.log.Error("SendMessage failed",
 						slog.Int64("chat_id", chatID),
