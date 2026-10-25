@@ -13,20 +13,19 @@
 Claude assistant with session continuity, long-term memory, voice,
 vision, scheduling, and multi-provider architecture ready for Codex.
 **Last updated:** 2026-10-25
-**Current deployment (2026-10-25 16:10 UTC):** reference Pi host runs
-`7bfd994` (PR #37), including Telegram IPC delivery correction, voice metadata,
-generic agent scheduling, provider continuity and confirmed quota switching.
-Running version/image and startup verified; SQLite integrity ok, restarts 0,
-OOMKilled false. A real canonical-JID IPC message returned ok/.processed and an
-invalid JID returned a reason/.failed; no model was invoked for these probes.
-The existing owner scheduling guide was updated only after matching the previous
-release template. Existing user task `freefeed-daily-digest` is paused (external
-change), not absent. Backup/rollback and bounded acceptance evidence:
-[latest deployment report](deployments/2026-10-25-7bfd994.md).
-Earlier 15:44 `1e0a21b` tests (zero tasks then, both-agent-image read-only IPC
-roundtrips, memory unauthenticated 401) are historical evidence in
-[the previous deployment report](deployments/2026-10-25-1e0a21b.md).
-Detailed client acceptance remains open (0X/0Y/0Z/0Q and real voice/task execution).
+**Current deployment (2026-10-25 16:42 UTC):** reference Pi runs `8df259d`
+(PR #40), including PR #39 task panel and prior voice/scheduling/provider/IPC
+fixes. Main/PR CI, independent reviews, full tests and relevant races passed.
+Running application version/image, startup, SQLite integrity, restart count 0
+and OOMKilled false verified. Agent runtime tags now contain Claude Code 2.1.310
+and Codex CLI 0.164.0; both versions verified in hardened ephemeral ARM64
+containers on the Pi. Old images and an online backup retained. Session/history/
+task counts preserved (7/54/1); the existing digest remains paused. Native
+Claude's V8/RAM cap is not qualified merely by accepted NODE_OPTIONS.
+[Deployment report](deployments/2026-10-25-8df259d.md) separates real deployment
+proof from fake-API panel tests and untested authenticated CLI/session acceptance.
+Earlier IPC delivery proof is in the 7bfd994 report; earlier zero-task and
+both-image scheduling probes are historical evidence in the 1e0a21b report.
 
 **IPC delivery correction (2026-10-25, deployed):** the owner's live
 `delivery-test-1792943974.json` failed because IPCSink parsed canonical
@@ -46,13 +45,13 @@ PR #37 is merged and deployed. A real canonical-JID message returned ok and
 .processed; an invalid JID returned an error receipt and .failed. No model/digest
 run was invoked; user-visible reading and real recurring execution remain open.
 
-**Current work (2026-10-25):** /tasks no-argument replies failed in production
+**Task control panel (2026-10-25, deployed):** /tasks no-argument replies failed in production
 because byte truncation split a Cyrillic/emoji prompt; persisted logs show
 Telegram's UTF-8 rejection for both reported commands. Rune-safe truncation and
 a three-task page with scoped Pause/Resume/Refresh/navigation now have control
 and Telegram callback tests. State actions are explicit, validated under the
-scheduler lock, stale-safe and cannot revive completed tasks. Code review, build/vet/full tests and control/Telegram race checks pass;
-release/CI status must be recorded before claiming this panel deployed.
+scheduler lock, stale-safe and cannot revive completed tasks. Code review, build/vet/full tests, scoped races and CI passed. PR #39 is
+merged and deployed in 8df259d. Real user callback taps remain untested.
 
 **New accepted design-only specifications:** CP-016 private-topic deletion and
 session retirement, CP-017 Telegram capability diagnostics, CP-018 per-thread
@@ -64,6 +63,13 @@ handler. Inline/business are disabled; the pinned SDK's inline boolean JSON tag
 is wrong (official true fixture decodes false), so diagnostics must correct it.
 Bot-to-bot is researched separately; its current enablement is unknown, no peers
 were contacted or modes toggled. Sender trust and loop budgets are prerequisites.
+
+**Ephemeral command replies (CP-019):** separate design-only spec saved after
+research. Owner scope is explicit: ordinary conversational output stays public;
+only group service/command/error replies use private delivery. Includes actor-
+bound controls, eligibility/expiry, message_id=0/reused ephemeral ids, isolated
+persistence and zero public fallback. SDK primitives exist; gopod does not use
+them yet, and no settings/command privacy flags were changed during research.
 
 **Extensibility specs saved (design only):** CP-011 sandbox runtime and CP-012
 provider registry separate agent behaviour from execution backend lifecycle.

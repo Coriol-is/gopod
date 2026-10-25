@@ -243,6 +243,7 @@ Suggested order: CP-001 → CP-005 → CP-002 → CP-003 → CP-004 → CP-006 �
 | CP-016 topic deletion | ⬜ | Explicit confirmed private-topic deletion, durable retirement and safe session cleanup; no deleted-topic event assumed |
 | CP-017 Telegram diagnostics | ⬜ | Separate Telegram settings, subscriptions, code support and contextual rights; owner doctor and scoped help |
 | CP-018 per-thread providers | ⬜ | Chat default plus topic overrides, provider-specific models and scoped confirmed quota fallback |
+| CP-019 ephemeral command/service/error replies | ⬜ | Public conversational messages unchanged; private delivery never falls back to public |
 
 Specifications are accepted for planning only; no associated mode or routing
 change is enabled by the documents. CP-015 follow-up: the task control panel
