@@ -34,6 +34,7 @@ func commandBot(t *testing.T, fake *fakeTelegram) (*Bot, func() []int) {
 		},
 		func(int64) string { return "owner" })
 	b.router = r
+	b.registerCallbacks()
 	return b, func() []int {
 		mu.Lock()
 		defer mu.Unlock()
@@ -47,6 +48,16 @@ func TestClearInThreadCallsClearWithThread(t *testing.T) {
 			fake := threadFake()
 			b, threads := commandBot(t, fake)
 			b.dispatchSlash(context.Background(), threadedMsg(thread, cmd), cmd)
+			if cmd == "/clear" {
+				// /clear asks first (D028): confirm on the prompt, which
+				// sits in the same topic.
+				if got := threads(); len(got) != 0 {
+					t.Fatalf("/clear acted before confirmation: %v", got)
+				}
+				yes := buttonsOf(t, lastCall(t, fake, "sendMessage"))[0]
+				b.callbackHandler(context.Background(), b.api,
+					cbUpdate("q", streamChat, thread, 555, yes.CallbackData))
+			}
 			if got := threads(); len(got) != 1 || got[0] != thread {
 				t.Errorf("%s in thread %d acted on %v, want [%d]", cmd, thread, got, thread)
 			}
@@ -61,7 +72,7 @@ func TestCommandReplyGoesToSameThread(t *testing.T) {
 	}{
 		{"/ping", "pong"},
 		{"/help", "gopod commands"},
-		{"/clear", "Session cleared"},
+		{"/clear", "Clear this conversation"}, // asks first (D028)
 		{"/compact", "Session compacted"},
 		{"/nope", "unknown command"},
 	}

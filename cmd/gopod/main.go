@@ -413,6 +413,14 @@ func run() error {
 					return "Model reset to the provider default. Applies from the next message.", nil
 				}
 				return "Model set to " + model + ". Applies from the next message.", nil
+			},
+			// Picker choices (D028): the Claude aliases; Codex takes any
+			// model id the account has, so it offers only "default".
+			func(chatFolder string) []string {
+				if agentRunner.ProviderForChat(chatFolder).Name() == "claude" {
+					return []string{"fable", "opus", "sonnet", "haiku"}
+				}
+				return nil
 			}, chatFolderLookup)
 
 		control.RegisterProviderCommand(router, func(chatFolder, name string) (string, error) {
@@ -437,7 +445,9 @@ func run() error {
 				msg += " Model reset to the provider default; use /model to pick one for " + name + "."
 			}
 			return msg, nil
-		}, chatFolderLookup)
+		}, func(chatFolder string) string {
+			return agentRunner.ProviderForChat(chatFolder).Name()
+		}, []string{"claude", "codex"}, chatFolderLookup)
 	}
 
 	// /clear + /compact commands.

@@ -118,6 +118,8 @@ func (b *Bot) registerCallbacks() {
 	b.onCallback("st2", b.showSteps)    // 🧭 in the More row
 	b.onCallback("af", b.asFile)        // 📄 in the More row
 	b.onCallback("cc", b.commandButton) // a control.Button (pickers, D028)
+	b.onCallback("cf", b.confirmButton) // Yes of a confirmation (D028)
+	b.onCallback("cx", b.cancelButton)  // Cancel of a confirmation (D028)
 }
 
 // callbackHandler is the dispatcher for every callback_query.

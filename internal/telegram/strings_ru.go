@@ -79,5 +79,6 @@ const (
 
 // Command buttons, confirmations and pages (cmdbuttons.go, pages.go).
 const (
-	cmdTextDone = "Готово."
+	cmdTextDone      = "Готово."
+	cmdTextCancelled = "Отменено."
 )

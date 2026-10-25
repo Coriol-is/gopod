@@ -27,15 +27,22 @@ import (
 	"github.com/Coriol-is/gopod/internal/control"
 )
 
-// cmdButtonTTL is how long a command button works after it was shown.
-const cmdButtonTTL = 10 * time.Minute
+// cmdButtonTTL is how long a command button works after it was shown;
+// confirmTTL is the same for a confirmation's Yes and Cancel.
+const (
+	cmdButtonTTL = 10 * time.Minute
+	confirmTTL   = 5 * time.Minute
+)
 
 // cmdButton is what a command button's token stands for.
 type cmdButton struct {
-	chatID  int64 // the chat the button was shown in
-	name    string
-	args    []string
-	expires time.Time
+	chatID    int64 // the chat the button was shown in
+	name      string
+	args      []string
+	confirmed bool   // the Yes of a confirmation (cf)
+	cancel    bool   // dismisses its message (cx)
+	group     string // the buttons of one message; cf/cx spend it whole
+	expires   time.Time
 }
 
 // newButtonToken returns a random 12-character hex token.
@@ -67,18 +74,30 @@ func (b *Bot) commandRows(chatID int64, rows [][]control.Button) [][]models.Inli
 	if b.cmdBtns == nil {
 		b.cmdBtns = make(map[string]cmdButton)
 	}
+	group := newButtonToken()
 	out := make([][]models.InlineKeyboardButton, 0, len(rows))
 	for _, row := range rows {
 		var kbRow []models.InlineKeyboardButton
 		for _, btn := range row {
 			tok := newButtonToken()
-			b.cmdBtns[tok] = cmdButton{
-				chatID:  chatID,
-				name:    btn.Command,
-				args:    append([]string(nil), btn.Args...),
-				expires: now.Add(cmdButtonTTL),
+			e := cmdButton{
+				chatID:    chatID,
+				name:      btn.Command,
+				args:      append([]string(nil), btn.Args...),
+				confirmed: btn.Confirmed && btn.Command != "",
+				cancel:    btn.Command == "",
+				group:     group,
+				expires:   now.Add(cmdButtonTTL),
 			}
-			data, _ := encodeCB("cc", tok) // 15 bytes
+			act := "cc"
+			switch {
+			case e.confirmed:
+				act, e.expires = "cf", now.Add(confirmTTL)
+			case e.cancel:
+				act, e.expires = "cx", now.Add(confirmTTL)
+			}
+			b.cmdBtns[tok] = e
+			data, _ := encodeCB(act, tok) // 15 bytes
 			kbRow = append(kbRow, models.InlineKeyboardButton{
 				Text:         btn.Label,
 				Style:        buttonStyle(btn.Style),
@@ -113,6 +132,34 @@ func (b *Bot) lookupButton(tok string) (cmdButton, bool) {
 	return e, true
 }
 
+// spendConfirmation returns the live Yes (cancel false) or Cancel
+// (cancel true) behind a pressed confirmation button and forgets every
+// button of its message, so Yes and Cancel are spent together and Yes
+// runs at most once, also when pressed twice at the same moment. A
+// token pressed outside its chat is refused without spending it. toast
+// is non-empty when nothing was taken.
+func (b *Bot) spendConfirmation(q cbQuery, cancel bool) (e cmdButton, toast string) {
+	if len(q.Data.Args) != 1 {
+		return cmdButton{}, cbToastExpired
+	}
+	now := b.clock()
+	b.btnMu.Lock()
+	defer b.btnMu.Unlock()
+	e, ok := b.cmdBtns[q.Data.Args[0]]
+	if !ok || now.After(e.expires) || e.cancel != cancel || (!cancel && !e.confirmed) {
+		return cmdButton{}, cbToastExpired
+	}
+	if !b.buttonInChat(e, q) {
+		return cmdButton{}, cbToastNotYours
+	}
+	for t, other := range b.cmdBtns {
+		if other.group == e.group {
+			delete(b.cmdBtns, t)
+		}
+	}
+	return e, ""
+}
+
 // callbackCaller is the control.Caller of a pressed button: the chat
 // and thread of the message carrying it, the user who pressed, and the
 // same IsOwner rule as a typed command (dispatchSlash).
@@ -135,12 +182,10 @@ func (b *Bot) commandButton(ctx context.Context, q cbQuery) (string, error) {
 		return cbToastExpired, nil
 	}
 	e, ok := b.lookupButton(q.Data.Args[0])
-	if !ok {
+	if !ok || e.confirmed || e.cancel {
 		return cbToastExpired, nil
 	}
-	if e.chatID != q.ChatID {
-		b.log.Info("command button refused: shown in another chat",
-			slog.Int64("chat_id", q.ChatID), slog.String("command", e.name))
+	if !b.buttonInChat(e, q) {
 		return cbToastNotYours, nil
 	}
 	return b.runButtonCommand(ctx, q, control.Command{
@@ -148,6 +193,46 @@ func (b *Bot) commandButton(ctx context.Context, q cbQuery) (string, error) {
 		Args:   append([]string(nil), e.args...),
 		Caller: b.callbackCaller(q),
 	})
+}
+
+// confirmButton handles the Yes of a confirmation (cf:<token>): it
+// spends the confirmation and dispatches its command with Confirmed
+// through the Router, which checks Perm again.
+func (b *Bot) confirmButton(ctx context.Context, q cbQuery) (string, error) {
+	if b.router == nil {
+		return cbToastExpired, nil
+	}
+	e, toast := b.spendConfirmation(q, false)
+	if toast != "" {
+		return toast, nil
+	}
+	return b.runButtonCommand(ctx, q, control.Command{
+		Name:      e.name,
+		Args:      append([]string(nil), e.args...),
+		Caller:    b.callbackCaller(q),
+		Confirmed: true,
+	})
+}
+
+// cancelButton handles Cancel (cx:<token>): it spends the confirmation
+// and edits the message to "cancelled" without buttons.
+func (b *Bot) cancelButton(ctx context.Context, q cbQuery) (string, error) {
+	if _, toast := b.spendConfirmation(q, true); toast != "" {
+		return toast, nil
+	}
+	b.editCommandMessage(ctx, q.ChatID, q.MessageID, control.Response{Text: cmdTextCancelled})
+	return "", nil
+}
+
+// buttonInChat reports whether a token is pressed in the chat it was
+// shown in; a token replayed from another chat is refused and logged.
+func (b *Bot) buttonInChat(e cmdButton, q cbQuery) bool {
+	if e.chatID == q.ChatID {
+		return true
+	}
+	b.log.Info("command button refused: shown in another chat",
+		slog.Int64("chat_id", q.ChatID), slog.String("command", e.name))
+	return false
 }
 
 // runButtonCommand dispatches cmd for a pressed button and shows the
