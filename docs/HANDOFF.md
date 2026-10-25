@@ -563,6 +563,24 @@ don't get lost.)
   session ids `SessionRef` (Task 6), per-thread `conversation_summary`
   (Task 7). Not wired to callers until Task 9.
 
+- **Future option: one container per thread** (owner, 2026-10-25). Record only,
+  not designed. Alternative to running two agents in the same container
+  (ROADMAP T5): each `(chat, thread)` gets its own agent container with the
+  chat workspace and memory mounted shared. Gains real parallelism and separate
+  `$HOME`/session dirs; costs RAM, more lifecycle (idle kill, cleanup, the
+  per-chat `/provider` and `ProviderForChat` assumptions, the per-chat agent
+  slot). Decide after the concurrency spike (HANDOFF item 00). See ROADMAP T5b.
+
+- **Backlog: enable the memory cgroup on the deploy host** (owner, 2026-10-25,
+  not implemented). On the Raspberry Pi 4B the container RAM limit set in
+  code (4 GiB) is not enforced: `docker inspect gopod-owner` shows
+  `Memory=0` because the memory cgroup is off. Fix is a boot cmdline change
+  (`cgroup_enable=memory cgroup_memory=1`) and a reboot of a host that also
+  runs other services; afterwards lower the per-agent cap to ~1 GB. Until
+  then the agent gate (ROADMAP T8) is the only protection. Measured: one
+  agent turn with a tool peaks at ~0.5-0.6 GB RSS; the host has ~1.8 GB
+  available.
+
 ## How to update this file
 
 1. **Before starting work:** read this file. Read the docs it points at.
