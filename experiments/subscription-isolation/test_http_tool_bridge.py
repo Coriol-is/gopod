@@ -28,6 +28,7 @@ class BridgeTests(unittest.TestCase):
         connection.request(method, path or self.parsed.path, body=body,
                            headers={"Content-Type": "application/json", **(headers or {})})
         response = connection.getresponse()
+        self.last_headers = dict(response.getheaders())
         return response.status, response.read()
 
     def test_mcp_inventory_and_notification(self):
@@ -59,9 +60,36 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(self.request(headers={"Content-Type": "text/plain"})[0], 400)
         self.assertEqual(self.request(method="GET")[0], 405)
 
+    def test_json_response_is_nosniff_and_cannot_render_markup(self):
+        identity = '<script>alert("canary")</script>&'
+        status, body = self.request(body=json.dumps({"jsonrpc": "2.0", "id": identity, "method": "unknown"}))
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["id"], identity)
+        self.assertNotIn(b"<script>", body)
+        self.assertNotIn(b"&", body)
+        self.assertIn(b"\\u003c", body)
+        self.assertEqual(self.last_headers["X-Content-Type-Options"], "nosniff")
+        self.assertEqual(self.last_headers["Content-Type"], "application/json; charset=utf-8")
+        self.assertIn("sandbox", self.last_headers["Content-Security-Policy"])
+
+    def test_ids_and_request_structure_are_bounded_before_dispatch(self):
+        invalid = [
+            {"id": {"secret": "not-reflected"}}, {"id": [1]}, {"id": True},
+            {"id": "x" * 129}, {"id": 9007199254740992}, {"id": 1.5},
+            {"params": []}, {"method": ["tools/list"]}, {"extra": "not-reflected"},
+        ]
+        for fields in invalid:
+            request = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", **fields}
+            with self.subTest(fields=fields), patch.object(self.server.executor, "run") as run:
+                status, body = self.request(body=json.dumps(request))
+                self.assertEqual(status, 400)
+                self.assertIsNone(json.loads(body)["id"])
+                self.assertNotIn(b"not-reflected", body)
+                run.assert_not_called()
+
     def test_fixed_executor_and_safe_errors(self):
         request = {"jsonrpc": "2.0", "id": 8, "method": "tools/call",
-                   "params": {"name": "group_exec", "arguments": {"command": "printf yes"}}}
+                   "params": {"name": "group_exec", "arguments": {"cmd": "printf yes"}}}
         with patch.object(self.server.executor, "run", return_value={"exit_code": 0, "stopped": None, "output": "yes"}) as run:
             status, body = self.request(body=json.dumps(request))
             run.assert_called_once_with({"command": "printf yes"})
