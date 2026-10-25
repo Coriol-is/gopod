@@ -38,6 +38,13 @@ with the replay count (one notice per 2 minutes). `GOPOD_NOTIFY_LIFECYCLE=0`
 disables; compose `stop_grace_period: 30s`. Not verified live: on the Pi a
 `docker compose up -d` recreate should show both messages, and
 `docker kill -s KILL <container>` then `docker compose up -d` the crash one.
+**2026-10-25:** dynamic UX phase 4 (branch `feat/ux-phase4`, PR open, not
+merged, not verified live; checklist 0X): `control.Response.Buttons`
+([D028](DECISIONS.md)), `/model` and `/provider` pickers, confirmations for
+`/clear` and `/provider <name>` (`control.Confirm`, `CodeConfirm`), paged
+long command replies. Command buttons are in-memory tokens (`cc:`/`cf:`/
+`cx:`/`pg:`), dispatched through the Router (`internal/telegram/cmdbuttons.go`,
+`pages.go`).
 **Previous session (2026-10-05):** production deploy + Codex harness.
 `main` (`b254e01`) is deployed on the production host via `docker compose`
 (data at `/opt/gopod/data`, live owner workspace at
@@ -449,6 +456,34 @@ pending: a 20-line and a 100-line block in a private chat and in a topic.
    second message in the same thread, keeps 👀); earlier messages of a
    batched turn keep 👀; elapsed time counts from the agent start, not from
    receipt; stall timers are not stopped by a shutdown mid-turn.
+0X. **Live checklist for dynamic Telegram UX, phase 4** (branch
+   `feat/ux-phase4`; spec F7-F9, plan Tasks 9-11,
+   [D028](DECISIONS.md), CONTROL.md §6.1; nothing run on a real bot yet;
+   run 0U first): (1) `/model` with no args shows buttons `fable opus
+   sonnet / haiku default` on a Claude chat (only `default` on Codex), the
+   current one `✓` and `primary`; a press edits the same message to "Model
+   set to …" without buttons and the next turn uses that model; (2)
+   `/provider` with no args shows `claude`/`codex`; a press turns the same
+   message into "Switch this chat to …?" with `Yes` (`danger`) / `Cancel`;
+   `Yes` switches (main conversation cleared), `Cancel` edits to
+   «Отменено.»; (3) `/clear` asks first, in the topic it was sent in;
+   `Yes` clears that conversation only, a double tap clears once, `Cancel`
+   then toasts «Кнопка устарела»; after 5 minutes `Yes` toasts expired;
+   (4) in a registered **non-owner** chat a command button for an
+   owner-only command toasts "Not authorized." and the log has the
+   Router's `permission denied` warn; (5) `/logs` (or `/recall` with many
+   hits) over 3000 characters arrives as one message with `‹ 1/N ›`; `›`
+   and `‹` edit the same message, a code block cut by a page stays
+   formatted; after a restart or 10 minutes a press toasts «Страницы
+   устарели, повторите команду»; (6) after a restart every old picker and
+   confirmation toasts expired. Known limits: button labels and texts from
+   `internal/control` are English (Phase 5 moves strings); buttons in an
+   unregistered chat toast «Этот чат не подключён» (slash commands work
+   there, callbacks need a registered chat); `/chats unregister` and
+   `/container restart|stop` are on the Q6 list but do not exist yet; the
+   CLI frontend (C3) is still not built, only `control.FormatText` and
+   `ParseConfirmFlag` for it; a picker press re-sends the whole result,
+   so a picker pressed after its model was changed elsewhere still applies.
 0. **Run the manual crash-recovery test for durable turns** (plan Task 8
    step 5, still not run; the branch is merged and deployed, cold start
    of the agent container is verified, but a `kill -9` of gopod itself
