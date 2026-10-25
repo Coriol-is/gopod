@@ -500,25 +500,33 @@ func (b *Bot) sendFormatted(ctx context.Context, chatID int64, thread int, reply
 // (the original message went with the topic). Chunks already delivered
 // into the topic went with it too, so the full text is resent.
 func (b *Bot) sendFormattedErr(ctx context.Context, chatID int64, thread int, replyToMsgID int, text string) (int, error) {
+	return b.sendRendered(ctx, chatID, thread, replyToMsgID, text, markdownToTelegramHTML)
+}
+
+// sendRendered is sendFormattedErr with the markdown-to-HTML renderer
+// as a parameter: the final reply renders with finalReplyHTML.
+func (b *Bot) sendRendered(ctx context.Context, chatID int64, thread int, replyToMsgID int, text string, render func(string) string) (int, error) {
 	if !b.threadGone(chatID, thread) {
-		id, err := b.sendChunks(ctx, chatID, thread, replyToMsgID, text)
+		id, err := b.sendChunks(ctx, chatID, thread, replyToMsgID, text, render)
 		if !b.checkThreadGone(chatID, thread, err) {
 			return id, err
 		}
 	}
-	return b.sendChunks(ctx, chatID, 0, 0, threadGoneNote+text)
+	return b.sendChunks(ctx, chatID, 0, 0, threadGoneNote+text, render)
 }
 
 // sendChunks sends text as HTML chunks into thread, falling back to
-// plain text when Telegram rejects the markup. A 429 on the HTML
+// plain text when Telegram rejects the markup. render turns the
+// markdown into HTML, which chunkHTML splits without breaking tags (an
+// element cut by a chunk boundary is closed and reopened). A 429 on the HTML
 // attempt is returned as is: the plain-text fallback is for markup
 // Telegram rejects and would only hit the same rate limit. So is a
 // thread-gone error, which the plain text would hit as well.
-func (b *Bot) sendChunks(ctx context.Context, chatID int64, thread int, replyToMsgID int, text string) (int, error) {
+func (b *Bot) sendChunks(ctx context.Context, chatID int64, thread int, replyToMsgID int, text string, render func(string) string) (int, error) {
 	const maxLen = 4000
 	last := 0
-	htmlText := markdownToTelegramHTML(text)
-	chunks := chunkString(htmlText, maxLen)
+	htmlText := render(text)
+	chunks := chunkHTML(htmlText, maxLen)
 
 	for i, c := range chunks {
 		params := &bot.SendMessageParams{
