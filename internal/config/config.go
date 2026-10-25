@@ -119,6 +119,21 @@ type Config struct {
 	// buffered path (wait for full response, then send).
 	// Default: true. Set GOPOD_STREAM_ENABLED=false to disable.
 	StreamEnabled bool
+
+	// --- Agent admission control (D026) ---
+
+	// MaxAgents caps agent processes running at once across all chats.
+	// GOPOD_MAX_AGENTS, default 2, at least 1.
+	MaxAgents int
+
+	// MinAvailableMB is the host MemAvailable (MiB) a new agent needs to
+	// start. GOPOD_MIN_AVAILABLE_MB, default 900; 0 disables the check.
+	MinAvailableMB int
+
+	// AgentNodeHeapMB caps a Claude agent's V8 heap through NODE_OPTIONS
+	// --max-old-space-size. GOPOD_AGENT_NODE_HEAP_MB, default 768;
+	// 0 disables.
+	AgentNodeHeapMB int
 }
 
 // Load reads environment, applies defaults, validates, and returns a
@@ -152,6 +167,10 @@ func Load(loadDotenv bool) (Config, error) {
 		CompactInterval:        os.Getenv("GOPOD_COMPACT_INTERVAL"),
 		CompactTime:            os.Getenv("GOPOD_COMPACT_TIME"),
 		ObsidianVault:          os.Getenv("GOPOD_OBSIDIAN_VAULT"),
+	}
+
+	if err := loadAgentAdmission(&cfg); err != nil {
+		return Config{}, err
 	}
 
 	abs, err := filepath.Abs(cfg.DataDir)
@@ -215,6 +234,39 @@ func (c Config) validate() error {
 		return errors.New("GOPOD_DATA_DIR resolved to empty path")
 	}
 	return nil
+}
+
+// loadAgentAdmission reads the agent gate and heap settings. The
+// defaults match runner.DefaultMaxAgents, DefaultMinAvailableMB and
+// DefaultAgentNodeHeapMB (config does not import runner).
+func loadAgentAdmission(cfg *Config) error {
+	var err error
+	if cfg.MaxAgents, err = envInt("GOPOD_MAX_AGENTS", 2); err != nil {
+		return err
+	}
+	cfg.MaxAgents = max(cfg.MaxAgents, 1)
+	if cfg.MinAvailableMB, err = envInt("GOPOD_MIN_AVAILABLE_MB", 900); err != nil {
+		return err
+	}
+	cfg.MinAvailableMB = max(cfg.MinAvailableMB, 0)
+	if cfg.AgentNodeHeapMB, err = envInt("GOPOD_AGENT_NODE_HEAP_MB", 768); err != nil {
+		return err
+	}
+	cfg.AgentNodeHeapMB = max(cfg.AgentNodeHeapMB, 0)
+	return nil
+}
+
+// envInt parses an integer env var; unset or blank means def.
+func envInt(key string, def int) (int, error) {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return def, nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return 0, fmt.Errorf("parsing %s=%q: %w", key, v, err)
+	}
+	return n, nil
 }
 
 func getenvDefault(key, def string) string {

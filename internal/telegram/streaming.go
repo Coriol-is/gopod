@@ -24,13 +24,18 @@ import (
 // the user's original message ID for reply threading; pass 0 for no
 // threading.
 func (b *Bot) sendPlaceholder(ctx context.Context, chatID int64, thread int, replyToMsgID int) int {
+	return b.sendPlaceholderText(ctx, chatID, thread, replyToMsgID, "\u2758") // ▍ cursor
+}
+
+// sendPlaceholderText is sendPlaceholder with a given opening text.
+func (b *Bot) sendPlaceholderText(ctx context.Context, chatID int64, thread int, replyToMsgID int, text string) int {
 	if b.threadGone(chatID, thread) {
 		return 0 // the caller falls back to one final message, sent to main
 	}
 	params := &bot.SendMessageParams{
 		ChatID:          chatID,
 		MessageThreadID: thread,
-		Text:            "\u2758", // ▍ cursor
+		Text:            text,
 	}
 	if replyToMsgID > 0 {
 		params.ReplyParameters = &models.ReplyParameters{
@@ -134,8 +139,18 @@ func (b *Bot) runAgentStreaming(ctx context.Context, item queue.Item) error {
 	defer cancelRun()
 	defer b.registerInflight(item.ID, cancelRun)()
 
-	stream, err := b.runner.RunStream(runCtx, item.Folder, item.ThreadID, tier, b.allowlist, prompt)
+	waitCtx := runner.WithWaitNotice(runCtx, b.waitNotice(ctx, item))
+	stream, err := b.runner.RunStream(waitCtx, item.Folder, item.ThreadID, tier, b.allowlist, prompt)
+	// The wait is over: no wait draft refresh may land after this point.
+	b.stopWaitDraftRefresh(item)
 	if err != nil {
+		// Stopped (or shut down) before the agent started: no fallback.
+		if handled, err := b.streamNotStarted(ctx, runCtx, item); handled {
+			return err
+		}
+		if ph := b.popWaitPlaceholder(item); ph != 0 {
+			b.editMessage(ctx, item.ChatID, ph, "")
+		}
 		// Fallback: if streaming setup fails, try sync path.
 		b.log.Warn("RunStream failed, falling back to sync",
 			slog.String("folder", item.Folder),
@@ -191,6 +206,8 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 	var draftHold time.Time // no draft updates before this (429 retry_after)
 	if placeholder = b.reusePlaceholder(ctx, item); placeholder != 0 {
 		b.recordPlaceholder(ctx, item, placeholder)
+	} else if placeholder = b.takeWaitPlaceholder(ctx, item); placeholder != 0 {
+		// Sent (and recorded) while the turn waited for the agent gate.
 	} else if b.draftsSupported(item.ChatID) {
 		// The opening draft shows the cursor and probes support up front.
 		draftID = useDraft(b.newDraftID())

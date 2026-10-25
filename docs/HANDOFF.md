@@ -592,6 +592,21 @@ don't get lost.)
   deployment"). Other projects' images on that host (nanoclaw, codex
   assistant, honcho) are not gopod's: do not prune them.
 
+- **Agent admission control landed (ROADMAP T8, D026, branch
+  feat/agent-gate, 2026-10-25).** Global agent gate in
+  `internal/runner/gate.go` (Run/RunStream interactive, RunFresh
+  background; `GOPOD_MAX_AGENTS`=2), MemAvailable check
+  (`GOPOD_MIN_AVAILABLE_MB`=900, 60 s bound on an idle system), Claude
+  `NODE_OPTIONS=--max-old-space-size` (`GOPOD_AGENT_NODE_HEAP_MB`=768) in
+  `agentenv.go`, Telegram wait text in `internal/telegram/agentwait.go`.
+  Also fixed: a Stop while a turn waited to start used to fall back to the
+  sync path and run the agent anyway. Not verified live on the Pi: the
+  wait draft/placeholder in Telegram, Stop on the wait draft, the
+  MemAvailable value read inside the gopod container, and that claude
+  honours the heap flag (`ps`/`/proc/<pid>/cmdline` and `environ` inside
+  an agent container). `gopod_agents_running/waiting` metrics skipped
+  (catalog is spec-checked; runner not instrumented yet).
+
 ## How to update this file
 
 1. **Before starting work:** read this file. Read the docs it points at.

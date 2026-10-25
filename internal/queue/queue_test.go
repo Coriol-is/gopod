@@ -914,3 +914,35 @@ func TestRecoverSplitsThreadsIntoSeparateBatches(t *testing.T) {
 		t.Errorf("batches = %s, want 1|2", got)
 	}
 }
+
+// Stage 1 of the agent acquire order (queue slot -> chat agent slot ->
+// agent gate, see runner/gate.go): a worker waiting for a queue slot
+// leaves on shutdown without running, while the slot holder (blocked in
+// its handler, e.g. waiting for the agent gate) is interrupted.
+func TestCloseWhileWaitingForQueueSlot(t *testing.T) {
+	started := make(chan string, 2)
+	handler := func(ctx context.Context, items []Item) error {
+		started <- items[0].Folder
+		<-ctx.Done() // like a turn waiting for the agent gate
+		return ctx.Err()
+	}
+	q := New(context.Background(), handler, 1, nil, silentLog())
+	q.Enqueue(context.Background(), Item{Folder: "a"})
+	if got := <-started; got != "a" {
+		t.Fatalf("first handler for %q", got)
+	}
+	q.Enqueue(context.Background(), Item{Folder: "b"}) // waits for the slot
+
+	closed := make(chan struct{})
+	go func() { q.Close(); close(closed) }()
+	select {
+	case <-closed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Close hung with a worker waiting for a queue slot")
+	}
+	select {
+	case f := <-started:
+		t.Fatalf("handler for %q ran after Close", f)
+	default:
+	}
+}
