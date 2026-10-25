@@ -38,7 +38,26 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 		return
 	}
 	m := update.Message
-	b.persistMessage(ctx, m)
+	if isLoginCommand(strings.TrimSpace(messageText(m))) && !privateLoginMessage(m) {
+		b.requestLoginHandoff(ctx, m)
+		return
+	}
+	consumed, sensitiveLogin := b.interceptLoginInput(ctx, m)
+	if consumed {
+		return
+	}
+	if !sensitiveLogin && !isLoginCommand(strings.TrimSpace(messageText(m))) {
+		b.persistMessage(ctx, m)
+	}
+	if sensitiveLogin {
+		// A reply/quote of the login URL/device-code message is credential-bearing
+		// metadata even when its new text is an ordinary command or device-flow chat.
+		clean := *m
+		clean.ReplyToMessage = nil
+		clean.Quote = nil
+		clean.ExternalReply = nil
+		m = &clean
+	}
 	b.noteInboundThread(m)
 	if b.dispatchRawTelegramDiagnostics(ctx, m, strings.TrimSpace(messageText(m))) {
 		return
@@ -260,6 +279,10 @@ func inboundThreadID(m *models.Message) int {
 // to "unknown command".
 func (b *Bot) dispatchSlash(ctx context.Context, m *models.Message, text string) {
 	thread := inboundThreadID(m)
+	if isLoginCommand(text) && !privateLoginMessage(m) {
+		b.requestLoginHandoff(ctx, m)
+		return
+	}
 	diagnostic, accepted := b.diagnosticCommand(m, text)
 	if diagnostic && !accepted {
 		return

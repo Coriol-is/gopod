@@ -408,7 +408,7 @@ func TestReplyContext_SlashCommandReachesRouterRaw(t *testing.T) {
 
 func TestReplyContext_LoginCodeReachesSessionRaw(t *testing.T) {
 	f := newInboundFixture(t, nil)
-	f.b.logins.set(streamChat, &loginSession{chatID: streamChat, awaitsCode: true})
+	f.b.logins.set(streamChat, &loginSession{chatID: streamChat, awaitsCode: true, private: true})
 	var got string
 	f.b.loginCode = func(_ context.Context, _ int64, code string) { got = code }
 	m := threadedMsg(0, "abc#def")

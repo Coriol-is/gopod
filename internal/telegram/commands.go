@@ -16,6 +16,12 @@ import (
 // if the runner is available, otherwise falls back to the manual
 // docker exec workaround hint.
 func (b *Bot) loginHandler(ctx context.Context, api *bot.Bot, update *models.Update) {
+	if update == nil || !privateLoginMessage(update.Message) {
+		if update != nil && update.Message != nil {
+			b.requestLoginHandoff(ctx, update.Message)
+		}
+		return
+	}
 	if b.runner != nil {
 		b.loginHandlerReal(ctx, api, update)
 		return
@@ -24,8 +30,7 @@ func (b *Bot) loginHandler(ctx context.Context, api *bot.Bot, update *models.Upd
 	if update == nil || update.Message == nil {
 		return
 	}
-	b.persistMessage(ctx, update.Message)
-	b.replyText(ctx, update.Message.Chat.ID, inboundThreadID(update.Message),
+	b.replyLoginText(ctx, update.Message.Chat.ID, inboundThreadID(update.Message),
 		"Runner is not available (Docker may be unreachable). "+
 			"Cannot start interactive login.")
 }
@@ -67,4 +72,3 @@ func (b *Bot) whoamiHandler(ctx context.Context, _ *bot.Bot, update *models.Upda
 
 	b.replyText(ctx, m.Chat.ID, inboundThreadID(m), sb.String())
 }
-

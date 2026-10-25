@@ -154,9 +154,10 @@ were changed. Use Reply for a supported group delivery test; Guest integration
 and private unregistered-chat hints remain separately scoped.
 
 ## Open questions / blockers
-Urgent login privacy hardening/private owner handoff is in progress separately.
-The existing flow can expose login URL/device code/raw output in groups; this
-is not fixed by the doctor rollout. Deep personal/group container isolation audit
+Private-login hardening and owner-DM group confirmation are implemented in a
+feature branch, not yet deployed. See [login delivery contract](LOGIN.md).
+The running doctor rollout still has the older group-login behavior until that
+hotfix is activated; full container/service isolation remains separate. Deep personal/group container isolation audit
 and plan are requested (env, vault/mounts, memory, connected services). Broad
 profile changes are not yet implemented.
 

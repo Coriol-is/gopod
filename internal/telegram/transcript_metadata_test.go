@@ -91,7 +91,7 @@ func TestFailedTranscriptionCaptionHasNoSuccessMetadata(t *testing.T) {
 func TestVoiceMetadataDoesNotAlterLoginCodeRouting(t *testing.T) {
 	f := newInboundFixture(t, map[string]string{"v1": "voice/message.ogg"})
 	newFakeWhisper(t, f.b, "abc#def")
-	f.b.logins.set(streamChat, &loginSession{chatID: streamChat, awaitsCode: true})
+	f.b.logins.set(streamChat, &loginSession{chatID: streamChat, awaitsCode: true, private: true})
 	var code string
 	f.b.loginCode = func(_ context.Context, _ int64, text string) { code = text }
 	m := threadedMsg(7, "")

@@ -98,11 +98,11 @@ func classifyErr(err error) errKind {
 func (b *Bot) replyError(ctx context.Context, item queue.Item, err error) {
 	kind := classifyErr(err)
 	b.turnStatus(item).Set(stError)
-	b.log.Error("agent run failed",
-		slog.String("chat_folder", item.Folder),
-		slog.Int64("turn", item.ID),
-		slog.String("kind", kind.String()),
-		slog.Any("err", err))
+	if kind == errAuthExpired || kind == errNotLoggedIn {
+		b.log.Error("agent authentication unavailable", slog.String("chat_folder", item.Folder), slog.Int64("turn", item.ID), slog.String("kind", kind.String()))
+	} else {
+		b.log.Error("agent run failed", slog.String("chat_folder", item.Folder), slog.Int64("turn", item.ID), slog.String("kind", kind.String()), slog.Any("err", err))
+	}
 	quotaTurn := int64(0)
 	if kind == errUsageLimit {
 		quotaTurn = item.ID
@@ -117,7 +117,7 @@ func (b *Bot) replyError(ctx context.Context, item queue.Item, err error) {
 	}
 	row := errReplies[kind]
 	var buttons []models.InlineKeyboardButton
-	if row.login {
+	if row.login && item.ChatID > 0 {
 		data, _ := encodeCB("lg")
 		buttons = append(buttons, models.InlineKeyboardButton{Text: btnLogin, CallbackData: data})
 	}
