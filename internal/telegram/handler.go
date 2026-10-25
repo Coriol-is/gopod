@@ -143,6 +143,10 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 	// (~15s). The turn moves it through its states (status.go).
 	b.newStatusReactor(m.Chat.ID, m.ID).Set(stQueued)
 
+	// What the message points at (reply, quote, forward) goes above it,
+	// so "explain this" in reply to an answer is about that answer.
+	text = withInboundContext(m, text)
+
 	item := queue.Item{
 		ChatID:    m.Chat.ID,
 		MessageID: m.ID,
