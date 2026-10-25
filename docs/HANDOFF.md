@@ -27,6 +27,21 @@ images as UID 1000 using the real mounted IPC path. Backup, rollback and evidenc
 Detailed client acceptance remains open (0X/0Y/0Z/0Q and real voice/task execution).
 Earlier `a9146f0` delivery evidence remains in its dated report.
 
+**IPC delivery correction (2026-10-25, in progress):** the owner's live
+`delivery-test-1792943974.json` failed because IPCSink parsed canonical
+`tg:89160926` as an integer. The adapter now removes the transport prefix at
+its API boundary (legacy numeric ids retained), splits long plain text into
+UTF-8-safe parts and reports partial sends without retrying the whole digest.
+Messages produce scoped diagnostic receipts in `results/messages/` for success,
+terminal errors and pending retries. These are not an exactly-once outbox;
+network/crash delivery ambiguity remains explicit. Terminal outcomes are retained
+in process while archive moves fail, preventing deterministic resend loops. Request reads are bounded
+and reject nonregular/symlink files. The guide documents receipt paths and
+failure semantics. The user-created `freefeed-daily-digest` is active at 09:00
+Europe/Belgrade; this fix does not create, pause or change its schedule.
+Local build/vet/full tests and IPC/Telegram race checks pass. Independent review
+confirmed the archive-retry fix; CI and deployment verification pending.
+
 **Extensibility specs saved (design only):** CP-011 sandbox runtime and CP-012
 provider registry separate agent behaviour from execution backend lifecycle.
 Both specs are saved under `docs/superpowers/specs/`; proposed D032 changes no

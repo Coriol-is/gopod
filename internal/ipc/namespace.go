@@ -14,18 +14,22 @@ func (w *Watcher) openNamespace(folder string) (*os.Root, error) {
 }
 
 func (w *Watcher) readTask(path, folder string) ([]byte, error) {
+	return w.readRequest(path, folder, "tasks")
+}
+
+func (w *Watcher) readRequest(path, folder, channel string) ([]byte, error) {
 	root, err := w.openNamespace(folder)
 	if err != nil {
 		return nil, err
 	}
 	defer root.Close()
-	name := filepath.Join("tasks", filepath.Base(path))
+	name := filepath.Join(channel, filepath.Base(path))
 	info, err := root.Lstat(name)
 	if err != nil {
 		return nil, err
 	}
 	if !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("regular JSON task file required")
+		return nil, fmt.Errorf("regular JSON request file required")
 	}
 	f, err := root.OpenFile(name, os.O_RDONLY|syscall.O_NONBLOCK|syscall.O_NOFOLLOW, 0)
 	if err != nil {
@@ -37,7 +41,7 @@ func (w *Watcher) readTask(path, folder string) ([]byte, error) {
 		return nil, err
 	}
 	if !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("regular JSON task file required")
+		return nil, fmt.Errorf("regular JSON request file required")
 	}
 
 	return io.ReadAll(io.LimitReader(f, (64<<10)+1))
@@ -65,7 +69,7 @@ func (w *Watcher) pruneNamespace(folder string) {
 		return
 	}
 	defer root.Close()
-	for _, channel := range []string{".processed", ".failed", "results"} {
+	for _, channel := range []string{".processed", ".failed", "results", "results/messages"} {
 		f, err := root.OpenFile(channel, os.O_RDONLY|syscall.O_NONBLOCK|syscall.O_NOFOLLOW, 0)
 		if err != nil {
 			continue

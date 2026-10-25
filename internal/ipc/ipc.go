@@ -64,12 +64,13 @@ func New(cfg Config, msgs MessageSink, tasks TaskSink, log *slog.Logger, resolve
 		log = slog.Default()
 	}
 	return &Watcher{
-		cfg:     cfg,
-		msgs:    msgs,
-		tasks:   tasks,
-		log:     log,
-		resolve: resolve,
-		retries: make(map[string]retryEntry),
+		cfg:              cfg,
+		msgs:             msgs,
+		tasks:            tasks,
+		log:              log,
+		resolve:          resolve,
+		retries:          make(map[string]retryEntry),
+		terminalMessages: make(map[string]messageOutcome),
 	}
 }
 
@@ -81,12 +82,13 @@ type retryEntry struct {
 // Watcher walks data/ipc/*/messages and data/ipc/*/tasks every Tick
 // and dispatches what it finds.
 type Watcher struct {
-	cfg     Config
-	msgs    MessageSink
-	tasks   TaskSink
-	log     *slog.Logger
-	resolve FolderResolver
-	retries map[string]retryEntry
+	cfg              Config
+	msgs             MessageSink
+	tasks            TaskSink
+	log              *slog.Logger
+	resolve          FolderResolver
+	retries          map[string]retryEntry
+	terminalMessages map[string]messageOutcome
 
 	// handleFolderHook overrides handleFolder when non-nil. Tests use
 	// it to assert traversal without exercising the dispatch pipeline.

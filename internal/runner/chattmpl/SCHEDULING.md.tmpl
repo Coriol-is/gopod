@@ -91,9 +91,21 @@ wanted, include an explicit step in the task prompt to write a message request:
 ```
 
 Publish it atomically to `/workspace/ipc/messages/<unique-name>.json`, then
-check `.processed`/`.failed`. Use the actual `chatJid` returned by a task receipt,
+check `/workspace/ipc/results/messages/<unique-name>.result.json`: `status:"ok"`
+means Telegram accepted all message parts; `status:"error"` gives a reason;
+`status:"retrying"` means the host will retry. The request also moves to
+`.processed`/`.failed`. Keep the `tg:` prefix; it is part of the canonical JID.
+Use unique filenames across both tasks and messages (archives share a directory).
+Use the actual `chatJid` returned by a task receipt,
 never a guessed id. Cross-chat sending is owner-only. Do not claim delivery
 merely because a task was scheduled or its model run completed.
+
+Long plain-text messages are split into UTF-8-safe parts. Receipts are diagnostic,
+not an exactly-once guarantee or a replay journal: network timeouts/restarts can
+leave delivery uncertain. A partial delivery stops automatic whole-message retry
+and reports the number of accepted parts. Do not blindly resubmit a failed request.
+A missing receipt is not proof of delivery failure; inspect its archive/host logs.
+Requests must be regular JSON files of at most 64 KiB.
 
 ## Database and source access
 

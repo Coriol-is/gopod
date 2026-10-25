@@ -256,3 +256,143 @@ func TestWatcher_RetentionCap(t *testing.T) {
 		t.Errorf(".processed = %d, want 200", len(got))
 	}
 }
+
+func TestWatcher_MessageReceipts(t *testing.T) {
+	for _, tc := range []struct {
+		name, jid, text, status string
+		sinkErr                 error
+	}{
+		{name: "success", jid: "tg:2002", text: "hello", status: "ok"},
+		{name: "unauthorized", jid: "tg:1001", text: "hello", status: "error"},
+		{name: "empty", jid: "tg:2002", status: "error"},
+		{name: "permanent", jid: "tg:2002", text: "hello", status: "error", sinkErr: ErrPermanent},
+		{name: "transient", jid: "tg:2002", text: "hello", status: "retrying", sinkErr: errors.New("network failure")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeIPC(t, root, "alice", "messages", "probe.json", map[string]string{"chatJid": tc.jid, "text": tc.text})
+			sink := &fakeMessageSink{responses: []error{tc.sinkErr}}
+			w := New(Config{DataDir: root, OwnerFolder: "owner"}, sink, &fakeTaskSink{}, nil, staticResolver(map[string]string{"alice": "tg:2002", "owner": "tg:1001"}))
+			w.tickOnce(context.Background())
+			data, err := os.ReadFile(filepath.Join(root, "ipc", "alice", "results", "messages", "probe.result.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var r struct{ Status, Error string }
+			if err = json.Unmarshal(data, &r); err != nil {
+				t.Fatal(err)
+			}
+			if r.Status != tc.status {
+				t.Fatalf("receipt=%s", data)
+			}
+			if tc.status != "ok" && r.Error == "" {
+				t.Fatalf("reason missing: %s", data)
+			}
+			if tc.name == "unauthorized" && len(sink.callsSnapshot()) != 0 {
+				t.Fatal("cross-chat delivery")
+			}
+			if _, err := os.Stat(filepath.Join(root, "ipc", "owner", "results")); !os.IsNotExist(err) {
+				t.Fatal("receipt crossed source namespace")
+			}
+		})
+	}
+}
+
+func TestWatcher_MessageReceiptFailureDoesNotResend(t *testing.T) {
+	root := t.TempDir()
+	writeIPC(t, root, "alice", "messages", "probe.json", map[string]string{"chatJid": "tg:2002", "text": "hello"})
+	if err := os.WriteFile(filepath.Join(root, "ipc", "alice", "results"), []byte("blocked"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	sink := &fakeMessageSink{}
+	w := New(Config{DataDir: root, OwnerFolder: "owner"}, sink, &fakeTaskSink{}, nil, staticResolver(map[string]string{"alice": "tg:2002"}))
+	w.tickOnce(context.Background())
+	w.tickOnce(context.Background())
+	if len(sink.callsSnapshot()) != 1 {
+		t.Fatal("receipt write failure resent a delivered message")
+	}
+	if _, err := os.Stat(filepath.Join(root, "ipc", "alice", ".processed", "probe.json")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWatcher_MessageRejectsOversizedAndSymlink(t *testing.T) {
+	for _, kind := range []string{"oversized", "symlink"} {
+		t.Run(kind, func(t *testing.T) {
+			root := t.TempDir()
+			writeIPC(t, root, "alice", "messages", "probe.json", map[string]string{"chatJid": "tg:2002", "text": "hello"})
+			path := filepath.Join(root, "ipc", "alice", "messages", "probe.json")
+			if kind == "oversized" {
+				if err := os.WriteFile(path, make([]byte, (64<<10)+1), 0600); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				outside := filepath.Join(t.TempDir(), "message.json")
+				if err := os.WriteFile(outside, []byte(`{"chatJid":"tg:2002","text":"escaped"}`), 0600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Remove(path); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(outside, path); err != nil {
+					t.Fatal(err)
+				}
+			}
+			sink := &fakeMessageSink{}
+			w := New(Config{DataDir: root, OwnerFolder: "owner"}, sink, &fakeTaskSink{}, nil, staticResolver(map[string]string{"alice": "tg:2002"}))
+			w.tickOnce(context.Background())
+			if len(sink.callsSnapshot()) != 0 {
+				t.Fatal("invalid file dispatched")
+			}
+			data, err := os.ReadFile(filepath.Join(root, "ipc", "alice", "results", "messages", "probe.result.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var r struct{ Status, Error string }
+			if err = json.Unmarshal(data, &r); err != nil {
+				t.Fatal(err)
+			}
+			if r.Status != "error" || r.Error == "" {
+				t.Fatalf("receipt=%s", data)
+			}
+		})
+	}
+}
+
+func TestWatcher_MessageArchiveFailureDoesNotResend(t *testing.T) {
+	for _, partial := range []bool{false, true} {
+		t.Run(fmt.Sprint(partial), func(t *testing.T) {
+			root := t.TempDir()
+			writeIPC(t, root, "alice", "messages", "probe.json", map[string]string{"chatJid": "tg:2002", "text": "hello"})
+			archive := ".processed"
+			sink := &fakeMessageSink{}
+			if partial {
+				archive = ".failed"
+				sink.responses = []error{fmt.Errorf("partial: %w", ErrPermanent)}
+			}
+			blocked := filepath.Join(root, "ipc", "alice", archive)
+			if err := os.Remove(blocked); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(blocked, []byte("blocked"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			w := New(Config{DataDir: root, OwnerFolder: "owner"}, sink, &fakeTaskSink{}, nil, staticResolver(map[string]string{"alice": "tg:2002"}))
+			w.tickOnce(context.Background())
+			w.tickOnce(context.Background())
+			if len(sink.callsSnapshot()) != 1 {
+				t.Fatal("archive failure resent terminal message")
+			}
+			if err := os.Remove(blocked); err != nil {
+				t.Fatal(err)
+			}
+			w.tickOnce(context.Background())
+			if len(sink.callsSnapshot()) != 1 || len(w.terminalMessages) != 0 {
+				t.Fatal("archive recovery resent message or leaked terminal outcome")
+			}
+			if _, err := os.Stat(filepath.Join(blocked, "probe.json")); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
