@@ -14,19 +14,19 @@ Claude assistant with session continuity, long-term memory, voice,
 vision, scheduling, and multi-provider architecture ready for Codex.
 **Last updated:** 2026-10-25
 **Current deployment (2026-10-25 16:10 UTC):** reference Pi host runs
-`7bfd994` (PR #37), including voice provenance metadata (PR #34), generic agent
-scheduling, provider continuity and confirmed quota switching. Running version
-and image id verified, schema/integrity and memory API unauthenticated 401
-checked, Telegram polling/startup notice confirmed; restarts 0, OOMKilled false.
-The existing owner workspace now has the rendered scheduling guide and optional
-skill; custom CLAUDE/AGENTS files were not overwritten. Read-only IPC list and
-invalid-op probes returned correct source-scoped receipts/archives; scheduled
-count stayed 0. Read-only IPC roundtrips also passed from both actual agent
-images as UID 1000 using the real mounted IPC path. Backup, rollback and evidence:
+`7bfd994` (PR #37), including Telegram IPC delivery correction, voice metadata,
+generic agent scheduling, provider continuity and confirmed quota switching.
+Running version/image and startup verified; SQLite integrity ok, restarts 0,
+OOMKilled false. A real canonical-JID IPC message returned ok/.processed and an
+invalid JID returned a reason/.failed; no model was invoked for these probes.
+The existing owner scheduling guide was updated only after matching the previous
+release template. Existing user task `freefeed-daily-digest` is paused (external
+change), not absent. Backup/rollback and bounded acceptance evidence:
 [latest deployment report](deployments/2026-10-25-7bfd994.md).
-Earlier scheduling-only probes are recorded in the 1e0a21b report.
+Earlier 15:44 `1e0a21b` tests (zero tasks then, both-agent-image read-only IPC
+roundtrips, memory unauthenticated 401) are historical evidence in
+[the previous deployment report](deployments/2026-10-25-1e0a21b.md).
 Detailed client acceptance remains open (0X/0Y/0Z/0Q and real voice/task execution).
-Earlier `a9146f0` delivery evidence remains in its dated report.
 
 **IPC delivery correction (2026-10-25, deployed):** the owner's live
 `delivery-test-1792943974.json` failed because IPCSink parsed canonical
