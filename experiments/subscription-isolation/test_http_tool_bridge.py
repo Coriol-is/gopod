@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 from urllib.parse import urlsplit
 
-from http_tool_bridge import start_bridge
+from http_tool_bridge import response_bytes, start_bridge
 from tool_server import REQUEST_LIMIT
 
 
@@ -86,6 +86,20 @@ class BridgeTests(unittest.TestCase):
                 self.assertIsNone(json.loads(body)["id"])
                 self.assertNotIn(b"not-reflected", body)
                 run.assert_not_called()
+
+    def test_html_entities_and_json_escapes_roundtrip_without_semantic_changes(self):
+        values = [
+            "<script>alert('canary')</script>&", "&lt;script&gt;", "&amp;lt;",
+            "&#x3c;script&#x3e;", "&quot;quoted&quot;", r"\u003cscript\u003e",
+            '"quoted" <tag key="value"> & </tag>', "\u2028\u2029\N{SNOWMAN}",
+        ]
+        for value in values:
+            payload = {"id": value, "result": {"content": [{"text": value}]}}
+            with self.subTest(value=value):
+                encoded = response_bytes(payload)
+                self.assertEqual(json.loads(encoded), payload)
+                for unsafe in (b"<", b">", b"&"):
+                    self.assertNotIn(unsafe, encoded)
 
     def test_fixed_executor_and_safe_errors(self):
         request = {"jsonrpc": "2.0", "id": 8, "method": "tools/call",

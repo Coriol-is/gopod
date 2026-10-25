@@ -4,6 +4,7 @@ No CLI/authentication functionality. Endpoint capability is returned in-process,
 never logged. Bind 0.0.0.0 only deliberately for a trusted Docker CLI probe.
 """
 import hmac
+import html
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import secrets
@@ -132,9 +133,12 @@ def validate_request(request):
 def response_bytes(payload):
     # JSON remains machine-readable while HTML-significant characters cannot be
     # interpreted as markup even by a client incorrectly treating it as HTML.
-    encoded = json.dumps(payload, ensure_ascii=True, allow_nan=False)
-    for character, escaped in (("<", r"\u003c"), (">", r"\u003e"), ("&", r"\u0026")):
-        encoded = encoded.replace(character, escaped)
+    encoded = html.escape(json.dumps(payload, ensure_ascii=True, allow_nan=False), quote=False)
+    # Translate only entities introduced by HTML escaping into JSON escapes.
+    # Ampersand is last so a literal input such as '&lt;' stays that literal
+    # after JSON decoding rather than changing to '<'.
+    for entity, escaped in (("&lt;", r"\u003c"), ("&gt;", r"\u003e"), ("&amp;", r"\u0026")):
+        encoded = encoded.replace(entity, escaped)
     return encoded.encode("utf-8")
 
 
