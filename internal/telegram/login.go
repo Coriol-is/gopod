@@ -2,7 +2,6 @@ package telegram
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"log/slog"
 	"strings"
@@ -17,13 +16,26 @@ import (
 )
 
 // loginTimeout is how long a /login session stays open waiting for
-// the user to paste the OAuth code. After this, the exec is killed
-// and the session is cleaned up.
+// the user to paste the OAuth code. Timeout closes its attachment and
+// cleans the session; this is not proof the CLI process was terminated.
 const loginTimeout = 10 * time.Minute
+
+const loginPrivateToast = "Sign in from private chat"
+
+// loginIO keeps raw provider output confined to the login flow.
+type loginIO interface {
+	ReadLine() (string, error)
+	WriteStdin([]byte) (int, error)
+	Close() error
+}
+
+func privateLoginMessage(m *models.Message) bool {
+	return m != nil && m.Chat.Type == models.ChatTypePrivate && m.Chat.ID > 0
+}
 
 // loginSession holds the state for one in-progress /login flow.
 type loginSession struct {
-	exec   *runner.InteractiveExec
+	exec   loginIO
 	ctx    context.Context
 	cancel context.CancelFunc
 	chatID int64
@@ -38,6 +50,12 @@ type loginSession struct {
 	// (Codex) completes in the browser and never reads a code, so its
 	// session must not swallow the next message.
 	awaitsCode bool
+	private    bool
+	actorID    int64
+	tier       runner.Tier
+	provider   string
+	loginURL   string
+	deviceCode string
 }
 
 // loginSessions tracks per-chat login sessions. Protected by loginMu.
@@ -139,7 +157,10 @@ func (b *Bot) loginHandlerReal(ctx context.Context, _ *bot.Bot, update *models.U
 		return
 	}
 	m := update.Message
-	b.persistMessage(ctx, m)
+	if !privateLoginMessage(m) {
+		b.requestLoginHandoff(ctx, m)
+		return
+	}
 	b.startLogin(ctx, m, inboundThreadID(m))
 }
 
@@ -147,9 +168,15 @@ func (b *Bot) loginHandlerReal(ctx context.Context, _ *bot.Bot, update *models.U
 // thread. The /login command and the login button (actions.go) share
 // it; m is the command message or the message carrying the button.
 func (b *Bot) startLogin(ctx context.Context, m *models.Message, thread int) {
+	if !privateLoginMessage(m) {
+		if m != nil {
+			b.requestLoginHandoff(ctx, m)
+		}
+		return
+	}
 	rc, ok := b.resolveRegistered(ctx, m)
 	if !ok {
-		b.replyText(ctx, m.Chat.ID, thread,
+		b.replyLoginText(ctx, m.Chat.ID, thread,
 			"This chat is not registered. The owner can register it with /register.")
 		return
 	}
@@ -160,7 +187,7 @@ func (b *Bot) startLogin(ctx context.Context, m *models.Message, thread int) {
 		if b.logins.isStarting(m.Chat.ID) {
 			text = loginTextStarting
 		}
-		b.replyText(ctx, m.Chat.ID, thread, text)
+		b.replyLoginText(ctx, m.Chat.ID, thread, text)
 		return
 	}
 	b.loginReserved(ctx, m, thread, rc)
@@ -169,6 +196,12 @@ func (b *Bot) startLogin(ctx context.Context, m *models.Message, thread int) {
 // loginReserved runs the login flow for a chat whose login slot the
 // caller reserved, and releases the slot when no session was stored.
 func (b *Bot) loginReserved(ctx context.Context, m *models.Message, thread int, rc store.RegisteredChat) {
+	if !privateLoginMessage(m) {
+		if m != nil {
+			b.cancelUnsafeLogin(m.Chat.ID)
+		}
+		return
+	}
 	run := b.loginRun
 	if run == nil {
 		run = b.runLogin
@@ -188,21 +221,32 @@ func (b *Bot) loginReserved(ctx context.Context, m *models.Message, thread int, 
 func (b *Bot) loginFailed(ctx context.Context, chatID int64, thread int, folder, what string, err error) {
 	b.log.Error("/login: "+what+" failed",
 		slog.String("folder", folder),
-		slog.Any("err", err))
-	b.replyText(ctx, chatID, thread, loginTextFailed)
+		slog.String("error_class", "login_failed"))
+	if chatID > 0 {
+		b.replyLoginText(ctx, chatID, thread, loginTextFailed)
+	}
 }
 
 // runLogin starts the agent's login exec and stores the session.
 // Reports whether a session was stored (it then owns the chat's slot).
 func (b *Bot) runLogin(ctx context.Context, m *models.Message, thread int, rc store.RegisteredChat) bool {
+	return b.runLoginTarget(ctx, m, thread, rc, false)
+}
+func (b *Bot) runLoginTarget(ctx context.Context, m *models.Message, thread int, rc store.RegisteredChat, confirmedGroup bool) bool {
+	if !privateLoginMessage(m) || (!confirmedGroup && rc.JID != buildChatJID(m.Chat.ID)) || (confirmedGroup && (m.Chat.ID != b.ownerChatID || userID(m.From) != b.ownerChatID || rc.IsOwner || rc.Folder == "owner")) {
+		if m != nil {
+			b.cancelUnsafeLogin(m.Chat.ID)
+		}
+		return false
+	}
 	if b.runner == nil {
-		b.replyText(ctx, m.Chat.ID, thread,
+		b.replyLoginText(ctx, m.Chat.ID, thread,
 			"Runner is not available. Is Docker running?")
 		return false
 	}
 
 	tier := runner.TierRegistered
-	if rc.IsOwner {
+	if rc.IsOwner && !confirmedGroup {
 		tier = runner.TierOwner
 	}
 
@@ -213,7 +257,7 @@ func (b *Bot) runLogin(ctx context.Context, m *models.Message, thread int, rc st
 		return false
 	}
 
-	b.replyText(ctx, m.Chat.ID, thread, "Starting authentication flow...")
+	b.replyLoginText(ctx, m.Chat.ID, thread, "Starting authentication flow...")
 
 	// Spawn interactive exec.
 	loginCtx, loginCancel := context.WithTimeout(context.Background(), loginTimeout)
@@ -229,6 +273,9 @@ func (b *Bot) runLogin(ctx context.Context, m *models.Message, thread int, rc st
 		return false
 	}
 
+	// Closing the attachment bounds a blocked ReadLine when the flow times out.
+	context.AfterFunc(loginCtx, func() { _ = exec.Close() })
+
 	// Read lines looking for URL and optional device code.
 	var url, deviceCode string
 	for i := 0; i < 30; i++ {
@@ -237,11 +284,9 @@ func (b *Bot) runLogin(ctx context.Context, m *models.Message, thread int, rc st
 			if err == io.EOF {
 				break
 			}
-			b.log.Error("/login: ReadLine failed",
-				slog.Any("err", err))
+			b.log.Error("/login: output unavailable", slog.String("error_class", "read_failed"))
 			break
 		}
-		b.log.Debug("/login stdout", slog.String("line", line))
 		extracted := prov.ExtractLoginURL(line)
 		if extracted == "" {
 			continue
@@ -263,8 +308,8 @@ func (b *Bot) runLogin(ctx context.Context, m *models.Message, thread int, rc st
 
 	if url == "" {
 		loginCancel()
-		exec.DrainAndClose()
-		b.replyText(ctx, m.Chat.ID, thread,
+		_ = exec.Close()
+		b.replyLoginText(ctx, m.Chat.ID, thread,
 			"Could not extract the login URL. Check gopod logs.")
 		return false
 	}
@@ -278,6 +323,15 @@ func (b *Bot) runLogin(ctx context.Context, m *models.Message, thread int, rc st
 		folder:     rc.Folder,
 		thread:     thread,
 		awaitsCode: deviceCode == "",
+		private:    true,
+		actorID:    userID(m.From),
+		tier:       tier,
+		provider:   prov.Name(),
+		loginURL:   url,
+		deviceCode: deviceCode,
+	}
+	if session.actorID == 0 {
+		session.actorID = m.Chat.ID
 	}
 	b.logins.set(m.Chat.ID, session)
 
@@ -296,7 +350,10 @@ func (b *Bot) runLogin(ctx context.Context, m *models.Message, thread int, rc st
 			"\n\nAfter signing in, copy the authorization code from the " +
 			"success page and send it here as your next message."
 	}
-	b.replyText(ctx, m.Chat.ID, thread, loginMsg)
+	if _, err := b.sendPrivateLoginText(ctx, m.Chat.ID, thread, loginMsg, nil); err != nil {
+		b.cleanupLoginSession(m.Chat.ID, session)
+		return false
+	}
 
 	// Device flow: the CLI finishes on its own once the user signs in
 	// in the browser. Wait for it in the background instead of leaving
@@ -309,12 +366,11 @@ func (b *Bot) runLogin(ctx context.Context, m *models.Message, thread int, rc st
 	// the user pastes the code, tear down the session.
 	go func() {
 		<-loginCtx.Done()
-		if s := b.logins.get(m.Chat.ID); s == session {
-			b.logins.remove(m.Chat.ID)
-			exec.DrainAndClose()
+		if b.logins.removeIf(m.Chat.ID, session) {
+			_ = exec.Close()
 			// Only notify if it was a timeout, not a clean completion.
-			if loginCtx.Err() == context.DeadlineExceeded {
-				b.replyText(context.Background(), m.Chat.ID, thread,
+			if loginCtx.Err() == context.DeadlineExceeded && session.private && session.chatID > 0 {
+				b.replyLoginText(context.Background(), m.Chat.ID, thread,
 					"Login session timed out. Run /login to try again.")
 			}
 		}
@@ -330,85 +386,60 @@ func (b *Bot) handleLoginCode(ctx context.Context, chatID int64, code string) {
 	if session == nil {
 		return
 	}
-
-	b.replyText(ctx, chatID, session.thread, "Verifying code...")
-
-	// Write the code to claude's stdin.
-	if _, err := session.exec.WriteStdin([]byte(code + "\n")); err != nil {
-		b.log.Error("/login: WriteStdin failed",
-			slog.Any("err", err))
-		b.replyText(ctx, chatID, session.thread, fmt.Sprintf("Failed to send code: %v", err))
+	if chatID <= 0 || !session.private {
 		b.cleanupLoginSession(chatID, session)
 		return
 	}
-
+	b.replyLoginText(ctx, chatID, session.thread, "Verifying code...")
+	if session.exec == nil {
+		b.cleanupLoginSession(chatID, session)
+		return
+	}
+	if _, err := session.exec.WriteStdin([]byte(code + "\n")); err != nil {
+		b.log.Warn("/login: code write failed", slog.String("error_class", "write_failed"))
+		b.replyLoginText(ctx, chatID, session.thread, loginTextFailed)
+		b.cleanupLoginSession(chatID, session)
+		return
+	}
 	b.finishLogin(ctx, chatID, session)
 }
 
-// finishLogin reads the login CLI's output until it reports success or
-// failure (or exits), tears the session down, and tells the user.
+// Completion output is never forwarded or logged: only an auth-status check
+// can establish success, even if CLI output says "Not logged in" or "success".
 func (b *Bot) finishLogin(ctx context.Context, chatID int64, session *loginSession) {
-	// Read lines looking for success or error indication.
-	var resultLines []string
-	for i := 0; i < 30; i++ {
-		line, err := session.exec.ReadLine()
-		if err != nil {
-			if err == io.EOF {
+	if session == nil {
+		return
+	}
+	if chatID <= 0 || !session.private || session.chatID != chatID {
+		b.cleanupLoginSession(chatID, session)
+		return
+	}
+	if session.exec != nil {
+		for i := 0; i < 30; i++ {
+			line, err := session.exec.ReadLine()
+			if err != nil {
 				break
 			}
-			break
-		}
-		b.log.Debug("/login result", slog.String("line", line))
-		cleaned := stripANSI(line)
-		if cleaned != "" {
-			resultLines = append(resultLines, cleaned)
-		}
-		// Check for known success patterns.
-		lower := strings.ToLower(cleaned)
-		if strings.Contains(lower, "logged in") ||
-			strings.Contains(lower, "authenticated") ||
-			strings.Contains(lower, "success") {
-			break
-		}
-		// Check for known error patterns.
-		if strings.Contains(lower, "error") ||
-			strings.Contains(lower, "failed") ||
-			strings.Contains(lower, "invalid") {
-			break
+			lower := strings.ToLower(stripANSI(line))
+			if strings.Contains(lower, "logged in") || strings.Contains(lower, "authenticated") || strings.Contains(lower, "success") || strings.Contains(lower, "error") || strings.Contains(lower, "failed") || strings.Contains(lower, "invalid") {
+				break
+			}
 		}
 	}
-
-	// Timed out: the timeout goroutine owns the user-facing message.
 	if session.ctx != nil && session.ctx.Err() == context.DeadlineExceeded {
 		return
 	}
 	b.cleanupLoginSession(chatID, session)
-
-	provName := "the agent"
-	if b.runner != nil {
-		provName = b.runner.ProviderForChat(session.folder).Name()
-	}
-
-	if len(resultLines) == 0 {
-		// Check auth status as fallback.
-		if b.checkAuthAfterLogin(ctx, session) {
-			b.replyText(ctx, chatID, session.thread, "Logged in successfully! Send a message to start chatting with "+provName+".")
-		} else {
-			b.replyText(ctx, chatID, session.thread,
-				"Login completed but could not verify auth status. "+
-					"Try sending a message — if it fails, run /login again.")
-		}
-		return
-	}
-
-	result := strings.Join(resultLines, "\n")
-	lower := strings.ToLower(result)
-	if strings.Contains(lower, "logged in") ||
-		strings.Contains(lower, "authenticated") ||
-		strings.Contains(lower, "success") {
-		b.replyText(ctx, chatID, session.thread, result+"\n\nSend a message to start chatting with "+provName+".")
+	verified := false
+	if b.loginAuthCheck != nil {
+		verified = b.loginAuthCheck(ctx, session)
 	} else {
-		b.replyText(ctx, chatID, session.thread, "Login result:\n\n"+result)
+		verified = b.checkAuthAfterLogin(ctx, session)
+	}
+	if verified {
+		b.replyLoginText(ctx, chatID, session.thread, "Authentication verified. Send a message to start chatting.")
+	} else {
+		b.replyLoginText(ctx, chatID, session.thread, "Authentication could not be verified. Run /login in this private chat to try again.")
 	}
 }
 
@@ -419,6 +450,10 @@ func (b *Bot) checkAuthAfterLogin(ctx context.Context, session *loginSession) bo
 		return false
 	}
 	tier := runner.TierRegistered
+	if session.provider != "" && b.runner.ProviderForChat(session.folder).Name() != session.provider {
+		return false
+	}
+	tier = session.tier
 	status, err := b.runner.CheckAuth(ctx, session.folder, tier, b.allowlist)
 	if err != nil {
 		return false
@@ -427,9 +462,70 @@ func (b *Bot) checkAuthAfterLogin(ctx context.Context, session *loginSession) bo
 }
 
 func (b *Bot) cleanupLoginSession(chatID int64, session *loginSession) {
-	session.cancel()
-	session.exec.DrainAndClose()
-	b.logins.remove(chatID)
+	if session == nil {
+		return
+	}
+	b.logins.removeIf(chatID, session)
+	if session.cancel != nil {
+		session.cancel()
+	}
+	if session.exec != nil {
+		_ = session.exec.Close()
+	}
+}
+func (ls *loginSessions) removeIf(chatID int64, session *loginSession) bool {
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
+	if ls.sessions[chatID] != session {
+		return false
+	}
+	delete(ls.sessions, chatID)
+	return true
+}
+func (b *Bot) cancelUnsafeLogin(chatID int64) {
+	if b.logins == nil {
+		return
+	}
+	if session := b.logins.get(chatID); session != nil {
+		b.cleanupLoginSession(chatID, session)
+	}
+	b.logins.release(chatID)
+}
+
+// Consume raw authorization codes before persistence, media processing or
+// model routing. Commands stay commands, but their quoted login URL is not saved.
+func (b *Bot) interceptLoginInput(ctx context.Context, m *models.Message) (consumed, sensitive bool) {
+	if m == nil || b.logins == nil {
+		return false, false
+	}
+	session := b.logins.get(m.Chat.ID)
+	if session == nil {
+		return false, false
+	}
+	raw := strings.TrimSpace(messageText(m))
+	if !privateLoginMessage(m) || !session.private {
+		b.cancelUnsafeLogin(m.Chat.ID)
+		return !strings.HasPrefix(raw, "/"), true
+	}
+	if !session.awaitsCode {
+		if raw != "" && (session.deviceCode != "" && strings.Contains(raw, session.deviceCode) || session.loginURL != "" && strings.Contains(raw, session.loginURL)) {
+			b.replyLoginText(ctx, m.Chat.ID, session.thread, "Complete sign-in in your browser. Do not send the device code to this chat.")
+			return true, true
+		}
+		return false, true
+	}
+	if session.actorID != 0 && session.actorID != userID(m.From) {
+		return !strings.HasPrefix(raw, "/"), true
+	}
+	if raw == "" || strings.HasPrefix(raw, "/") {
+		return false, true
+	}
+	if b.loginCode != nil {
+		b.loginCode(ctx, m.Chat.ID, raw)
+	} else {
+		b.handleLoginCode(ctx, m.Chat.ID, raw)
+	}
+	return true, true
 }
 
 // extractURL finds the URL in the "If the browser didn't open, visit: <URL>"
@@ -483,4 +579,13 @@ func stripANSI(s string) string {
 
 func isCSITerminator(c byte) bool {
 	return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+}
+
+func isLoginCommand(raw string) bool {
+	fields := strings.Fields(raw)
+	if len(fields) == 0 {
+		return false
+	}
+	command, _, _ := strings.Cut(fields[0], "@")
+	return command == "/login"
 }

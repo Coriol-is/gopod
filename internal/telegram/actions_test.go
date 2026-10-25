@@ -220,7 +220,7 @@ func TestLoginCallback_ConcurrentPressesStartOne(t *testing.T) {
 		t.Fatalf("keyboard clears = %+v", m)
 	}
 	// /login while it starts is refused too, saying it is starting.
-	b.startLogin(ctx, &models.Message{ID: 5, Chat: models.Chat{ID: streamChat}}, 0)
+	b.startLogin(ctx, &models.Message{ID: 5, Chat: models.Chat{ID: streamChat, Type: models.ChatTypePrivate}}, 0)
 	if stub.calls.Load() != 1 {
 		t.Fatal("/login started a second login")
 	}
@@ -290,7 +290,7 @@ func TestLoginReserved_PanicReleasesSlot(t *testing.T) {
 	}
 	func() {
 		defer func() { _ = recover() }()
-		b.loginReserved(context.Background(), &models.Message{Chat: models.Chat{ID: streamChat}}, 0, store.RegisteredChat{Folder: "owner"})
+		b.loginReserved(context.Background(), &models.Message{Chat: models.Chat{ID: streamChat, Type: models.ChatTypePrivate}}, 0, store.RegisteredChat{Folder: "owner"})
 	}()
 
 	stub := stubLogin(b)

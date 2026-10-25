@@ -120,6 +120,13 @@ func (b *Bot) unmarkRetried(turnID int64) {
 // flow waits for the agent's login URL, so it runs in the background
 // and the press is answered at once.
 func (b *Bot) loginCallback(ctx context.Context, q cbQuery) (string, error) {
+	if q.ChatKind != "private" || q.ChatID <= 0 {
+		m := &models.Message{Chat: models.Chat{ID: q.ChatID, Type: models.ChatType(q.ChatKind)}, From: &models.User{ID: q.UserID}}
+		if b.requestLoginHandoff(ctx, m) {
+			return "Check private chat", nil
+		}
+		return loginPrivateToast, nil
+	}
 	// The slot is claimed here, before answering, so a second press
 	// (or /login) while this one starts gets a toast, not a second exec.
 	if !b.logins.reserve(q.ChatID) {
@@ -131,7 +138,7 @@ func (b *Bot) loginCallback(ctx context.Context, q cbQuery) (string, error) {
 	b.clearKeyboard(ctx, q.ChatID, q.MessageID)
 	// The flow needs the chat only; it is registered (the dispatcher
 	// checked).
-	m := &models.Message{ID: q.MessageID, Chat: models.Chat{ID: q.ChatID}}
+	m := &models.Message{ID: q.MessageID, Chat: models.Chat{ID: q.ChatID, Type: models.ChatTypePrivate}, From: &models.User{ID: q.UserID}}
 	go b.loginReserved(ctx, m, q.ThreadID, q.Chat)
 	return loginToastStarting, nil
 }
