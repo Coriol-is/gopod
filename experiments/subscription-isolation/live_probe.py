@@ -155,8 +155,9 @@ class ToolAudit:
             self.count += 1
             expected, proof = self.expected, self.proof
             record = {'command_matches_expected': isinstance(arguments, dict) and arguments.get('command') == expected,
-                      'exit_code': None, 'stopped': 'execution_unavailable',
+                      'exit_code': None, 'stopped': 'unknown',
                       'marker_returned': False, 'proof_matches_after': False}
+            record.update(argument_shape(arguments))
             self.records.append(record)
         try:
             result = self.original_run(arguments)
@@ -166,10 +167,40 @@ class ToolAudit:
                 record['stopped'] = stopped if stopped in (None, 'timeout', 'output_limit', 'cancelled') else 'other'
                 record['marker_returned'] = isinstance(output, str) and self.marker in output
             return result
+        except Exception as error:
+            with self.lock:
+                if isinstance(error, ValueError) and str(error) in {
+                        'only command is accepted', 'invalid command', 'executor is stopping'}:
+                    record['stopped'] = 'invalid_arguments'
+                elif isinstance(error, subprocess.TimeoutExpired):
+                    record['stopped'] = 'cleanup_timeout'
+                elif isinstance(error, OSError):
+                    record['stopped'] = 'spawn_unavailable'
+                else:
+                    record['stopped'] = 'unknown'
+            raise
         finally:
             matched = proof_matches(self.workspace, proof, self.marker)
             with self.lock:
                 record['proof_matches_after'] = matched
+
+
+def argument_shape(arguments):
+    def kind(value):
+        if value is None:
+            return 'null'
+        if isinstance(value, dict):
+            return 'object'
+        if isinstance(value, str):
+            return 'string'
+        if isinstance(value, list):
+            return 'array'
+        return 'other'
+    has_command = isinstance(arguments, dict) and 'command' in arguments
+    command = arguments.get('command') if isinstance(arguments, dict) else None
+    return {'arguments_type': kind(arguments), 'has_command': has_command,
+            'extra_keys_count': sum(key != 'command' for key in arguments) if isinstance(arguments, dict) else 0,
+            'command_type': kind(command), 'command_length': len(command) if isinstance(command, str) else None}
 
 
 def sanitized_events(output, provider):

@@ -73,7 +73,9 @@ class ToolAuditTests(unittest.TestCase):
             report = audit.snapshot()
             self.assertEqual(report['calls'], [{'command_matches_expected': False, 'exit_code': 7,
                                                'stopped': 'other', 'marker_returned': True,
-                                               'proof_matches_after': True}])
+                                               'proof_matches_after': True, 'arguments_type': 'object',
+                                               'has_command': True, 'extra_keys_count': 0, 'command_type': 'string',
+                                               'command_length': len('private-argument-value')}])
             self.assertNotIn('private-', json.dumps(report))
 
     def test_call_budget_revokes_executor_without_more_execution(self):
@@ -100,8 +102,27 @@ class ToolAuditTests(unittest.TestCase):
             audit.configure('expected-command', 'proof')
             with self.assertRaises(ValueError):
                 executor.run({'command': 'expected-command'})
-            self.assertEqual(audit.snapshot()['calls'][0]['stopped'], 'execution_unavailable')
+            self.assertEqual(audit.snapshot()['calls'][0]['stopped'], 'unknown')
             self.assertNotIn('private-error-value', json.dumps(audit.snapshot()))
+
+    def test_argument_shape_and_exception_classification_are_fixed_labels(self):
+        self.assertEqual(live_probe.argument_shape({'command': ['private-value'], 'private-key': 'private-value'}),
+                         {'arguments_type': 'object', 'has_command': True, 'extra_keys_count': 1,
+                          'command_type': 'array', 'command_length': None})
+        for arguments, expected_type in [('private-value', 'string'), ([], 'array'), (None, 'null'), (7, 'other')]:
+            self.assertEqual(live_probe.argument_shape(arguments)['arguments_type'], expected_type)
+        for exception, expected in [(ValueError('only command is accepted'), 'invalid_arguments'),
+                                    (OSError('private-error-value'), 'spawn_unavailable'),
+                                    (subprocess.TimeoutExpired('private-command', 5), 'cleanup_timeout')]:
+            with tempfile.TemporaryDirectory() as root:
+                executor = SimpleNamespace(run=mock.Mock(side_effect=exception))
+                audit = live_probe.ToolAudit(executor, Path(root), 'marker', live_probe.Cancellation())
+                audit.configure('expected', 'proof')
+                with self.assertRaises(type(exception)):
+                    executor.run({'private-key': 'private-value'})
+                report = audit.snapshot()
+                self.assertEqual(report['calls'][0]['stopped'], expected)
+                self.assertNotIn('private-', json.dumps(report))
 
 
 class LifecycleTests(unittest.TestCase):
