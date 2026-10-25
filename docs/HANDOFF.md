@@ -26,6 +26,10 @@ Also: CI workflow `.github/workflows/ci.yml` and the PR-based git flow in
 CLAUDE.md (main's ruleset needs 1 approval; PRs are merged with
 `gh pr merge --squash --admin`).
 **Before deploying, run the live checklist** (next section, item 00).
+**2026-10-25:** extracted memories are now scoped per conversation
+([D023](DECISIONS.md#d023--extracted-memories-are-scoped-per-conversation)):
+a thread sees main/manual/pinned rows plus its own, main sees all; existing
+rows stay shared (thread 0).
 **Previous session (2026-10-05):** production deploy + Codex harness.
 `main` (`b254e01`) is deployed on the production host via `docker compose`
 (data at `/opt/gopod/data`, live owner workspace at
