@@ -14,8 +14,13 @@ import (
 	"time"
 )
 
+// SecretWords are the D012 words that mark a name as holding a secret.
+// Other packages that redact (the Telegram progress lines) build their
+// patterns from it, so there is one list.
+const SecretWords = `token|key|secret|password|cookie|auth`
+
 // secretPattern matches attribute keys that should be redacted per D012.
-var secretPattern = regexp.MustCompile(`(?i)token|key|secret|password|cookie|auth`)
+var secretPattern = regexp.MustCompile(`(?i)` + SecretWords)
 
 // SQLiteHandler is a slog.Handler that writes to the logs SQLite table.
 // It also forwards to a wrapped handler (typically stderr) so logs

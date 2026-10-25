@@ -317,6 +317,8 @@ All 5 sub-steps (ST1–ST5) implemented:
 - Config: `GOPOD_STREAM_DISABLED=1` to disable. Default: streaming on.
 - `maybeVoiceReply` extracted for reuse across sync/streaming paths.
 
+**Coding output, parts 1-2** ([D024](DECISIONS.md#d024--coding-output-output-policy-and-tool-progress-in-the-draft), 2026-10-25, branch `feat/coding-progress-clean`): output policy in every system prompt; Claude streamed turns run `stream-json` and the draft shows the last five tool steps. Unit-tested with sanitised fixtures from Claude Code 2.1.310 whose event kinds match 2.1.289; **not verified live** (check: progress lines appear, final answer short, Stop mid-tool, `GOPOD_PROGRESS=0`, expired-login reply). Part 3 is D025.
+
 **Phase 6 — Secret gateway** ([D019](DECISIONS.md), [GATEWAY.md](GATEWAY.md)).
 Design complete. Implementation not started. Second priority.
 

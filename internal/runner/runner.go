@@ -64,6 +64,11 @@ type Runner struct {
 	// compactAfter triggers auto-compact after N turns. 0 = disabled.
 	compactAfter int
 
+	// progress runs streamed turns in structured mode when the
+	// provider supports it (StructuredStreamer), so tool calls reach
+	// AgentStream.Progress. Off: plain text, as before (GOPOD_PROGRESS=0).
+	progress bool
+
 	// Per-chat provider and model overrides (/provider, /model).
 	providersMu   sync.RWMutex
 	chatProviders map[string]AgentProvider
@@ -257,6 +262,7 @@ func (r *Runner) Run(
 				slog.Int("len", len(compiled)))
 		}
 	}
+	opts.AppendSystemPrompt = systemPromptWith(opts.AppendSystemPrompt)
 
 	prov := r.ProviderForChat(chatFolder)
 	ref, err := r.resolveSession(ctx, id, chatFolder, thread, prov)
@@ -321,9 +327,18 @@ type RunResult struct {
 // AgentStream is the handle callers use to consume streaming output.
 // Read Chunks in a loop for partial text; when Chunks closes, read
 // Result for the final outcome.
+//
+// Progress is nil unless the run is structured (see StructuredStreamer).
+// Then it carries the agent's tool calls and Chunks carries only answer
+// text. Progress is unbuffered and both channels have one sender, so a
+// consumer that drains the Chunks already buffered before applying a
+// progress event sees text and tools in the agent's order. A consumer
+// must keep reading Progress (or cancel the run) until Chunks closes;
+// Progress closes with it.
 type AgentStream struct {
-	Chunks <-chan string    // text chunks as they arrive
-	Result <-chan RunResult // final result after agent exits
+	Chunks   <-chan string        // answer text chunks as they arrive
+	Progress <-chan ProgressEvent // tool calls of a structured run; nil otherwise
+	Result   <-chan RunResult     // final result after agent exits
 }
 
 // RunStream is the streaming variant of Run. It ensures the container,
@@ -358,6 +373,7 @@ func (r *Runner) RunStream(
 				slog.Int("len", len(compiled)))
 		}
 	}
+	systemPrompt = systemPromptWith(systemPrompt)
 
 	prov := r.ProviderForChat(chatFolder)
 	model := r.ModelForChat(chatFolder)
@@ -405,6 +421,10 @@ func (r *Runner) startStream(
 	}
 	cmd := mkCmd(ref)
 	capture := announcesNewSession(prov, ref)
+	ss := r.structuredStreamer(prov) // nil: plain text
+	if ss != nil {
+		cmd = ss.StructuredCmd(cmd)
+	}
 
 	// Acquire order: queue slot -> chat's agent slot -> gate (gate.go).
 	releaseGate, err := r.admit(ctx, chatFolder, ClassInteractive)
@@ -435,6 +455,10 @@ func (r *Runner) startStream(
 
 	chunks := make(chan string, 32)
 	result := make(chan RunResult, 1)
+	var progress chan ProgressEvent
+	if ss != nil {
+		progress = make(chan ProgressEvent) // unbuffered: see AgentStream
+	}
 
 	// The watcher kills the agent when the turn is cancelled. finished
 	// tells it the process exited on its own; killed reports which of
@@ -455,6 +479,9 @@ func (r *Runner) startStream(
 	go func() {
 		defer close(chunks)
 		defer close(result)
+		if progress != nil {
+			defer close(progress)
+		}
 		defer handle.Close()
 		defer release() // capability dies with the exec, not the handler
 
@@ -466,7 +493,7 @@ func (r *Runner) startStream(
 			case <-ctx.Done():
 			}
 		}
-		fullOut, stderr := readExecStream(handle.Stdout, handle.Stderr, send)
+		fullOut, authOut, stderr := r.readAgentOutput(ctx, handle, ss, send, progress)
 		stderr = strings.TrimSpace(stderr)
 
 		// Wait for exit.
@@ -500,7 +527,7 @@ func (r *Runner) startStream(
 		// Classify auth/exit errors.
 		if execErr != nil {
 			if ee, ok := execErr.(*ExecError); ok && ee.Code != 0 {
-				if prov.IsNotLoggedInError(stderr, fullText) {
+				if prov.IsNotLoggedInError(stderr, authOut) {
 					result <- RunResult{Err: r.classifyAuthError(ctx, id)}
 					return
 				}
@@ -529,8 +556,55 @@ func (r *Runner) startStream(
 		}
 	}()
 
-	return &AgentStream{Chunks: chunks, Result: result}, nil
+	return &AgentStream{Chunks: chunks, Progress: progress, Result: result}, nil
 }
+
+// structuredStreamer returns prov's structured-output capability, or
+// nil when progress is off or prov has none.
+func (r *Runner) structuredStreamer(prov AgentProvider) StructuredStreamer {
+	if !r.progress {
+		return nil
+	}
+	ss, _ := prov.(StructuredStreamer)
+	return ss
+}
+
+// readAgentOutput reads a streamed agent run to EOF. Plain runs (ss
+// nil) pass stdout through as chunks. Structured runs pass answer text
+// to send and tool calls to progress, and the reply is the run's result
+// text. Returns the reply, the text to search for auth errors and
+// stderr. For structured runs that text is the reply only (result or
+// final agent text), never tool results or the raw transcript: a file
+// the agent read may well say "not logged in".
+func (r *Runner) readAgentOutput(ctx context.Context, handle *StreamHandle, ss StructuredStreamer, send func(string), progress chan<- ProgressEvent) (reply, authText, stderr string) {
+	if ss == nil {
+		out, errOut := readExecStream(handle.Stdout, handle.Stderr, send)
+		return out, out, errOut
+	}
+	onTool := func(ev ProgressEvent) {
+		select {
+		case progress <- ev:
+		case <-ctx.Done():
+		}
+	}
+	out := readStructuredStream(handle.Stdout, handle.Stderr, ss.ParseStreamLine, send, onTool)
+	r.log.Debug("structured agent run read",
+		slog.String("agent_session", out.SessionID),
+		slog.Int("parsed", out.Parsed))
+	if ctx.Err() == nil && (out.Malformed > 0 || !out.Result) {
+		// Counts only: lines may carry file contents or secrets.
+		r.log.Warn("structured agent output incomplete",
+			slog.Int("parsed", out.Parsed),
+			slog.Int("malformed", out.Malformed),
+			slog.Bool("result", out.Result))
+	}
+	return out.Text, out.Text, out.Stderr
+}
+
+// SetProgress turns structured streaming (tool progress) on or off
+// for providers that support it. Off by default; main wires
+// config.ProgressEnabled.
+func (r *Runner) SetProgress(on bool) { r.progress = on }
 
 // readExecStream reads an exec's demuxed stdout to EOF, passing each
 // chunk to onChunk, and returns the full stdout and stderr text.

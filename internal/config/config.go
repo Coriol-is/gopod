@@ -125,6 +125,12 @@ type Config struct {
 	// Default true; GOPOD_NOTIFY_LIFECYCLE=0/false/no/off disables them.
 	NotifyLifecycle bool
 
+	// ProgressEnabled runs streamed Claude turns with structured
+	// output, so the Telegram draft shows the agent's tool steps
+	// instead of a bare cursor. Default: true. Set GOPOD_PROGRESS=0
+	// for plain `claude -p` text mode.
+	ProgressEnabled bool
+
 	// --- Agent admission control (D026) ---
 
 	// MaxAgents caps agent processes running at once across all chats.
@@ -168,7 +174,8 @@ func Load(loadDotenv bool) (Config, error) {
 		ContainerImage:         getenvDefault("GOPOD_CONTAINER_IMAGE", "gopod-agent:latest"),
 		LeftoverCleanupEnabled: !envFlag("GOPOD_LEFTOVER_CLEANUP_DISABLED"),
 		StreamEnabled:          !envFlag("GOPOD_STREAM_DISABLED"),
-		NotifyLifecycle:        envFlagDefault("GOPOD_NOTIFY_LIFECYCLE", true),
+		NotifyLifecycle:        !envOff("GOPOD_NOTIFY_LIFECYCLE"),
+		ProgressEnabled:        !envOff("GOPOD_PROGRESS"),
 		CompactAfter:           compactAfter,
 		CompactInterval:        os.Getenv("GOPOD_COMPACT_INTERVAL"),
 		CompactTime:            os.Getenv("GOPOD_COMPACT_TIME"),
@@ -294,17 +301,15 @@ func envFlag(key string) bool {
 	}
 }
 
-// envFlagDefault is envFlag for a setting that has a default: unset or
-// unrecognised returns def, 1/true/yes/on returns true and 0/false/no/off
-// returns false (case-insensitive).
-func envFlagDefault(key string, def bool) bool {
+// envOff reports whether an on-by-default env var is switched off:
+// 0, false, no or off (case-insensitive). Unset or anything else is
+// not off.
+func envOff(key string) bool {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
-	case "1", "true", "yes", "on":
-		return true
 	case "0", "false", "no", "off":
-		return false
+		return true
 	default:
-		return def
+		return false
 	}
 }
 

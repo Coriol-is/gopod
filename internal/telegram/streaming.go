@@ -239,9 +239,55 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 
 	var accumulated strings.Builder // text of the current draft/placeholder
 	var full strings.Builder        // every chunk so far, for a stop
-	dirty := false                  // accumulated has text not yet shown
+	dirty := false                  // the view has changed since last shown
 	overflow := false               // the reply outgrew one message
 
+	// Structured runs (stream.Progress != nil) also report tool steps.
+	// Until answer text arrives after the latest step, the view is the
+	// last progressShown steps instead of the text.
+	var steps []string
+	answering := false // answer text arrived since the latest step
+	view := func() string {
+		if !answering && len(steps) > 0 {
+			return progressView(steps)
+		}
+		return accumulated.String()
+	}
+
+	// addChunk applies one answer chunk. Returns false when the turn
+	// had to be finished by drainAndSend.
+	addChunk := func(chunk string) bool {
+		accumulated.WriteString(chunk)
+		full.WriteString(chunk)
+		answering = true
+		dirty = true
+
+		if accumulated.Len() <= editLimit {
+			return true
+		}
+		overflow = true
+		if draftID != 0 {
+			// A draft cannot hold more. Continue in a fresh draft
+			// (replaced, not animated); the final message carries
+			// the whole reply.
+			draftID = useDraft(b.newDraftID())
+			accumulated.Reset()
+			return true
+		}
+		// Edit path: finalize this placeholder, continue in a new one.
+		b.editMessage(ctx, item.ChatID, placeholder, accumulated.String())
+		placeholder = b.sendPlaceholder(ctx, item.ChatID, item.ThreadID, 0)
+		if placeholder == 0 {
+			b.drainAndSend(ctx, item, stream)
+			return false
+		}
+		b.recordPlaceholder(ctx, item, placeholder)
+		accumulated.Reset()
+		dirty = false
+		return true
+	}
+
+	progress := stream.Progress // nil for plain runs: never selected
 loop:
 	for {
 		select {
@@ -249,32 +295,42 @@ loop:
 			if !ok {
 				break loop // channel closed, agent exited
 			}
-			accumulated.WriteString(chunk)
-			full.WriteString(chunk)
-			dirty = true
-
-			if accumulated.Len() <= editLimit {
-				continue
-			}
-			overflow = true
-			if draftID != 0 {
-				// A draft cannot hold more. Continue in a fresh draft
-				// (replaced, not animated); the final message carries
-				// the whole reply.
-				draftID = useDraft(b.newDraftID())
-				accumulated.Reset()
-				continue
-			}
-			// Edit path: finalize this placeholder, continue in a new one.
-			b.editMessage(ctx, item.ChatID, placeholder, accumulated.String())
-			placeholder = b.sendPlaceholder(ctx, item.ChatID, item.ThreadID, 0)
-			if placeholder == 0 {
-				b.drainAndSend(ctx, item, stream)
+			if !addChunk(chunk) {
 				return nil
 			}
-			b.recordPlaceholder(ctx, item, placeholder)
+
+		case ev, ok := <-progress:
+			if !ok {
+				progress = nil
+				continue
+			}
+			// The runner sent every chunk that precedes this step
+			// before it (Progress is unbuffered): apply those first.
+		drain:
+			for {
+				select {
+				case chunk, ok := <-stream.Chunks:
+					if !ok {
+						break drain // seen again by the outer select
+					}
+					if !addChunk(chunk) {
+						return nil
+					}
+				default:
+					break drain
+				}
+			}
+			// Text before a tool step was narration: the answer (and
+			// what a stop delivers) starts again after it.
+			steps = append(steps, progressLine(ev))
+			if len(steps) > progressShown {
+				steps = steps[len(steps)-progressShown:]
+			}
+			answering = false
 			accumulated.Reset()
-			dirty = false
+			full.Reset()
+			overflow = false // the current draft/placeholder holds no answer yet
+			dirty = true
 
 		case <-ticker.C:
 			if draftID != 0 {
@@ -284,7 +340,7 @@ loop:
 				if time.Now().Before(draftHold) {
 					continue // rate limited: wait out retry_after
 				}
-				text := accumulated.String() + "❘" // ▍ cursor, never empty
+				text := view() + "❘" // ▍ cursor, never empty
 				err := b.sendDraftOpts(ctx, item.ChatID, item.ThreadID, draftID, text, stopOpts)
 				if err == nil {
 					lastDraft = time.Now()
@@ -309,8 +365,8 @@ loop:
 					return nil
 				}
 			}
-			if dirty && accumulated.Len() > 0 {
-				b.editMessage(ctx, item.ChatID, placeholder, accumulated.String()+"❘")
+			if v := view(); dirty && v != "" {
+				b.editMessage(ctx, item.ChatID, placeholder, v+"❘")
 				dirty = false
 			}
 
@@ -548,8 +604,7 @@ const stoppedEmpty = "(stopped)"
 // runner's goroutine never blocks on a reader that has gone.
 func (b *Bot) finishStopped(ctx context.Context, item queue.Item, stream *runner.AgentStream, partial string) error {
 	go func() {
-		for range stream.Chunks {
-		}
+		drainStream(stream)
 		<-stream.Result
 	}()
 
@@ -592,9 +647,7 @@ func (b *Bot) handleStreamError(ctx context.Context, item queue.Item, err error)
 // into a buffer and send the result as a single formatted message.
 // Used when the placeholder can't be sent.
 func (b *Bot) drainAndSend(ctx context.Context, item queue.Item, stream *runner.AgentStream) {
-	// Drain remaining chunks.
-	for range stream.Chunks {
-	}
+	drainStream(stream)
 	res := <-stream.Result
 	if res.Err != nil {
 		b.handleStreamError(ctx, item, res.Err)
@@ -611,6 +664,25 @@ func (b *Bot) drainAndSend(ctx context.Context, item queue.Item, stream *runner.
 	sent, _ := b.sendFinal(ctx, item.ChatID, item.ThreadID, item.MessageID, text)
 	b.recordReply(ctx, item, sent, text)
 	b.maybeVoiceReply(ctx, item, text)
+}
+
+// drainStream discards a stream's remaining chunks and progress steps
+// until Chunks closes, so the runner never blocks on a reader that has
+// gone (Progress is unbuffered and closes before Chunks).
+func drainStream(stream *runner.AgentStream) {
+	progress := stream.Progress
+	for chunks := stream.Chunks; chunks != nil; {
+		select {
+		case _, ok := <-chunks:
+			if !ok {
+				chunks = nil
+			}
+		case _, ok := <-progress:
+			if !ok {
+				progress = nil
+			}
+		}
+	}
 }
 
 // maybeVoiceReply sends a TTS voice reply if the chat's reply mode

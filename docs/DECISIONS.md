@@ -860,6 +860,22 @@ hang shutdown. Spec:
 
 **Consequences.** Rows that existed before this change keep `thread_id = 0` and stay shared; facts already extracted from threads cannot be told apart from main's. Facts learned in a thread reach other threads only through main or a manual/pinned copy. An agent in a thread that saves a memory with `/memory/add` shares it with every conversation of the chat by design.
 
+## D024 — Coding output: output policy and tool progress in the draft
+
+**Date:** 2026-10-25
+**Status:** Accepted
+**Extends:** D021 (native streaming)
+
+**Context.** Coding turns dumped walls of code into Telegram, and during the work the user saw only a cursor: `claude -p` in text mode prints the final answer at the end. Spec: [superpowers/specs/2026-10-25-coding-output-design.md](superpowers/specs/2026-10-25-coding-output-design.md), parts 1 and 2.
+
+**Decision.**
+- `runner.OutputPolicy` (no code walls, 3-6 line work summary, code only on request or when short) is appended after the compiled memory context to every `Run`/`RunStream` system prompt, also when memory is empty; the new-chat `CLAUDE.md` template says the same. A runner constant, because existing chats' `CLAUDE.md` is never overwritten. Codex gets it through the prompt (its `RunCmd` prepends the system prompt). `RunFresh` system tasks do not get it.
+- Optional provider capability `StructuredStreamer` (`StructuredCmd`, `ParseStreamLine`). Claude implements it with `--output-format stream-json --verbose --include-partial-messages`; Codex stays on plain text. Streamed turns use it unless `GOPOD_PROGRESS=0`; sync `Run` stays plain.
+- `AgentStream.Chunks` carries only the main agent's text deltas; `AgentStream.Progress` (unbuffered, nil for plain runs) carries tool calls (tool name and its command/path/pattern/query/URL, never output). The reply is, by priority, the `result` event's text, the last main-agent assistant text since the last tool call, the text deltas since it, or the last assistant text at all; memory ingestion uses it, and auth classification searches only it and stderr, never tool results or the transcript. Unparsable lines are skipped; if no line parses, stdout is the reply (plain-text fallback). Once stdout proves structured only its last 64 KB is kept.
+- Telegram shows the last five steps (one plain-text line each, at most 60 characters, secrets masked by a progress-line redactor built from the D012 words plus a few names and token shapes that only matter there; the shared D012 list is unchanged) until answer text arrives after the latest step; a later step drops that text as narration. Same lines on the edit path's placeholder. Stop with no answer text replies `(stopped)`.
+
+**Consequences.** Fixtures are sanitised recordings from Claude Code 2.1.310; their event kinds were cross-checked against a run in the 2.1.289 agent image, but they are not byte-identical to it, and a live turn is still owed. The draft no longer shows narration text between tool calls. Codex progress (`--json`) is a follow-up.
+
 ## D025 — Long code in final replies
 
 **Date:** 2026-10-25
