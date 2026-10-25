@@ -359,10 +359,12 @@ loop:
 		}
 		b.recordReply(ctx, item, sent, finalText)
 	case !overflow:
-		// Everything fits in the placeholder.
-		err := b.editMessageHTML(ctx, item.ChatID, placeholder, markdownToTelegramHTML(finalText))
+		// Everything fits in the placeholder. Oversized code goes out as
+		// documents first; the reply in main keeps their notes.
+		shown := b.attachLongCode(ctx, item.ChatID, item.ThreadID, finalText)
+		err := b.editMessageHTML(ctx, item.ChatID, placeholder, finalReplyHTML(shown))
 		if b.finalEditLost(item, err) {
-			if err := b.replyInMain(ctx, item, finalText); err != nil {
+			if err := b.replyInMain(ctx, item, shown); err != nil {
 				return err
 			}
 			break
@@ -380,7 +382,7 @@ loop:
 				break
 			}
 		}
-		sent := b.replyTo(ctx, item.ChatID, item.ThreadID, item.MessageID, finalText)
+		sent, _ := b.sendFinal(ctx, item.ChatID, item.ThreadID, item.MessageID, finalText)
 		b.recordReply(ctx, item, sent, finalText)
 	}
 
@@ -457,10 +459,15 @@ const (
 // times and finalSendMaxWait in total. Any other error, or a send that
 // delivered some chunks, is returned at once. Returns the last
 // delivered message id, 0 when nothing was delivered.
+//
+// Every path that delivers an agent's final reply goes through here:
+// oversized code blocks are sent as documents first (attachLongCode),
+// and the text renders with finalReplyHTML (long blocks collapsed).
 func (b *Bot) sendFinal(ctx context.Context, chatID int64, thread int, replyTo int, text string) (int, error) {
+	text = b.attachLongCode(ctx, chatID, thread, text)
 	var waited time.Duration
 	for attempt := 1; ; attempt++ {
-		id, err := b.sendFormattedErr(ctx, chatID, thread, replyTo, text)
+		id, err := b.sendRendered(ctx, chatID, thread, replyTo, text, finalReplyHTML)
 		if err == nil || id != 0 {
 			return id, err
 		}
@@ -522,7 +529,7 @@ func (b *Bot) finishStopped(ctx context.Context, item queue.Item, stream *runner
 	if text == "" {
 		text = stoppedEmpty
 	}
-	sent := b.sendFormatted(ctx, item.ChatID, item.ThreadID, item.MessageID, text)
+	sent, _ := b.sendFinal(ctx, item.ChatID, item.ThreadID, item.MessageID, text)
 	b.recordReply(ctx, item, sent, text)
 	if item.MessageID > 0 {
 		b.react(ctx, item.ChatID, item.MessageID, emojiDone)
@@ -573,7 +580,7 @@ func (b *Bot) drainAndSend(ctx context.Context, item queue.Item, stream *runner.
 	if item.MessageID > 0 {
 		b.react(ctx, item.ChatID, item.MessageID, emojiDone)
 	}
-	sent := b.replyTo(ctx, item.ChatID, item.ThreadID, item.MessageID, text)
+	sent, _ := b.sendFinal(ctx, item.ChatID, item.ThreadID, item.MessageID, text)
 	b.recordReply(ctx, item, sent, text)
 	b.maybeVoiceReply(ctx, item, text)
 }
@@ -587,6 +594,10 @@ func (b *Bot) maybeVoiceReply(ctx context.Context, item queue.Item, text string)
 	}
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
+		return
+	}
+	text = stripCodeBlocks(text) // code is not read aloud
+	if strings.TrimSpace(text) == "" {
 		return
 	}
 	audioData, err := textToSpeech(ctx, apiKey, text)

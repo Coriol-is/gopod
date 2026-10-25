@@ -171,3 +171,20 @@ func (b *Bot) attachLongCode(ctx context.Context, chatID int64, thread int, text
 	}
 	return r.text(sent)
 }
+
+// stripCodeBlocks removes the fenced code blocks from text, fences
+// included (an unclosed fence runs to the end), for the voice reply.
+func stripCodeBlocks(text string) string {
+	var out []string
+	inBlock := false
+	for _, l := range strings.Split(text, "\n") {
+		if isFence(l) {
+			inBlock = !inBlock
+			continue
+		}
+		if !inBlock {
+			out = append(out, l)
+		}
+	}
+	return strings.Join(out, "\n")
+}

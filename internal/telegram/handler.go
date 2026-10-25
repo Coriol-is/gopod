@@ -329,7 +329,7 @@ func (b *Bot) runAgentSync(ctx context.Context, item queue.Item) {
 
 	mode := b.getReplyMode(item.ChatID, item.IsVoice)
 	if mode != "voice" {
-		sent := b.replyTo(ctx, item.ChatID, item.ThreadID, item.MessageID, reply)
+		sent, _ := b.sendFinal(ctx, item.ChatID, item.ThreadID, item.MessageID, reply)
 		b.recordReply(ctx, item, sent, reply)
 	}
 }

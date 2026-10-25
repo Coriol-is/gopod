@@ -841,6 +841,24 @@ hang shutdown. Spec:
 
 **Consequences.** Parallel execution of threads is *not* built: it is an optional research track (two agents in one container sharing `$HOME` are unverified; fallback is the current sequential queue). Open items: compaction summarises via `RunFresh` without the conversation's history (pre-existing, so `/compact` effectively clears); `/provider` still clears the main session; a `/login` code is accepted from any thread of the chat; `ClearSession` during a Codex first turn is a no-op; closed or deleted topics are never cleaned up. Requires topics ("Threaded mode") enabled for the bot in @BotFather. Spec: [superpowers/specs/2026-10-24-telegram-threads-and-drafts-design.md](superpowers/specs/2026-10-24-telegram-threads-and-drafts-design.md).
 
+## D025 — Long code in final replies
+
+**Date:** 2026-10-25
+**Status:** Accepted
+**Extends:** D021 (native streaming)
+
+**Context.** A code-heavy answer floods a Telegram chat: every line is shown, and the 4000-byte chunker split HTML on newlines without regard to tags, so a `<pre>` cut across two messages was rejected and fell back to plain text. Spec part 3: [superpowers/specs/2026-10-25-coding-output-design.md](superpowers/specs/2026-10-25-coding-output-design.md).
+
+**Decision.**
+- Only the agent's final reply is affected (draft-path final, edit-path final, overflow reply, sync path, drain fallback, `finishStopped`, the reply redirected to main from a gone topic); all of them go through `sendFinal`. Command and system replies keep `sendFormatted`/`markdownToTelegramHTML` unchanged.
+- A fenced block over 12 lines renders as `<blockquote expandable><pre>…</pre></blockquote>` (`finalReplyHTML`). The Bot API prose is vague on `pre` inside a quote; TDLib's validator, which the Bot API server runs, allows it ("Pre and Code can't be part of other entities, except blockquote"). The plain-text fallback on rejected markup stays.
+- A block over 60 lines or 3000 characters is sent as a document first (`sendDocument`, name from the fence language: `snippet.go`, `snippet-2.py`, unknown → `.txt`), and the text carries `📎 snippet.go (N lines)` in its place. A failed upload keeps the block inline (collapsed). Documents honour `message_thread_id` and the topic-gone fallback to main.
+- The turn's reply id (D020) is the text message, never a document. The transcript (`recordReply`) stores the agent's original text, code included.
+- The HTML chunker (`chunkHTML`) never cuts inside a tag, entity or UTF-8 sequence, and closes elements open at a boundary and reopens them (attributes kept) in the next chunk.
+- The voice reply drops fenced blocks before TTS.
+
+**Consequences.** If the text fails after documents went out and the queue retries the turn, the documents are sent again (accepted duplicate). On the edit path, when the final edit is lost and the reply goes to main, the stored transcript has the notes instead of the code. Documents are not memoized on the turn row. Live check pending: that Telegram renders the quoted `pre` collapsed and accepts it in every client.
+
 ---
 
 ## Template for new ADRs
