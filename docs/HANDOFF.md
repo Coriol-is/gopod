@@ -29,6 +29,23 @@ current runtime support. Docker remains the sole backend; no additional agent,
 remote service or implementation was added. `GOPOD_NO_CONTAINER=1` is now
 accurately documented as disabling the runner, not a working subprocess fallback.
 
+**Speech transcript provenance (CP-013):** successful voice/audio/video-note
+transcripts carry fixed source kind, automatic-ASR marker and positive duration
+when known. Typed audio captions stay separate; commands/login see the original
+raw text. The queued text carries this metadata into retries/recovery and the
+D030 journal/handoff. No filename/id, speaker, language, emotion or confidence
+is inferred. Implementation and tests are complete; live voice acceptance remains
+open. The deployed payload above is still `a9146f0` until a later deployment.
+
+**Media planning (CP-014):** the owner approved three queues in
+[the media spec](superpowers/specs/2026-10-25-telegram-media-input.md) and
+[plan](superpowers/plans/2026-10-25-telegram-media-input.md): (1) card/link/input
+fidelity and truthful unsupported notices; (2) document/image/speech analysis;
+(3) bounded video timelines from speech and selected frames, then exports/search.
+This is planning only. Actual hidden URL/update fields from the supplied Guest
+card are not captured; do not infer them from the screenshot. Gopod's own guest
+query participation requires a separate authorization/reply namespace.
+
 **Earlier working session (2026-10-24):** Telegram chat-UI parity, built
 autonomously through worktrees and PRs #3–#10 (agent implementer + separate
 reviewer per task, CI green, admin squash-merge). Now included in deployed
