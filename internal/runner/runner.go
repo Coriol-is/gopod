@@ -423,7 +423,7 @@ func (r *Runner) startStream(
 		releaseSlot()
 		return nil, err
 	}
-	env, release := r.agentEnv(chatFolder)
+	env, release := r.agentExecEnv(chatFolder, prov)
 	handle, err := r.ex.ExecStream(ctx, id, wrapWithPidFile(pidFile, cmd), env)
 	if err != nil {
 		release()
@@ -598,7 +598,7 @@ func (r *Runner) execAgent(ctx context.Context, containerID, chatFolder string, 
 		r.ex.Exec(ctx, containerID, restoreCmd, nil)
 	}
 
-	env, release := r.agentEnv(chatFolder)
+	env, release := r.agentExecEnv(chatFolder, prov)
 	defer release()
 	res, err := r.ex.Exec(ctx, containerID, cmd, env)
 	if err != nil {
