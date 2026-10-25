@@ -45,7 +45,8 @@ type Runner struct {
 	memory MemoryCompiler
 
 	// extractFn is the callback for conversation extraction (Phase A).
-	extractFn func(ctx context.Context, chatFolder, userMsg, agentReply string)
+	// thread is the turn's conversation; its facts are stored there (D023).
+	extractFn func(ctx context.Context, chatFolder string, thread int, userMsg, agentReply string)
 
 	// compactFn is the callback for session compaction. Summarizes
 	// one conversation and stores it in memory. Set via SetCompactFn.
@@ -275,7 +276,7 @@ func (r *Runner) Run(
 	if r.memory != nil && r.extractFn != nil && reply != "" {
 		go func() {
 			bgCtx := context.Background()
-			r.extractAndIngest(bgCtx, chatFolder, prompt, reply)
+			r.extractAndIngest(bgCtx, chatFolder, thread, prompt, reply)
 		}()
 	}
 
@@ -494,7 +495,7 @@ func (r *Runner) startStream(
 
 		// Post-run: extraction, auto-compact (same as Run).
 		if r.memory != nil && r.extractFn != nil && fullText != "" {
-			go r.extractAndIngest(context.Background(), chatFolder, prompt, fullText)
+			go r.extractAndIngest(context.Background(), chatFolder, conv.thread, prompt, fullText)
 		}
 		turns := r.incrementTurnCount(chatFolder, conv.thread)
 		if r.compactAfter > 0 && turns >= r.compactAfter {
@@ -689,8 +690,10 @@ type MemoryCompiler interface {
 // SetMemory wires the memory layer after construction.
 func (r *Runner) SetMemory(m MemoryCompiler) { r.memory = m }
 
-// SetExtractFn wires the conversation extraction callback.
-func (r *Runner) SetExtractFn(fn func(ctx context.Context, chatFolder, userMsg, agentReply string)) {
+// SetExtractFn wires the conversation extraction callback. It gets the
+// turn's conversation (chatFolder, thread) so extracted facts are stored
+// in that thread (D023).
+func (r *Runner) SetExtractFn(fn func(ctx context.Context, chatFolder string, thread int, userMsg, agentReply string)) {
 	r.extractFn = fn
 }
 
@@ -799,10 +802,10 @@ func (r *Runner) activeConversations() []convKey {
 
 // extractAndIngest is the background callback for Phase A. Runs
 // after each successful agent turn — extracts structured facts and
-// stores them in memory.
-func (r *Runner) extractAndIngest(ctx context.Context, chatFolder, userMsg, agentReply string) {
+// stores them in memory under the turn's conversation.
+func (r *Runner) extractAndIngest(ctx context.Context, chatFolder string, thread int, userMsg, agentReply string) {
 	if r.extractFn != nil {
-		r.extractFn(ctx, chatFolder, userMsg, agentReply)
+		r.extractFn(ctx, chatFolder, thread, userMsg, agentReply)
 	}
 }
 

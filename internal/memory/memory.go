@@ -52,9 +52,12 @@ func (m *Memory) Add(ctx context.Context, chatFolder, kind, title, content, sour
 	return m.AddInThread(ctx, chatFolder, 0, kind, title, content, source)
 }
 
-// AddInThread is Add with a conversation (thread) scope. thread only
-// matters for kind=conversation_summary (0 = main conversation); every
-// other kind is chat-wide and the argument is ignored.
+// AddInThread is Add with a conversation (thread) scope: the row is
+// stored with thread_id = thread for every kind (D023). Thread 0 is the
+// main conversation and is what manual writes use; its rows are shared
+// by every conversation of the chat. A row of thread T != 0 is visible
+// only to T and to main (see visibleIn). conversation_summary rows are
+// further limited to their own conversation's reserved slot.
 func (m *Memory) AddInThread(ctx context.Context, chatFolder string, thread int, kind, title, content, source string) (int64, error) {
 	if content == "" {
 		return 0, fmt.Errorf("memory: Add: empty content")
@@ -78,17 +81,17 @@ func (m *Memory) AddInThread(ctx context.Context, chatFolder string, thread int,
 	isSummary := kind == "conversation_summary"
 	if isSummary {
 		m.supersedePreviousSummary(ctx, chatFolder, thread)
-	} else {
-		thread = 0
 	}
 
 	// Dedup: if a very similar active memory already exists (cosine
-	// similarity > 0.92), update it instead of creating a duplicate.
+	// similarity > 0.92) in the same conversation, update it instead of
+	// creating a duplicate. Only rows of the same thread_id are
+	// candidates, so one conversation never rewrites another's row.
 	// Summaries skip this: they are per conversation and the supersede
 	// step above already handles replacement.
 	existingID, sim := int64(0), 0.0
 	if !isSummary {
-		existingID, sim, err = m.FindSimilar(ctx, chatFolder, vecs[0])
+		existingID, sim, err = m.FindSimilar(ctx, chatFolder, thread, vecs[0])
 	}
 	if err == nil && existingID > 0 && sim > 0.92 {
 		now := time.Now().UnixMilli()
@@ -146,7 +149,16 @@ func (m *Memory) AddInThread(ctx context.Context, chatFolder string, thread int,
 //
 // chatFolder scopes the search to one chat. Pass "_global" to search
 // only global memories, or "" to search ALL memories (owner use case).
+// Search is chat-wide (every thread); it backs the owner-facing
+// listings. Agent context uses SearchInThread.
 func (m *Memory) Search(ctx context.Context, chatFolder, query string, k int) ([]Item, error) {
+	return m.SearchInThread(ctx, chatFolder, 0, query, k)
+}
+
+// SearchInThread is Search limited to the rows conversation thread may
+// see (visibleIn). Thread 0 (main) sees the whole chat, so it equals
+// Search.
+func (m *Memory) SearchInThread(ctx context.Context, chatFolder string, thread int, query string, k int) ([]Item, error) {
 	if query == "" {
 		return nil, nil
 	}
@@ -163,14 +175,14 @@ func (m *Memory) Search(ctx context.Context, chatFolder, query string, k int) ([
 	fetchK := k * 3 // over-fetch for RRF merge
 
 	// Vector search.
-	vecResults, err := m.vecSearch(ctx, chatFolder, vecs[0], fetchK)
+	vecResults, err := m.vecSearch(ctx, chatFolder, thread, vecs[0], fetchK)
 	if err != nil {
 		m.log.Warn("memory: vec search failed, falling back to FTS only",
 			slog.Any("err", err))
 	}
 
 	// FTS search.
-	ftsResults, err := m.ftsSearch(ctx, chatFolder, query, fetchK)
+	ftsResults, err := m.ftsSearch(ctx, chatFolder, thread, query, fetchK)
 	if err != nil {
 		m.log.Warn("memory: FTS search failed, falling back to vec only",
 			slog.Any("err", err))
@@ -270,19 +282,30 @@ func (m *Memory) touchRetrieved(ctx context.Context, ids []int64) {
 	}
 }
 
-// FindSimilar returns the most similar existing memory to content
-// (by cosine distance). Used for dedup before Add. Returns (id,
-// similarity, error). Similarity > 0.92 suggests a duplicate.
-func (m *Memory) FindSimilar(ctx context.Context, chatFolder string, vec []float32) (int64, float64, error) {
+// similarCandidates is how many nearest neighbours FindSimilar takes
+// from the vector index before filtering by chat and thread: vec0 picks
+// the k nearest first and the JOIN filters after, so k = 1 would miss a
+// same-conversation duplicate whenever another chat's or thread's row
+// is nearer.
+const similarCandidates = 32
+
+// FindSimilar returns the most similar existing memory of the same
+// conversation (chat_folder and thread_id) to vec (by cosine distance).
+// Used for dedup before Add. Returns (id, similarity, error).
+// Similarity > 0.92 suggests a duplicate.
+func (m *Memory) FindSimilar(ctx context.Context, chatFolder string, thread int, vec []float32) (int64, float64, error) {
 	rows, err := m.store.DB().QueryContext(ctx, `
 		SELECT m.id, v.distance
 		  FROM memory_vec v
 		  JOIN memories m ON m.id = v.rowid
 		 WHERE v.embedding MATCH ?
-		   AND v.k = 1
+		   AND v.k = ?
 		   AND m.chat_folder = ?
-		   AND IFNULL(m.status, 'active') = 'active'`,
-		float32sToBlob(vec), chatFolder)
+		   AND m.thread_id = ?
+		   AND IFNULL(m.status, 'active') = 'active'
+		 ORDER BY v.distance ASC
+		 LIMIT 1`,
+		float32sToBlob(vec), similarCandidates, chatFolder, thread)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -299,9 +322,27 @@ func (m *Memory) FindSimilar(ctx context.Context, chatFolder string, vec []float
 	return id, similarity, nil
 }
 
+// visibleIn returns the SQL condition (with its args) limiting rows of
+// alias to those conversation thread may see (D023): thread 0 (main)
+// sees every row of the chat; thread T != 0 sees thread 0 rows and its
+// own. The condition starts with " AND " or is empty.
+func visibleIn(alias string, thread int) (string, []any) {
+	if thread == 0 {
+		return "", nil
+	}
+	col := "thread_id"
+	if alias != "" {
+		col = alias + ".thread_id"
+	}
+	return " AND " + col + " IN (0, ?)", []any{thread}
+}
+
 // vecSearch runs a KNN query against memory_vec, filtering by
-// chat_folder via a JOIN. Only returns active memories.
-func (m *Memory) vecSearch(ctx context.Context, chatFolder string, queryVec []float32, k int) ([]Item, error) {
+// chat_folder and thread visibility via a JOIN. Only returns active
+// memories.
+func (m *Memory) vecSearch(ctx context.Context, chatFolder string, thread int, queryVec []float32, k int) ([]Item, error) {
+	vis, visArgs := visibleIn("m", thread)
+	args := append([]any{float32sToBlob(queryVec), k, chatFolder, chatFolder}, visArgs...)
 	rows, err := m.store.DB().QueryContext(ctx, `
 		SELECT m.id, m.chat_folder, m.kind, IFNULL(m.title,''), m.content,
 		       IFNULL(m.source,''), m.created_at, IFNULL(m.last_retrieved_at,0),
@@ -311,9 +352,8 @@ func (m *Memory) vecSearch(ctx context.Context, chatFolder string, queryVec []fl
 		 WHERE v.embedding MATCH ?
 		   AND v.k = ?
 		   AND (? = '' OR m.chat_folder = ?)
-		   AND IFNULL(m.status, 'active') = 'active'
-		 ORDER BY v.distance ASC`,
-		float32sToBlob(queryVec), k, chatFolder, chatFolder)
+		   AND IFNULL(m.status, 'active') = 'active'`+vis+`
+		 ORDER BY v.distance ASC`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -340,8 +380,9 @@ func (m *Memory) vecSearch(ctx context.Context, chatFolder string, queryVec []fl
 	return items, rows.Err()
 }
 
-// ftsSearch runs a BM25 query against memory_fts.
-func (m *Memory) ftsSearch(ctx context.Context, chatFolder, query string, k int) ([]Item, error) {
+// ftsSearch runs a BM25 query against memory_fts, limited to the rows
+// conversation thread may see (visibleIn).
+func (m *Memory) ftsSearch(ctx context.Context, chatFolder string, thread int, query string, k int) ([]Item, error) {
 	// Sanitize query for FTS5: wrap each word in double quotes so
 	// punctuation (.,?!) doesn't break FTS5 query syntax. FTS5 MATCH
 	// treats raw punctuation as operators and errors on them.
@@ -349,6 +390,9 @@ func (m *Memory) ftsSearch(ctx context.Context, chatFolder, query string, k int)
 	if sanitized == "" {
 		return nil, nil
 	}
+	vis, visArgs := visibleIn("m", thread)
+	args := append([]any{sanitized, chatFolder, chatFolder}, visArgs...)
+	args = append(args, k)
 	rows, err := m.store.DB().QueryContext(ctx, `
 		SELECT m.id, m.chat_folder, m.kind, IFNULL(m.title,''), m.content,
 		       IFNULL(m.source,''), m.created_at, rank
@@ -356,9 +400,9 @@ func (m *Memory) ftsSearch(ctx context.Context, chatFolder, query string, k int)
 		  JOIN memories m ON m.id = f.rowid
 		 WHERE memory_fts MATCH ?
 		   AND (? = '' OR m.chat_folder = ?)
-		   AND IFNULL(m.status, 'active') = 'active'
+		   AND IFNULL(m.status, 'active') = 'active'`+vis+`
 		 ORDER BY rank ASC
-		 LIMIT ?`, sanitized, chatFolder, chatFolder, k)
+		 LIMIT ?`, args...)
 	if err != nil {
 		return nil, err
 	}

@@ -94,17 +94,18 @@ func (m *Memory) ExtractFromTurn(
 	return valid, nil
 }
 
-// IngestExtracted stores extracted facts into memory, handling
-// supersession and dedup.
-func (m *Memory) IngestExtracted(ctx context.Context, chatFolder string, facts []ExtractedFact) {
+// IngestExtracted stores facts extracted from a turn of conversation
+// thread into that thread (D023), handling supersession and dedup
+// within the same conversation.
+func (m *Memory) IngestExtracted(ctx context.Context, chatFolder string, thread int, facts []ExtractedFact) {
 	for _, f := range facts {
 		// Handle supersession: if the fact declares it replaces
 		// something, search for the old memory and mark it superseded.
 		if f.SupersedesKeyword != "" {
-			m.trySupersede(ctx, chatFolder, f.SupersedesKeyword)
+			m.trySupersede(ctx, chatFolder, thread, f.SupersedesKeyword)
 		}
 
-		id, err := m.Add(ctx, chatFolder, f.Kind, "", f.Content, "extraction")
+		id, err := m.AddInThread(ctx, chatFolder, thread, f.Kind, "", f.Content, "extraction")
 		if err != nil {
 			m.log.Warn("memory: ingest extracted fact failed",
 				slog.String("content", truncateForPrompt(f.Content, 80)),
@@ -118,39 +119,35 @@ func (m *Memory) IngestExtracted(ctx context.Context, chatFolder string, facts [
 	}
 }
 
-// trySupersede searches for an existing active memory matching the
-// keyword and supersedes it with the assumption that a newer fact
-// is about to be stored.
-func (m *Memory) trySupersede(ctx context.Context, chatFolder, keyword string) {
+// trySupersede searches for an existing active memory of the same
+// conversation (chat and thread) matching the keyword and supersedes it
+// with the assumption that a newer fact is about to be stored. Like
+// dedup, it never touches another conversation's rows.
+func (m *Memory) trySupersede(ctx context.Context, chatFolder string, thread int, keyword string) {
 	// Use FTS for keyword match — more precise than vector for
 	// supersession detection.
 	sanitized := sanitizeFTSKeyword(keyword)
 	if sanitized == "" {
 		return
 	}
-	rows, err := m.store.DB().QueryContext(ctx, `
+	// QueryRow, not Query: the store has a single connection, so the
+	// UPDATE below would wait forever on rows still open.
+	var oldID int64
+	if err := m.store.DB().QueryRowContext(ctx, `
 		SELECT m.id FROM memory_fts f
 		  JOIN memories m ON m.id = f.rowid
 		 WHERE memory_fts MATCH ?
 		   AND m.chat_folder = ?
+		   AND m.thread_id = ?
 		   AND IFNULL(m.status, 'active') = 'active'
-		 LIMIT 1`, sanitized, chatFolder)
-	if err != nil {
-		return
-	}
-	defer rows.Close()
-	if !rows.Next() {
-		return
-	}
-	var oldID int64
-	if err := rows.Scan(&oldID); err != nil {
+		 LIMIT 1`, sanitized, chatFolder, thread).Scan(&oldID); err != nil {
 		return
 	}
 	// Mark as superseded (superseded_by will point to the new fact
 	// once it's stored — for now just mark the status).
 	m.store.DB().ExecContext(ctx, `
 		UPDATE memories SET status = 'superseded', updated_at = ?
-		 WHERE id = ?`, fmt.Sprintf("%d", timeNowMs()), oldID)
+		 WHERE id = ?`, timeNowMs(), oldID)
 	m.log.Debug("memory: superseded old fact",
 		slog.Int64("old_id", oldID),
 		slog.String("keyword", keyword))
