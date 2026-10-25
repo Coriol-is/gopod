@@ -95,8 +95,8 @@ func TestTelegramDoctorBoundedAndSanitized(t *testing.T) {
 		if strings.Contains(text, "secret") {
 			t.Fatal("untrusted field rendered")
 		}
-		// Reports contain no Markdown constructs needing expansion; HTML escaping
-		// is a conservative rendered-byte bound for their fixed plain-text copy.
+		// Check the bounded source copy here; Telegram integration tests also
+		// measure actual HTML, including inline-code tag expansion.
 		if n := len(html.EscapeString(text)); n >= 3800 {
 			t.Fatalf("rendered upper bound=%d", n)
 		}
@@ -121,5 +121,42 @@ func TestTelegramEffectiveReasonsAccumulate(t *testing.T) {
 	delete(s.Settings, "supports_inline_queries")
 	if !strings.Contains(strings.Join(telegramReasons(s, "supports_inline_queries", "ready", "inline_query"), ","), "telegram_unknown") {
 		t.Fatal("unknown missing")
+	}
+}
+
+func TestTelegramDoctorHistoricalRuntimeAndManualRefresh(t *testing.T) {
+	s := TelegramSnapshot{Runtime: "configured", Startup: &TelegramRuntimeObservation{CheckedAt: time.Now().Add(-time.Hour), Provider: "claude", CLIVersion: "2.1.310", Container: "ready", CLI: "ready", Auth: "authenticated"}}
+	text := telegramDoctor(s)
+	for _, want := range []string{"Refresh permitted after:", "Refresh is manual only", "No automatic refresh timer", "Startup snapshot: stale", "Current health unverified", "provider=claude", "version=2.1.310", "auth=`authenticated`"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing %q in %s", want, text)
+		}
+	}
+	if strings.Contains(text, "Next refresh:") || strings.Contains(text, "configuration only; health unknown") {
+		t.Fatal("obsolete readiness/refresh wording")
+	}
+}
+func TestTelegramStartupObservationNeverLeaksToSummaryOrNonowner(t *testing.T) {
+	r := New(nil)
+	snapshot := TelegramSnapshot{Runtime: "configured", Startup: &TelegramRuntimeObservation{CheckedAt: time.Now(), Provider: "claude", CLIVersion: "2.1.310", Container: "ready", CLI: "ready", Auth: "authenticated"}}
+	RegisterTelegramCommands(r, func() TelegramSnapshot { return snapshot }, nil, func(context.Context, int64) bool { return true })
+	c := Caller{Source: SourceTelegram, ChatKind: "private", ChatID: 20}
+	summary, err := r.Dispatch(t.Context(), Command{Name: "telegram", Caller: c})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(summary.Text, "2.1.310") || strings.Contains(summary.Text, "Startup") || strings.Contains(summary.Text, "authenticated") {
+		t.Fatal("startup leaked to summary")
+	}
+	denied, err := r.Dispatch(t.Context(), Command{Name: "telegram", Args: []string{"doctor"}, Caller: c})
+	if !errors.Is(err, ErrNotAuthorized) || strings.Contains(denied.Text, "2.1.310") {
+		t.Fatal(denied, err)
+	}
+}
+func TestTelegramStartupRuntimeFieldsSanitized(t *testing.T) {
+	secret := strings.Repeat("secret`<script>_", 500)
+	s := TelegramSnapshot{Startup: &TelegramRuntimeObservation{CheckedAt: time.Now(), Provider: secret, CLIVersion: secret, Container: secret, CLI: secret, Auth: secret}}
+	if strings.Contains(telegramDoctor(s), "secret") {
+		t.Fatal("runtime field rendered without allowlist")
 	}
 }

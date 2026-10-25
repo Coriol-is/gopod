@@ -16,6 +16,9 @@ func (r *Runner) ModelForChat(chatFolder string) string {
 func (r *Runner) SetChatModel(chatFolder, model string) {
 	r.providersMu.Lock()
 	defer r.providersMu.Unlock()
+	if r.chatModels[chatFolder] != model {
+		r.invalidateStartupLocked(chatFolder)
+	}
 	if model == "" {
 		delete(r.chatModels, chatFolder)
 		return

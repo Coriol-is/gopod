@@ -204,3 +204,40 @@ func TestDiagnosticsSlowGetMeDoesNotBlockPollingAndJoins(t *testing.T) {
 		t.Fatal("getMe survived shutdown")
 	}
 }
+
+func TestDoctorRenderedTechnicalNamesAndRuntimeFitSingleMessage(t *testing.T) {
+	b, fake, _ := diagnosticFixture(t)
+	s := control.TelegramSnapshot{Runtime: "configured", Freshness: "fresh", RefreshState: "in_flight", ErrorClass: "api_rejection", AllowedUpdates: []string{"message", "callback_query", "stopped_message_generation"}, Startup: &control.TelegramRuntimeObservation{CheckedAt: time.Now().Add(-time.Hour), Provider: "claude", CLIVersion: "2.1.310", Container: "selection_unavailable", CLI: "cleanup_failed", Auth: "not_authenticated"}}
+	b.router = control.New(b.log)
+	control.RegisterTelegramCommands(b.router, func() control.TelegramSnapshot { return s }, nil, func(context.Context, int64) bool { return true })
+	b.dispatchSlash(t.Context(), threadedMsg(7, "/telegram doctor"), "/telegram doctor")
+	sends := fake.callsTo("sendMessage")
+	if len(sends) != 1 {
+		t.Fatalf("sends=%d", len(sends))
+	}
+	rendered := sends[0].Form["text"]
+	for _, want := range []string{"<code>callback_query</code>", "<code>stopped_message_generation</code>", "<code>inline_query</code>", "<code>guest_message</code>", "<code>business_message</code>", "<code>in_flight</code>", "<code>api_rejection</code>", "code_unsupported,telegram_unknown,not_subscribed,context_rights_unknown", "<code>cleanup_failed</code>", "<code>not_authenticated</code>", "Refresh permitted after:", "Current health unverified"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("missing exact %q in %s", want, rendered)
+		}
+	}
+	if len(rendered) > pageMaxHTMLBytes || strings.Contains(sends[0].Form["reply_markup"], "callback_data") {
+		t.Fatal("report paginated")
+	}
+}
+
+func TestDoctorWorstCaseRuntimeAndUnknownReasonsRemainSingleMessage(t *testing.T) {
+	b, fake, _ := diagnosticFixture(t)
+	s := control.TelegramSnapshot{Runtime: "absent", Freshness: "unknown", RefreshState: "in_flight", ErrorClass: "api_rejection", CheckedAt: time.Now().Add(-time.Hour), LastAttempt: time.Now(), NextRefresh: time.Now().Add(time.Minute), Startup: &control.TelegramRuntimeObservation{CheckedAt: time.Now().Add(-time.Hour), Provider: "claude", CLIVersion: "123456789.123456789.123456789", Container: "selection_unavailable", CLI: "cleanup_failed", Auth: "not_authenticated"}}
+	b.router = control.New(b.log)
+	control.RegisterTelegramCommands(b.router, func() control.TelegramSnapshot { return s }, nil, func(context.Context, int64) bool { return true })
+	b.dispatchSlash(t.Context(), threadedMsg(0, "/telegram doctor"), "/telegram doctor")
+	sends := fake.callsTo("sendMessage")
+	if len(sends) != 1 {
+		t.Fatalf("sends=%d", len(sends))
+	}
+	rendered := sends[0].Form["text"]
+	if len(rendered) > pageMaxHTMLBytes || strings.Contains(rendered, "safe message limit") || strings.Contains(sends[0].Form["reply_markup"], "callback_data") {
+		t.Fatalf("worst-case report invalid (%dbytes): %s", len(rendered), rendered)
+	}
+}

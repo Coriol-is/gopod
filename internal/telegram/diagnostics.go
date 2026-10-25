@@ -69,6 +69,15 @@ func (b *Bot) TelegramSnapshot() control.TelegramSnapshot {
 	s.Runtime = "absent"
 	if b.runner != nil {
 		s.Runtime = "configured"
+		// The configured owner's registered folder is trusted store metadata.
+		// Reading the snapshot never starts a container or probes its health.
+		if b.store != nil && b.ownerChatID != 0 {
+			if owner, err := b.store.GetRegistered(context.Background(), buildChatJID(b.ownerChatID)); err == nil {
+				if observed, ok := b.runner.CachedStartupObservation(owner.Folder); ok {
+					s.Startup = &control.TelegramRuntimeObservation{CheckedAt: observed.CheckedAt, Provider: observed.Report.Provider, CLIVersion: observed.Report.Version, Container: observed.Report.Container, CLI: observed.Report.CLI, Auth: observed.Report.Auth}
+				}
+			}
+		}
 	}
 	return s
 }

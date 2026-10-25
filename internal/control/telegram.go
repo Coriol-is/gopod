@@ -3,6 +3,7 @@ package control
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -16,6 +17,14 @@ type TelegramSnapshot struct {
 	Freshness, ErrorClass, RefreshState string
 	AllowedUpdates                      []string
 	Runtime                             string
+	Startup                             *TelegramRuntimeObservation
+}
+
+// TelegramRuntimeObservation contains only bounded local startup evidence.
+// A successful snapshot does not imply the container is still alive now.
+type TelegramRuntimeObservation struct {
+	CheckedAt                                  time.Time
+	Provider, CLIVersion, Container, CLI, Auth string
 }
 
 // RegisterTelegramCommands keeps privileged refresh behind a separate Router
@@ -94,7 +103,9 @@ func telegramSummary(s TelegramSnapshot) string {
 // nor sensitive output can be controlled by raw API error strings or map keys.
 func telegramDoctor(s TelegramSnapshot) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Telegram doctor (read-only)\nSource: getMe; freshness: %s\nLast success: %s\nLast attempt: %s\nNext refresh: %s\nRefresh: %s; error: %s\nRuntime: %s (configuration only; health unknown)\nPolicy: owner private chat; group rights/business connection unknown.\n", telegramEnum(s.Freshness, "fresh", "stale", "unknown"), telegramTime(s.CheckedAt), telegramTime(s.LastAttempt), telegramTime(s.NextRefresh), telegramEnum(s.RefreshState, "idle", "in_flight", "cooldown", "backoff", "stopped"), telegramErrorClass(s.ErrorClass), telegramEnum(s.Runtime, "configured", "absent", "unknown"))
+	fmt.Fprintf(&b, "Telegram doctor (read-only)\nSource: getMe; freshness: %s\nLast success: %s\nLast attempt: %s\nRefresh permitted after: %s\nRefresh: `%s`; error: `%s`\nRuntime: %s\n", telegramEnum(s.Freshness, "fresh", "stale", "unknown"), telegramTime(s.CheckedAt), telegramTime(s.LastAttempt), telegramTime(s.NextRefresh), telegramEnum(s.RefreshState, "idle", "in_flight", "cooldown", "backoff", "stopped"), telegramErrorClass(s.ErrorClass), telegramEnum(s.Runtime, "configured", "absent", "unknown"))
+	writeTelegramRuntime(&b, s.Startup)
+	b.WriteString("Policy: owner private chat; group rights/business connection unknown.\n")
 	for _, f := range []struct{ label, key string }{
 		{"Private topics", "has_topics_enabled"}, {"User topic creation/deletion", "allows_users_to_create_topics"}, {"Group invitation", "can_join_groups"}, {"Read all group messages", "can_read_all_group_messages"}, {"Inline", "supports_inline_queries"}, {"Guest", "supports_guest_queries"}, {"Business", "can_connect_to_business"},
 	} {
@@ -110,7 +121,7 @@ func telegramDoctor(s TelegramSnapshot) string {
 	b.WriteString("Bot-to-bot: unknown; no authoritative flag inspected.\nRequested updates:")
 	for _, update := range []string{"message", "callback_query", "stopped_message_generation", "inline_query", "guest_message", "business_message"} {
 		if slices.Contains(s.AllowedUpdates, update) {
-			b.WriteString(" " + update)
+			b.WriteString(" `" + update + "`")
 		}
 	}
 	b.WriteString("\n")
@@ -129,10 +140,33 @@ func telegramDoctor(s TelegramSnapshot) string {
 		} else {
 			subscribed = "no"
 		}
-		fmt.Fprintf(&b, "%s: code=%s; needs=%s; subscribed=%s; reasons=%s\n", m.name, m.implementation, required, subscribed, strings.Join(reasons, ","))
+		fmt.Fprintf(&b, "%s: code=%s; needs=`%s`; subscribed=%s; reasons=`%s`\n", m.name, m.implementation, required, subscribed, strings.Join(reasons, ","))
 	}
-	b.WriteString("Group forum rights are not private-topic settings. Invitation/privacy flags do not prove membership/admin rights. Business enablement does not prove connection/can_reply.\nUse /telegram doctor refresh to refresh; no settings or subscriptions are changed.")
+	b.WriteString("Group forum rights are not private-topic settings. Invitation/privacy flags do not prove membership/admin rights. Business enablement does not prove connection/`can_reply`.\nRefresh is manual only: /telegram doctor refresh. No automatic refresh timer; settings/subscriptions unchanged.")
 	return b.String()
+}
+
+var telegramVersion = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
+
+func writeTelegramRuntime(b *strings.Builder, observation *TelegramRuntimeObservation) {
+	if observation == nil || observation.CheckedAt.IsZero() {
+		b.WriteString("Startup snapshot: unavailable; current health unverified.\n")
+		return
+	}
+	age := time.Since(observation.CheckedAt)
+	if age < 0 {
+		age = 0
+	}
+	freshness := "historical"
+	if age >= 15*time.Minute {
+		freshness = "stale"
+	}
+	version := "unknown"
+	if len(observation.CLIVersion) <= 32 && telegramVersion.MatchString(observation.CLIVersion) {
+		version = observation.CLIVersion
+	}
+	fmt.Fprintf(b, "Startup snapshot: %s; checked %s; age %s. Current health unverified.\n", freshness, telegramTime(observation.CheckedAt), age.Truncate(time.Second))
+	fmt.Fprintf(b, "Startup: provider=%s; container=`%s`; CLI=`%s`; version=%s; auth=`%s`\n", telegramEnum(observation.Provider, "claude", "codex"), telegramEnum(observation.Container, "ready", "error", "canceled", "timeout", "selection_unavailable"), telegramEnum(observation.CLI, "ready", "error", "canceled", "timeout", "cleanup_failed"), version, telegramEnum(observation.Auth, "authenticated", "not_authenticated", "error", "canceled", "timeout", "cleanup_failed"))
 }
 
 func telegramReasons(s TelegramSnapshot, setting, implementation, update string) []string {

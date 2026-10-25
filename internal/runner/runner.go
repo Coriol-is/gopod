@@ -70,10 +70,12 @@ type Runner struct {
 	progress bool
 
 	// Per-chat provider and model overrides (/provider, /model).
-	providersMu     sync.RWMutex
-	chatProviders   map[string]AgentProvider
-	chatModels      map[string]string
-	selectionBlocks map[string]bool
+	providersMu          sync.RWMutex
+	chatProviders        map[string]AgentProvider
+	chatModels           map[string]string
+	selectionBlocks      map[string]bool
+	startupObservations  map[string]StartupObservation
+	selectionGenerations map[string]uint64
 
 	// containerLocksMu serialises EnsureRunning per chat. Without it,
 	// two simultaneous messages on the same chat could race two
@@ -860,6 +862,7 @@ func (r *Runner) setChatProviderOverride(chatFolder string, p AgentProvider) {
 		r.chatProviders = make(map[string]AgentProvider)
 	}
 	r.chatProviders[chatFolder] = p
+	r.invalidateStartupLocked(chatFolder)
 	delete(r.selectionBlocks, chatFolder)
 	r.providersMu.Unlock()
 
@@ -869,6 +872,7 @@ func (r *Runner) setChatProviderOverride(chatFolder string, p AgentProvider) {
 func (r *Runner) ClearChatProvider(chatFolder string) {
 	r.providersMu.Lock()
 	delete(r.chatProviders, chatFolder)
+	r.invalidateStartupLocked(chatFolder)
 	r.providersMu.Unlock()
 }
 
@@ -1116,6 +1120,7 @@ func (r *Runner) BlockChatSelection(folder string) {
 		r.selectionBlocks = make(map[string]bool)
 	}
 	r.selectionBlocks[folder] = true
+	r.invalidateStartupLocked(folder)
 }
 func (r *Runner) selectionBlocked(folder string) bool {
 	r.providersMu.RLock()
