@@ -142,6 +142,9 @@ func (f *fakeAgentHome) touchLocked(provider, id string) {
 }
 
 func (f *fakeAgentHome) Exec(_ context.Context, _ string, cmd, _ []string) (*ExecResult, error) {
+	if len(cmd) > 4 && cmd[0] == "sh" && strings.Contains(cmd[2], `echo $$ >`) {
+		cmd = cmd[4:]
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.execs++

@@ -67,8 +67,13 @@ command replies and errors private, including every callback/page/failure path;
 there is no implementation or privacy-flag activation yet.
 
 ## What's in progress
-No feature implementation is currently active. Documentation/status
-reconciliation is complete in this change; no active work is inferred from old
+Background extraction starvation fix: RunFresh timeout and same-chat user
+preemption, cancellable buffered process cleanup and compaction cancellation
+preserving context. [Incident](incidents/2026-10-25-background-extraction-starvation.md).
+Review/checks and deployment status must be recorded before claiming it live.
+
+Backlog/status reconciliation is complete; this live-incident fix takes
+priority over the planned queue. No other active work is inferred from old
 branch names. Independent reviews and CI
 must pass before squash merge. Preserve other agents' work/worktrees; do not
 turn housekeeping into branch deletion, reset or production task mutation.
@@ -94,8 +99,8 @@ unreviewed proposal. Pending proposed CP-002–007 still need their bounded desi
 - IPC receipts are diagnostic, not a crash-safe delivery outbox. Network/crash
   send ambiguity remains CP-002. Voice-only reply memo and crash windows need
   A12 verification. Queue.Close still waits without its own timeout.
-- Scheduled jobs use main's session; isolation is CP-004. Maintenance does not
-  yet implement user preemption/quiet hours; compaction source-context/restart
+- Scheduled jobs use main's session; isolation is CP-004. System-run user preemption is being fixed for this incident; full maintenance
+  rescheduling/quiet hours remain proposed; compaction source-context/restart
   behavior needs A17 investigation, not a claim that old notes are all fixed.
 - No documented Telegram topic-deleted update; current deleted/closed-topic
   fallback is not session retirement. CP-016 separates closure from deletion.

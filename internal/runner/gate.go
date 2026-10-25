@@ -18,10 +18,10 @@ import (
 //
 // Acquire order, everywhere: queue slot (internal/queue's semaphore,
 // held by the worker for the whole handler) -> per-chat agent slot
-// (acquireAgentSlot, streamed turns only) -> gate. Nothing acquires a
+// (acquireAgentSlot, all provider runs) -> gate. Nothing acquires a
 // queue slot or a per-chat slot while holding the gate, and background
-// runs (RunFresh: extraction, compaction, task parsing) hold neither a
-// queue slot nor a per-chat slot. So a gate holder never waits on
+// runs (RunFresh: extraction, compaction, task parsing) hold a per-chat
+// slot but never a queue slot. Foreground waits cancel same-chat background work. So a gate holder never waits on
 // anything a gate waiter holds, and every wait honours ctx, which the
 // queue cancels on shutdown and the Stop button cancels per turn.
 

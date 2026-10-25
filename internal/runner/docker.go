@@ -80,8 +80,7 @@ func (d *Docker) Client() *client.Client { return d.cli }
 //   - no container with that name → create + start, return new id.
 //   - container exists and is running → return existing id.
 //   - container exists but is stopped/exited → remove it (so the
-//     fresh spawn picks up any new mount/flag changes), then create
-//     + start.
+//     fresh spawn picks up any new mount/flag changes), then create and start.
 //
 // The (cfg, host) pair is applied only when a new container is
 // created. gopod does not mutate an already-running container's
@@ -195,6 +194,10 @@ func (d *Docker) Exec(
 		return nil, fmt.Errorf("docker: exec attach: %w", err)
 	}
 	defer resp.Close()
+	// The hijacked attachment does not inherit HTTP context cancellation.
+	// Unblock StdCopy on cancellation; process termination is the runner's job.
+	stopClose := context.AfterFunc(ctx, func() { resp.Close() })
+	defer stopClose()
 
 	var outBuf, errBuf bytes.Buffer
 	if _, err := stdcopy.StdCopy(&outBuf, &errBuf, resp.Reader); err != nil && !errors.Is(err, io.EOF) {
@@ -244,7 +247,7 @@ func (e *ExecError) Error() string {
 type StreamHandle struct {
 	Stdout io.ReadCloser // demuxed stdout stream
 	Stderr io.ReadCloser // demuxed stderr stream
-	Done   <-chan error   // closed when exec finishes (nil = success)
+	Done   <-chan error  // closed when exec finishes (nil = success)
 	cancel context.CancelFunc
 	conn   io.Closer // the attached exec connection
 }

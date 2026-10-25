@@ -33,6 +33,9 @@ func newGatedRunner(t *testing.T, max int) *gatedRunner {
 	}
 	g.fx.started = make(chan *fakeProc, 8)
 	g.fx.onExec = func(cmd []string) *ExecResult {
+		if len(cmd) > 4 && cmd[0] == "sh" && strings.Contains(cmd[2], `echo $$ >`) {
+			cmd = cmd[4:]
+		}
 		if len(cmd) > 0 && cmd[0] == "claude" && strings.HasPrefix(cmd[len(cmd)-1], "bg") { // RunFresh's agent
 			g.freshStart <- cmd[len(cmd)-1]
 			<-g.freshGo

@@ -28,8 +28,15 @@ Cancelling compaction mid-way must not corrupt the session; the compact command 
 - A user message at 23:30 is answered immediately.
 
 ## 2026-10-25 reconciliation
-Agent admission and same-chat serialization now bound background work, but do
+Agent admission and same-chat serialization now bound background work, but did
 not implement user-priority preemption or quiet-hour delivery. GOPOD_TIMEZONE
 in this proposal is a future setting, not an implemented deployment variable;
 current cron supports explicit CRON_TZ. Define retention/expiry for private
 CP-019 replies before delaying any delivery window.
+
+## Live-incident implementation slice
+The 2026-10-25 extraction stall prompted a narrow bug fix: one-minute RunFresh
+budget, same-chat foreground cancellation, process cleanup and preservation of
+context on canceled compaction. See the dated incident report and release
+handoff for merge/deploy evidence. This does not complete maintenance re-arming,
+quiet-hour delivery or the full acceptance of this proposal; status stays proposed.
