@@ -21,7 +21,8 @@ checked, Telegram polling/startup notice confirmed; restarts 0, OOMKilled false.
 The existing owner workspace now has the rendered scheduling guide and optional
 skill; custom CLAUDE/AGENTS files were not overwritten. Read-only IPC list and
 invalid-op probes returned correct source-scoped receipts/archives; scheduled
-count stayed 0. Backup, rollback and evidence:
+count stayed 0. Read-only IPC roundtrips also passed from both actual agent
+images as UID 1000 using the real mounted IPC path. Backup, rollback and evidence:
 [latest deployment report](deployments/2026-10-25-1e0a21b.md).
 Detailed client acceptance remains open (0X/0Y/0Z/0Q and real voice/task execution).
 Earlier `a9146f0` delivery evidence remains in its dated report.
