@@ -2,6 +2,8 @@ package memory
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -130,24 +132,36 @@ func (m *Memory) trySupersede(ctx context.Context, chatFolder string, thread int
 	if sanitized == "" {
 		return
 	}
-	// QueryRow, not Query: the store has a single connection, so the
-	// UPDATE below would wait forever on rows still open.
+	// QueryRow (not Query): the store has a single DB connection, so the
+	// read must release it before the UPDATE below can run.
 	var oldID int64
-	if err := m.store.DB().QueryRowContext(ctx, `
+	err := m.store.DB().QueryRowContext(ctx, `
 		SELECT m.id FROM memory_fts f
 		  JOIN memories m ON m.id = f.rowid
 		 WHERE memory_fts MATCH ?
 		   AND m.chat_folder = ?
 		   AND m.thread_id = ?
 		   AND IFNULL(m.status, 'active') = 'active'
-		 LIMIT 1`, sanitized, chatFolder, thread).Scan(&oldID); err != nil {
+		 LIMIT 1`, sanitized, chatFolder, thread).Scan(&oldID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return
+	}
+	if err != nil {
+		m.log.Warn("memory: supersede lookup failed",
+			slog.String("keyword", keyword),
+			slog.Any("err", err))
 		return
 	}
 	// Mark as superseded (superseded_by will point to the new fact
 	// once it's stored — for now just mark the status).
-	m.store.DB().ExecContext(ctx, `
+	if _, err := m.store.DB().ExecContext(ctx, `
 		UPDATE memories SET status = 'superseded', updated_at = ?
-		 WHERE id = ?`, timeNowMs(), oldID)
+		 WHERE id = ?`, timeNowMs(), oldID); err != nil {
+		m.log.Warn("memory: supersede update failed",
+			slog.Int64("old_id", oldID),
+			slog.Any("err", err))
+		return
+	}
 	m.log.Debug("memory: superseded old fact",
 		slog.Int64("old_id", oldID),
 		slog.String("keyword", keyword))
