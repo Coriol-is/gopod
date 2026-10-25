@@ -20,10 +20,11 @@ DISABLED_FEATURES = (
 )
 
 
-def probe(codex="codex", mcp=False, image="node:22-slim", native_attack=False, missing_mcp=False):
+def probe(codex="codex", mcp=False, image="node:22-slim", native_attack=False, missing_mcp=False, http_mcp=False):
     captured = []
     tool_result_seen = False
     function_result_seen = False
+    bridge = None
 
     class Handler(http.server.BaseHTTPRequestHandler):
         def log_message(self, *_):
@@ -114,10 +115,17 @@ def probe(codex="codex", mcp=False, image="node:22-slim", native_attack=False, m
                 if missing_mcp:
                     tool_script = str(base / "missing_server.py")
                 import shutil
-                config.extend([
-                    '[mcp_servers.group]',
+                transport_config = [
                     'command = ' + json.dumps(shutil.which("python3")),
                     'args = ' + json.dumps([tool_script, "--workspace", str(work), "--image", image]),
+                ]
+                if http_mcp:
+                    from http_tool_bridge import start_bridge
+                    bridge, endpoint = start_bridge(str(work), image)
+                    transport_config = ['url = ' + json.dumps(endpoint)]
+                config.extend([
+                    '[mcp_servers.group]',
+                    *transport_config,
                     'enabled_tools = ["group_exec"]',
                     'required = true',
                     'tool_timeout_sec = 15',
@@ -140,8 +148,11 @@ def probe(codex="codex", mcp=False, image="node:22-slim", native_attack=False, m
                     "requests": captured, "disabled_features": list(DISABLED_FEATURES),
                     "stderr_present": bool(result.stderr), "stdout_lines": len(result.stdout.splitlines()),
                     "mcp_roundtrip": tool_result_seen, "function_result_seen": function_result_seen,
-                    "native_marker_created": (work / "native-bypass").exists()}
+                    "native_marker_created": (work / "native-bypass").exists(),
+                    "mcp_transport": "http" if http_mcp else "stdio"}
     finally:
+        if bridge is not None:
+            bridge.close()
         server.shutdown()
         server.server_close()
 
@@ -153,5 +164,6 @@ if __name__ == "__main__":
     parser.add_argument("--image", default="node:22-slim")
     parser.add_argument("--native-attack", action="store_true", help="mock provider requests disabled native execution")
     parser.add_argument("--missing-mcp", action="store_true", help="qualify fail-closed required MCP startup")
+    parser.add_argument("--http-mcp", action="store_true", help="use capability-protected HTTP tool bridge instead of stdio")
     args = parser.parse_args()
-    print(json.dumps(probe(args.codex, args.mcp or args.missing_mcp, args.image, args.native_attack, args.missing_mcp), indent=2))
+    print(json.dumps(probe(args.codex, args.mcp or args.missing_mcp or args.http_mcp, args.image, args.native_attack, args.missing_mcp, args.http_mcp), indent=2))

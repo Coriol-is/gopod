@@ -21,6 +21,12 @@ Four opt-in tests passed in **5.015s**:
   ran in the disposable restricted Docker container and its output reached the
   next provider request. The native CLI itself remained `read-only` / `never`.
 
+Follow-up: **5 tests passed in 5.929s**, adding the same Codex native CLI
+round trip over the capability-protected HTTP bridge used by the disposable
+subscription probe. HTTP MCP transport and per-tool approval configuration work
+with the synthetic provider as well as stdio; this does not establish real-model
+tool selection or the account's negotiated model/tool inventory.
+
 The exact observed tool inventory with MCP enabled was:
 
 ```text
@@ -54,6 +60,7 @@ GOPOD_CODEX_OFFLINE_TEST=1 GOPOD_ISOLATION_DOCKER_TEST=1 \
 `--missing-mcp` tests required-server admission failure. All create disposable
 synthetic HOME/CODEX_HOME/work directories and replace the provider with localhost.
 No actual auth file is read, copied, printed or used by these tests.
+`codex_probe.py --http-mcp` uses the HTTP bridge and real Docker tool execution.
 
 ## Configuration findings
 

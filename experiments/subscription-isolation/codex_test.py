@@ -44,6 +44,14 @@ class CodexBoundaryTests(unittest.TestCase):
         self.assertEqual(len(result["requests"]), 2)
         self.assert_no_native_tools(result)
 
+    @unittest.skipUnless(os.environ.get("GOPOD_ISOLATION_DOCKER_TEST") == "1", "real Docker required")
+    def test_http_external_tool_roundtrip(self):
+        result = probe(mcp=True, http_mcp=True, image=os.environ.get("GOPOD_ISOLATION_TEST_IMAGE", "node:22-slim"))
+        self.assertEqual(result["exit_code"], 0, result)
+        self.assertTrue(result["mcp_roundtrip"], result)
+        self.assertEqual(len(result["requests"]), 2)
+        self.assert_no_native_tools(result)
+
 
 if __name__ == "__main__":
     unittest.main()
