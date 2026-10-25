@@ -20,68 +20,81 @@ DISABLED_FEATURES = (
 )
 
 
-def probe(codex="codex", mcp=False, image="node:22-slim", native_attack=False, missing_mcp=False, http_mcp=False):
-    captured = []
-    tool_result_seen = False
-    function_result_seen = False
+def tool_metadata(tool):
+    result = {"type": tool.get("type"), "name": tool.get("name")}
+    if "tools" in tool:
+        result["tools"] = [{"name": nested.get("name"), "type": nested.get("type")} for nested in tool["tools"]]
+    return result
+
+
+def mock_tool_output(server):
+    output = []
+    if server.mcp and len(server.captured) == 1:
+        namespace = next((x for x in server.captured[-1]["tools"] if x.get("type") == "namespace" and x.get("name") == "mcp__group"), None)
+        name = "group_exec" if namespace else next(x["name"] for x in server.captured[-1]["tools"] if (x.get("name") or "").endswith("group_exec"))
+        output = [{"type": "function_call", "id": "fc_canary", "call_id": "call_canary",
+                   "name": name, "arguments": json.dumps({"cmd": "printf codex-mcp-ok > codex-proof.txt; cat codex-proof.txt"}), "status": "completed"}]
+        if namespace:
+            output[0]["namespace"] = namespace["name"]
+    if server.native_attack and len(server.captured) == 1:
+        output = [{"type": "function_call", "id": "fc_canary", "call_id": "call_canary",
+                   "name": "exec_command", "arguments": json.dumps({"cmd": "printf bypass > native-bypass"}), "status": "completed"}]
+    return output
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *_):
+        # Suppress request/endpoint logs: reports contain only synthetic metadata.
+        return
+
+    def do_GET(self):
+        body = json.dumps({"object": "list", "data": []}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length", "0"))
+        request = json.loads(self.rfile.read(length))
+        self.server.tool_result_seen = self.server.tool_result_seen or any(
+            x.get("type") == "function_call_output" and "codex-mcp-ok" in str(x.get("output"))
+            for x in request.get("input", []) if isinstance(x, dict))
+        self.server.function_result_seen = self.server.function_result_seen or any(
+            x.get("type") == "function_call_output" for x in request.get("input", []) if isinstance(x, dict))
+        self.server.captured.append({"path": self.path,
+                         "tools": [tool_metadata(x) for x in request.get("tools", [])],
+                         "has_authorization": self.headers.get("Authorization") is not None})
+        output = mock_tool_output(self.server)
+        response = {"id": "resp_offline_canary", "object": "response", "status": "completed",
+                    "model": "gpt-5", "output": output, "usage": {"input_tokens": 1, "output_tokens": 0, "total_tokens": 1}}
+        frames = [
+            {"type": "response.created", "response": {**response, "status": "in_progress"}},
+        ]
+        if output:
+            frames.extend([
+                {"type": "response.output_item.added", "output_index": 0, "item": {**output[0], "arguments": "", "status": "in_progress"}},
+                {"type": "response.function_call_arguments.delta", "item_id": "fc_canary", "output_index": 0, "delta": output[0]["arguments"]},
+                {"type": "response.function_call_arguments.done", "item_id": "fc_canary", "output_index": 0, "arguments": output[0]["arguments"]},
+                {"type": "response.output_item.done", "output_index": 0, "item": output[0]},
+            ])
+        frames.append({"type": "response.completed", "response": response})
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.end_headers()
+        for frame in frames:
+            self.wfile.write(("data: " + json.dumps(frame) + "\n\n").encode())
+
+
+def probe(mcp=False, image="node:22-slim", native_attack=False, missing_mcp=False, http_mcp=False):
     bridge = None
 
-    class Handler(http.server.BaseHTTPRequestHandler):
-        def log_message(self, *_):
-            pass
-
-        def do_GET(self):
-            body = json.dumps({"object": "list", "data": []}).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(body)
-
-        def do_POST(self):
-            nonlocal tool_result_seen, function_result_seen
-            length = int(self.headers.get("Content-Length", "0"))
-            request = json.loads(self.rfile.read(length))
-            tool_result_seen = tool_result_seen or any(
-                x.get("type") == "function_call_output" and "codex-mcp-ok" in str(x.get("output"))
-                for x in request.get("input", []) if isinstance(x, dict))
-            function_result_seen = function_result_seen or any(
-                x.get("type") == "function_call_output" for x in request.get("input", []) if isinstance(x, dict))
-            captured.append({"path": self.path,
-                             "tools": [{"type": x.get("type"), "name": x.get("name"),
-                                        **({"tools": [{"name": t.get("name"), "type": t.get("type")} for t in x["tools"]]} if "tools" in x else {})}
-                                       for x in request.get("tools", [])],
-                             "has_authorization": self.headers.get("Authorization") is not None})
-            output = []
-            if mcp and len(captured) == 1:
-                namespace = next((x for x in captured[-1]["tools"] if x.get("type") == "namespace" and x.get("name") == "mcp__group"), None)
-                name = "group_exec" if namespace else next(x["name"] for x in captured[-1]["tools"] if (x.get("name") or "").endswith("group_exec"))
-                output = [{"type": "function_call", "id": "fc_canary", "call_id": "call_canary",
-                           "name": name, "arguments": json.dumps({"command": "printf codex-mcp-ok > codex-proof.txt; cat codex-proof.txt"}), "status": "completed"}]
-                if namespace:
-                    output[0]["namespace"] = namespace["name"]
-            if native_attack and len(captured) == 1:
-                output = [{"type": "function_call", "id": "fc_canary", "call_id": "call_canary",
-                           "name": "exec_command", "arguments": json.dumps({"cmd": "printf bypass > native-bypass"}), "status": "completed"}]
-            response = {"id": "resp_offline_canary", "object": "response", "status": "completed",
-                        "model": "gpt-5", "output": output, "usage": {"input_tokens": 1, "output_tokens": 0, "total_tokens": 1}}
-            frames = [
-                {"type": "response.created", "response": {**response, "status": "in_progress"}},
-            ]
-            if output:
-                frames.extend([
-                    {"type": "response.output_item.added", "output_index": 0, "item": {**output[0], "arguments": "", "status": "in_progress"}},
-                    {"type": "response.function_call_arguments.delta", "item_id": "fc_canary", "output_index": 0, "delta": output[0]["arguments"]},
-                    {"type": "response.function_call_arguments.done", "item_id": "fc_canary", "output_index": 0, "arguments": output[0]["arguments"]},
-                    {"type": "response.output_item.done", "output_index": 0, "item": output[0]},
-                ])
-            frames.append({"type": "response.completed", "response": response})
-            self.send_response(200)
-            self.send_header("Content-Type", "text/event-stream")
-            self.end_headers()
-            for frame in frames:
-                self.wfile.write(("data: " + json.dumps(frame) + "\n\n").encode())
-
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server.captured = []
+    server.tool_result_seen = False
+    server.function_result_seen = False
+    server.mcp = mcp
+    server.native_attack = native_attack
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -136,18 +149,20 @@ def probe(codex="codex", mcp=False, image="node:22-slim", native_attack=False, m
             (cli_home / "config.toml").write_text("\n".join(config) + "\n")
             env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(home),
                    "CODEX_HOME": str(cli_home), "TMPDIR": str(base)}
-            version = subprocess.check_output([codex, "--version"], text=True, env=env).strip()
+            # The trusted harness fixes the executable and every CLI argument;
+            # provider/model input cannot choose a program, path or shell string.
+            version = subprocess.check_output(["codex", "--version"], text=True, env=env).strip()
             if version != "codex-cli 0.164.0":
                 raise RuntimeError("pinned Codex version required")
-            result = subprocess.run([codex, "exec", "--strict-config", "--ephemeral", "--skip-git-repo-check",
+            result = subprocess.run(["codex", "exec", "--strict-config", "--ephemeral", "--skip-git-repo-check",
                                      "--json", "Reply with offline-canary only; do not invoke tools."],
                                     cwd=work, env=env, text=True, capture_output=True, timeout=25)
             # Never return raw CLI streams: future versions could include inputs,
             # paths or diagnostics. Only synthetic metadata is reported.
             return {"version": version, "exit_code": result.returncode,
-                    "requests": captured, "disabled_features": list(DISABLED_FEATURES),
+                    "requests": server.captured, "disabled_features": list(DISABLED_FEATURES),
                     "stderr_present": bool(result.stderr), "stdout_lines": len(result.stdout.splitlines()),
-                    "mcp_roundtrip": tool_result_seen, "function_result_seen": function_result_seen,
+                    "mcp_roundtrip": server.tool_result_seen, "function_result_seen": server.function_result_seen,
                     "native_marker_created": (work / "native-bypass").exists(),
                     "external_file_proof": (work / "codex-proof.txt").is_file() and (work / "codex-proof.txt").read_text() == "codex-mcp-ok",
                     "mcp_transport": "http" if http_mcp else "stdio"}
@@ -160,11 +175,12 @@ def probe(codex="codex", mcp=False, image="node:22-slim", native_attack=False, m
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--codex", default="codex")
     parser.add_argument("--mcp", action="store_true", help="execute synthetic command via real Docker-backed MCP")
     parser.add_argument("--image", default="node:22-slim")
     parser.add_argument("--native-attack", action="store_true", help="mock provider requests disabled native execution")
     parser.add_argument("--missing-mcp", action="store_true", help="qualify fail-closed required MCP startup")
     parser.add_argument("--http-mcp", action="store_true", help="use capability-protected HTTP tool bridge instead of stdio")
     args = parser.parse_args()
-    print(json.dumps(probe(args.codex, args.mcp or args.missing_mcp or args.http_mcp, args.image, args.native_attack, args.missing_mcp, args.http_mcp), indent=2))
+    print(json.dumps(probe(mcp=args.mcp or args.missing_mcp or args.http_mcp, image=args.image,
+                           native_attack=args.native_attack, missing_mcp=args.missing_mcp,
+                           http_mcp=args.http_mcp), indent=2))

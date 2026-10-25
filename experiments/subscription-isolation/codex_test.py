@@ -44,8 +44,9 @@ class InventoryGateTests(unittest.TestCase):
             {"name": "mcp__group", "type": "namespace", "tools": [{"name": "group_exec", "type": "function"}, {"name": "read_auth", "type": "function"}]},
         ]
         for tool in cases:
+            result = self.result(tool)
             with self.subTest(tool=tool), self.assertRaises(AssertionError):
-                assert_restricted_inventory(self, self.result(tool))
+                assert_restricted_inventory(self, result)
 
 
 @unittest.skipUnless(os.environ.get("GOPOD_CODEX_OFFLINE_TEST") == "1", "opt-in pinned Codex offline qualification")
