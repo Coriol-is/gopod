@@ -78,6 +78,7 @@ func decodeCB(s string) (cbData, bool) {
 // the message carrying the button, never from Data.
 type cbQuery struct {
 	ID        string // callback query id
+	ChatKind  string
 	ChatID    int64
 	ThreadID  int // private-chat topic of the button's message (inboundThreadID)
 	MessageID int // message carrying the button
@@ -184,6 +185,7 @@ func (b *Bot) dispatchCallback(ctx context.Context, cq *models.CallbackQuery, an
 		return cbToastNotRegistered
 	}
 	q := cbQuery{
+		ChatKind:  string(m.Chat.Type),
 		ID:        cq.ID,
 		ChatID:    m.Chat.ID,
 		ThreadID:  inboundThreadID(m),

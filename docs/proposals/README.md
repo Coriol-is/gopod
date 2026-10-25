@@ -90,6 +90,6 @@ not enabling the feature merely by merging that document.
 | [CP-014](CP-014-telegram-media-input.md) | Telegram media — three delivery queues (design only) | accepted | L |
 | [CP-015](CP-015-agent-scheduling.md) | Generic agent scheduling and IPC receipts | done | M |
 | [CP-016](CP-016-telegram-topic-deletion.md) | Telegram topic deletion and conversation retirement (design only) | accepted | M |
-| [CP-017](CP-017-telegram-capability-diagnostics.md) | Telegram capability diagnostics and mode-aware guidance (design only) | accepted | M |
+| [CP-017](CP-017-telegram-capability-diagnostics.md) | Telegram capability diagnostics (initial private-DM slice) | done | M |
 | [CP-018](CP-018-per-thread-providers.md) | Provider selection per conversation (design only) | accepted | M |
 | [CP-019](CP-019-telegram-ephemeral-commands.md) | Private command/service/error replies in groups (design only) | accepted | M |

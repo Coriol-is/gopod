@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | accepted |
+| Status | done |
 | Date | 2026-10-25 |
 | Origin | Owner requested separate self-diagnostics specification after code and Bot API research |
 | Size | M |
@@ -16,8 +16,10 @@ Current behavior and verified gaps are recorded in the linked specification.
 
 ## Proposal
 Implement the bounded, scoped contract in the specification in separate delivery
-slices. Planning is complete; implementation has not started. This acceptance
-is for design, not a claim of deployment.
+slices. The initial private-DM slice is implemented: cached `/telegram`, owner-only
+`/telegram doctor [refresh]`, and static help. Group reports, rights probes and
+Guest/inline/business notice handlers remain deferred. Deployment and client
+acceptance are tracked independently in HANDOFF and ACCEPTANCE.
 
 ## Out of scope
 Enabling modes, deleting real topics, changing provider routing or adding

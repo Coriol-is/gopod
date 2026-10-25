@@ -1068,6 +1068,31 @@ PR #43; unit/race and actual Docker shell preemption tests, including on Pi.
 
 ---
 
+## D034 — Observe Telegram capabilities without gating ordinary service
+
+**Date:** 2026-10-25
+**Status:** Accepted
+
+**Context.** SDK v1.27.0 loses missing boolean information and misspells the
+inline-support field. Its mandatory constructor getMe also makes observation
+failure fatal before polling starts. BotFather settings alone do not imply
+local handling or contextual rights.
+
+**Decision.** Use a private getMe-only raw adapter with tri-state fields,
+bounded requests and no raw error/body logging. Skip SDK constructor getMe;
+SDK identity uses the token numeric prefix and does not need a fetched user.
+Cache verified username separately for diagnostic command suffix validation.
+A service-owned single-flight request outlives individual waiters but is joined
+on shutdown. Retain stale last-success observations across acquisition failures.
+Reports use control Router authorization and private-chat context gates.
+
+**Consequences.** Ordinary DM routing is independent of observation freshness.
+No BotFather settings, subscriptions or modes are enabled by diagnostics. New
+reports/help remain private-DM-only until CP-019, and fit one message without
+buttons. No generic registry, migration or provider request is introduced.
+
+---
+
 ## Template for new ADRs
 
 ```

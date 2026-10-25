@@ -40,6 +40,9 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 	m := update.Message
 	b.persistMessage(ctx, m)
 	b.noteInboundThread(m)
+	if b.dispatchRawTelegramDiagnostics(ctx, m, strings.TrimSpace(messageText(m))) {
+		return
+	}
 
 	// Without a runner this stays at M1 echo-only behaviour.
 	if b.runner == nil {
@@ -257,7 +260,15 @@ func inboundThreadID(m *models.Message) int {
 // to "unknown command".
 func (b *Bot) dispatchSlash(ctx context.Context, m *models.Message, text string) {
 	thread := inboundThreadID(m)
+	diagnostic, accepted := b.diagnosticCommand(m, text)
+	if diagnostic && !accepted {
+		return
+	}
 	if b.router == nil {
+		if diagnostic {
+			b.sendDiagnosticResponse(ctx, m, "Telegram diagnostics unavailable.")
+			return
+		}
 		b.replyText(ctx, m.Chat.ID, thread, "unknown command")
 		return
 	}
@@ -283,6 +294,7 @@ func (b *Bot) dispatchSlash(ctx context.Context, m *models.Message, text string)
 		Name: cmdName,
 		Args: parts[1:],
 		Caller: control.Caller{
+			ChatKind: string(m.Chat.Type),
 			ChatID:   m.Chat.ID,
 			ThreadID: thread,
 			UserID:   userID(m.From),
@@ -302,6 +314,10 @@ func (b *Bot) dispatchSlash(ctx context.Context, m *models.Message, text string)
 	resp, err := b.router.Dispatch(ctx, cmd)
 	if err != nil {
 		status.Set(stError)
+		if diagnostic {
+			b.sendDiagnosticResponse(ctx, m, resp.Text)
+			return
+		}
 		b.replyTo(ctx, m.Chat.ID, thread, m.ID, resp.Text)
 		return
 	}
@@ -309,6 +325,10 @@ func (b *Bot) dispatchSlash(ctx context.Context, m *models.Message, text string)
 		status.Set(stError) // e.g. "Chat not registered.": not done
 	} else {
 		status.Set(stDone)
+	}
+	if diagnostic {
+		b.sendDiagnosticResponse(ctx, m, resp.Text)
+		return
 	}
 	b.sendCommandResponse(ctx, m.Chat.ID, thread, m.ID, resp)
 }

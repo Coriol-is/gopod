@@ -1,6 +1,6 @@
 # Telegram capability diagnostics and mode-aware guidance
 
-Date: 2026-10-25. Status: design only; implementation deferred. CP-017.
+Date: 2026-10-25. Status: initial private-DM slice implemented; broader slices deferred. CP-017.
 
 Execution: [implementation plan](../plans/2026-10-25-telegram-capability-diagnostics.md).
 
@@ -98,7 +98,8 @@ Telegram-on+handler-off, update-filter mismatch, group/business rights, privacy,
 public versus owner output, guest namespace separation and transient API errors.
 Live acceptance compares doctor with read-only getMe and known BotFather settings;
 toggling a mode or contacting another bot requires a deliberately authorized test.
-No diagnostic feature was implemented or enabled during this research.
+The research itself enabled no modes. The initial private-DM implementation is
+tracked separately in HANDOFF/ACCEPTANCE; no Guest/inline/business handler ships.
 
 ## Official references
 - https://core.telegram.org/bots/api#user

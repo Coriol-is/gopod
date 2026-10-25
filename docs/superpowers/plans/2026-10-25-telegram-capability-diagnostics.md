@@ -1,8 +1,8 @@
 # CP-017 — Telegram capability diagnostics implementation plan
 
-Status: planning complete, 2026-10-25. Accepted specification; implementation has
-not started. This plan does not claim a deployed feature or authorize additional
-Telegram modes. Contract: [capability specification](../specs/2026-10-25-telegram-capability-diagnostics.md).
+Status: initial private-DM slice implemented, 2026-10-25; release verification
+and real-client acceptance tracked in HANDOFF/ACCEPTANCE. This plan does not
+authorize additional Telegram modes. Contract: [capability specification](../specs/2026-10-25-telegram-capability-diagnostics.md).
 Related boundary: [CP-019 private service replies](../specs/2026-10-25-telegram-ephemeral-commands.md).
 
 ## Release boundary and decisions
