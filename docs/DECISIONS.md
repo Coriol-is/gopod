@@ -1038,6 +1038,36 @@ Specs: [sandbox runtime](superpowers/specs/2026-10-25-sandbox-runtime.md) and
 
 ---
 
+## D033 — Bound fresh system work and yield to foreground runs
+
+**Date:** 2026-10-25
+**Status:** Accepted
+
+**Context.** A Codex memory-extraction run without a deadline held a chat's
+execution slot for several minutes, delaying messages in multiple topics. Native
+sessions were intact; the blocking process was a fresh system run. Context
+cancellation alone does not terminate a Docker exec or unblock its hijacked read.
+
+**Decision.** Bound RunFresh (extraction, compaction summary and task parsing)
+to one minute, honoring shorter caller deadlines. A foreground slot waiter
+cancels background work only in its own chat; foreground waiters precede new
+background starts. Buffered user/system agents own a pid-file process group and
+wait for a bounded TERM/KILL cleanup attempt before releasing their slots.
+Docker attachments close on cancellation so reads can finish. Interrupted or
+timed-out compaction preserves history, session mappings and turn counters.
+
+**Consequences.** Best-effort extraction may be skipped when a user arrives.
+A slow system/parser call may return cancellation/deadline rather than holding
+the chat indefinitely. Full maintenance re-arming and quiet hours remain CP-006.
+Kill failure is logged; this does not guarantee cleanup during Docker outages,
+kill deliberately detached tools, provide per-topic providers, enable parallel
+processes, or roll back tool side effects. Existing D030 continuity stays intact.
+
+Evidence: [incident](incidents/2026-10-25-background-extraction-starvation.md),
+PR #43; unit/race and actual Docker shell preemption tests, including on Pi.
+
+---
+
 ## Template for new ADRs
 
 ```

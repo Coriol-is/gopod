@@ -1,11 +1,15 @@
 # Live acceptance register
 
-Last reconciled: 2026-10-25. Application deployed: `8df259d`.
+Last reconciled: 2026-10-25. Application deployed: `18e0c86`.
 Code merged/deployed is distinct from a real-client scenario being accepted.
 Items below are pending unless explicit evidence is linked. Do not infer a pass
 from unit tests, CLI --help/version, startup notices or a green CI job.
 
 ## Verified operational baseline
+- [18e0c86 starvation fix](deployments/2026-10-25-18e0c86.md): real Pi Docker
+  background-preemption test PASS, deployed version/image, startup/integrity,
+  preserved sessions/history/tasks and no pending/running turns. Actual user/model
+  multi-topic behavior after this fix is not established by a sleeping-shell test.
 - [8df259d deployment](deployments/2026-10-25-8df259d.md): running version/image,
   SQLite integrity, restart/OOM state, session/history/task count preservation,
   startup/polling and new CLI version smoke in hardened ARM64 containers on Pi.
@@ -16,18 +20,19 @@ from unit tests, CLI --help/version, startup notices or a green CI job.
   IPC receipts from both agent images; no test schedule was created.
 - Historical Codex authenticated turn and persisted login after container
   recreation succeeded on 2026-10-05 with older CLI. It does not qualify new
-  Codex0.164.0/Claude2.1.310 authenticated turns or native resume.
+  Codex CLI 0.164.0/Claude Code 2.1.310 authenticated turns or native resume.
 - Owner subsequently created the real FreeFeed schedule and received its task
-  receipt. It is paused now; cron stays 09:00 Europe/Belgrade. No successful
+  receipt. It was later resumed externally and is active in the 17:24 predeploy backup;
+  cron stays 09:00 Europe/Belgrade. No successful
   recurring execution+digest delivery is recorded.
 
 ## User-reported acceptance and incident follow-up
 On 2026-10-25 the owner confirmed voice messages and /tasks work. This accepts
 the reported baseline, not every A01/A07 scenario: task paging/toggles and audio
-files/video notes/provenance still need separate evidence. New Codex0.164.0
+files/video notes/provenance still need separate evidence. New Codex CLI 0.164.0
 produced authenticated replies in the live chat; post-recreation resume and new
 Claude acceptance remain open. Both topics later stalled behind system
-extraction, documented in [the incident](incidents/2026-10-25-background-extraction-starvation.md).
+extraction (fixed/deployed in 18e0c86; real user/model follow-up pending), documented in [the incident](incidents/2026-10-25-background-extraction-starvation.md).
 
 ## Pending current-release scenarios
 | ID | Scenario | Acceptance / evidence still needed |
