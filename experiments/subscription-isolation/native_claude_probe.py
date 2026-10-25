@@ -27,7 +27,7 @@ def qualify():
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
-            pass
+            pass  # Suppress all request logging, including synthetic auth headers.
 
         def do_POST(self):
             data = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
@@ -47,7 +47,7 @@ def qualify():
             calls.extend(results)
             if not results:
                 content = {"type": "tool_use", "id": "toolu_synthetic", "name": tool_name,
-                           "input": {"command": f"printf {marker} > claude-proof.txt; cat claude-proof.txt"}}
+                           "input": {"cmd": f"printf {marker} > claude-proof.txt; cat claude-proof.txt"}}
                 reason = "tool_use"
             else:
                 content = {"type": "text", "text": "SYNTHETIC_ROUNDTRIP_OK"}
