@@ -203,3 +203,20 @@ func scanTurns(rows *sql.Rows) ([]Turn, error) {
 	}
 	return out, nil
 }
+
+// TurnBySource looks up durable retry identity before a confirmed provider switch.
+func (s *Store) TurnBySource(ctx context.Context, source, sourceID string) (Turn, bool, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+turnColumns+` FROM turns WHERE source=? AND source_id=?`, source, sourceID)
+	if err != nil {
+		return Turn{}, false, fmt.Errorf("store: turn by source: %w", err)
+	}
+	defer rows.Close()
+	turns, err := scanTurns(rows)
+	if err != nil {
+		return Turn{}, false, err
+	}
+	if len(turns) == 0 {
+		return Turn{}, false, nil
+	}
+	return turns[0], true, nil
+}

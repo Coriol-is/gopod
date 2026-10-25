@@ -985,6 +985,34 @@ Spec: [provider continuity](superpowers/specs/2026-10-25-provider-continuity.md)
 
 ---
 
+## D031 — Require confirmation for quota-triggered provider changes
+
+**Date:** 2026-10-25
+**Status:** Accepted
+**Extends:** D028 command confirmations, D030 provider continuity
+
+**Context.** The owner requested switching with a notification after quota
+exhaustion, then explicitly preferred confirmation over unattended switching.
+Provider selection affects every conversation in a chat.
+
+**Decision.** A typed, known quota rejection offers a five-minute, single-use
+confirmation in its own thread. On Yes, a hidden Router command validates the
+original turn scope and durable quota offer, compares the expected provider
+under runner locks, switches using D030, then queues one original-input retry.
+The retry's source identity prevents duplicates and further switch offers if
+that attempt is itself quota-limited. Notify the user of the selected provider,
+queued request, stale choice or failure. Cancel never mutates state.
+
+**Consequences.** No model calls or provider switches are started without
+confirmation. Context and native sessions survive; the target may need login.
+A prior failed turn may have performed actions, so workspace verification
+remains necessary. Provider change and retry insertion are not one transaction;
+a crash between them can require a manual resend. No unattended fallback,
+automatic switch-back or quota polling. Spec:
+[confirmed quota fallback](superpowers/specs/2026-10-25-quota-switch-confirmation.md).
+
+---
+
 ## Template for new ADRs
 
 ```

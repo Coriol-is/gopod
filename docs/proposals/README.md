@@ -78,3 +78,4 @@ Bullet list someone else can verify.
 | [CP-007](CP-007-store-backups.md) | Scheduled store backups on the production host | proposed | S |
 | [CP-008](CP-008-model-per-chat.md) | `/model` per chat | accepted | S |
 | [CP-009](CP-009-provider-continuity.md) | Continue conversations across providers | done | M |
+| [CP-010](CP-010-quota-switch-confirmation.md) | Confirm switching after quota exhaustion | done | M |

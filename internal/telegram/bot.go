@@ -310,6 +310,9 @@ func (b *Bot) publishCommands(ctx context.Context) {
 	var cmds []models.BotCommand
 	if b.router != nil {
 		for _, c := range b.router.List() {
+			if c.SlashName == "" {
+				continue
+			}
 			cmds = append(cmds, models.BotCommand{
 				Command:     c.SlashName,
 				Description: c.Description,

@@ -548,3 +548,20 @@ its first turn with a different provider; main is a separate conversation.
 `/clear` invalidates all providers' session mappings and the neutral transcript
 for that conversation only. Shared memory and workspace are retained. Full
 native tool history is not migrated. Automatic quota fallback is deferred.
+
+
+### Quota switch confirmation (D031)
+
+A known provider allowance rejection offers a single-use switch-and-retry
+confirmation in the failed turn's own topic. It never changes a provider
+unattended. The hidden `provider.fallback` command has no slash/menu/help entry;
+its Yes rechecks registration, chat/folder/thread, a durable quota offer, and
+whether the expected provider is still selected. The provider changes for the
+whole chat, then the original request is retried once in its original topic
+with durable identity `fallback:<turn id>`. Voice/file input metadata is kept.
+
+Cancel/expiry do nothing. If the target is also quota-limited, report it without
+another switch offer. A switch failure does not enqueue; a queue failure after
+a successful switch explicitly asks the user to resend. Restart forgets button
+tokens; a crash between provider change and retry insertion can require a manual
+resend. Existing native sessions and bounded context remain as in D030.

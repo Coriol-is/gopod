@@ -379,11 +379,23 @@ func run() error {
 	}
 	control.RegisterTaskCommands(router, st, chatFolderLookup, taskPromptFn)
 
+	var fallbackSwitch control.ProviderFallbackSwitchFunc
 	// /provider command — per-chat agent provider switching.
 	if agentRunner != nil {
 		providers := map[string]runner.AgentProvider{
 			"claude": runner.NewClaudeProvider(cfg.ContainerImage),
 			"codex":  runner.NewCodexProvider(""),
+		}
+		fallbackSwitch = func(ctx context.Context, folder, expected, target string) error {
+			p, ok := providers[target]
+			if !ok {
+				return fmt.Errorf("unknown fallback provider")
+			}
+			err := agentRunner.SwitchChatProviderIfCurrent(ctx, folder, expected, p)
+			if errors.Is(err, runner.ErrProviderChanged) {
+				return control.ErrFallbackStale
+			}
+			return err
 		}
 		// Restore saved provider choices from store.
 		for _, rc := range func() []store.RegisteredChat {
@@ -501,6 +513,10 @@ func run() error {
 		})
 		if err != nil {
 			return fmt.Errorf("init telegram: %w", err)
+		}
+
+		if fallbackSwitch != nil {
+			control.RegisterProviderFallbackCommand(router, st, fallbackSwitch, tgBot.EnqueueProviderFallback)
 		}
 
 		// Wire the GroupQueue if the runner is available. Turns are

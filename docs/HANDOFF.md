@@ -35,6 +35,16 @@ Telegram explains the quota rather than a generic agent failure. No automatic
 retry or provider switch. Live end-to-end recovery after the allowance resets
 has not been verified.
 
+**2026-10-25:** confirmed quota fallback (CP-010, D031). A recognized
+provider usage-limit rejection offers Switch and continue / Cancel in the
+failed turn's thread. Only confirmation changes the chat-wide provider and
+queues one retry with the original thread/text/voice/file metadata. Existing
+command-token single-use/expiry applies; chat/folder/thread and expected-provider
+checks prevent foreign or stale actions. The target's own quota error reports
+without another switch offer. Ordinary agent/network/login errors do not offer
+a switch. Native sessions and bounded context use D030. Not deployed or live
+verified. No unattended fallback or switch-back is implemented.
+
 **Before deploying, run the live checklist** (next section, item 00).
 **2026-10-25:** extracted memories are now scoped per conversation
 ([D023](DECISIONS.md#d023--extracted-memories-are-scoped-per-conversation)):
@@ -494,6 +504,17 @@ pending: a 20-line and a 100-line block in a private chat and in a topic.
    second message in the same thread, keeps 👀); earlier messages of a
    batched turn keep 👀; elapsed time counts from the agent start, not from
    receipt; stall timers are not stopped by a shutdown mid-turn.
+0Q. **Confirmed quota fallback (CP-010, D031).** After deployment, trigger a
+   known quota rejection in a private topic: verify the named-provider question
+   says the whole chat changes, no change before Yes, Cancel leaves it alone,
+   and Yes edits to the switch/queued notice and retries the original request
+   once in that topic. Check a voice input, context and native-session reuse,
+   double tap, 5-minute expiry and restart-expired buttons. A quota rejection
+   on the target must be shown even within 60 seconds, with no reverse switch
+   offer. Change provider manually before pressing an old offer: it must refuse
+   the stale choice. A target without login should ask for /login normally.
+   No real quota-triggered switch or Pi deployment has yet been verified.
+
 0Z. **Manual provider continuity (CP-009, D030).** After deployment, establish
    distinct facts/tasks in main and two private topics. Switch Claude → Codex,
    ask each topic to continue and verify its own recent details and shared
