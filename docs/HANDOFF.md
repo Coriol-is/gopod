@@ -12,7 +12,7 @@
 **Phase:** Core complete. gopod is a working personal Telegram
 Claude assistant with session continuity, long-term memory, voice,
 vision, scheduling, and multi-provider architecture ready for Codex.
-**Last updated:** 2026-10-24
+**Last updated:** 2026-10-25
 **Last working session (2026-10-24):** Telegram chat-UI parity, built
 autonomously through worktrees and PRs #3–#10 (agent implementer + separate
 reviewer per task, CI green, admin squash-merge). On `main`, **not deployed
@@ -25,6 +25,15 @@ plan `docs/superpowers/plans/2026-10-24-telegram-threads-and-drafts.md`.
 Also: CI workflow `.github/workflows/ci.yml` and the PR-based git flow in
 CLAUDE.md (main's ruleset needs 1 approval; PRs are merged with
 `gh pr merge --squash --admin`).
+**2026-10-25 incident:** the Pi voice message was downloaded and transcribed
+successfully; repeated Claude exits were an account session usage limit (429,
+reset reported as 13:50 UTC), not container restarts or OOM. Checked live:
+gopod restart count 0, OOMKilled=false. The runner now classifies the known
+session/usage-limit CLI response separately on failed streaming and sync runs;
+Telegram explains the quota rather than a generic agent failure. No automatic
+retry or provider switch. Live end-to-end recovery after the allowance resets
+has not been verified.
+
 **Before deploying, run the live checklist** (next section, item 00).
 **2026-10-25:** extracted memories are now scoped per conversation
 ([D023](DECISIONS.md#d023--extracted-memories-are-scoped-per-conversation)):

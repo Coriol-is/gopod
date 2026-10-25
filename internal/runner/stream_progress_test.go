@@ -267,3 +267,19 @@ func TestStartStreamStructuredAssistantTextFallback(t *testing.T) {
 		t.Fatalf("result = %+v", c.result)
 	}
 }
+
+func TestStartStreamStructuredUsageLimit(t *testing.T) {
+	s := newStreamTestRunner(t)
+	stream, p, _ := startStructured(t, s, context.Background())
+	go func() {
+		p.stdoutW.Write([]byte(`{"type":"assistant","message":{"content":[{"type":"text","text":"You've hit your session limit · resets 1:50pm (UTC)"}]}}` + "\n"))
+		p.exit(1)
+	}()
+	c := consume(t, stream)
+	if !errors.Is(c.result.Err, ErrUsageLimit) {
+		t.Fatalf("err = %v", c.result.Err)
+	}
+	if c.text != "" {
+		t.Fatalf("quota text streamed: %q", c.text)
+	}
+}
