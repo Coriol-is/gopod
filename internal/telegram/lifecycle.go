@@ -52,6 +52,9 @@ const (
 	DefaultShutdownNoticeTimeout = 3 * time.Second
 	// startNoticeTimeout bounds the startup send.
 	startNoticeTimeout = 10 * time.Second
+	// stateTimeout bounds Started's store section, which holds l.mu,
+	// so a stalled store cannot block Shutdown behind it.
+	stateTimeout = 2 * time.Second
 	// startNoticeMinGap is the crash-loop guard: at most one startup
 	// notice per this window.
 	startNoticeMinGap = 2 * time.Minute
@@ -104,7 +107,9 @@ func decideStart(prevStarted, graceful bool, lastNotice, now time.Time) (startKi
 	case !prevStarted:
 		return startFirst, false
 	}
-	if !lastNotice.IsZero() && now.Sub(lastNotice) < startNoticeMinGap {
+	// A notice "in the future" means the clock went backwards (the Pi
+	// has no RTC and boots behind until NTP syncs): do not suppress.
+	if d := now.Sub(lastNotice); !lastNotice.IsZero() && d >= 0 && d < startNoticeMinGap {
 		return kind, false
 	}
 	return kind, true
@@ -153,6 +158,8 @@ type Lifecycle struct {
 	timeout time.Duration
 	log     *slog.Logger
 	now     func() time.Time
+	// stateTimeout is stateTimeout; tests shorten it.
+	stateTimeout time.Duration
 
 	// mu orders Started's state section against Shutdown's marker: a
 	// signal during startup must not have its marker read and cleared
@@ -175,6 +182,8 @@ func (b *Bot) NewLifecycle(cfg LifecycleConfig) *Lifecycle {
 		timeout: cfg.ShutdownTimeout,
 		log:     b.log.With(slog.String("component", "lifecycle")),
 		now:     time.Now,
+
+		stateTimeout: stateTimeout,
 	}
 }
 
@@ -187,7 +196,8 @@ func (l *Lifecycle) Started(ctx context.Context, replayed int) {
 		return
 	}
 	// State must be kept even if a signal is already cancelling ctx.
-	stCtx := context.WithoutCancel(ctx)
+	stCtx, stCancel := context.WithTimeout(context.WithoutCancel(ctx), l.stateTimeout)
+	defer stCancel()
 	l.mu.Lock()
 	if l.shuttingDown {
 		l.mu.Unlock()

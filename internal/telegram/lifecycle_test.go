@@ -74,6 +74,9 @@ func TestDecideStart(t *testing.T) {
 		{"crash at window edge", true, false, now.Add(-2 * time.Minute), startCrash, true},
 		{"graceful after window", true, true, now.Add(-time.Hour), startGraceful, true},
 		{"first start ignores old notice", false, false, now.Add(-time.Second), startFirst, false},
+		// Clock behind the stored notice (no RTC after power loss).
+		{"crash with notice in the future", true, false, now.Add(time.Hour), startCrash, true},
+		{"graceful with notice in the future", true, true, now.Add(30 * time.Second), startGraceful, true},
 	} {
 		kind, send := decideStart(tc.prevStarted, tc.graceful, tc.lastNotice, now)
 		if kind != tc.wantKind || send != tc.wantSend {
@@ -376,6 +379,38 @@ func TestSignalDuringStartupKeepsMarker(t *testing.T) {
 	f.lc.Started(ctx, 0)
 	if got := f.sends(); len(got) != 1 || !strings.HasPrefix(got[0], "1001/0: ✅") {
 		t.Fatalf("run 3 sends = %q, want the graceful back notice", got)
+	}
+}
+
+// stalledStore blocks every call until its context ends.
+type stalledStore struct{}
+
+func (stalledStore) GetState(ctx context.Context, _ string) (string, error) {
+	<-ctx.Done()
+	return "", ctx.Err()
+}
+
+func (stalledStore) SetState(ctx context.Context, _, _ string) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func (stalledStore) ListUnfinishedTurns(ctx context.Context) ([]store.Turn, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func TestStalledStoreDoesNotBlockShutdown(t *testing.T) {
+	b := newFakeBot(t, &fakeTelegram{})
+	lc := b.NewLifecycle(LifecycleConfig{Store: stalledStore{}, OwnerChatID: lcOwner, Enabled: true,
+		ShutdownTimeout: 100 * time.Millisecond})
+	lc.stateTimeout = 50 * time.Millisecond
+	start := time.Now()
+	go lc.Started(context.Background(), 0)
+	time.Sleep(10 * time.Millisecond) // Started holds l.mu on the stalled store
+	lc.Shutdown(context.Background())
+	if d := time.Since(start); d > time.Second {
+		t.Fatalf("Shutdown blocked %v behind Started on a stalled store", d)
 	}
 }
 
