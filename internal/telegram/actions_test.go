@@ -517,3 +517,54 @@ func TestMoreBack_SwapsMarkupOnly(t *testing.T) {
 		t.Fatalf("more/back sent or edited text (%d -> %d calls)", texts, n)
 	}
 }
+
+// A scheduled task's turn is not a chat turn: no reply button acts on it,
+// even when its row names the chat.
+func TestReplyActions_TaskTurnRefused(t *testing.T) {
+	fake := &fakeTelegram{respond: okResponder}
+	b := newCallbackFixture(t, fake)
+	b.registerCallbacks()
+	mt := withQueue(t, b)
+	id, _, err := b.store.InsertTurn(context.Background(), store.Turn{
+		Source: "task", SourceID: "task-1:123", ChatFolder: "owner", ChatID: streamChat, Text: "daily report",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, act := range []string{"rg", "mo", "mb", "st2", "af"} {
+		if toast := pressed(t, b, fake, fmt.Sprint("q", i), 0, 99, fmt.Sprintf("%s:%d", act, id)); toast != cbToastNotYours {
+			t.Errorf("%s toast = %q", act, toast)
+		}
+	}
+	if n := len(mt.inserted()); n != 0 {
+		t.Fatalf("enqueued %d turns, want 0", n)
+	}
+}
+
+// A regenerate whose turn could not be saved says so, keeps the row and
+// can be pressed again.
+func TestRegenerate_NotSavedReportsFailure(t *testing.T) {
+	fake := &fakeTelegram{respond: okResponder}
+	b := newCallbackFixture(t, fake)
+	b.registerCallbacks()
+	mt := withQueue(t, b)
+	mt.fail = true
+	id := failedTurn(t, b, streamChat)
+	data := fmt.Sprintf("rg:%d", id)
+
+	if toast := pressed(t, b, fake, "q1", 7, 99, data); toast != regenToastFailed {
+		t.Fatalf("toast = %q", toast)
+	}
+	if n := len(fake.callsTo("editMessageReplyMarkup")); n != 0 {
+		t.Fatalf("row cleared %d times after a failed regenerate", n)
+	}
+	mt.mu.Lock()
+	mt.fail = false
+	mt.mu.Unlock()
+	if toast := pressed(t, b, fake, "q2", 7, 99, data); toast != regenToastQueued {
+		t.Fatalf("second press toast = %q", toast)
+	}
+	if n := len(mt.inserted()); n != 1 {
+		t.Fatalf("enqueued %d turns, want 1", n)
+	}
+}
