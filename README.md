@@ -112,12 +112,12 @@ GOPOD_GID=1000
 docker compose build
 docker compose up -d
 
-# Housekeeping after every build: every rebuild adds layers to the Docker
-# build cache (it reached ~25 GB on a Raspberry Pi). Drop dangling images and
-# cache older than a week; recent cache keeps rebuilds fast. Only touches
-# gopod's own leftovers; do not run `docker system prune -a` on a shared host.
-docker image prune -f
-docker builder prune -f --filter until=168h
+# Optional scoped cleanup: retain rollback tags. This removes only dangling
+# images carrying this Compose project's label; it does not clean other images.
+docker image prune -f --filter label=com.docker.compose.project=gopod
+
+# Build-cache pruning is a separate host-wide operation, not project-scoped
+# housekeeping. Inspect cache ownership/retention before choosing to prune it.
 ```
 
 gopod runs inside a container managing agent containers as siblings
@@ -132,8 +132,8 @@ Read these before exposing a deployment to anything but yourself.
   effectively controls the host Docker daemon.
 - **Agents run unattended.** Inside the container the CLI runs with
   permission prompts disabled (`claude --dangerously-skip-permissions`,
-  `codex --full-auto`). Isolation comes from the container, not from
-  the CLI: read-only rootfs, dropped capabilities, non-root uid,
+  `codex --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check`).
+  Isolation comes from the container, not from the CLI: read-only rootfs, dropped capabilities, non-root uid,
   allowlisted mounts. See [docs/ISOLATION.md](docs/ISOLATION.md).
 - **Memory API is reachable from the Docker bridge.** It listens on
   `0.0.0.0:9876` so sibling containers can reach it via
@@ -144,8 +144,10 @@ Read these before exposing a deployment to anything but yourself.
   Without a token the API answers 401. Still firewall the port if you do
   not trust the LAN (Docker's `iptables` rules bypass `ufw`, so the rule
   must target the bridge interface).
-- **Owner chat mounts the store read-write.** The owner's agent can
-  edit `store.sqlite` directly. Only register chats you trust.
+- **Owner chat mounts the store read-write.** The database file bind is RW,
+  but its parent is read-only and cannot supply WAL sidecars; direct SQL is not
+  the supported scheduling interface. Use SCHEDULING.md and filesystem IPC.
+  Only register chats you trust.
 - **Secrets are env vars.** Forwarded API keys are visible inside the
   agent container's environment. The planned secret gateway
   ([docs/GATEWAY.md](docs/GATEWAY.md)) removes this; it is not built yet.

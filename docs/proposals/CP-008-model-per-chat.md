@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | accepted (2026-10-05) |
+| Status | done (reconciled 2026-10-25) |
 | Date | 2026-10-05 |
 | Origin | user request 2026-10-05: "у бота нет поддержки команды /model" |
 | Size | S |
@@ -10,13 +10,10 @@
 | Depends on | — |
 | Spec | bounded change, no spec |
 
-## Problem
-Both harnesses run on their default model: `provider_claude.go` and
-`provider_codex.go` pass no model flag, and there is no command to change
-it. Claude Code accepts `--model <alias|name>` (aliases `fable`, `opus`,
-`sonnet` in 2.1.289); Codex 0.160 accepts `-m/--model` on both `exec` and
-`exec resume`. Neither CLI lists models, so a typo only surfaces on the next
-turn.
+## Original problem (resolved)
+There was no per-chat /model command or provider-specific flag plumbing.
+This is implemented. Picker labels are not a live model catalog; provider
+acceptance still determines whether a supplied model name is usable.
 
 ## Proposal
 `/model [name|default]` through the Router (`PermChatLocal`), mirroring
@@ -41,3 +38,11 @@ the log.
 - The next turn's exec command carries `--model sonnet` (Claude) or `-m`
   (Codex), verified by provider unit tests.
 - Extraction and compaction commands carry no model flag.
+
+## Shipped evidence and remaining acceptance
+control/handlers.go RegisterModelCommand and model tests cover selection/reset;
+main restores/persists model:<folder>; runner/model_test.go covers provider
+flag insertion and chat state. User turns apply the override; fresh system
+turns use provider defaults. Live model use and restart acceptance remains A11
+in [ACCEPTANCE.md](../ACCEPTANCE.md). Per-topic/model-provider scoping is a new
+CP-018 design, not an unfinished part of this per-chat implementation.
