@@ -11,22 +11,22 @@ Core Telegram assistant, Docker runtime, Claude/Codex native sessions,
 conversation-scoped history, memory, voice, scheduler and filesystem IPC are
 implemented. No other runtime, channel, guest agent or bot-to-bot peer is enabled.
 
-Reference Pi runs application **8df259d**, deployed 2026-10-25 16:42 UTC.
-Agent runtime tags contain **Claude Code 2.1.310** and **Codex CLI 0.164.0**. The
-application version/image, startup/polling, SQLite integrity and CLI versions
-in hardened ARM64 Pi containers were verified. At the deployment check:
-restarts `0`, OOMKilled `false`, sessions/history/tasks preserved `7/54/1`. An actual
-upgraded authenticated model turn/native resume is still A02, not proven by
---version. Native Claude accepting NODE_OPTIONS is not a qualified V8/RAM cap;
-existing admission checks remain in place, Pi memory cgroup remains unqualified.
+Reference Pi runs application **18e0c86**, deployed 2026-10-25 17:30 UTC.
+Claude Code2.1.310 and Codex CLI 0.164.0 agent tags remain unchanged. Build/review/CI,
+full tests and runner/Telegram/queue races passed. A real no-network Docker
+preemption test passed on the Pi: a silent background shell was gone before a
+foreground waiter reused the slot (no model request). Running version/image,
+startup, integrity and preserved counts verified: sessions 11, history 68, task 1;
+restarts 0, OOMKilled false, no unfinished user turns.
+[Latest deployment evidence](deployments/2026-10-25-18e0c86.md) records backup,
+rollback, tests and limits. New authenticated Codex replies were observed before
+this fix; real multi-topic/model acceptance after it remains open. Native
+Claude's NODE_OPTIONS acceptance is not a qualified memory cap.
 
-[Latest deployment evidence](deployments/2026-10-25-8df259d.md) contains image ids,
-backup/rollback tags, exact tests and limitations. Subsequent documentation-only
-commits do not require rebuilding/restarting this same application payload.
-
-The user's **freefeed-daily-digest is paused**, cron 09:00 Europe/Belgrade.
-It was created/paused through the user's live agent, not by this investigation.
-Do not resume it, create a replacement, or change its timezone as housekeeping.
+The existing **freefeed-daily-digest is active**, 09:00 Europe/Belgrade. It was
+already active in the 17:24 predeploy backup; the older paused observation is
+historical. No schedule/provider mutation was issued by this incident fix. Do
+not pause/resume, replace or change it merely to close a validation checkbox.
 
 ## What's done
 - CP-001: per-exec memory capability, header-only authorization and chat/thread
@@ -38,13 +38,13 @@ Do not resume it, create a replacement, or change its timezone as housekeeping.
   and queues one retry; no unattended fallback chain. /clear invalidates this
   topic's history and both provider mappings, not a complete data purge.
 - CP-013: successful speech transcripts carry source/automatic-ASR/duration
-  metadata after raw command/login routing. Real new voice acceptance A07.
+  metadata after raw command/login routing. Voice baseline confirmed by owner; remaining media/provenance acceptance A07.
 - CP-015: agent scheduling guide, validated recurring task operations and
   scoped receipts; explicit IPC delivery, canonical tg: JID adapter and message
   error receipts. Live delivery API acceptance was verified, not user reading.
 - /tasks now uses Unicode-safe truncation and three-task pages with scoped
   Pause/Resume/Refresh/navigation. Stale actions and completed tasks cannot
-  mutate unexpectedly. Real user callback acceptance remains A01.
+  mutate unexpectedly. Baseline /tasks confirmed by owner; paging/toggle acceptance remains A01.
 - Telegram UX T6/T10–T13/T15 is implemented/deployed, not actively being coded:
   callbacks/Stop/Retry, reply actions, reactions/progress, pickers/confirmations/
   HTML paging, reply/quote/forward/albums/audio/video-note baseline. Live A07–A11.
@@ -67,16 +67,15 @@ command replies and errors private, including every callback/page/failure path;
 there is no implementation or privacy-flag activation yet.
 
 ## What's in progress
-Background extraction starvation fix: RunFresh timeout and same-chat user
-preemption, cancellable buffered process cleanup and compaction cancellation
-preserving context. [Incident](incidents/2026-10-25-background-extraction-starvation.md).
-Review/checks and deployment status must be recorded before claiming it live.
-
-Backlog/status reconciliation is complete; this live-incident fix takes
-priority over the planned queue. No other active work is inferred from old
-branch names. Independent reviews and CI
-must pass before squash merge. Preserve other agents' work/worktrees; do not
-turn housekeeping into branch deletion, reset or production task mutation.
+No unmerged feature implementation is active. PR #43 is merged and deployed.
+The live extraction stall is addressed by a one-minute system-run deadline and
+same-chat foreground preemption; buffered user/system cancellation waits for a
+bounded process-group cleanup attempt. Canceled compaction preserves context.
+See [D033](DECISIONS.md#d033--bound-fresh-system-work-and-yield-to-foreground-runs)
+and [incident](incidents/2026-10-25-background-extraction-starvation.md).
+Remaining live checks use ACCEPTANCE.md; full maintenance re-arming/quiet hours
+and per-topic providers are still planned work, not shipped by this bug fix.
+Preserve other agents' work/worktrees and use reviewed, green-CI squash PRs.
 
 ## What's next — owner-approved order
 1. Qualify current deployed functionality using A01–A17 in ACCEPTANCE.md.
@@ -99,7 +98,7 @@ unreviewed proposal. Pending proposed CP-002–007 still need their bounded desi
 - IPC receipts are diagnostic, not a crash-safe delivery outbox. Network/crash
   send ambiguity remains CP-002. Voice-only reply memo and crash windows need
   A12 verification. Queue.Close still waits without its own timeout.
-- Scheduled jobs use main's session; isolation is CP-004. System-run user preemption is being fixed for this incident; full maintenance
+- Scheduled jobs use main's session; isolation is CP-004. System-run deadlines and same-chat preemption are deployed; full maintenance
   rescheduling/quiet hours remain proposed; compaction source-context/restart
   behavior needs A17 investigation, not a claim that old notes are all fixed.
 - No documented Telegram topic-deleted update; current deleted/closed-topic

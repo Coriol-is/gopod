@@ -40,3 +40,10 @@ the release handoff; an unmerged document is not deployment proof.
 Provider choice is still chat-wide and execution serialized per chat. Different
 providers in different topics and concurrent CLI processes are CP-018/runtime
 planning, not current advertised functionality.
+
+## Release
+PR #43 merged as 18e0c86 and deployed 2026-10-25 17:30 UTC. A real Docker
+preemption test also passed on the Pi 2.13s without provider/model calls.
+[Deployment evidence](../deployments/2026-10-25-18e0c86.md) records preserved
+session/history/task state and remaining real-client acceptance. D033 captures
+the cancellation policy; full CP-006 and CP-018 remain planned work.
