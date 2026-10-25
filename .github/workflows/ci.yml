@@ -32,7 +32,9 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/isolation-cli" @anthropic-ai/claude-code@2.1.310 @openai/codex@0.164.0
           echo "$RUNNER_TEMP/isolation-cli/node_modules/.bin" >> "$GITHUB_PATH"
       - name: Preload synthetic tool image
-        run: docker pull node:22-slim
+        run: |
+          docker pull node@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d
+          docker tag node@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d node:22-slim
       - name: Qualify isolated tools against local mock providers
         env:
           PYTHONDONTWRITEBYTECODE: '1'
