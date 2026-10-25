@@ -120,6 +120,11 @@ type Config struct {
 	// Default: true. Set GOPOD_STREAM_ENABLED=false to disable.
 	StreamEnabled bool
 
+	// NotifyLifecycle sends the restart notices (D027): a "restarting"
+	// message on graceful shutdown and a "back" message on startup.
+	// Default true; GOPOD_NOTIFY_LIFECYCLE=0/false/no/off disables them.
+	NotifyLifecycle bool
+
 	// ProgressEnabled runs streamed Claude turns with structured
 	// output, so the Telegram draft shows the agent's tool steps
 	// instead of a bare cursor. Default: true. Set GOPOD_PROGRESS=0
@@ -169,6 +174,7 @@ func Load(loadDotenv bool) (Config, error) {
 		ContainerImage:         getenvDefault("GOPOD_CONTAINER_IMAGE", "gopod-agent:latest"),
 		LeftoverCleanupEnabled: !envFlag("GOPOD_LEFTOVER_CLEANUP_DISABLED"),
 		StreamEnabled:          !envFlag("GOPOD_STREAM_DISABLED"),
+		NotifyLifecycle:        !envOff("GOPOD_NOTIFY_LIFECYCLE"),
 		ProgressEnabled:        !envOff("GOPOD_PROGRESS"),
 		CompactAfter:           compactAfter,
 		CompactInterval:        os.Getenv("GOPOD_COMPACT_INTERVAL"),

@@ -30,6 +30,14 @@ CLAUDE.md (main's ruleset needs 1 approval; PRs are merged with
 ([D023](DECISIONS.md#d023--extracted-memories-are-scoped-per-conversation)):
 a thread sees main/manual/pinned rows plus its own, main sees all; existing
 rows stay shared (thread 0).
+**2026-10-25:** lifecycle notices
+([D027](DECISIONS.md#d027--lifecycle-notices)): on SIGTERM gopod tells the
+owner and chats with unfinished turns "🔄 Перезапускаюсь…" (3 s bound), on
+startup tells the owner "✅ Снова на связи" or "⚠️ Был неожиданный перезапуск"
+with the replay count (one notice per 2 minutes). `GOPOD_NOTIFY_LIFECYCLE=0`
+disables; compose `stop_grace_period: 30s`. Not verified live: on the Pi a
+`docker compose up -d` recreate should show both messages, and
+`docker kill -s KILL <container>` then `docker compose up -d` the crash one.
 **Previous session (2026-10-05):** production deploy + Codex harness.
 `main` (`b254e01`) is deployed on the production host via `docker compose`
 (data at `/opt/gopod/data`, live owner workspace at

@@ -96,8 +96,11 @@ func run() error {
 		}
 	}()
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// ctx is the app context: cancelled after the signal once the
+	// shutdown hooks (restart notice, D027) have run.
+	ctx, onShutdown := gracefulContext(sigCtx, stop)
 
 	st, err := store.Open(ctx, cfg.StorePath, logger.With(slog.String("subsys", "store")))
 	if err != nil {
@@ -530,6 +533,7 @@ func run() error {
 
 		// Recover turns left unfinished by a crash/shutdown. Must run after
 		// the scheduler hook is registered and before the bot polls.
+		replayed := 0
 		if agentQueue != nil {
 			n, err := agentQueue.Recover(ctx)
 			if err != nil {
@@ -537,6 +541,7 @@ func run() error {
 			} else if n > 0 {
 				logger.Info("queue: recovered unfinished turns", slog.Int("count", n))
 			}
+			replayed = n
 		}
 
 		// Start polling only after Recover, so the first poll cannot
@@ -591,6 +596,17 @@ func run() error {
 				tgLog.Error("telegram bot exited with error", slog.Any("err", err))
 			}
 		}()
+
+		// Lifecycle notices (D027): "back" to the owner now, "restarting"
+		// to the owner and unfinished conversations on SIGTERM/SIGINT.
+		lifecycle := tgBot.NewLifecycle(telegram.LifecycleConfig{
+			Store:       st,
+			OwnerChatID: cfg.OwnerChatID,
+			Version:     buildVersion(),
+			Enabled:     cfg.NotifyLifecycle,
+		})
+		onShutdown(func() { lifecycle.Shutdown(context.Background()) })
+		lifecycle.Started(sigCtx, replayed)
 	}
 
 	logger.Info("gopod ready (waiting for SIGINT/SIGTERM)")
