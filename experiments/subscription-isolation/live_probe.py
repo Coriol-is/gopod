@@ -7,6 +7,7 @@ it. No production chat/context/config is mounted. No API-key fallback is supplie
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 import selectors
 import signal
@@ -18,6 +19,7 @@ import time
 import uuid
 from collections import Counter
 from dataclasses import dataclass
+from enum import Enum, auto
 
 from claude_policy import SETTINGS, ENV_OVERRIDES
 from codex_probe import DISABLED_FEATURES
@@ -54,17 +56,6 @@ class Cancellation:
     def __exit__(self, *_args):
         for signum, handler in self.previous.items():
             signal.signal(signum, handler)
-
-
-def docker_command(argv):
-    """The canary never accepts an arbitrary executable or Docker operation."""
-    if not isinstance(argv, (list, tuple)) or len(argv) < 3 or argv[0] != 'docker':
-        raise ValueError('fixed Docker command required')
-    if argv[1] not in {'create', 'start', 'exec'}:
-        raise ValueError('Docker operation is not allowed')
-    if not all(isinstance(value, str) and '\0' not in value for value in argv[2:]):
-        raise ValueError('invalid Docker arguments')
-    return ['docker', argv[1], *argv[2:]]
 
 
 def input_payload(input_text):
@@ -135,14 +126,8 @@ class CaptureIO:
         return self.output[:CAPTURE_LIMIT], self.stopped
 
 
-def capture(argv, cancellation, timeout, *, cancelable=True, input_text=None):
-    """Fixed Docker execution; prompt data travels only over bounded stdin."""
-    command, payload = docker_command(argv), input_payload(input_text)
-    if cancelable and cancellation.signum is not None:
-        return Capture(-1, "", stopped="cancelled")
-    stdin = subprocess.PIPE if payload else subprocess.DEVNULL
-    proc = subprocess.Popen(['docker', *command[1:]], stdin=stdin, stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT, shell=False, bufsize=0)
+def _collect_process(proc, payload, cancellation, timeout, *, cancelable=True):
+    """Collect an already-created process; this helper cannot execute commands."""
     try:
         output, stopped = CaptureIO(proc, payload, cancellation, time.monotonic() + timeout, cancelable).run()
         if stopped:
@@ -156,6 +141,110 @@ def capture(argv, cancellation, timeout, *, cancelable=True, input_text=None):
         if proc.stdin is not None and not proc.stdin.closed:
             proc.stdin.close()
     return Capture(code, bytes(output).decode("utf-8", errors="replace"), stopped=stopped)
+
+
+class Operation(Enum):
+    CREATE = auto()
+    START = auto()
+    VERSION = auto()
+    AUTH_STATUS = auto()
+    NEW_TURN = auto()
+    RESUME_TURN = auto()
+
+
+OPERATION_TIMEOUTS = {Operation.CREATE: 20, Operation.START: 10, Operation.VERSION: 10,
+                      Operation.AUTH_STATUS: 10, Operation.NEW_TURN: 90, Operation.RESUME_TURN: 90}
+
+
+class CanaryRuntime:
+    """Namespace-bound operations, with no raw argv/container/flag input API."""
+    def __init__(self, provider, image, auth, policy, cancellation):
+        validate_provider(provider)
+        validate_image(image)
+        self._provider, self._image = provider, image
+        self._auth = canonical_auth_file(auth)
+        validate_mount_source(policy)
+        self._policy = Path(policy).resolve(strict=True)
+        validate_mount_source(self._policy)
+        if not self._policy.is_dir():
+            raise ValueError('invalid policy directory')
+        self._name = 'gopod-trusted-cli-canary-' + uuid.uuid4().hex
+        self._cancellation = cancellation
+        self._created, self._started, self._closed = False, False, False
+
+    @property
+    def provider(self):
+        return self._provider
+
+    @property
+    def name(self):
+        return self._name
+
+    def _command(self, operation, session=None):
+        if not isinstance(operation, Operation):
+            raise ValueError('typed canary operation required')
+        if operation is Operation.CREATE:
+            target = {'claude': '/home/node/.claude/.credentials.json', 'codex': '/home/node/.codex/auth.json'}[self._provider]
+            return _container_command(self._provider, self._auth, self._policy, self._name, target, self._image)
+        if operation is Operation.START:
+            return ['docker', 'start', '--', self._name]
+        if operation is Operation.VERSION:
+            return ['docker', 'exec', '--', self._name, self._provider, '--version']
+        if operation is Operation.AUTH_STATUS:
+            return _auth_status_command(self._provider, self._name)
+        turn = 'new' if operation is Operation.NEW_TURN else 'resume'
+        if self._provider == 'claude' or turn == 'resume':
+            session = str(uuid.UUID(session))
+        return _turn_command(self._provider, self._name, session, turn)
+
+    def _check_state(self, operation):
+        if self._closed or not isinstance(operation, Operation):
+            raise ValueError('canary runtime unavailable')
+        if operation is Operation.CREATE:
+            valid = not self._created
+        elif operation is Operation.START:
+            valid = self._created and not self._started
+        else:
+            valid = self._started
+        if not valid:
+            raise ValueError('canary operation not available in current state')
+
+    def _execute(self, operation, *, session=None, input_text=None):
+        self._check_state(operation)
+        payload = input_payload(input_text)
+        command = self._command(operation, session)
+        cancelable = operation is not Operation.CREATE
+        if cancelable and self._cancellation.signum is not None:
+            return Capture(-1, '', stopped='cancelled')
+        proc = subprocess.Popen(command, stdin=subprocess.PIPE if payload else subprocess.DEVNULL,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=False, bufsize=0)
+        result = _collect_process(proc, payload, self._cancellation, OPERATION_TIMEOUTS[operation], cancelable=cancelable)
+        if result.returncode == 0 and result.stopped is None:
+            self._created = self._created or operation is Operation.CREATE
+            self._started = self._started or operation is Operation.START
+        return result
+
+    def create(self):
+        return self._execute(Operation.CREATE)
+
+    def start(self):
+        return self._execute(Operation.START)
+
+    def version(self):
+        return self._execute(Operation.VERSION)
+
+    def auth_status(self):
+        return self._execute(Operation.AUTH_STATUS)
+
+    def new_turn(self, session, prompt):
+        return self._execute(Operation.NEW_TURN, session=session, input_text=prompt)
+
+    def resume_turn(self, session, prompt):
+        return self._execute(Operation.RESUME_TURN, session=session, input_text=prompt)
+
+    def close(self):
+        self._closed = True
+        subprocess.run(['docker', 'rm', '-f', '--', self._name], capture_output=True, timeout=15)
 
 
 def proof_matches(workspace, name, marker):
@@ -279,45 +368,61 @@ def argument_shape(arguments):
             'command_type': kind(command), 'command_length': len(command) if isinstance(command, str) else None}
 
 
-def sanitized_events(output, provider):
-    event_types, item_types, tool_names = Counter(), Counter(), Counter()
-    inventory_seen, inventory_valid, unexpected = False, True, 0
-    events = []
-    known_events = {"system", "assistant", "user", "result", "thread.started", "turn.started", "turn.completed",
-                    "turn.failed", "item.started", "item.updated", "item.completed", "error"}
-    known_items = {"command_execution", "mcp_tool_call", "agent_message", "reasoning", "file_change",
-                   "web_search", "todo_list", "error"}
+def _known_label(value, allowed):
+    return value if isinstance(value, str) and value in allowed else 'other'
+
+
+def _json_events(output):
     for line in output.splitlines():
         try:
             event = json.loads(line)
         except ValueError:
             continue
-        if not isinstance(event, dict):
-            continue
+        if isinstance(event, dict):
+            yield event
+
+
+def _record_item(event, item_types, tool_names):
+    known_items = {'command_execution', 'mcp_tool_call', 'agent_message', 'reasoning', 'file_change',
+                   'web_search', 'todo_list', 'error'}
+    item = event.get('item', {})
+    if not isinstance(item, dict) or not item:
+        return
+    kind = item.get('type')
+    item_types[_known_label(kind, known_items)] += 1
+    if kind == 'mcp_tool_call':
+        tool_names[_known_label(item.get('tool'), {'group_exec', 'mcp__group__group_exec'})] += 1
+
+
+def _claude_inventory(event, provider, tool_names):
+    if provider != 'claude' or event.get('type') != 'system' or event.get('subtype') != 'init':
+        return False, True, 0
+    tools = event.get('tools')
+    if not isinstance(tools, list):
+        return True, False, 0
+    unexpected = 0
+    for tool in tools:
+        if isinstance(tool, str) and tool in CLAUDE_ALLOWED_TOOLS:
+            tool_names[tool] += 1
+        else:
+            unexpected += 1
+    return True, True, unexpected
+
+
+def sanitized_events(output, provider):
+    event_types, item_types, tool_names = Counter(), Counter(), Counter()
+    inventory_seen, inventory_valid, unexpected = False, True, 0
+    events = []
+    known_events = {'system', 'assistant', 'user', 'result', 'thread.started', 'turn.started', 'turn.completed',
+                    'turn.failed', 'item.started', 'item.updated', 'item.completed', 'error'}
+    for event in _json_events(output):
         events.append(event)
-        kind = event.get("type")
-        event_types[kind if isinstance(kind, str) and kind in known_events else "other"] += 1
-        item = event.get("item", {})
-        if isinstance(item, dict) and item:
-            kind = item.get("type")
-            item_types[kind if isinstance(kind, str) and kind in known_items else "other"] += 1
-            if kind == "mcp_tool_call":
-                tool = item.get("tool")
-                if isinstance(tool, str) and tool in {"group_exec", "mcp__group__group_exec"}:
-                    tool_names[tool] += 1
-                else:
-                    tool_names["other"] += 1
-        if provider == "claude" and event.get("type") == "system" and event.get("subtype") == "init":
-            inventory_seen = True
-            tools = event.get("tools")
-            if not isinstance(tools, list):
-                inventory_valid = False
-                continue
-            for tool in tools:
-                if isinstance(tool, str) and tool in CLAUDE_ALLOWED_TOOLS:
-                    tool_names[tool] += 1
-                else:
-                    unexpected += 1
+        event_types[_known_label(event.get('type'), known_events)] += 1
+        _record_item(event, item_types, tool_names)
+        seen, valid, count = _claude_inventory(event, provider, tool_names)
+        inventory_seen = inventory_seen or seen
+        inventory_valid = inventory_valid and valid
+        unexpected += count
     needles = {"approval": "approval", "mcp": "mcp", "unsupported": "unsupported", "not_found": "not found",
                "denied": "denied", "disabled": "disabled", "unavailable": "unavailable", "connection": "connect",
                "auth": "not logged in", "quota": "usage limit", "expired": "expired", "readonly": "read-only file system"}
@@ -330,9 +435,9 @@ def sanitized_events(output, provider):
     return report, events
 
 
-def cleanup(name, server):
+def cleanup(runtime, server):
     try:
-        subprocess.run(['docker', 'rm', '-f', name], capture_output=True, timeout=15)
+        runtime.close()
     finally:
         server.close()
 
@@ -344,13 +449,31 @@ def run(options):
 
 def validated_inputs(options):
     validate_provider(options.provider)
-    auth = Path(options.auth_file)
-    if not auth.is_absolute() or auth.is_symlink() or not auth.is_file():
-        raise ValueError("operator must supply an existing absolute native auth file")
+    auth = canonical_auth_file(options.auth_file)
     image = options.cli_image
-    if not image or image.startswith("-"):
-        raise ValueError("explicit trusted CLI image required")
+    validate_image(image)
+    validate_image(options.tool_image)
     return auth, image
+
+
+def validate_image(image):
+    if not isinstance(image, str) or re.fullmatch(r'[a-z0-9][a-z0-9._/:-]{0,254}(?:@sha256:[a-f0-9]{64})?', image) is None:
+        raise ValueError('invalid trusted image reference')
+
+
+def canonical_auth_file(source):
+    auth = Path(source)
+    validate_mount_source(auth)
+    if not auth.is_absolute() or auth.is_symlink() or not auth.is_file():
+        raise ValueError('operator must supply an absolute native auth file')
+    canonical = auth.resolve(strict=True)
+    validate_mount_source(canonical)
+    return canonical
+
+
+def validate_mount_source(source):
+    if any(character in str(source) for character in (',', '"', '\r', '\n')):
+        raise ValueError('invalid mount source syntax')
 
 
 def validate_provider(provider):
@@ -376,7 +499,7 @@ def write_policy(provider, policy, endpoint):
     return target
 
 
-def container_command(options, auth, policy, name, target, image):
+def _container_command(provider, auth, policy, name, target, image):
     command = ['docker', 'create', '--rm', '--pull=never', '--init', '--name', name,
                '--read-only', '--cap-drop=ALL', '--security-opt=no-new-privileges',
                '--pids-limit=128', '--memory=768m', '--cpus=1', '--user=1000:1000',
@@ -389,13 +512,13 @@ def container_command(options, auth, policy, name, target, image):
                '--mount', f'type=bind,src={auth},dst={target},readonly',
                '--mount', f'type=bind,src={policy},dst=/qualification,readonly',
                '--workdir=/workspace/chat', '--env=HOME=/home/node']
-    if options.provider == "codex":
+    if provider == "codex":
         command += ['--mount', f'type=bind,src={policy / "config.toml"},dst=/home/node/.codex/config.toml,readonly']
     command += ['--entrypoint=/bin/sleep', '--', image, 'infinity']
     return command
 
 
-def turn_command(provider, name, session, turn):
+def _turn_command(provider, name, session, turn):
     validate_provider(provider)
     if turn not in ('new', 'resume'):
         raise ValueError('unsupported turn')
@@ -453,7 +576,7 @@ def collect_turn(provider, turn, result, work, proof, marker, audit, session):
     return entry, session
 
 
-def execute_turn(provider, turn, name, session, work, marker, audit, cancellation):
+def execute_turn(provider, turn, runtime, session, work, marker, audit):
     proof = f"{provider}-{turn}.txt"
     expected_command = f"printf {marker} > {proof}; cat {proof}"
     audit.configure(expected_command, proof)
@@ -462,8 +585,8 @@ def execute_turn(provider, turn, name, session, work, marker, audit, cancellatio
               f"to run exactly: {expected_command}. "
               "Do not inspect accounts, environment, other files, network or any other tools. "
               f"Then reply exactly {marker}. No planning or extra work.")
-    cli = turn_command(provider, name, session, turn)
-    result = capture(cli, cancellation, timeout=90, input_text=prompt)
+    operation = runtime.new_turn if turn == 'new' else runtime.resume_turn
+    result = operation(session, prompt)
     if result.stopped:
         return ({'turn': turn, 'passed': False, 'failure': result.stopped,
                  'tool_execution': audit.snapshot()}, session)
@@ -474,7 +597,7 @@ def initial_session(provider):
     return str(uuid.uuid4()) if provider == 'claude' else None
 
 
-def auth_status_command(provider, name):
+def _auth_status_command(provider, name):
     validate_provider(provider)
     if provider == 'claude':
         return ['docker', 'exec', '--', name, 'claude', 'auth', 'status', '--json']
@@ -505,19 +628,18 @@ def auth_evidence(provider, result):
     return {'auth_method': method, 'subscription_auth_verified': verified}
 
 
-def qualify_runtime(options, name, cancellation):
-    version_result = capture(['docker', 'exec', '--', name, options.provider, '--version'], cancellation, timeout=10)
-    version_match = version_result.stdout.strip() == EXPECTED_VERSIONS[options.provider]
+def qualify_runtime(runtime):
+    version_result = runtime.version()
+    version_match = version_result.stdout.strip() == EXPECTED_VERSIONS[runtime.provider]
     report = {'version_match': version_match, 'auth_method': 'unknown', 'subscription_auth_verified': False}
     if version_match and version_result.returncode == 0 and version_result.stopped is None:
-        status = capture(auth_status_command(options.provider, name), cancellation, timeout=10)
-        report.update(auth_evidence(options.provider, status))
+        status = runtime.auth_status()
+        report.update(auth_evidence(runtime.provider, status))
     return report
 
 
 def _run(options, cancellation):
     auth, image = validated_inputs(options)
-    name = "gopod-trusted-cli-canary-" + uuid.uuid4().hex
     marker = "gopod_subscription_canary"
     report = {"provider": options.provider, "scope": "synthetic new/resume; existing native subscription auth",
               "auth_mounted_readonly": True, "auth_copied": False, "api_key_fallback": False,
@@ -529,23 +651,23 @@ def _run(options, cancellation):
         work.mkdir(mode=0o777)
         work.chmod(0o777)
         policy.mkdir()
+        runtime = CanaryRuntime(options.provider, image, auth, policy, cancellation)
         server, url = start_bridge(str(work), options.tool_image, bind="0.0.0.0")
         audit = ToolAudit(server.executor, work, marker, cancellation)
         endpoint = url.replace("127.0.0.1", "host.docker.internal", 1)
         try:
-            target = write_policy(options.provider, policy, endpoint)
-            command = container_command(options, auth, policy, name, target, image)
+            write_policy(options.provider, policy, endpoint)
             # A create request cannot execute a command. Wait for its bounded
             # acknowledgement even on cancellation, then never start if stopped.
-            created = capture(command, cancellation, timeout=20, cancelable=False)
+            created = runtime.create()
             if created.returncode != 0 or created.stopped or cancellation.signum is not None:
                 report['failure'] = 'cancelled' if cancellation.signum is not None else 'create_unavailable'
                 return report
-            started = capture(['docker', 'start', '--', name], cancellation, timeout=10)
+            started = runtime.start()
             if started.returncode != 0 or started.stopped:
                 report['failure'] = started.stopped or 'start_unavailable'
                 return report
-            report.update(qualify_runtime(options, name, cancellation))
+            report.update(qualify_runtime(runtime))
             if not report['subscription_auth_verified']:
                 report.update(passed=False, failure='subscription_auth_unverified')
                 return report
@@ -554,7 +676,7 @@ def _run(options, cancellation):
                 return report
             session = initial_session(options.provider)
             for turn in ("new", "resume"):
-                entry, session = execute_turn(options.provider, turn, name, session, work, marker, audit, cancellation)
+                entry, session = execute_turn(options.provider, turn, runtime, session, work, marker, audit)
                 report['turns'].append(entry)
                 if not entry['passed'] or not session:
                     break
@@ -565,7 +687,7 @@ def _run(options, cancellation):
         finally:
             # A timed-out docker exec may leave a CLI process. Remove the entire
             # disposable CLI container; never target an existing gopod runtime.
-            cleanup(name, server)
+            cleanup(runtime, server)
 
 
 if __name__ == '__main__':

@@ -153,15 +153,17 @@ class LifecycleTests(unittest.TestCase):
         image = os.environ.get('GOPOD_ISOLATION_TEST_IMAGE', 'node:22-slim')
         prompt = '--model=bad; $(printf injection)\ncanary-only'
         try:
-            created = live_probe.capture(['docker', 'create', '--rm', '--pull=never', '--name', name,
+            created = subprocess.run(['docker', 'create', '--rm', '--pull=never', '--name', name,
                                           '--network=none', '--read-only', '--cap-drop=ALL',
                                           '--security-opt=no-new-privileges', '--memory=128m', '--pids-limit=64',
                                           '--user=1000:1000', '--entrypoint=/bin/sleep', '--', image, 'infinity'],
-                                         cancellation, timeout=10, cancelable=False)
+                                         capture_output=True, timeout=10, check=False)
             self.assertEqual(created.returncode, 0)
-            self.assertEqual(live_probe.capture(['docker', 'start', '--', name], cancellation, timeout=5).returncode, 0)
-            result = live_probe.capture(['docker', 'exec', '--interactive', '--', name, 'node', '-e',
-                                        'process.stdin.pipe(process.stdout)'], cancellation, timeout=5, input_text=prompt)
+            self.assertEqual(subprocess.run(['docker', 'start', '--', name], capture_output=True, timeout=5).returncode, 0)
+            proc = subprocess.Popen(['docker', 'exec', '--interactive', '--', name, 'node', '-e',
+                                     'process.stdin.pipe(process.stdout)'], stdin=subprocess.PIPE,
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=False, bufsize=0)
+            result = live_probe._collect_process(proc, live_probe.input_payload(prompt), cancellation, timeout=5)
             self.assertEqual(result.returncode, 0)
             self.assertEqual(result.stdout, prompt)
             self.assertIsNone(result.stopped)
@@ -170,43 +172,111 @@ class LifecycleTests(unittest.TestCase):
                            stderr=subprocess.DEVNULL, timeout=5)
 
     def fixture_capture(self, script, cancellation, timeout, input_text=None):
-        original = subprocess.Popen
-        def fixture(argv, **kwargs):
-            self.assertEqual(argv, ['docker', 'exec', '--interactive', '--', 'synthetic-only', 'offline-fixture'])
-            self.assertIs(kwargs['shell'], False)
-            return original([sys.executable, '-c', script], **kwargs)
-        with mock.patch.object(live_probe.subprocess, 'Popen', side_effect=fixture):
-            return live_probe.capture(['docker', 'exec', '--interactive', '--', 'synthetic-only', 'offline-fixture'],
-                                      cancellation, timeout, input_text=input_text)
+        payload = live_probe.input_payload(input_text)
+        proc = subprocess.Popen([sys.executable, '-c', script],
+                                stdin=subprocess.PIPE if payload else subprocess.DEVNULL,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=False, bufsize=0)
+        return live_probe._collect_process(proc, payload, cancellation, timeout)
 
-    def test_capture_rejects_arbitrary_binaries_and_docker_operations(self):
-        with mock.patch.object(live_probe.subprocess, 'Popen') as spawn:
-            for argv in ([sys.executable, '-c', 'private-command'], ['docker', 'run', 'image'],
-                         ['docker', 'exec'], ['docker', 'start', 'invalid\0name']):
+    def runtime_fixture(self, root, provider='claude'):
+        auth, policy = Path(root) / 'synthetic-auth', Path(root) / 'policy'
+        auth.write_text('synthetic-never-read')
+        policy.mkdir(exist_ok=True)
+        return live_probe.CanaryRuntime(provider, 'unused:offline', auth.resolve(), policy, live_probe.Cancellation())
+
+    def test_typed_operations_cannot_select_foreign_runtime_or_flags(self):
+        with tempfile.TemporaryDirectory() as root:
+            runtime = self.runtime_fixture(root)
+            self.assertTrue(runtime.name.startswith('gopod-trusted-cli-canary-'))
+            self.assertFalse(hasattr(live_probe, 'capture'))
+            self.assertFalse(hasattr(live_probe, 'docker_command'))
+            with mock.patch.object(live_probe.subprocess, 'Popen') as spawn:
+                for operation in ('exec', ['docker', 'exec', 'foreign'], None):
+                    with self.assertRaises(ValueError):
+                        runtime._execute(operation)
                 with self.assertRaises(ValueError):
-                    live_probe.capture(argv, live_probe.Cancellation(), timeout=1)
-            spawn.assert_not_called()
+                    runtime.version()
+                with self.assertRaises(TypeError):
+                    runtime.new_turn('session', 'prompt', argv=['foreign'])
+                spawn.assert_not_called()
+            with self.assertRaises(AttributeError):
+                runtime.name = 'gopod-owner'
+            other = live_probe.CanaryRuntime(runtime.provider, 'unused:offline', Path(root) / 'synthetic-auth',
+                                            Path(root) / 'policy', live_probe.Cancellation())
+            self.assertNotEqual(runtime.name, other.name)
+
+    def test_mount_and_image_configuration_are_validated_without_spawn(self):
+        cancellation = live_probe.Cancellation()
+        with tempfile.TemporaryDirectory() as root:
+            auth, policy = Path(root) / 'synthetic-auth', Path(root) / 'policy'
+            auth.write_text('synthetic-never-read')
+            policy.mkdir()
+            comma = Path(root) / 'synthetic,readonly=false'
+            comma.write_text('synthetic-never-read')
+            cases = [('arbitrary-program', 'unused:offline', auth), ('claude', '--privileged', auth),
+                     ('claude', 'image,flag', auth), ('claude', 'unused:offline', comma)]
+            with mock.patch.object(live_probe.subprocess, 'Popen') as spawn:
+                for provider, image, source in cases:
+                    resolved_source = source.resolve()
+                    with self.assertRaises(ValueError):
+                        live_probe.CanaryRuntime(provider, image, resolved_source, policy, cancellation)
+                spawn.assert_not_called()
+            self.assertEqual(live_probe.canonical_auth_file(auth.resolve()), auth.resolve())
+            for character in (',', '"', '\r', '\n'):
+                unsafe = Path(root) / ('synthetic' + character + 'auth')
+                unsafe.write_text('synthetic-never-read')
+                resolved_unsafe = unsafe.resolve()
+                with self.assertRaises(ValueError):
+                    live_probe.CanaryRuntime('claude', 'unused:offline', resolved_unsafe, policy, cancellation)
+                unsafe_policy = Path(root) / ('synthetic' + character + 'policy')
+                unsafe_policy.mkdir()
+                resolved_auth = auth.resolve()
+                with self.assertRaises(ValueError):
+                    live_probe.CanaryRuntime('claude', 'unused:offline', resolved_auth, unsafe_policy, cancellation)
+
+    def test_typed_runtime_spawns_only_its_namespace_and_fixed_operations(self):
+        original = subprocess.Popen
+        with tempfile.TemporaryDirectory() as root:
+            runtime = self.runtime_fixture(root)
+            def fixture(argv, **kwargs):
+                self.assertEqual(argv[0], 'docker')
+                self.assertIn(runtime.name, argv)
+                self.assertIs(kwargs['shell'], False)
+                script = 'import sys;sys.stdout.write(sys.stdin.read())'
+                return original([sys.executable, '-c', script], **kwargs)
+            with mock.patch.object(live_probe.subprocess, 'Popen', side_effect=fixture):
+                self.assertEqual(runtime.create().returncode, 0)
+                self.assertEqual(runtime.start().returncode, 0)
+                result = runtime.new_turn('00000000-0000-0000-0000-000000000001', '--hostile=prompt-data')
+            self.assertEqual(result.stdout, '--hostile=prompt-data')
+            with mock.patch.object(live_probe.subprocess, 'run') as removal:
+                runtime.close()
+            removal.assert_called_once_with(['docker', 'rm', '-f', '--', runtime.name], capture_output=True, timeout=15)
+            with self.assertRaises(ValueError):
+                runtime.version()
 
     def test_prompt_is_bounded_stdin_data_and_never_an_argument(self):
         prompt = '--model=bad; $(printf injection)\nprivate-prompt-value'
-        for provider in ('claude', 'codex'):
-            argv = live_probe.turn_command(provider, 'synthetic-container', '00000000-0000-0000-0000-000000000001', 'new')
-            self.assertNotIn(prompt, argv)
-            self.assertIn('--interactive', argv)
-            self.assertEqual(argv[argv.index('--') + 1], 'synthetic-container')
-            self.assertEqual(argv[-1], '-p' if provider == 'claude' else '-')
-        with mock.patch.object(live_probe.subprocess, 'Popen') as spawn:
-            for value in ('x' * (live_probe.INPUT_LIMIT + 1), '\u044f' * live_probe.INPUT_LIMIT, b'invalid-type'):
-                with self.assertRaises(ValueError):
-                    live_probe.capture(['docker', 'exec', '--', 'synthetic'], live_probe.Cancellation(), timeout=1, input_text=value)
-            spawn.assert_not_called()
-        result = self.fixture_capture('import sys;sys.stdout.write(sys.stdin.read())', live_probe.Cancellation(), 3, prompt)
+        with tempfile.TemporaryDirectory() as root:
+            for provider in ('claude', 'codex'):
+                runtime = self.runtime_fixture(root, provider)
+                argv = runtime._command(live_probe.Operation.NEW_TURN, '00000000-0000-0000-0000-000000000001')
+                self.assertNotIn(prompt, argv)
+                self.assertIn('--interactive', argv)
+                self.assertEqual(argv[argv.index('--') + 1], runtime.name)
+                self.assertEqual(argv[-1], '-p' if provider == 'claude' else '-')
+                runtime._created = runtime._started = True
+                with mock.patch.object(live_probe.subprocess, 'Popen') as spawn:
+                    for value in ('x' * (live_probe.INPUT_LIMIT + 1), '\u044f' * live_probe.INPUT_LIMIT, b'invalid-type'):
+                        with self.assertRaises(ValueError):
+                            runtime.new_turn('00000000-0000-0000-0000-000000000001', value)
+                    spawn.assert_not_called()
+        cancellation = live_probe.Cancellation()
+        result = self.fixture_capture('import sys;sys.stdout.write(sys.stdin.read())', cancellation, 3, prompt)
         self.assertEqual(result.stdout, prompt)
         self.assertIsNone(result.stopped)
-        result = self.fixture_capture('import time;time.sleep(5)', live_probe.Cancellation(), 0.1, 'x' * live_probe.INPUT_LIMIT)
+        result = self.fixture_capture('import time;time.sleep(5)', cancellation, 0.1, 'x' * live_probe.INPUT_LIMIT)
         self.assertEqual(result.stopped, 'deadline')
-        with self.assertRaises(ValueError):
-            live_probe.turn_command('arbitrary-program', 'synthetic', None, 'new')
 
     def test_capture_deadline_output_and_sigterm_are_bounded(self):
         cancellation = live_probe.Cancellation()
@@ -226,9 +296,10 @@ class LifecycleTests(unittest.TestCase):
 
     def test_bridge_closes_even_when_cli_cleanup_times_out(self):
         server = mock.Mock()
-        with mock.patch.object(live_probe.subprocess, 'run', side_effect=subprocess.TimeoutExpired('docker', 15)):
-            with self.assertRaises(subprocess.TimeoutExpired):
-                live_probe.cleanup('synthetic-test-only', server)
+        runtime = mock.Mock()
+        runtime.close.side_effect = subprocess.TimeoutExpired('docker', 15)
+        with self.assertRaises(subprocess.TimeoutExpired):
+            live_probe.cleanup(runtime, server)
         server.close.assert_called_once_with()
 
     def test_cancelled_create_is_acknowledged_but_never_started(self):
@@ -239,13 +310,13 @@ class LifecycleTests(unittest.TestCase):
                                       tool_image='unused:offline', provider='claude')
             cancellation = live_probe.Cancellation()
             server = mock.Mock()
-            def create(argv, _cancellation, timeout, cancelable=True):
-                self.assertEqual(argv[:2], ['docker', 'create'])
-                self.assertFalse(cancelable)
+            def create(runtime, operation, **_kwargs):
+                self.assertEqual(operation, live_probe.Operation.CREATE)
+                self.assertEqual(runtime._command(operation)[:2], ['docker', 'create'])
                 cancellation.cancel(signal.SIGTERM)
                 return live_probe.Capture(0, 'synthetic-container-id')
             with mock.patch.object(live_probe, 'start_bridge', return_value=(server, 'http://127.0.0.1:12345/mcp/synthetic')):
-                with mock.patch.object(live_probe, 'capture', side_effect=create) as commands:
+                with mock.patch.object(live_probe.CanaryRuntime, '_execute', autospec=True, side_effect=create) as commands:
                     with mock.patch.object(live_probe.subprocess, 'run') as removal:
                         report = live_probe._run(options, cancellation)
             self.assertEqual(commands.call_count, 1)
@@ -274,9 +345,10 @@ class LifecycleTests(unittest.TestCase):
                 def bridge(workspace, *_args, **_kwargs):
                     holder.update(work=Path(workspace), turns=[])
                     return server, 'http://127.0.0.1:12345/mcp/synthetic'
-                def fake_capture(argv, _cancellation, timeout, cancelable=True, input_text=None):
-                    commands.append(live_probe.docker_command(argv))
-                    if argv[1] != 'exec':
+                def fake_capture(runtime, operation, *, session=None, input_text=None):
+                    argv = runtime._command(operation, session)
+                    commands.append(argv)
+                    if operation in (live_probe.Operation.CREATE, live_probe.Operation.START):
                         return live_probe.Capture(0, 'synthetic-container-id')
                     if argv[-1] == '--version':
                         return live_probe.Capture(0, live_probe.EXPECTED_VERSIONS[provider])
@@ -295,7 +367,7 @@ class LifecycleTests(unittest.TestCase):
                              {'type': 'thread.started', 'thread_id': '00000000-0000-0000-0000-000000000001'})
                     return live_probe.Capture(0, json.dumps(event))
                 with mock.patch.object(live_probe, 'start_bridge', side_effect=bridge):
-                    with mock.patch.object(live_probe, 'capture', side_effect=fake_capture):
+                    with mock.patch.object(live_probe.CanaryRuntime, '_execute', autospec=True, side_effect=fake_capture):
                         with mock.patch.object(live_probe.subprocess, 'run'):
                             report = live_probe._run(options, live_probe.Cancellation())
                 self.assertTrue(report['passed'])
@@ -318,7 +390,7 @@ class LifecycleTests(unittest.TestCase):
                       live_probe.Capture(0, live_probe.EXPECTED_VERSIONS['claude']),
                       live_probe.Capture(0, '{"loggedIn":true,"authMethod":"claude.ai","email":"private-account-value"}')]
             with mock.patch.object(live_probe, 'start_bridge', return_value=(server, 'http://127.0.0.1:12345/mcp/synthetic')):
-                with mock.patch.object(live_probe, 'capture', side_effect=values):
+                with mock.patch.object(live_probe.CanaryRuntime, '_execute', autospec=True, side_effect=values):
                     with mock.patch.object(live_probe.subprocess, 'run'):
                         with mock.patch.object(live_probe, 'execute_turn') as inference:
                             report = live_probe._run(options, live_probe.Cancellation())
