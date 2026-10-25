@@ -843,6 +843,28 @@ hang shutdown. Spec:
 
 ---
 
+## D023 — Agent admission control
+
+**Date:** 2026-10-25
+**Status:** Accepted
+**Extends:** D021 (per-chat agent slot), D022 (conversations)
+
+**Context.** The deploy host (Raspberry Pi 4B, 3.8 GB, shared with other services) has the memory cgroup off, so the 4 GiB container limit is not enforced. RAM is spent by running agents (~0.5-0.6 GB per turn with a tool), not by idle containers. Threads, scheduled tasks and background `RunFresh` work (extraction, compaction, task parsing) make several simultaneous agents likely, and nothing limited them except the queue's per-chat cap.
+
+**Decision.**
+- One global gate in `internal/runner` (`gate.go`) that every agent process start passes: `Run` and `RunStream` as *interactive*, `RunFresh` as *background*. At most `GOPOD_MAX_AGENTS` (default 2, at least 1) run at once. Interactive waiters go before background ones, FIFO inside a class; nothing is preempted. Waiters admit themselves from the head of the queue, so a cancelled waiter just leaves and a slot is never handed to a caller that is gone; `release` is idempotent.
+- A start also needs host `MemAvailable` (`/proc/meminfo`) >= `GOPOD_MIN_AVAILABLE_MB` (default 900, 0 = off), re-read every 2 s. Unreadable = sufficient. On an idle system (no agent running) the memory wait is bounded at 60 s, then the start proceeds with a Warn.
+- Acquire order: queue slot -> per-chat agent slot -> gate. Nothing takes a queue or chat slot while holding the gate, background runs hold neither, every wait honours ctx. A streamed turn holds its gate slot until its process has exited or been killed. The queue's `DefaultMaxConcurrent` (3) stays; the gate is the authority.
+- Execs that do not call the model are not gated: auth status, session lookups, pid-file removal and kill, version probes, `/login`.
+- The wait is shown to the user: the runner calls a `WaitNotice` carried in the run context once; Telegram shows `⏳ ждёт свободный слот агента…` / `⏳ ждёт свободную память…` as a stoppable draft, or as the early placeholder on the edit path. A Stop while waiting ends the turn `stopped` (it used to fall back to the sync path and run the agent).
+- Soft per-agent cap: Claude agent execs get `NODE_OPTIONS=--max-old-space-size=GOPOD_AGENT_NODE_HEAP_MB` (default 768, 0 = off), merged into an existing `NODE_OPTIONS`; not for Codex. Not a secret, so set by the runner (D012's forwarding rules do not apply).
+
+**Rejected.** Limiting containers instead of running agents (idle containers cost almost nothing); making `RunStream`/`Run` take an extra callback parameter (the context value keeps signatures stable); gopod metrics `gopod_agents_running/waiting` (the catalog is checked against OBSERVABILITY.md §2.3 and the runner is not instrumented yet).
+
+**Consequences.** With one user and one turn at a time nothing changes (no wait, no notice). Background extraction after a turn can be delayed by user turns. Enabling the memory cgroup (reboot) stays backlog. Spec: [superpowers/specs/2026-10-25-agent-admission-control-design.md](superpowers/specs/2026-10-25-agent-admission-control-design.md).
+
+---
+
 ## Template for new ADRs
 
 ```
