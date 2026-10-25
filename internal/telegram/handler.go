@@ -29,9 +29,8 @@ import (
 // use the public commands (/ping, /whoami, /register).
 func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Update) {
 	if update != nil && update.StoppedMessageGeneration != nil {
-		// Stop button on a streaming draft. gopod sets no
-		// allowed_updates, so Telegram's default set applies, which
-		// includes stopped_message_generation.
+		// Stop button on a streaming draft (stopped_message_generation
+		// is in allowedUpdates, bot.go).
 		b.handleGenerationStopped(ctx, update)
 		return
 	}
@@ -292,26 +291,7 @@ func (b *Bot) runAgentSync(ctx context.Context, item queue.Item) {
 	}
 	reply, err := b.runner.Run(ctx, item.Folder, item.ThreadID, tier, b.allowlist, prompt)
 	if err != nil {
-		// ❌ reaction on error
-		if item.MessageID > 0 {
-			b.react(ctx, item.ChatID, item.MessageID, emojiError)
-		}
-
-		if errors.Is(err, runner.ErrSessionExpired) {
-			b.replyTo(ctx, item.ChatID, item.ThreadID, item.MessageID,
-				"Session expired. Run /login to re-authenticate.")
-			return
-		}
-		if errors.Is(err, runner.ErrNotLoggedIn) {
-			b.replyTo(ctx, item.ChatID, item.ThreadID, item.MessageID,
-				"Not authenticated. Run /login to sign in.")
-			return
-		}
-		b.log.Error("runner.Run failed",
-			slog.String("chat_folder", item.Folder),
-			slog.Any("err", err))
-		b.replyTo(ctx, item.ChatID, item.ThreadID, item.MessageID,
-			"Something went wrong. Check gopod logs for details.")
+		b.replyError(ctx, item, err)
 		return
 	}
 

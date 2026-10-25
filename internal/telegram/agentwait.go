@@ -58,7 +58,7 @@ func (b *Bot) waitNotice(ctx context.Context, item queue.Item) runner.WaitNotice
 		text := waitText(reason)
 		if item.Resumed && item.PlaceholderMsgID != 0 {
 			// streamReply reuses the interrupted attempt's placeholder.
-			b.editMessage(ctx, item.ChatID, item.PlaceholderMsgID, text)
+			b.editMessageKB(ctx, item.ChatID, item.PlaceholderMsgID, text, b.turnKeyboard(item.ID))
 			return
 		}
 		if b.draftsSupported(item.ChatID) {
@@ -84,7 +84,8 @@ func (b *Bot) waitNotice(ctx context.Context, item queue.Item) runner.WaitNotice
 			}
 			b.bindDraft(item.ID, item.ChatID, 0)
 		}
-		ph := b.sendPlaceholderText(ctx, item.ChatID, item.ThreadID, item.MessageID, text)
+		// Edit path: the placeholder carries the Stop button already.
+		ph := b.sendPlaceholderText(ctx, item.ChatID, item.ThreadID, item.MessageID, text, b.turnKeyboard(item.ID))
 		if ph == 0 {
 			return
 		}
@@ -114,7 +115,7 @@ func (b *Bot) popWaitPlaceholder(item queue.Item) int {
 func (b *Bot) takeWaitPlaceholder(ctx context.Context, item queue.Item) int {
 	ph := b.popWaitPlaceholder(item)
 	if ph != 0 {
-		b.editMessage(ctx, item.ChatID, ph, "")
+		b.editMessageKB(ctx, item.ChatID, ph, "", b.turnKeyboard(item.ID))
 	}
 	return ph
 }

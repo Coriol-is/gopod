@@ -233,7 +233,7 @@ func TestTypingAndPlaceholderSkipGoneThread(t *testing.T) {
 	if n := len(fake.callsTo("sendChatAction")); n != 1 {
 		t.Errorf("sendChatAction calls = %d, want 1 (stop after thread gone)", n)
 	}
-	if id := b.sendPlaceholder(ctx, streamChat, 7, 10); id != 0 {
+	if id := b.sendPlaceholder(ctx, streamChat, 7, 10, nil); id != 0 {
 		t.Errorf("placeholder id = %d, want 0 in a gone thread", id)
 	}
 	if n := len(fake.callsTo("sendMessage")); n != 0 {

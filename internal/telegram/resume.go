@@ -97,9 +97,10 @@ func (b *Bot) reusePlaceholder(ctx context.Context, item queue.Item) int {
 		return 0
 	}
 	_, err := b.api.EditMessageText(ctx, &bot.EditMessageTextParams{
-		ChatID:    item.ChatID,
-		MessageID: item.PlaceholderMsgID,
-		Text:      resumingBanner,
+		ChatID:      item.ChatID,
+		MessageID:   item.PlaceholderMsgID,
+		Text:        resumingBanner,
+		ReplyMarkup: b.turnKeyboard(item.ID), // Stop, when stoppable
 	})
 	if err != nil {
 		b.log.Debug("reuse placeholder failed, sending a new one",

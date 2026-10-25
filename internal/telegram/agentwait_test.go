@@ -38,7 +38,7 @@ func TestWaitNoticeDraftIsStoppableAndReplaced(t *testing.T) {
 	ctx := context.Background()
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	defer b.registerInflight(item.ID, cancel)()
+	defer b.registerInflight(item.ID, item.ChatID, cancel)()
 	defer b.stopWaitDraftRefresh(item)
 
 	b.waitNotice(ctx, item)(runner.WaitMemory)
@@ -203,7 +203,7 @@ func TestWaitDraftRefreshedUntilStopped(t *testing.T) {
 	ctx := context.Background()
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	defer b.registerInflight(item.ID, cancel)()
+	defer b.registerInflight(item.ID, item.ChatID, cancel)()
 
 	b.waitNotice(ctx, item)(runner.WaitSlot)
 	waitFor(t, "refreshed wait draft", func() bool { return len(waitDrafts(fake)) >= 3 })

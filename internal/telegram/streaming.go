@@ -22,13 +22,14 @@ import (
 //
 // thread is the private-chat topic (0 = main chat). replyToMsgID is
 // the user's original message ID for reply threading; pass 0 for no
-// threading.
-func (b *Bot) sendPlaceholder(ctx context.Context, chatID int64, thread int, replyToMsgID int) int {
-	return b.sendPlaceholderText(ctx, chatID, thread, replyToMsgID, "\u2758") // ▍ cursor
+// threading. markup is the placeholder's keyboard (turnKeyboard: the
+// Stop button of a stoppable turn), nil for none.
+func (b *Bot) sendPlaceholder(ctx context.Context, chatID int64, thread int, replyToMsgID int, markup models.ReplyMarkup) int {
+	return b.sendPlaceholderText(ctx, chatID, thread, replyToMsgID, "\u2758", markup) // ▍ cursor
 }
 
 // sendPlaceholderText is sendPlaceholder with a given opening text.
-func (b *Bot) sendPlaceholderText(ctx context.Context, chatID int64, thread int, replyToMsgID int, text string) int {
+func (b *Bot) sendPlaceholderText(ctx context.Context, chatID int64, thread int, replyToMsgID int, text string, markup models.ReplyMarkup) int {
 	if b.threadGone(chatID, thread) {
 		return 0 // the caller falls back to one final message, sent to main
 	}
@@ -36,6 +37,7 @@ func (b *Bot) sendPlaceholderText(ctx context.Context, chatID int64, thread int,
 		ChatID:          chatID,
 		MessageThreadID: thread,
 		Text:            text,
+		ReplyMarkup:     markup,
 	}
 	if replyToMsgID > 0 {
 		params.ReplyParameters = &models.ReplyParameters{
@@ -57,18 +59,29 @@ func (b *Bot) sendPlaceholderText(ctx context.Context, chatID int64, thread int,
 	return sent.ID
 }
 
-// editMessage edits a previously sent message with plain text content.
-// Errors are logged and returned; mid-stream callers ignore them — a
-// failed edit means the user sees a slightly stale partial; the next
-// edit or final message fixes it.
+// editMessage edits a previously sent message with plain text content
+// and removes its inline keyboard (a placeholder's Stop button): every
+// caller ends the placeholder's streaming life. Errors are logged and
+// returned; mid-stream callers ignore them — a failed edit means the
+// user sees a slightly stale partial; the next edit or final message
+// fixes it.
 func (b *Bot) editMessage(ctx context.Context, chatID int64, msgID int, text string) error {
+	return b.editMessageKB(ctx, chatID, msgID, text, noKeyboard())
+}
+
+// editMessageKB is editMessage with the keyboard to show after the edit
+// (nil: the request carries none). A streaming placeholder passes its
+// turnKeyboard on every edit, so the text and the Stop button change in
+// one call.
+func (b *Bot) editMessageKB(ctx context.Context, chatID int64, msgID int, text string, markup models.ReplyMarkup) error {
 	if text == "" {
 		text = "\u2758" // keep cursor visible if empty
 	}
 	_, err := b.api.EditMessageText(ctx, &bot.EditMessageTextParams{
-		ChatID:    chatID,
-		MessageID: msgID,
-		Text:      text,
+		ChatID:      chatID,
+		MessageID:   msgID,
+		Text:        text,
+		ReplyMarkup: markup,
 	})
 	if err != nil {
 		b.log.Debug("editMessage failed",
@@ -81,17 +94,19 @@ func (b *Bot) editMessage(ctx context.Context, chatID int64, msgID int, text str
 }
 
 // editMessageHTML edits a previously sent message with HTML-formatted
-// content. Falls back to plain text if the HTML edit fails (e.g. due
-// to malformed tags). Returns the error of the last attempt.
+// content and removes its inline keyboard: it is the final edit of a
+// placeholder. Falls back to plain text if the HTML edit fails (e.g.
+// due to malformed tags). Returns the error of the last attempt.
 func (b *Bot) editMessageHTML(ctx context.Context, chatID int64, msgID int, html string) error {
 	if html == "" {
 		return nil
 	}
 	_, err := b.api.EditMessageText(ctx, &bot.EditMessageTextParams{
-		ChatID:    chatID,
-		MessageID: msgID,
-		Text:      html,
-		ParseMode: models.ParseModeHTML,
+		ChatID:      chatID,
+		MessageID:   msgID,
+		Text:        html,
+		ParseMode:   models.ParseModeHTML,
+		ReplyMarkup: noKeyboard(),
 	})
 	if err != nil {
 		if isNotModified(err) {
@@ -137,7 +152,7 @@ func (b *Bot) runAgentStreaming(ctx context.Context, item queue.Item) error {
 	}
 	runCtx, cancelRun := context.WithCancel(ctx)
 	defer cancelRun()
-	defer b.registerInflight(item.ID, cancelRun)()
+	defer b.registerInflight(item.ID, item.ChatID, cancelRun)()
 
 	waitCtx := runner.WithWaitNotice(runCtx, b.waitNotice(ctx, item))
 	stream, err := b.runner.RunStream(waitCtx, item.Folder, item.ThreadID, tier, b.allowlist, prompt)
@@ -183,6 +198,9 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 
 	stop := b.inflightStop(item.ID) // nil: not stoppable, never fires
 	stopOpts := draftOpts{CanStop: stop != nil, KeepOnStop: stop != nil}
+	// kb is the edit path's Stop button (nil when not stoppable): on
+	// the placeholder and on every mid-stream edit of it.
+	kb := b.turnKeyboard(item.ID)
 	// useDraft makes id the turn's current draft, the one a stop names.
 	useDraft := func(id int) int {
 		b.bindDraft(item.ID, item.ChatID, id)
@@ -193,7 +211,7 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 	// when no placeholder could be sent.
 	placeholder := 0
 	startPlaceholder := func() bool {
-		placeholder = b.sendPlaceholder(ctx, item.ChatID, item.ThreadID, item.MessageID)
+		placeholder = b.sendPlaceholder(ctx, item.ChatID, item.ThreadID, item.MessageID, kb)
 		if placeholder == 0 {
 			return false
 		}
@@ -276,7 +294,7 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 		}
 		// Edit path: finalize this placeholder, continue in a new one.
 		b.editMessage(ctx, item.ChatID, placeholder, accumulated.String())
-		placeholder = b.sendPlaceholder(ctx, item.ChatID, item.ThreadID, 0)
+		placeholder = b.sendPlaceholder(ctx, item.ChatID, item.ThreadID, 0, kb)
 		if placeholder == 0 {
 			b.drainAndSend(ctx, item, stream)
 			return false
@@ -285,6 +303,15 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 		accumulated.Reset()
 		dirty = false
 		return true
+	}
+
+	// stopped ends a stopped turn: the draft path sends the text so far
+	// as a new message; the edit path makes the placeholder the reply.
+	stopped := func() error {
+		if placeholder == 0 {
+			return b.finishStopped(ctx, item, stream, full.String())
+		}
+		return b.finishStoppedEdit(ctx, item, stream, placeholder, full.String(), overflow, accumulated.String())
 	}
 
 	progress := stream.Progress // nil for plain runs: never selected
@@ -366,12 +393,12 @@ loop:
 				}
 			}
 			if v := view(); dirty && v != "" {
-				b.editMessage(ctx, item.ChatID, placeholder, v+"❘")
+				b.editMessageKB(ctx, item.ChatID, placeholder, v+"❘", kb)
 				dirty = false
 			}
 
 		case <-stop:
-			return b.finishStopped(ctx, item, stream, full.String())
+			return stopped()
 
 		case <-ctx.Done():
 			return nil
@@ -385,17 +412,17 @@ loop:
 	var res runner.RunResult
 	select {
 	case <-stop:
-		return b.finishStopped(ctx, item, stream, full.String())
+		return stopped()
 	default:
 	}
 	select {
 	case res = <-stream.Result:
 	case <-stop:
-		return b.finishStopped(ctx, item, stream, full.String())
+		return stopped()
 	}
 	select {
 	case <-stop:
-		return b.finishStopped(ctx, item, stream, full.String())
+		return stopped()
 	default:
 	}
 
@@ -459,6 +486,8 @@ loop:
 				}
 				break
 			}
+		} else if kb != nil {
+			b.clearKeyboard(ctx, item.ChatID, placeholder)
 		}
 		sent, _ := b.sendFinal(ctx, item.ChatID, item.ThreadID, item.MessageID, finalText)
 		b.recordReply(ctx, item, sent, finalText)
@@ -620,27 +649,52 @@ func (b *Bot) finishStopped(ctx context.Context, item queue.Item, stream *runner
 	return queue.ErrStopped
 }
 
-// handleStreamError handles errors from a streaming agent run.
-// Mirrors the error classification in runAgentSync.
-func (b *Bot) handleStreamError(ctx context.Context, item queue.Item, err error) {
+// finishStoppedEdit ends a turn stopped on the edit path. When the reply
+// fit one placeholder, that placeholder becomes the reply: final text
+// (the text so far), keyboard removed, recorded as the turn's reply.
+// After an overflow it is frozen like a finished overflow turn's last
+// placeholder and the whole stopped text goes out as a new message.
+// Like finishStopped it drains the agent's remaining output in the
+// background and returns queue.ErrStopped.
+func (b *Bot) finishStoppedEdit(ctx context.Context, item queue.Item, stream *runner.AgentStream, placeholder int, partial string, overflow bool, tail string) error {
+	go func() {
+		drainStream(stream)
+		<-stream.Result
+	}()
+
+	text := strings.TrimSpace(partial)
+	if text == "" {
+		text = stoppedEmpty
+	}
+	if !overflow {
+		shown := b.attachLongCode(ctx, item.ChatID, item.ThreadID, text)
+		err := b.editMessageHTML(ctx, item.ChatID, placeholder, finalReplyHTML(shown))
+		if b.finalEditLost(item, err) {
+			if err := b.replyInMain(ctx, item, shown); err != nil {
+				return err
+			}
+		} else {
+			b.recordReply(ctx, item, placeholder, text)
+		}
+	} else {
+		if tail != "" {
+			b.editMessage(ctx, item.ChatID, placeholder, tail)
+		} else {
+			b.clearKeyboard(ctx, item.ChatID, placeholder)
+		}
+		sent, _ := b.sendFinal(ctx, item.ChatID, item.ThreadID, item.MessageID, text)
+		b.recordReply(ctx, item, sent, text)
+	}
 	if item.MessageID > 0 {
-		b.react(ctx, item.ChatID, item.MessageID, emojiError)
+		b.react(ctx, item.ChatID, item.MessageID, emojiDone)
 	}
-	if errors.Is(err, runner.ErrSessionExpired) {
-		b.replyTo(ctx, item.ChatID, item.ThreadID, item.MessageID,
-			"Session expired. Run /login to re-authenticate.")
-		return
-	}
-	if errors.Is(err, runner.ErrNotLoggedIn) {
-		b.replyTo(ctx, item.ChatID, item.ThreadID, item.MessageID,
-			"Not authenticated. Run /login to sign in.")
-		return
-	}
-	b.log.Error("streaming agent run failed",
-		slog.String("chat_folder", item.Folder),
-		slog.Any("err", err))
-	b.replyTo(ctx, item.ChatID, item.ThreadID, item.MessageID,
-		"Something went wrong. Check gopod logs for details.")
+	return queue.ErrStopped
+}
+
+// handleStreamError handles errors from a streaming agent run: a
+// humane reply from the error table (errors.go), as on the sync path.
+func (b *Bot) handleStreamError(ctx context.Context, item queue.Item, err error) {
+	b.replyError(ctx, item, err)
 }
 
 // drainAndSend is the fallback path: drain a streaming AgentStream

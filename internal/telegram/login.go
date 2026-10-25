@@ -13,6 +13,7 @@ import (
 	"github.com/go-telegram/bot/models"
 
 	"github.com/Coriol-is/gopod/internal/runner"
+	"github.com/Coriol-is/gopod/internal/store"
 )
 
 // loginTimeout is how long a /login session stays open waiting for
@@ -45,6 +46,41 @@ type loginSession struct {
 type loginSessions struct {
 	mu       sync.Mutex
 	sessions map[int64]*loginSession
+	// starting marks chats whose login is being started (reserve):
+	// between the reservation and set (or release) no second login
+	// may start, so two quick /login or 🔑 presses run one exec.
+	starting map[int64]bool
+}
+
+// reserve claims chatID's login slot. False when a login session is
+// active or another start holds the slot. The holder ends the claim
+// with set (session stored) or release (start failed).
+func (ls *loginSessions) reserve(chatID int64) bool {
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
+	if ls.sessions[chatID] != nil || ls.starting[chatID] {
+		return false
+	}
+	if ls.starting == nil {
+		ls.starting = make(map[int64]bool)
+	}
+	ls.starting[chatID] = true
+	return true
+}
+
+// isStarting reports whether chatID's login slot is reserved by a start
+// that has not stored its session yet.
+func (ls *loginSessions) isStarting(chatID int64) bool {
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
+	return ls.starting[chatID]
+}
+
+// release gives up a reservation whose login did not start.
+func (ls *loginSessions) release(chatID int64) {
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
+	delete(ls.starting, chatID)
 }
 
 func newLoginSessions() *loginSessions {
@@ -60,6 +96,7 @@ func (ls *loginSessions) get(chatID int64) *loginSession {
 func (ls *loginSessions) set(chatID int64, s *loginSession) {
 	ls.mu.Lock()
 	defer ls.mu.Unlock()
+	delete(ls.starting, chatID) // the reservation becomes the session
 	ls.sessions[chatID] = s
 }
 
@@ -103,27 +140,65 @@ func (b *Bot) loginHandlerReal(ctx context.Context, _ *bot.Bot, update *models.U
 	}
 	m := update.Message
 	b.persistMessage(ctx, m)
-	thread := inboundThreadID(m)
+	b.startLogin(ctx, m, inboundThreadID(m))
+}
 
-	if b.runner == nil {
-		b.replyText(ctx, m.Chat.ID, thread,
-			"Runner is not available. Is Docker running?")
-		return
-	}
-
+// startLogin runs the /login flow for the chat of m, answering in
+// thread. The /login command and the login button (actions.go) share
+// it; m is the command message or the message carrying the button.
+func (b *Bot) startLogin(ctx context.Context, m *models.Message, thread int) {
 	rc, ok := b.resolveRegistered(ctx, m)
 	if !ok {
 		b.replyText(ctx, m.Chat.ID, thread,
 			"This chat is not registered. The owner can register it with /register.")
 		return
 	}
-
-	// Refuse if already in a login session.
-	if existing := b.logins.get(m.Chat.ID); existing != nil {
-		b.replyText(ctx, m.Chat.ID, thread,
-			"A /login session is already active for this chat. "+
-				"Paste the auth code from the browser, or wait for the session to time out.")
+	// Refuse if a login is active or being started: claimed atomically
+	// before the slow container start, so two quick presses run one.
+	if !b.logins.reserve(m.Chat.ID) {
+		text := loginTextAlready
+		if b.logins.isStarting(m.Chat.ID) {
+			text = loginTextStarting
+		}
+		b.replyText(ctx, m.Chat.ID, thread, text)
 		return
+	}
+	b.loginReserved(ctx, m, thread, rc)
+}
+
+// loginReserved runs the login flow for a chat whose login slot the
+// caller reserved, and releases the slot when no session was stored.
+func (b *Bot) loginReserved(ctx context.Context, m *models.Message, thread int, rc store.RegisteredChat) {
+	run := b.loginRun
+	if run == nil {
+		run = b.runLogin
+	}
+	// Deferred, so a panic in run cannot keep the slot forever.
+	stored := false
+	defer func() {
+		if !stored {
+			b.logins.release(m.Chat.ID)
+		}
+	}()
+	stored = run(ctx, m, thread, rc)
+}
+
+// loginFailed logs a failed login start and tells the user without the
+// error text (paths, container ids and stderr stay in the log).
+func (b *Bot) loginFailed(ctx context.Context, chatID int64, thread int, folder, what string, err error) {
+	b.log.Error("/login: "+what+" failed",
+		slog.String("folder", folder),
+		slog.Any("err", err))
+	b.replyText(ctx, chatID, thread, loginTextFailed)
+}
+
+// runLogin starts the agent's login exec and stores the session.
+// Reports whether a session was stored (it then owns the chat's slot).
+func (b *Bot) runLogin(ctx context.Context, m *models.Message, thread int, rc store.RegisteredChat) bool {
+	if b.runner == nil {
+		b.replyText(ctx, m.Chat.ID, thread,
+			"Runner is not available. Is Docker running?")
+		return false
 	}
 
 	tier := runner.TierRegistered
@@ -134,11 +209,8 @@ func (b *Bot) loginHandlerReal(ctx context.Context, _ *bot.Bot, update *models.U
 	// Ensure container is running.
 	containerID, err := b.runner.Ensure(ctx, rc.Folder, tier, b.allowlist)
 	if err != nil {
-		b.log.Error("/login: ensure container failed",
-			slog.String("folder", rc.Folder),
-			slog.Any("err", err))
-		b.replyText(ctx, m.Chat.ID, thread, fmt.Sprintf("Failed to start container: %v", err))
-		return
+		b.loginFailed(ctx, m.Chat.ID, thread, rc.Folder, "ensure container", err)
+		return false
 	}
 
 	b.replyText(ctx, m.Chat.ID, thread, "Starting authentication flow...")
@@ -153,11 +225,8 @@ func (b *Bot) loginHandlerReal(ctx context.Context, _ *bot.Bot, update *models.U
 	)
 	if err != nil {
 		loginCancel()
-		b.log.Error("/login: ExecInteractive failed",
-			slog.String("folder", rc.Folder),
-			slog.Any("err", err))
-		b.replyText(ctx, m.Chat.ID, thread, fmt.Sprintf("Failed to start login: %v", err))
-		return
+		b.loginFailed(ctx, m.Chat.ID, thread, rc.Folder, "ExecInteractive", err)
+		return false
 	}
 
 	// Read lines looking for URL and optional device code.
@@ -197,7 +266,7 @@ func (b *Bot) loginHandlerReal(ctx context.Context, _ *bot.Bot, update *models.U
 		exec.DrainAndClose()
 		b.replyText(ctx, m.Chat.ID, thread,
 			"Could not extract the login URL. Check gopod logs.")
-		return
+		return false
 	}
 
 	// Store the session.
@@ -250,6 +319,7 @@ func (b *Bot) loginHandlerReal(ctx context.Context, _ *bot.Bot, update *models.U
 			}
 		}
 	}()
+	return true
 }
 
 // handleLoginCode is called from defaultHandler when the chat has an
