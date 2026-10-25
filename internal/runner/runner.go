@@ -153,6 +153,7 @@ func New(
 		activity:       make(map[string]time.Time),
 		turnCount:      make(map[convKey]int),
 		compactAfter:   30,
+		gate:           newGate(DefaultMaxAgents, DefaultMinAvailableMB, readMemAvailableMB, log),
 	}, nil
 }
 
@@ -262,7 +263,12 @@ func (r *Runner) Run(
 		return "", err
 	}
 	cmd := withModel(prov.RunCmd(prompt, opts.AppendSystemPrompt, ref), prov, r.ModelForChat(chatFolder))
+	releaseGate, err := r.admit(ctx, chatFolder, ClassInteractive)
+	if err != nil {
+		return "", err
+	}
 	res, err := r.execAgent(ctx, id, chatFolder, prov, cmd)
+	releaseGate()
 	if announcesNewSession(prov, ref) {
 		var stderr string
 		if res != nil {
@@ -399,6 +405,13 @@ func (r *Runner) startStream(
 	cmd := mkCmd(ref)
 	capture := announcesNewSession(prov, ref)
 
+	// Acquire order: queue slot -> chat's agent slot -> gate (gate.go).
+	releaseGate, err := r.admit(ctx, chatFolder, ClassInteractive)
+	if err != nil {
+		releaseSlot()
+		return nil, err
+	}
+
 	// Restore config from backup if needed.
 	if restoreCmd := prov.RestoreConfigCmd(); restoreCmd != nil {
 		r.ex.Exec(ctx, id, restoreCmd, nil)
@@ -406,6 +419,7 @@ func (r *Runner) startStream(
 
 	pidFile, err := newAgentPidFile()
 	if err != nil {
+		releaseGate()
 		releaseSlot()
 		return nil, err
 	}
@@ -413,6 +427,7 @@ func (r *Runner) startStream(
 	handle, err := r.ex.ExecStream(ctx, id, wrapWithPidFile(pidFile, cmd), env)
 	if err != nil {
 		release()
+		releaseGate()
 		releaseSlot()
 		return nil, fmt.Errorf("runner: exec stream: %w", err)
 	}
@@ -462,6 +477,7 @@ func (r *Runner) startStream(
 		if !<-killed {
 			r.removePidFile(ctx, id, pidFile)
 		}
+		releaseGate() // the agent process is gone (exited or killed)
 		if capture {
 			r.captureSession(ctx, chatFolder, conv.thread, prov, stderr)
 		}
@@ -560,7 +576,12 @@ func (r *Runner) RunFresh(
 		return "", fmt.Errorf("runner: ensure %q: %w", chatFolder, err)
 	}
 	prov := r.ProviderForChat(chatFolder)
+	releaseGate, err := r.admit(ctx, chatFolder, ClassBackground)
+	if err != nil {
+		return "", err
+	}
 	res, err := r.execAgent(ctx, id, chatFolder, prov, prov.RunFreshCmd(prompt))
+	releaseGate()
 	if err != nil {
 		return "", err
 	}
