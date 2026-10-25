@@ -25,6 +25,16 @@ plan `docs/superpowers/plans/2026-10-24-telegram-threads-and-drafts.md`.
 Also: CI workflow `.github/workflows/ci.yml` and the PR-based git flow in
 CLAUDE.md (main's ruleset needs 1 approval; PRs are merged with
 `gh pr merge --squash --admin`).
+**2026-10-25 incident:** the Pi voice message was downloaded and transcribed
+successfully; repeated Claude exits were an account session usage limit (429,
+reset reported as 13:50 UTC), not container restarts or OOM. Checked live:
+gopod restart count 0, OOMKilled=false. PR #30 is merged on main
+(`5a9af2a`). The runner now classifies the known
+session/usage-limit CLI response separately on failed streaming and sync runs;
+Telegram explains the quota rather than a generic agent failure. No automatic
+retry or provider switch. Live end-to-end recovery after the allowance resets
+has not been verified.
+
 **Before deploying, run the live checklist** (next section, item 00).
 **2026-10-25:** extracted memories are now scoped per conversation
 ([D023](DECISIONS.md#d023--extracted-memories-are-scoped-per-conversation)):
@@ -52,6 +62,15 @@ Unknown providers fail before confirmation and selecting the current provider
 is a no-op. Topic-gone picker/page fallbacks retain their buttons in main. Risky
 confirmations instead ask the user to rerun the command in the desired
 conversation, without buttons, so a deleted-topic `/clear` cannot clear main.
+**2026-10-25:** dynamic Telegram UX phase 6 (input context, branch
+`feat/ux-phase6`, PR #28 merged on main at `51cc974`): replied, quoted and forwarded
+text reaches the prompt as a header (`internal/telegram/inbound_context.go`),
+albums become one turn after a 1 s window, audio files and video notes
+are transcribed like voice. Review fixes reject media before downloading or
+transcribing for unregistered chats, sanitize and distinguish upload names,
+and drain inbound handlers plus pending/in-flight album downloads on graceful
+shutdown. Obsolete timer callbacks cannot shorten a restarted album window.
+Unit-tested only; live checklist 0Y.
 **Previous session (2026-10-05):** production deploy + Codex harness.
 `main` (`b254e01`) is deployed on the production host via `docker compose`
 (data at `/opt/gopod/data`, live owner workspace at
@@ -73,12 +92,10 @@ gopod-owner` the next message was answered first time (turn 4, 2026-10-05
 message" symptom is gone (root cause: `~/.codex` on tmpfs + 0.128
 `resume --last` failing on an empty session dir; both removed).
 
-**Also this session:** a CP (change proposal) process. Template, lifecycle
-and registry in [proposals/README.md](proposals/README.md); seven
-proposals CP-001…CP-007 written from the `codex-agent` survey, all
-`proposed`, suggested order in ROADMAP "Proposals". `/handoff` now
-cross-checks the CP registry (step 4b). Uncommitted: `docs/proposals/`,
-`CLAUDE.md`, `ROADMAP.md`, `.claude/skills/handoff/SKILL.md`, this file.
+**Change proposals:** the CP process, registry and `/handoff` cross-check
+are committed. Current proposal statuses live in
+[proposals/README.md](proposals/README.md); do not infer acceptance from this
+historical handoff.
 
 **Previous session:** durable turns (2026-10-03, branch
 `worktree-durable-turns`, merged to `main`). Every agent run is now a row
@@ -320,6 +337,14 @@ Additional completed work (post-milestone):
 
 ## What's in progress
 
+**Dynamic Telegram UX phase 4:** PR #29 (`feat/ux-phase4`) has review fixes
+and merges current main (`51cc974`, including PR #28 input context and
+PR #30 usage-limit handling). Integration build, vet, all tests and the control/Telegram race suite pass;
+independent review and CI gate its merge. No live phase 4 or phase 6 acceptance is claimed.
+Phase 6 is merged; its remaining work is the live checklist 0Y. The quota
+classification fix is merged; live recovery after the allowance resets
+remains unverified.
+
 **Phase 7 — Streaming output** ([STREAMING.md](STREAMING.md)). ✅ **Done.**
 
 Real-time agent output to Telegram via message editing (~1s updates).
@@ -497,6 +522,45 @@ pending: a 20-line and a 100-line block in a private chat and in a topic.
    CLI frontend (C3) is still not built, only `control.FormatText` and
    `ParseConfirmFlag` for it; a picker press re-sends the whole result,
    so a picker pressed after its model was changed elsewhere still applies.
+0Y. **Live checklist for dynamic Telegram UX, phase 6** (branch
+   `feat/ux-phase6`; spec F10, F11 and "Verify live" items 8 and 9, plan
+   Phase 6; nothing run on a real bot yet): (1) reply to one of gopod's
+   answers with "что я процитировал?" / "explain this": the agent answers
+   about that answer; select part of it with Telegram's quote and ask
+   again: it names exactly the quoted part; (2) forward a message from a
+   user, a channel, and a user who hides forwards: the agent sees
+   `[forwarded from <name>]`, `[forwarded from channel <title>]`,
+   `[forwarded from a hidden user]` (ask "откуда это?"), never an id or a
+   username of a named user; (3) in a private-chat topic, a plain message
+   (no reply) gets no `[in reply to …]` header, so check that Telegram
+   really stamps the topic root as `reply_to_message` with
+   `forum_topic_created` or `is_topic_message` (the matching rule is from
+   the Bot API docs, not a recorded update); (4) an album of 3 photos with
+   a caption makes one turn, one 👀 on the first photo, one reply that
+   sees all three (`[Album attached: …]`); the same in a topic answers in
+   the topic; (5) an audio file (mp3/m4a) and a video note are transcribed
+   and answered in text, a failed transcription replies "Failed to
+   transcribe audio."; a sticker gets no reply and no reaction; (6) a long
+   code reply shows "sending a file…" before the `📎` snippet and a voice
+   reply shows "recording audio…" while TTS runs; (7) stop gopod
+   (`docker compose restart`) right after sending an album: the album
+   still becomes one turn after the restart (flushed at shutdown, replayed
+   by Recover); repeat while the album's download is in progress. Known limits:
+   abrupt termination (`SIGKILL`, power loss, or the 30 s container stop deadline)
+   can still lose an album before its turn is persisted; downloads are bounded
+   at 2 minutes, which can exceed that deadline; video and audio items inside
+   an album are skipped silently (photos and documents only); an item arriving more
+   than 1 s after the previous one starts a second turn; an album caption
+   starting with `/` is sent to the agent, not to the Router, and an
+   album never feeds a waiting `/login` code; audio files and video notes
+   do not switch the reply to voice; Whisper rejects `.opus`, `.aac` and
+   `.amr` audio files ("Failed to transcribe audio."); the header is part
+   of the turn text, so `extractAndIngest` sees replied/forwarded text and
+   may store it as a fact about the user; a caption-less single photo's
+   prompt still does not name its upload path (pre-existing, noted, not
+   changed here). Media from unregistered chats is no longer downloaded
+   or transcribed; document names keep only their last path element
+   after a unique prefix.
 0. **Run the manual crash-recovery test for durable turns** (plan Task 8
    step 5, still not run; the branch is merged and deployed, cold start
    of the agent container is verified, but a `kill -9` of gopod itself

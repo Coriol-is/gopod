@@ -829,6 +829,7 @@ func (b *Bot) maybeVoiceReply(ctx context.Context, item queue.Item, text string)
 	if strings.TrimSpace(text) == "" {
 		return
 	}
+	b.chatAction(ctx, item.ChatID, item.ThreadID, models.ChatActionRecordVoice)
 	audioData, err := textToSpeech(ctx, apiKey, text)
 	if err != nil {
 		b.log.Warn("TTS failed",

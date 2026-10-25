@@ -29,6 +29,7 @@ const (
 	errNotLoggedIn                // the agent container was never logged in
 	errAgentFailed                // the run crashed, timed out or failed otherwise
 	errBusy                       // no agent slot; reserved: the D026 gate waits without a timeout today
+	errUsageLimit                 // provider allowance exhausted
 	errDelivery                   // the reply could not be delivered
 )
 
@@ -40,6 +41,8 @@ func (k errKind) String() string {
 		return "not_logged_in"
 	case errBusy:
 		return "busy"
+	case errUsageLimit:
+		return "usage_limit"
 	case errDelivery:
 		return "delivery"
 	}
@@ -66,6 +69,7 @@ type errReply struct {
 var errReplies = map[errKind]errReply{
 	errAuthExpired: {text: errTextAuthExpired, login: true},
 	errNotLoggedIn: {text: errTextNotLoggedIn, login: true},
+	errUsageLimit:  {text: errTextUsageLimit, retry: true},
 	errAgentFailed: {text: errTextAgentFailed, retry: true},
 	errBusy:        {text: errTextBusy, retry: true},
 	errDelivery:    {text: errTextDelivery, retry: true},
@@ -74,6 +78,8 @@ var errReplies = map[errKind]errReply{
 // classifyErr maps a failed run's error to what the user is told.
 func classifyErr(err error) errKind {
 	switch {
+	case errors.Is(err, runner.ErrUsageLimit):
+		return errUsageLimit
 	case errors.Is(err, runner.ErrSessionExpired):
 		return errAuthExpired
 	case errors.Is(err, runner.ErrNotLoggedIn):

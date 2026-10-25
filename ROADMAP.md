@@ -182,7 +182,7 @@ Spec: [docs/superpowers/specs/2026-10-24-telegram-threads-and-drafts-design.md](
 | T12 | Visible state: status reactions, elapsed time and queue position in the draft | 🟦 | Plan phase 3, branch `feat/ux-phase3`: unit-tested, live check HANDOFF 0W pending; owner Q3 |
 | T13 | Command buttons: model/provider pickers, confirmations, paged outputs | 🟦 | Plan phase 4 (Tasks 9-11), branch `feat/ux-phase4`: `control.Response.Buttons`, ADR D028, CONTROL.md §6.1; unit-tested, live check HANDOFF 0X pending; owner Q6 (`/chats unregister`, `/container` do not exist yet) |
 | T14 | Commands menu per scope and one strings file | ⬜ | Plan phase 5; owner Q4 |
-| T15 | Input context: replied/quoted/forwarded text, albums, audio, video notes | ⬜ | Plan phase 6 |
+| T15 | Input context: replied/quoted/forwarded text, albums, audio, video notes | 🟦 | Plan phase 6 (Tasks 13-14), branch `feat/ux-phase6`: unit-tested, live check HANDOFF 0Y pending |
 | T16 | Optional: task-result buttons, topic titles | ⬜ | Plan phase 8; owner Q7 |
 
 ## Post-milestone work
