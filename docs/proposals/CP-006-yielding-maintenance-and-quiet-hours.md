@@ -26,3 +26,10 @@ Cancelling compaction mid-way must not corrupt the session; the compact command 
 - Send a message while a compaction is running: the reply starts within the normal spawn latency and compaction completes afterwards.
 - A task due at 23:30 is delivered at 08:00 with its original timestamp in the text.
 - A user message at 23:30 is answered immediately.
+
+## 2026-10-25 reconciliation
+Agent admission and same-chat serialization now bound background work, but do
+not implement user-priority preemption or quiet-hour delivery. GOPOD_TIMEZONE
+in this proposal is a future setting, not an implemented deployment variable;
+current cron supports explicit CRON_TZ. Define retention/expiry for private
+CP-019 replies before delaying any delivery window.

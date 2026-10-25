@@ -16,6 +16,26 @@ right now" view, see [docs/HANDOFF.md](docs/HANDOFF.md).
 
 ---
 
+## Approved delivery queue — 2026-10-25
+
+The owner approved this order. This is prioritization, not a claim that all
+proposed designs are implemented or that every implementation's live acceptance
+has passed. The proposal registry remains the single CP status source;
+[ACCEPTANCE.md](docs/ACCEPTANCE.md) tracks live checks separately.
+
+| Order | Workstream | Ordered work / dependencies | State |
+|---|---|---|---|
+| 1 | Qualify the deployed release | Tasks panel, delivery, upgraded CLIs, quota/provider continuity, Stop/recovery and media baseline — A01–A17 | Implemented/deployed baseline; live checks open |
+| 2 | Reliability and diagnostics | CP-017 Telegram diagnosis -> CP-002 bounded outbox/uncertain delivery -> CP-004 isolated task sessions -> CP-007 scheduled backups/restore -> CP-006 maintenance/quiet hours | CP-017 spec saved; remaining proposals need bounded design |
+| 3 | Conversation management | CP-016 topic deletion/retirement -> CP-018 per-conversation providers/models/quota scope | Specs saved; no implementation |
+| 4 | Group service UX | CP-019 ephemeral command/service/error replies; T14 scoped menu/strings work coordinated with transport | Spec saved; ordinary output stays public |
+| 5 | Media, three queues | CP-014 Q1 cards/links/attachment fidelity -> Q2 document/OCR/image/speech -> Q3 video speech+frames/export; CP-003 typed IPC artifacts and CP-005 qualified tools support appropriate slices | Specs/proposals only beyond existing baseline |
+| 6 | Platform extensions | CP-011 runtime, CP-012 registry; then additional providers/sandboxes, bounded bot-to-bot experiment if useful; secret gateway/MCP/metrics stay deferred | Design/research/deferred; no new backend or peer enabled |
+
+Done implementation must not remain "in progress" just because a live check is
+pending. Host memory-cgroup changes/reboot (T9) and parallel execution (T5/T5b)
+remain paused operational/research items, not implicit deployment steps.
+
 ## Build order (reordered by [D018](docs/DECISIONS.md))
 
 The numerical IDs below are stable identifiers cited from many places —
@@ -36,15 +56,15 @@ if `ANTHROPIC_API_KEY` is set in the environment.
 | M1 | Telegram echo: long-poll, default handler stores every message, `/ping` replies | ✅ | `internal/telegram` wraps `go-telegram/bot`; `internal/store/messages.go` + `chats.go` ingest. End-to-end with a real bot token works without an agent |
 | M2 | Direct API agent (no container): `anthropic-sdk-go`, single chat, trigger pattern, per-chat session | ⏸️ | **Optional, off the critical path per [D018](docs/DECISIONS.md).** Auto-enabled if `ANTHROPIC_API_KEY` is set; otherwise skipped silently |
 | M3 | GroupQueue: per-chat serialization + global concurrency cap + backoff | ✅ | `internal/queue` with per-chat worker, buffered-chan cap (default 3), coalescing, exponential backoff (5s→80s, 5 retries). Telegram default handler enqueues; queue worker runs agent async |
-| M3.5 | **Control plane** (`internal/control` Router + Telegram frontend). C1 (Router scaffold) + C2 (fold handlers) done. C3 (CLI frontend), C4 (extended handlers), C5 (logs subsystem) deferred. | ✅ | Router with auth enforcement, all slash commands dispatch through it, setMyCommands built from Router.List(). /login stays as Telegram-side special case (stateful) |
-| M3.6 | **Observability** (`internal/observability`: opt-in Prometheus `/metrics` + opt-in OTel OTLP traces; logs are already covered by M3.5/C5). Sub-steps O1–O6 below. See [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) and [D014](docs/DECISIONS.md). | ⬜ | Deprioritized to end of backlog — personal bot doesn't need metrics/traces yet |
+| M3.5 | **Control plane** (`internal/control` Router + Telegram frontend). C1/C2 and C5 logging implemented; C3 CLI and C4 extended handlers deferred. | ✅ | Router with auth enforcement, all slash commands dispatch through it, setMyCommands built from Router.List(). /login stays as Telegram-side special case (stateful) |
+| M3.6 | **Observability** (`internal/observability`: opt-in Prometheus `/metrics` + opt-in OTel OTLP traces; logs are already covered by M3.5/C5). Sub-steps O1–O6 below. See [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) and [D014](docs/DECISIONS.md). | ⏸️ | O1/O2 implemented; remaining scope deferred.  Deprioritized to end of backlog — personal bot doesn't need metrics/traces yet |
 | M4 | Scheduler: cron/interval/once via `robfig/cron/v3`, `/tasks` commands via Router, poller goroutine | ✅ | store CRUD, 60s poller, /tasks add/list/pause/resume/cancel, tasks push through queue same as messages |
-| M5 | Container runtime: Docker SDK, mounts, exec attach, idle kill, label-based recovery | ✅ | `internal/runner` has `mountsec` subpackage, three-tier `BuildMounts`, full `BuildContainerArgs` flag assembly, Docker client with `EnsureRunning`/`Exec`/`Stop`/`Remove`/`CleanupLeftovers`, plus the `gopod-agent:latest` image (node:22-slim + claude-code 2.1.100 + git + ripgrep). Integration tests behind `//go:build docker_integration` verified end-to-end. Idle watcher intentionally deferred to M6 wiring |
+| M5 | Container runtime: Docker SDK, mounts, exec attach, idle kill, label-based recovery | ✅ | `internal/runner` has `mountsec` subpackage, three-tier `BuildMounts`, full `BuildContainerArgs` flag assembly, Docker client with `EnsureRunning`/`Exec`/`Stop`/`Remove`/`CleanupLeftovers`, plus the `gopod-agent:latest` image (node:22-slim + pinned Claude Code 2.1.310 + tools). Integration tests behind `//go:build docker_integration` verified end-to-end. Idle watcher is wired |
 | M6 | Agent SDK in container: synchronous `claude -p` via `docker exec`, registered_chats CRUD, /register + /whoami slash commands, owner auto-register, auth detection, idle watcher | ✅ | Verified end-to-end: real Pro/Max reply on Telegram. SDK migration (per [D015](docs/DECISIONS.md) wrapper script) deferred until streaming/tools/MCP land. Three runtime fixes: drop bogus `seccomp=default` SecurityOpt, add /home/node tmpfs + HOME env, skip .env mask when RepoRoot/.env absent |
 | M6.5 | **Telegram-mediated `/login`.** Interactive OAuth proxy: spawns `claude auth login` with PTY+stdin via Docker SDK, captures URL from stdout, forwards to Telegram, intercepts user's next message as the OAuth code, pipes it to claude's stdin, confirms. Session-expired vs never-logged-in distinction in error replies. 10-min timeout with auto-cleanup. | ✅ | Full onboarding fits inside Telegram — no terminal access needed |
 | M7 | IPC: filesystem watcher, container → host messages, task ops, owner gating | ✅ | 2026-05-07 |
 | M8 | Recovery & polish: cursor backfill, structured SQLite logs + /logs command, Docker Compose production deployment, README rewrite | ✅ | Update offset persisted for restart replay, slog → SQLite handler with D012 redaction, multi-stage Dockerfile + compose with docker.sock mount |
-| M9 | Native memory: OpenAI embedder, hybrid FTS5+vec0 search, /remember + /recall, auto-injection into agent prompt via --append-system-prompt | ✅ | Agent gets cross-session memory context automatically. User manages memories via /remember + /recall. Auto-summarize + container skill deferred |
+| M9 | Native memory: OpenAI embedder, hybrid FTS5+vec0 search, /remember + /recall, auto-injection into agent prompt via --append-system-prompt | ✅ | Agent gets cross-session memory context automatically. User manages memories via /remember + /recall. Extraction, compaction and memory container skill implemented; live skill acceptance A14 |
 
 ### M3.5 sub-steps (control plane)
 
@@ -54,7 +74,7 @@ if `ANTHROPIC_API_KEY` is set in the environment.
 | C2 | Telegram frontend: `parseSlash`, dispatch wiring, `/ping`, `/whoami`, `/version`, `/help` | ✅ |
 | C3 | CLI frontend: argv parser, `serve`/`migrate` reserved subcommands, `--json`, mirror of public commands | ⬜ | Deferred |
 | C4 | First batch of real handlers: chats, queue, container, system | ⬜ | Deferred |
-| C5 | Logs subsystem: `internal/log/sqlite_handler.go`, retention task, `/logs` and `gopod logs` | ✅ | SQLite slog handler with D012 redaction landed in M8 |
+| C5 | Logs subsystem: `internal/log/sqlite_handler.go`, retention task and `/logs` (CLI frontend remains C3) | ✅ | SQLite slog handler with D012 redaction landed in M8 |
 
 ### M3.6 sub-steps (observability)
 
@@ -77,12 +97,12 @@ See [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) for full triage.
 | ID | Integration | Tier | Status |
 |----|-------------|------|--------|
 | I1 | Reactions (👀👍👎) + typing indicator + reply threading | 1 | ✅ |
-| I2 | Image vision + document handling | 1 | ✅ |
+| I2 | Image/document baseline: download and scoped path handoff; universal extraction/OCR is CP-014 queue 2 | 1 | ✅ |
 | I3 | Voice transcription (Whisper) + TTS replies + `/voice` mode | 1 | ✅ |
-| I4 | PDF reader | 1 | ⬜ |
+| I4 | Qualified PDF extraction — tracked within CP-014 queue 2, not a duplicate project | 1 | ⬜ |
 | I5 | Markdown → Telegram HTML formatting + smart chunking | 1 | ✅ |
 | I6 | Karpathy LLM Wiki convention | 1 | ⬜ |
-| I7 | Telegram Agent Swarm (multi-bot teams) | 1 | ⬜ |
+| I7 | Bot-to-bot feasibility researched; implementation/agent swarm deferred to queue 6 | 1 | ⬜ |
 | I8 | Ollama tool | 2 | ⬜ |
 | I9 | Gmail tool mode | 2 | ⬜ |
 | I10 | X tool, Parallel tool — as needed | 2 | ⬜ |
@@ -100,7 +120,7 @@ Tracked as its own phase because the milestones are orthogonal to core work.
 | S2 | MCP tool server: gopod as MCP stdio server proxying memory/tasks/control HTTP APIs → natively registered Claude tools via `--mcp-config`. Agent sees tools as first-class (no curl). Hybrid approach: HTTP API as backend, thin MCP wrapper as frontend. | ⬜ | |
 | S3 | Skill manifest format + validation | ⬜ | |
 | S4 | Per-chat skill enable/disable (`/skills enable/disable`) | ⬜ | |
-| S5 | Dev-time Claude Code skills in `.claude/skills/` for gopod maintainers | ⬜ | |
+| S5 | Dev-time Claude Code skills in `.claude/skills/` for gopod maintainers | ✅ | `.claude/skills/handoff/SKILL.md`; does not imply a runtime skill manager |
 
 ---
 
@@ -109,9 +129,9 @@ Tracked as its own phase because the milestones are orthogonal to core work.
 | ID | Step | Status |
 |----|------|--------|
 | P1 | AgentProvider interface: refactor runner to call provider methods instead of hardcoded `claude` commands | ✅ | `internal/runner/provider.go` — stateless interface with Name/Image/RunCmd/LoginCmd/etc. Runner calls provider methods everywhere |
-| P2 | Claude provider: extract current claude-specific code into provider implementation | ✅ | `internal/runner/provider_claude.go` — `--continue`/`--no-session-persistence`, `.claude.json` restore, auth parsing. Codex provider also landed (`provider_codex.go`) |
-| P3 | Codex provider: OpenAI Codex CLI support (separate Docker image, codex-specific flags/auth/sessions) | ✅ | `internal/runner/provider_codex.go` (`codex exec resume --last --full-auto`, device-auth login, plain-text auth status) + `container/Dockerfile.codex` (`@openai/codex`, image `gopod-agent-codex:latest`). Not yet verified end-to-end against a real Codex login |
-| P4 | Per-chat provider config: `/provider claude\|codex` command | ✅ | `Runner.SetChatProvider`/`ProviderForChat` + `control.RegisterProviderCommand`, wired in `cmd/gopod/main.go`. Choice persisted in `router_state` as `provider:<folder>` and restored at boot; switching kills the container and clears the session. `GOPOD_DEFAULT_PROVIDER` not implemented — default is Claude via `GOPOD_CONTAINER_IMAGE` |
+| P2 | Claude provider | ✅ | Explicit session UUID/resume, fresh system turns, auth/model/stream handling in provider_claude.go |
+| P3 | Codex provider | ✅ | Separate image/auth and explicit session ids; dangerous-bypass + skip-git flags, fresh --ephemeral system turns. Historical real login worked; upgraded0.164 native resume is A02 |
+| P4 | Per-chat provider config and continuity | ✅ | D030/D031: choice persisted, switching waits and preserves sessions/history, resets incompatible model; confirmed quota retry. Per-topic choice is future CP-018 |
 | P5 | Gemini CLI provider: `gemini -p` with Google OAuth (browser link auth like Claude), `--resume latest` for sessions, `~/.gemini/` persisted via bind mount | ⬜ |
 | P6 | Goose provider: `goose run -t` — model-agnostic (15+ providers via env), MCP extensible, Rust binary, named sessions | ⬜ |
 | P7 | Cline CLI provider: `cline -y` — multi-provider (Anthropic/OpenAI/Google/Bedrock/Azure), gRPC API, standalone since 2.0 | ⬜ |
@@ -163,7 +183,7 @@ G8 is optional — full Vault mode (G1–G7) is the primary path.
 
 ## Phase 8 — Telegram chat-UI parity ([D021](docs/DECISIONS.md), [D022](docs/DECISIONS.md))
 
-Spec: [docs/superpowers/specs/2026-10-24-telegram-threads-and-drafts-design.md](docs/superpowers/specs/2026-10-24-telegram-threads-and-drafts-design.md). Merged to `main`, **not yet verified live** (see HANDOFF checklist).
+Spec: [docs/superpowers/specs/2026-10-24-telegram-threads-and-drafts-design.md](docs/superpowers/specs/2026-10-24-telegram-threads-and-drafts-design.md). Implementation is merged and deployed. Detailed real-client acceptance is tracked separately in [ACCEPTANCE.md](docs/ACCEPTANCE.md).
 
 | # | Item | Status | Notes |
 |---|---|---|---|
@@ -173,17 +193,17 @@ Spec: [docs/superpowers/specs/2026-10-24-telegram-threads-and-drafts-design.md](
 | T4 | Conversations per private-chat thread: sessions, summaries, queue, sends, commands | ✅ | D022; needs topics ("Threaded mode") enabled in @BotFather |
 | T5 | Parallel execution of threads | ⏸️ | Needs research: two agents in one container (`$HOME`) unverified; sequential per chat today |
 | T5b | One container per thread (alternative route to parallel threads) | ⏸️ | Needs research. Idea: each `(chat, thread)` gets its own agent container, workspace and memory mounts shared. Real parallelism and no shared `$HOME` between sessions, at the cost of RAM and container lifecycle (idle kill, cleanup, per-thread `/provider` question). Compare with T5 (two agents in one container) once the concurrency spike has run. Owner raised it 2026-10-25; chosen fallback today is sequential per chat |
-| T8 | Agent admission control: global agent gate, memory-aware start, soft Node heap cap | ✅ | D026; `internal/runner/gate.go`, `agentenv.go`, `internal/telegram/agentwait.go`. Spec: docs/superpowers/specs/2026-10-25-agent-admission-control-design.md |
+| T8 | Agent admission control | ✅ | Global gate, memory-aware admission and wait UI implemented. Native CLI NODE_OPTIONS acceptance is not a qualified heap/RAM cap; live A10/A16 |
 | T9 | Enable the memory cgroup on the Pi so the per-container RAM limit is enforced (`cgroup_enable=memory cgroup_memory=1` in the boot cmdline + host reboot), then set the agent cap to ~1 GB | ⏸️ | **Backlog, not implemented** (owner, 2026-10-25). Today the 4 GiB limit in code is ignored on the deploy host (`docker inspect` shows `mem=0`) |
-| T6 | Inline keyboards (Regenerate / Copy / pickers, confirmations) | ⬜ | Spec: [docs/superpowers/specs/2026-10-25-telegram-dynamic-ux-design.md](docs/superpowers/specs/2026-10-25-telegram-dynamic-ux-design.md) (F1-F9), plan phases 1, 2, 4 |
+| T6 | Inline keyboards: reply actions, pickers and confirmations | ✅ | Implemented/deployed; live A08/A09/A11 pending. Copy has API/client limits |
 | T7 | Rich messages (`sendRichMessage`: tables, thinking/details blocks) | ⬜ | Same spec, F13; plan phase 7, behind `GOPOD_RICH_REPLIES`; verify in private chats first |
-| T10 | Callback layer, Stop button on the edit path, humane errors with Retry | 🟦 | Dynamic UX plan phase 1 (`docs/superpowers/plans/2026-10-25-telegram-dynamic-ux-plan.md`), branch `feat/ux-phase1`: unit-tested, live check HANDOFF 0U pending; ADR D028 written with plan Task 9 (phase 4) |
-| T11 | Reply actions under the newest reply: Regenerate, Copy, Steps, As file | 🟦 | Dynamic UX plan phase 2 (Tasks 4-6), branch `feat/ux-phase2`: unit-tested, live check HANDOFF 0V pending; owner Q1 (newest reply only), Q2 (same session) |
-| T12 | Visible state: status reactions, elapsed time and queue position in the draft | 🟦 | Plan phase 3, branch `feat/ux-phase3`: unit-tested, live check HANDOFF 0W pending; owner Q3 |
-| T13 | Command buttons: model/provider pickers, confirmations, paged outputs | 🟦 | Plan phase 4 (Tasks 9-11), branch `feat/ux-phase4`: `control.Response.Buttons`, ADR D028, CONTROL.md §6.1; unit-tested, live check HANDOFF 0X pending; owner Q6 (`/chats unregister`, `/container` do not exist yet) |
+| T10 | Callback layer, Stop button on the edit path, humane errors with Retry | ✅ | Implemented, merged and deployed; live acceptance A08–A11/A07 remains pending (see docs/ACCEPTANCE.md) |
+| T11 | Reply actions under the newest reply: Regenerate, Copy, Steps, As file | ✅ | Implemented, merged and deployed; live acceptance A08–A11/A07 remains pending (see docs/ACCEPTANCE.md) |
+| T12 | Visible state: status reactions, elapsed time and queue position in the draft | ✅ | Implemented, merged and deployed; live acceptance A08–A11/A07 remains pending (see docs/ACCEPTANCE.md) |
+| T13 | Command buttons: model/provider pickers, confirmations, paged outputs | ✅ | Implemented, merged and deployed; live acceptance A08–A11/A07 remains pending (see docs/ACCEPTANCE.md) |
 | T14 | Commands menu per scope and one strings file | ⬜ | Plan phase 5; owner Q4 |
-| T15 | Input context: replied/quoted/forwarded text, albums, audio, video notes | 🟦 | Plan phase 6 (Tasks 13-14), branch `feat/ux-phase6`: unit-tested, live check HANDOFF 0Y pending |
-| T16 | Optional: task-result buttons, topic titles | ⬜ | Plan phase 8; owner Q7 |
+| T15 | Input context: replied/quoted/forwarded text, albums, audio, video notes | ✅ | Implemented, merged and deployed; live acceptance A08–A11/A07 remains pending (see docs/ACCEPTANCE.md) |
+| T16 | Optional task-result buttons and topic titles | ⬜ | Task management buttons shipped separately (CP-015 follow-up); result actions/topic titles remain open |
 
 ## Post-milestone work
 
@@ -193,30 +213,22 @@ Spec: [docs/superpowers/specs/2026-10-24-telegram-threads-and-drafts-design.md](
 
 ---
 
-## Proposals
+## Shipped proposal implementation
 
-Candidate changes live in [docs/proposals/](docs/proposals/README.md); the
-index there is the registry. A CP becomes a row above when it ships.
+[The CP registry](docs/proposals/README.md) is the status authority. Acceptance
+checks do not reopen an implemented proposal; use docs/ACCEPTANCE.md instead.
 
-| CP | Title | Status |
-|----|-------|--------|
-| CP-001 | Capability token for the memory API | in-progress |
-| CP-002 | Telegram outbox with retry and `uncertain` state | proposed |
-| CP-003 | Files and voice as typed replies via IPC | proposed |
-| CP-004 | Scheduled tasks run in their own session | proposed |
-| CP-005 | Shared tools base image for agent containers | proposed |
-| CP-006 | Maintenance yields to the user; quiet hours | proposed |
-| CP-007 | Scheduled store backups on the production host | proposed |
-| CP-008 | `/model` per chat | accepted |
-| CP-009 | Continue conversations across providers | done |
-| CP-010 | Confirm switching after quota exhaustion | done |
-| CP-011 | Sandbox runtime contract — spec saved, implementation deferred | accepted |
-| CP-012 | Provider registry — spec saved, implementation deferred | accepted |
-| CP-013 | Speech transcript origin and duration metadata | done |
-| CP-014 | Telegram media input — three delivery queues, implementation deferred | accepted |
-| CP-015 | Generic agent scheduling, management and IPC receipts | done |
+| CP | Shipped behavior | Verification boundary |
+|---|---|---|
+| CP-001 | Per-exec memory capability, chat/thread scope and revocation | Unit/integration scope tests; live unauth401. Authenticated real skill A14 remains open |
+| CP-008 | Per-chat model selection/persistence and provider model flags | Tests and deployed command/picker; live model/restart/use A11 remains open |
+| CP-009 | Bounded provider continuity preserving native sessions | Deployed; real roundtrip A04 pending |
+| CP-010 | Explicit confirmed quota fallback | Deployed; quota UI/retry A05 pending |
+| CP-013 | Speech transcript source/duration provenance | Deployed; real voice A07 pending |
+| CP-015 | Agent scheduling guide/management/receipts; canonical-JID message delivery; paged task controls | Real receipts/API delivery proved; user task execution and client UI A01/A06 pending |
 
-Suggested order: CP-001 → CP-005 → CP-002 → CP-003 → CP-004 → CP-006 → CP-007.
+Pending proposals and design-only CP-011/012/014/016–019 are assigned to the
+approved queue above. A saved spec is not an active implementation.
 
 ---
 

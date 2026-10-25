@@ -26,3 +26,10 @@ A path check that is too loose lets an agent exfiltrate the owner's project moun
 - Agent writes `{chatJid, text, files:[{path:"/workspace/chat/out.png"}]}`; the user receives the photo with caption within the watcher tick.
 - A path outside `/workspace/chat` lands in `.failed/` with a reason and is never sent.
 - `voice: true` produces a voice note using the existing TTS path.
+
+## 2026-10-25 reconciliation
+Text-only IPC now has diagnostic receipts under results/messages. Future typed
+files/voice must return equivalent scoped reasons and preserve an explicit
+public/private delivery target (CP-019), rather than treating a filesystem path
+or a failed private send as permission to publish elsewhere. This proposal
+remains unimplemented and supports appropriate CP-014 artifact output slices.
