@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"sync"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-telegram/bot"
@@ -51,11 +51,34 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 	// answer to it below goes back into that topic.
 	thread := inboundThreadID(m)
 
+	// An album arrives as one message per item: collect them into one
+	// turn (inbound_context.go).
+	if m.MediaGroupID != "" {
+		b.collectAlbum(ctx, m)
+		return
+	}
+
+	// Media costs a download (and for audio a paid transcription): only
+	// for registered chats, resolved before any of it starts. Text from
+	// an unregistered chat still goes on, so /register works there.
+	var rc store.RegisteredChat
+	hasMedia := m.Voice != nil || m.Audio != nil || m.VideoNote != nil || len(m.Photo) > 0 || m.Document != nil
+	if hasMedia {
+		var ok bool
+		if rc, ok = b.resolveRegistered(ctx, m); !ok {
+			return
+		}
+	}
+	// Downloads are not cut by a shutdown: a message whose media
+	// arrived must still become a turn row (D020).
+	dctx, cancel := downloadContext(ctx)
+	defer cancel()
+
 	// Handle voice messages (I3): transcribe via Whisper, use text as prompt.
 	isVoice := false
 	if m.Voice != nil {
 		isVoice = true
-		transcript, err := b.transcribeVoice(ctx, m.Voice)
+		transcript, err := b.transcribeVoice(dctx, m.Voice)
 		if err != nil {
 			b.log.Error("voice transcription failed", slog.Any("err", err))
 			b.replyTo(ctx, m.Chat.ID, thread, m.ID, "Failed to transcribe voice message.")
@@ -69,14 +92,35 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 		}
 	}
 
+	// Audio files and video notes are transcribed like voice, but the
+	// reply stays text: they are not the user talking to the bot. A
+	// caption stays the prompt, with the transcript attached; when the
+	// transcription fails the caption still goes, with a note.
+	if m.Audio != nil || m.VideoNote != nil {
+		transcript, err := b.transcribeAudio(dctx, m)
+		switch {
+		case err != nil && text == "":
+			b.log.Error("audio transcription failed", slog.Any("err", err))
+			b.replyTo(ctx, m.Chat.ID, thread, m.ID, "Failed to transcribe audio.")
+			return
+		case err != nil:
+			b.log.Warn("audio transcription failed, sending the caption alone", slog.Any("err", err))
+			text += "\n\n[An audio file was attached but could not be transcribed]"
+		default:
+			if transcript = strings.TrimSpace(transcript); transcript != "" {
+				if text == "" {
+					text = transcript
+				} else {
+					text += "\n\n[Transcript of the attached audio: " + transcript + "]"
+				}
+			}
+		}
+	}
+
 	// Handle photo messages (I2): download, save, build prompt.
 	var filePath string
 	if len(m.Photo) > 0 {
-		rc, ok := b.resolveRegistered(ctx, m)
-		if !ok {
-			return
-		}
-		_, containerPath, err := b.downloadPhoto(ctx, rc.Folder, m.Photo)
+		_, containerPath, err := b.downloadPhoto(dctx, rc.Folder, m.Photo)
 		if err != nil {
 			b.log.Error("download photo failed", slog.Any("err", err))
 			b.replyTo(ctx, m.Chat.ID, thread, m.ID, "Failed to download photo.")
@@ -92,11 +136,7 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 
 	// Handle document messages: download, save, reference in prompt.
 	if m.Document != nil && filePath == "" {
-		rc, ok := b.resolveRegistered(ctx, m)
-		if !ok {
-			return
-		}
-		_, containerPath, err := b.downloadDocument(ctx, rc.Folder, m.Document)
+		_, containerPath, err := b.downloadDocument(dctx, rc.Folder, m.Document)
 		if err != nil {
 			b.log.Error("download document failed", slog.Any("err", err))
 			b.replyTo(ctx, m.Chat.ID, thread, m.ID, "Failed to download document.")
@@ -120,7 +160,11 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 	// agent. Slash commands are NOT intercepted — the user might type
 	// /help mid-login and that should still work.
 	if b.logins.awaitingCode(m.Chat.ID, text) != nil {
-		b.handleLoginCode(ctx, m.Chat.ID, text)
+		if b.loginCode != nil {
+			b.loginCode(ctx, m.Chat.ID, text)
+		} else {
+			b.handleLoginCode(ctx, m.Chat.ID, text)
+		}
 		return
 	}
 
@@ -133,15 +177,28 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 		return
 	}
 
-	rc, ok := b.resolveRegistered(ctx, m)
-	if !ok {
-		return
+	if !hasMedia {
+		var ok bool
+		if rc, ok = b.resolveRegistered(ctx, m); !ok {
+			return
+		}
 	}
+	b.enqueueTurn(ctx, m, rc, text, filePath, isVoice)
+}
+
+// enqueueTurn queues text as the agent turn answering m, with the
+// header of what m points at (reply, quote, forward) above it.
+func (b *Bot) enqueueTurn(ctx context.Context, m *models.Message, rc store.RegisteredChat, text, filePath string, isVoice bool) {
+	thread := inboundThreadID(m)
 
 	// Instant acknowledgement: the queued reaction (👀) so the user
 	// knows the message was received, even before container spawns
 	// (~15s). The turn moves it through its states (status.go).
 	b.newStatusReactor(m.Chat.ID, m.ID).Set(stQueued)
+
+	// What the message points at (reply, quote, forward) goes above it,
+	// so "explain this" in reply to an answer is about that answer.
+	text = withInboundContext(m, text)
 
 	item := queue.Item{
 		ChatID:    m.Chat.ID,

@@ -10,6 +10,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"os"
+	"path/filepath"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -24,41 +25,77 @@ func (b *Bot) transcribeVoice(ctx context.Context, voice *models.Voice) (string,
 	if voice == nil {
 		return "", fmt.Errorf("nil voice")
 	}
+	return b.transcribeFile(ctx, voice.FileID, "voice.ogg")
+}
 
-	// Download the voice file from Telegram.
-	file, err := b.api.GetFile(ctx, &bot.GetFileParams{FileID: voice.FileID})
+// transcribeAudio transcribes the audio file or the video note m
+// carries. Whisper takes mp3, m4a, ogg, wav, webm and mp4 (a video
+// note) as they are, telling them apart by the file name's extension.
+func (b *Bot) transcribeAudio(ctx context.Context, m *models.Message) (string, error) {
+	switch {
+	case m.Audio != nil:
+		name := m.Audio.FileName
+		if name == "" {
+			name = "audio"
+		}
+		return b.transcribeFile(ctx, m.Audio.FileID, name)
+	case m.VideoNote != nil:
+		return b.transcribeFile(ctx, m.VideoNote.FileID, "video_note")
+	}
+	return "", fmt.Errorf("no audio in message")
+}
+
+// transcribeFile downloads a Telegram file and transcribes it. name is
+// the file name Whisper sees; without an extension it gets the
+// downloaded file's, which tells Whisper the format.
+func (b *Bot) transcribeFile(ctx context.Context, fileID, name string) (string, error) {
+	apiKey := os.Getenv("OPENAI_API_KEY")
+	if apiKey == "" {
+		return "", fmt.Errorf("OPENAI_API_KEY not set (required for transcription)")
+	}
+
+	file, err := b.api.GetFile(ctx, &bot.GetFileParams{FileID: fileID})
 	if err != nil {
 		return "", fmt.Errorf("GetFile: %w", err)
 	}
+	if filepath.Ext(name) == "" {
+		name += filepath.Ext(file.FilePath)
+	}
 
-	downloadURL := b.api.FileDownloadLink(file)
-	resp, err := http.Get(downloadURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, b.api.FileDownloadLink(file), nil)
 	if err != nil {
-		return "", fmt.Errorf("download voice: %w", err)
+		return "", fmt.Errorf("download audio: %w", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("download audio: %w", err)
 	}
 	defer resp.Body.Close()
-
-	voiceData, err := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("download audio: HTTP %d", resp.StatusCode)
+	}
+	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("read voice data: %w", err)
+		return "", fmt.Errorf("read audio data: %w", err)
 	}
 
-	b.log.Debug("voice downloaded",
-		slog.String("file_id", voice.FileID),
-		slog.Int("duration", voice.Duration),
-		slog.Int("size", len(voiceData)))
+	b.log.Debug("audio downloaded",
+		slog.String("file_id", fileID),
+		slog.String("name", name),
+		slog.Int("size", len(data)))
 
-	// Send to OpenAI Whisper API.
-	apiKey := os.Getenv("OPENAI_API_KEY")
-	if apiKey == "" {
-		return "", fmt.Errorf("OPENAI_API_KEY not set (required for voice transcription)")
+	url := b.whisperURL
+	if url == "" {
+		url = whisperDefaultURL
 	}
-
-	return whisperTranscribe(ctx, apiKey, voiceData, "voice.ogg")
+	return whisperTranscribe(ctx, url, apiKey, data, name)
 }
 
-// whisperTranscribe calls OpenAI's /v1/audio/transcriptions endpoint.
-func whisperTranscribe(ctx context.Context, apiKey string, audioData []byte, filename string) (string, error) {
+// whisperDefaultURL is OpenAI's transcription endpoint.
+const whisperDefaultURL = "https://api.openai.com/v1/audio/transcriptions"
+
+// whisperTranscribe calls a /v1/audio/transcriptions endpoint at url.
+func whisperTranscribe(ctx context.Context, url, apiKey string, audioData []byte, filename string) (string, error) {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 
@@ -78,8 +115,7 @@ func whisperTranscribe(ctx context.Context, apiKey string, audioData []byte, fil
 		return "", fmt.Errorf("close multipart: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST",
-		"https://api.openai.com/v1/audio/transcriptions", &body)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, &body)
 	if err != nil {
 		return "", fmt.Errorf("create request: %w", err)
 	}
