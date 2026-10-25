@@ -175,8 +175,15 @@ Spec: [docs/superpowers/specs/2026-10-24-telegram-threads-and-drafts-design.md](
 | T5b | One container per thread (alternative route to parallel threads) | ⏸️ | Needs research. Idea: each `(chat, thread)` gets its own agent container, workspace and memory mounts shared. Real parallelism and no shared `$HOME` between sessions, at the cost of RAM and container lifecycle (idle kill, cleanup, per-thread `/provider` question). Compare with T5 (two agents in one container) once the concurrency spike has run. Owner raised it 2026-10-25; chosen fallback today is sequential per chat |
 | T8 | Agent admission control: global agent gate, memory-aware start, soft Node heap cap | ✅ | D026; `internal/runner/gate.go`, `agentenv.go`, `internal/telegram/agentwait.go`. Spec: docs/superpowers/specs/2026-10-25-agent-admission-control-design.md |
 | T9 | Enable the memory cgroup on the Pi so the per-container RAM limit is enforced (`cgroup_enable=memory cgroup_memory=1` in the boot cmdline + host reboot), then set the agent cap to ~1 GB | ⏸️ | **Backlog, not implemented** (owner, 2026-10-25). Today the 4 GiB limit in code is ignored on the deploy host (`docker inspect` shows `mem=0`) |
-| T6 | Inline keyboards (Regenerate / Copy / pickers, confirmations) | ⬜ | Separate spec |
-| T7 | Rich messages (`sendRichMessage`: tables, thinking/details blocks) | ⬜ | Separate spec; verify in private chats first |
+| T6 | Inline keyboards (Regenerate / Copy / pickers, confirmations) | ⬜ | Spec: [docs/superpowers/specs/2026-10-25-telegram-dynamic-ux-design.md](docs/superpowers/specs/2026-10-25-telegram-dynamic-ux-design.md) (F1-F9), plan phases 1, 2, 4 |
+| T7 | Rich messages (`sendRichMessage`: tables, thinking/details blocks) | ⬜ | Same spec, F13; plan phase 7, behind `GOPOD_RICH_REPLIES`; verify in private chats first |
+| T10 | Callback layer, Stop button on the edit path, humane errors with Retry | ⬜ | Dynamic UX plan phase 1 (`docs/superpowers/plans/2026-10-25-telegram-dynamic-ux-plan.md`); ADR D028 |
+| T11 | Reply actions under the newest reply: Regenerate, Copy, Steps, As file | ⬜ | Plan phase 2; owner Q1, Q2 |
+| T12 | Visible state: status reactions, elapsed time and queue position in the draft | ⬜ | Plan phase 3; needs PR #22 (D024); owner Q3 |
+| T13 | Command buttons: model/provider pickers, confirmations, paged outputs | ⬜ | Plan phase 4; `control.Response.Buttons`; owner Q6 |
+| T14 | Commands menu per scope and one strings file | ⬜ | Plan phase 5; owner Q4 |
+| T15 | Input context: replied/quoted/forwarded text, albums, audio, video notes | ⬜ | Plan phase 6 |
+| T16 | Optional: task-result buttons, topic titles | ⬜ | Plan phase 8; owner Q7 |
 
 ## Post-milestone work
 
