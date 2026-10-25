@@ -524,9 +524,13 @@ func (r *Runner) startStream(
 			return
 		}
 
-		// Classify auth/exit errors.
+		// Classify provider quota/auth/exit errors.
 		if execErr != nil {
 			if ee, ok := execErr.(*ExecError); ok && ee.Code != 0 {
+				if isUsageLimit(stderr, authOut) {
+					result <- RunResult{Err: ErrUsageLimit}
+					return
+				}
 				if prov.IsNotLoggedInError(stderr, authOut) {
 					result <- RunResult{Err: r.classifyAuthError(ctx, id)}
 					return
@@ -683,6 +687,9 @@ func (r *Runner) execAgent(ctx context.Context, containerID, chatFolder string, 
 	}
 	if res.ExitCode != 0 {
 		stderr := strings.TrimSpace(res.Stderr)
+		if isUsageLimit(stderr, res.Stdout) {
+			return res, ErrUsageLimit
+		}
 		if prov.IsNotLoggedInError(stderr, res.Stdout) {
 			return res, r.classifyAuthError(ctx, containerID)
 		}
@@ -973,4 +980,3 @@ func (r *Runner) unlockChat(chatFolder string) {
 		mu.Unlock()
 	}
 }
-

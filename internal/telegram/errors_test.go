@@ -209,3 +209,19 @@ func TestStreamErrorUsesHumaneReply(t *testing.T) {
 		t.Fatalf("error reply = %q", last.Form["text"])
 	}
 }
+
+func TestClassifyUsageLimit(t *testing.T) {
+	if got := classifyErr(fmt.Errorf("run: %w", runner.ErrUsageLimit)); got != errUsageLimit {
+		t.Fatalf("kind = %v", got)
+	}
+}
+
+func TestReplyError_UsageLimitExplainsQuota(t *testing.T) {
+	fake := &fakeTelegram{respond: okResponder}
+	b, item := newStreamFixture(t, fake)
+	b.replyError(context.Background(), item, runner.ErrUsageLimit)
+	sends := errorSends(fake)
+	if len(sends) != 1 || sends[0].Form["text"] != errTextUsageLimit {
+		t.Fatalf("sends = %+v", sends)
+	}
+}
