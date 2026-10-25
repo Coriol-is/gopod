@@ -582,8 +582,9 @@ owner-only Router dispatch; a human owner in another chat has no privilege.
 Menus advertise `/telegram` in private chats only. No guest/inline/business
 handler or additional update subscription is enabled.
 
-Doctor displays refresh eligibility, not an automatic refresh schedule: only the
-explicit refresh command requests a new getMe observation. Technical update and
+Doctor displays refresh eligibility, not an automatic refresh schedule. After
+the initial startup observation, only the explicit refresh command requests
+another getMe observation. Technical update and
 reason identifiers use inline code so Markdown cannot remove underscores.
 An available owner startup snapshot includes its timestamp/age and local
 container/CLI/auth results, explicitly historical and not current-health proof.
