@@ -29,9 +29,8 @@ import (
 // use the public commands (/ping, /whoami, /register).
 func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Update) {
 	if update != nil && update.StoppedMessageGeneration != nil {
-		// Stop button on a streaming draft. gopod sets no
-		// allowed_updates, so Telegram's default set applies, which
-		// includes stopped_message_generation.
+		// Stop button on a streaming draft (stopped_message_generation
+		// is in allowedUpdates, bot.go).
 		b.handleGenerationStopped(ctx, update)
 		return
 	}

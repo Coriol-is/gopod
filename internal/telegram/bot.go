@@ -125,6 +125,23 @@ type Bot struct {
 	// sleep waits d or until ctx ends; nil means sleepCtx. Tests stub
 	// it to skip retry_after waits.
 	sleep func(ctx context.Context, d time.Duration) error
+
+	// callbacks maps a callback act to its handler (callback.go).
+	cbMu      sync.RWMutex
+	callbacks map[string]cbHandler
+}
+
+// allowedUpdates is the explicit getUpdates allowed_updates list. Before
+// inline buttons gopod sent none, so Telegram's default set applied
+// (every type except chat_member, message_reaction and
+// message_reaction_count); of that set gopod handles only message and
+// stopped_message_generation (draft Stop). callback_query is in the
+// default set too, but listing the three keeps the set gopod depends on
+// visible. Add a type here before handling it.
+var allowedUpdates = bot.AllowedUpdates{
+	"message",
+	"callback_query",
+	"stopped_message_generation",
 }
 
 // New constructs a Bot. The token must be a valid @BotFather token; an
@@ -157,13 +174,10 @@ func New(token string, deps Deps) (*Bot, error) {
 		streamEnabled: deps.StreamEnabled,
 	}
 
+	opts := b.botOptions()
 	// Load last processed update offset for cursor backfill (M8a).
 	// On restart, this tells Telegram to deliver any updates that
 	// arrived while gopod was down.
-	opts := []bot.Option{
-		bot.WithDefaultHandler(b.defaultHandler),
-		bot.WithMiddlewares(b.offsetMiddleware),
-	}
 	if deps.Store != nil {
 		offsetStr, _ := deps.Store.GetState(context.Background(), "telegram_update_offset")
 		if offsetStr != "" {
@@ -182,13 +196,32 @@ func New(token string, deps Deps) (*Bot, error) {
 		return nil, fmt.Errorf("telegram: bot.New: %w", err)
 	}
 	b.api = api
+	b.registerHandlers(api)
+	b.registerCallbacks()
 
+	return b, nil
+}
+
+// botOptions are the go-telegram/bot options of every gopod bot: the
+// default handler, the offset middleware and the allowed updates.
+func (b *Bot) botOptions() []bot.Option {
+	return []bot.Option{
+		bot.WithDefaultHandler(b.defaultHandler),
+		bot.WithMiddlewares(b.offsetMiddleware),
+		bot.WithAllowedUpdates(allowedUpdates),
+	}
+}
+
+// registerHandlers registers the handlers that take updates away from
+// the default handler: /login and every callback_query.
+func (b *Bot) registerHandlers(api *bot.Bot) {
 	// /login is special-cased because it's a stateful interactive
 	// session (stdin pipe, timeout), not a stateless Command→Response.
 	// All other slash commands go through the Router via slashHandler.
 	api.RegisterHandler(bot.HandlerTypeMessageText, "login", bot.MatchTypeCommand, b.loginHandler)
-
-	return b, nil
+	// Every inline button press goes to one dispatcher (callback.go).
+	// An empty prefix matches all callback data and nothing else.
+	api.RegisterHandler(bot.HandlerTypeCallbackQueryData, "", bot.MatchTypePrefix, b.callbackHandler)
 }
 
 // Run starts the long-poll loop and blocks until ctx is cancelled.
