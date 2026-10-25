@@ -109,6 +109,11 @@ type Bot struct {
 	inflightMu sync.Mutex
 	inflight   map[int64]*inflightTurn
 
+	// waitPlaceholders holds placeholders sent early by a turn's agent
+	// gate wait notice, for streamReply to take over (agentwait.go).
+	waitMu           sync.Mutex
+	waitPlaceholders map[waitKey]int
+
 	// streamTick is the streaming flush cadence; zero means 1s.
 	streamTick time.Duration
 
