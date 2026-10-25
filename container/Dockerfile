@@ -8,9 +8,9 @@
 #
 # Design notes:
 #
-#   - Base image is `node:22-slim`. node is a hard dependency of
-#     `@anthropic-ai/claude-code` — the Claude Code CLI is a Node
-#     application; gopod itself is Go and lives on the host.
+#   - Base image is `node:22-slim`. The Claude Code npm installer
+#     requires Node 22+ and installs a per-platform native binary.
+#     Node also supports agent scripts; gopod itself is Go on the host.
 #   - Only four extra binaries go in: `git`, `ripgrep`, `ca-certificates`,
 #     and `curl`. `git` is needed by most agent workflows, `ripgrep`
 #     is the search tool Claude Code shells out to, `ca-certificates`
@@ -57,7 +57,7 @@ COPY --from=frf-builder /frf /usr/local/bin/frf
 #   docker build --build-arg CLAUDE_CODE_VERSION=x.y.z ...
 # or edit the default below. Check what is baked in with
 #   docker run --rm --entrypoint claude gopod-agent:latest --version
-ARG CLAUDE_CODE_VERSION=2.1.289
+ARG CLAUDE_CODE_VERSION=2.1.310
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} \
  && npm cache clean --force
 

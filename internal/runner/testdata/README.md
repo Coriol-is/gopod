@@ -3,7 +3,7 @@
 ## Claude Code stream-json (`claude_stream_*.jsonl`)
 
 Recorded 2026-10-25 with **Claude Code 2.1.310 on the developer's Mac**
-(not the `gopod-agent` image, which pins 2.1.289 and was not available
+(not the then-current `gopod-agent` image, which pinned 2.1.289 and was not available
 locally):
 
     claude --no-session-persistence --model haiku \
@@ -31,7 +31,7 @@ thinking/signature blobs are `sig-placeholder`; timestamps are fixed;
 `rate_limit_event` is cut to its status. `TestTestdataHasNoPersonalData`
 fails on local paths or real-looking UUIDs in any testdata file.
 
-**Cross-checked against 2.1.289** (the version the agent image pins) on
+**Cross-checked against 2.1.289** (the agent image version at that time) on
 2026-10-25 by event kinds only: a run in the real image produced the
 same kinds (system/init with session_id, system/status,
 system/thinking_tokens, stream_event message_start/content_block_*/
