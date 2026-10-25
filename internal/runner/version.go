@@ -29,9 +29,9 @@ func (r *Runner) logAgentVersion(ctx context.Context, containerID, chatFolder st
 	if len(cmd) == 0 {
 		return
 	}
-	vctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	vctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	res, err := r.d.Exec(vctx, containerID, cmd, nil)
+	res, err := r.execLocalProbe(vctx, containerID, cmd)
 	if err != nil || res.ExitCode != 0 {
 		r.log.Debug("agent version check failed",
 			slog.String("chat", chatFolder),
@@ -43,7 +43,7 @@ func (r *Runner) logAgentVersion(ctx context.Context, containerID, chatFolder st
 		slog.String("chat", chatFolder),
 		slog.String("provider", prov.Name()),
 		slog.String("image", prov.Image()),
-		slog.String("cli_version", firstLine(res.Stdout)))
+		slog.String("cli_version", safeStartupVersion(res.Stdout)))
 }
 
 // tailString returns the last n bytes of s, prefixed with an ellipsis

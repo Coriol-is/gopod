@@ -70,7 +70,11 @@ there is no implementation or privacy-flag activation yet.
 
 ## What's in progress
 CP-017 initial private-DM slice is reviewed, merged and deployed as f1f4532.
-No active feature implementation remains.
+A separate owner-startup runtime/self-diagnostic slice is being implemented;
+see [startup contract](STARTUP.md) and D035. It restores selections before
+recovery, warms the selected owner image, checks CLI/local auth and performs a
+Codex management-only quota observation where supported. No model call or
+automatic provider switch is included; new slice not yet deployed.
 `/telegram` reads cached observations for registered private chats; owner chat alone
 can use `/telegram doctor` and explicit `refresh`. Static `/help guest|inline|topics`
 works without model/container/media processing. New commands silently suppress all

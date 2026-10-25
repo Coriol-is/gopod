@@ -213,27 +213,10 @@ func run() error {
 			}
 			r.SetProgress(cfg.ProgressEnabled)
 
-			// Start compact watcher for interval/daily triggers.
-			var compactInterval time.Duration
-			if cfg.CompactInterval != "" {
-				compactInterval, _ = time.ParseDuration(cfg.CompactInterval)
-			}
-			r.StartCompactWatcher(ctx, runner.CompactConfig{
-				After:     cfg.CompactAfter,
-				Interval:  compactInterval,
-				TimeOfDay: cfg.CompactTime,
-			}, allowlist)
-
 			runLog.Info("runner ready",
 				slog.String("image", defaults.Image),
 				slog.Int("uid", defaults.UID),
 				slog.Int("gid", defaults.GID))
-
-			// Idle watcher: a single goroutine that scans every active
-			// chat once a minute and stops + removes containers that
-			// have been idle for longer than DefaultIdleTimeout (30m).
-			// Exits when ctx is cancelled by SIGINT/SIGTERM.
-			r.StartIdleWatcher(ctx, runner.DefaultIdleTimeout)
 
 			// Memory layer (M9). OpenAI embedder + hybrid search.
 			// Optional: if OPENAI_API_KEY is unset, memory is disabled.
@@ -397,21 +380,18 @@ func run() error {
 			}
 			return err
 		}
-		// Restore saved provider choices from store.
-		for _, rc := range func() []store.RegisteredChat {
-			list, _ := st.ListRegistered(context.Background())
-			return list
-		}() {
-			saved, _ := st.GetState(context.Background(), "provider:"+rc.Folder)
-			if saved != "" {
-				if p, ok := providers[saved]; ok {
-					agentRunner.SetChatProvider(rc.Folder, p)
-				}
-			}
-			if m, _ := st.GetState(context.Background(), "model:"+rc.Folder); m != "" {
-				agentRunner.SetChatModel(rc.Folder, m)
-			}
+		// Restore choices first, then warm/check only the configured owner before
+		// queue recovery, scheduled work or Telegram command dispatch can race it.
+		if err := restoreAndWarmOwner(ctx, st, agentRunner, cfg.OwnerChatID, providers, allowlist, logger); err != nil {
+			return err
 		}
+		// Maintenance must not race restoration or warm up the default image.
+		var compactInterval time.Duration
+		if cfg.CompactInterval != "" {
+			compactInterval, _ = time.ParseDuration(cfg.CompactInterval)
+		}
+		agentRunner.StartCompactWatcher(ctx, runner.CompactConfig{After: cfg.CompactAfter, Interval: compactInterval, TimeOfDay: cfg.CompactTime}, allowlist)
+		agentRunner.StartIdleWatcher(ctx, runner.DefaultIdleTimeout)
 
 		// /model (CP-008): per-chat model override, persisted like /provider.
 		control.RegisterModelCommand(router,
