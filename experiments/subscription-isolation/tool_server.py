@@ -21,11 +21,11 @@ REQUEST_LIMIT = 131072
 TOOL = {
     "name": "group_exec",
     "description": "Run a command in the isolated experimental group workspace; no network or account credentials.",
-    "inputSchema": {"type": "object", "properties": {"command": {"type": "string", "maxLength": 16384}},
-                    "required": ["command"], "additionalProperties": False},
+    "inputSchema": {"type": "object", "properties": {"cmd": {"type": "string", "minLength": 1, "maxLength": 16384}},
+                    "required": ["cmd"], "additionalProperties": False},
 }
-ARGUMENT_HINT = ('group_exec requires exactly one field command containing a nonempty shell string. '
-                 'Example: {"command":"printf canary"}. No other fields.')
+ARGUMENT_HINT = ('group_exec requires exactly one field cmd containing a nonempty shell string. '
+                 'Example: {"cmd":"printf canary"}. No other fields.')
 
 
 class Executor:
@@ -175,7 +175,16 @@ def dispatch(request, executor):
         if params.get("name") != "group_exec":
             raise ValueError("unknown tool")
         try:
-            value = executor.run(params.get("arguments"))
+            arguments = params.get("arguments")
+            # One canonical external schema; do not accept aliases, nested
+            # payloads or extra authority-bearing fields. Executor's internal
+            # command API remains unchanged and is validated independently.
+            if not isinstance(arguments, dict) or set(arguments) != {"cmd"}:
+                raise ValueError("invalid command")
+            command = arguments["cmd"]
+            if not isinstance(command, str) or not command or len(command) > 16384 or "\0" in command:
+                raise ValueError("invalid command")
+            value = executor.run({"command": command})
         except ValueError as error:
             if str(error) not in {"only command is accepted", "invalid command"}:
                 raise

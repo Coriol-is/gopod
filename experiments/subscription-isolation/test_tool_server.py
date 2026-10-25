@@ -17,6 +17,7 @@ class ProtocolTests(unittest.TestCase):
         result = dispatch({"id": 1, "method": "tools/list"}, None)
         self.assertEqual([x["name"] for x in result["result"]["tools"]], ["group_exec"])
         self.assertFalse(result["result"]["tools"][0]["inputSchema"]["additionalProperties"])
+        self.assertEqual(set(result["result"]["tools"][0]["inputSchema"]["properties"]), {'cmd'})
 
     def test_unknown_method_and_tool(self):
         self.assertEqual(dispatch({"id": 1, "method": "host/read"}, None)["error"]["code"], -32601)
@@ -28,7 +29,7 @@ class ProtocolTests(unittest.TestCase):
         # Exercise the real strict validator, which returns before any self or
         # Docker access on invalid input. Hints never echo untrusted arguments.
         executor.run.side_effect = lambda arguments: Executor.run(None, arguments)
-        for arguments in ({'cmd': 'private-argument'}, {'command': ''}, {'command': 'true', 'private-key': 'private-value'}):
+        for arguments in ({'command': 'private-argument'}, {'cmd': ''}, {'cmd': 'true', 'private-key': 'private-value'}):
             with mock.patch('tool_server.subprocess.Popen') as spawn:
                 response = dispatch({'id': 7, 'method': 'tools/call',
                                      'params': {'name': 'group_exec', 'arguments': arguments}}, executor)
@@ -37,7 +38,15 @@ class ProtocolTests(unittest.TestCase):
             self.assertNotIn('private-', json.dumps(response))
         executor.run.side_effect = ValueError('executor is stopping')
         with self.assertRaises(ValueError):
-            dispatch({'id': 8, 'method': 'tools/call', 'params': {'name': 'group_exec', 'arguments': {}}}, executor)
+            dispatch({'id': 8, 'method': 'tools/call', 'params': {'name': 'group_exec', 'arguments': {'cmd': 'true'}}}, executor)
+
+    def test_external_cmd_normalizes_to_internal_command_without_aliases(self):
+        executor = mock.Mock()
+        executor.run.return_value = {'exit_code': 0, 'stopped': None, 'output': 'canary'}
+        response = dispatch({'id': 1, 'method': 'tools/call',
+                             'params': {'name': 'group_exec', 'arguments': {'cmd': 'printf canary'}}}, executor)
+        executor.run.assert_called_once_with({'command': 'printf canary'})
+        self.assertFalse(response['result']['isError'])
 
     @unittest.skipUnless(shutil.which("docker"), "requires Docker client executable, not a running daemon")
     def test_idle_sigterm_and_oversized_frame(self):
@@ -136,7 +145,7 @@ printf boundary-ok
                 proc.terminate()
                 proc.communicate(timeout=8)
         self.addCleanup(stop_server)
-        request = {"id": 1, "method": "tools/call", "params": {"name": "group_exec", "arguments": {"command": "touch started; sleep 30"}}}
+        request = {"id": 1, "method": "tools/call", "params": {"name": "group_exec", "arguments": {"cmd": "touch started; sleep 30"}}}
         proc.stdin.write(json.dumps(request) + "\n")
         proc.stdin.flush()
         deadline = time.monotonic() + 5
@@ -170,7 +179,7 @@ printf boundary-ok
         frames = [
             {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-03-26"}},
             {"jsonrpc": "2.0", "method": "notifications/initialized"},
-            {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "group_exec", "arguments": {"command": "printf mcp-ok"}}},
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "group_exec", "arguments": {"cmd": "printf mcp-ok"}}},
         ]
         result = subprocess.run(["python3", str(Path(__file__).with_name("tool_server.py")),
                                  "--workspace", str(self.workspace), "--image", self.executor.image],
