@@ -26,6 +26,10 @@ func (w *Watcher) writeTaskReceipt(folder, path, op string, result *TaskResult, 
 		receipt.Status = "error"
 		receipt.Error = cause.Error()
 	}
+	return w.writeReceipt(folder, path, "results", receipt)
+}
+
+func (w *Watcher) writeReceipt(folder, path, directory string, receipt any) bool {
 	data, err := json.MarshalIndent(receipt, "", "  ")
 	if err != nil {
 		return false
@@ -36,12 +40,12 @@ func (w *Watcher) writeTaskReceipt(folder, path, op string, result *TaskResult, 
 		return false
 	}
 	defer root.Close()
-	if err = root.MkdirAll("results", 0o700); err != nil {
+	if err = root.MkdirAll(directory, 0o700); err != nil {
 		w.log.Error("ipc: create result directory", "folder", folder, "err", err)
 		return false
 	}
 	name := strings.TrimSuffix(filepath.Base(path), ".json") + ".result.json"
-	tmp := filepath.Join("results", ".tmp-"+name+"-"+strconv.FormatInt(w.cfg.NowFn().UnixNano(), 10))
+	tmp := filepath.Join(directory, ".tmp-"+name+"-"+strconv.FormatInt(w.cfg.NowFn().UnixNano(), 10))
 	f, err := root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err == nil {
 		_, err = f.Write(append(data, '\n'))
@@ -50,12 +54,27 @@ func (w *Watcher) writeTaskReceipt(folder, path, op string, result *TaskResult, 
 		}
 	}
 	if err == nil {
-		err = root.Rename(tmp, filepath.Join("results", name))
+		err = root.Rename(tmp, filepath.Join(directory, name))
 	}
 	if err != nil {
 		root.Remove(tmp)
-		w.log.Error("ipc: write task receipt", "folder", folder, "file", filepath.Base(path), "err", fmt.Errorf("receipt: %w", err))
+		w.log.Error("ipc: write receipt", "folder", folder, "file", filepath.Base(path), "err", fmt.Errorf("receipt: %w", err))
 		return false
 	}
 	return true
+}
+
+// Message receipts are diagnostic only, not delivery replay authority. Telegram
+// has no atomic transaction with our filesystem; resubmission may duplicate.
+func (w *Watcher) writeMessageReceipt(folder, path, status string, cause error) bool {
+	receipt := struct {
+		Status      string `json:"status"`
+		RequestFile string `json:"requestFile"`
+		Error       string `json:"error,omitempty"`
+		Help        string `json:"help"`
+	}{Status: status, RequestFile: filepath.Base(path), Help: "Read /workspace/chat/SCHEDULING.md. Message receipts are under results/messages; use canonical chatJid tg:<id>. Do not blindly resend after an ambiguous delivery error."}
+	if cause != nil {
+		receipt.Error = cause.Error()
+	}
+	return w.writeReceipt(folder, path, "results/messages", receipt)
 }
