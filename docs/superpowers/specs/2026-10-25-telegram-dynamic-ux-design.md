@@ -1,5 +1,9 @@
 # Dynamic Telegram UX: buttons, status, rich replies
 
+> **Owner decisions (2026-10-25):** all recommended answers to Q1-Q10 below are
+> accepted as written. Implementation starts with plan phases 1-3.
+
+
 Status: **proposed** (2026-10-25). Research and design by the controller;
 every point marked *owner* below waits for the owner's answer, everything
 marked *call* is the controller's decision and can be overturned in review.
