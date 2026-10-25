@@ -46,6 +46,25 @@ PR #37 is merged and deployed. A real canonical-JID message returned ok and
 .processed; an invalid JID returned an error receipt and .failed. No model/digest
 run was invoked; user-visible reading and real recurring execution remain open.
 
+**Current work (2026-10-25):** /tasks no-argument replies failed in production
+because byte truncation split a Cyrillic/emoji prompt; persisted logs show
+Telegram's UTF-8 rejection for both reported commands. Rune-safe truncation and
+a three-task page with scoped Pause/Resume/Refresh/navigation now have control
+and Telegram callback tests. State actions are explicit, validated under the
+scheduler lock, stale-safe and cannot revive completed tasks. Code review, build/vet/full tests and control/Telegram race checks pass;
+release/CI status must be recorded before claiming this panel deployed.
+
+**New accepted design-only specifications:** CP-016 private-topic deletion and
+session retirement, CP-017 Telegram capability diagnostics, CP-018 per-thread
+provider overrides. Specs under docs/superpowers/specs define acceptance gates;
+none of these three features is implemented. Bot API has no documented deleted
+forum-topic event; closed topics must not lose sessions. Current getMe reports
+Guest and private topics enabled, but gopod has no guest update subscription or
+handler. Inline/business are disabled; the pinned SDK's inline boolean JSON tag
+is wrong (official true fixture decodes false), so diagnostics must correct it.
+Bot-to-bot is researched separately; its current enablement is unknown, no peers
+were contacted or modes toggled. Sender trust and loop budgets are prerequisites.
+
 **Extensibility specs saved (design only):** CP-011 sandbox runtime and CP-012
 provider registry separate agent behaviour from execution backend lifecycle.
 Both specs are saved under `docs/superpowers/specs/`; proposed D032 changes no
