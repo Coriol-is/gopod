@@ -574,6 +574,13 @@ don't get lost.)
   agent turn with a tool peaks at ~0.5-0.6 GB RSS; the host has ~1.8 GB
   available.
 
+- **Deploy housekeeping (2026-10-25).** The deploy host (Raspberry Pi 4B,
+  117 GB disk) had 24.6 GB of Docker build cache, growing with every
+  `docker compose build`. After each deploy run `docker image prune -f` and
+  `docker builder prune -f --filter until=168h` (README, "Production
+  deployment"). Other projects' images on that host (nanoclaw, codex
+  assistant, honcho) are not gopod's: do not prune them.
+
 ## How to update this file
 
 1. **Before starting work:** read this file. Read the docs it points at.
