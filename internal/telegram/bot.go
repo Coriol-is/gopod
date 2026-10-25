@@ -158,11 +158,16 @@ type Bot struct {
 	rowMu sync.Mutex
 	rows  replyRow
 
+	// inboundHandlers tracks our async handlers; the SDK only waits for
+	// its polling workers, not its default async handler goroutines.
+	inboundHandlers sync.WaitGroup
+
 	// albums holds media groups being collected (inbound_context.go);
 	// albumClock is their window's clock, nil means the real one.
-	albumMu    sync.Mutex
-	albums     map[albumKey]*albumBuf
-	albumClock reactClock
+	albumDownloads sync.WaitGroup
+	albumMu        sync.Mutex
+	albums         map[albumKey]*albumBuf
+	albumClock     reactClock
 
 	// whisperURL is the transcription endpoint; "" means OpenAI's.
 	// Tests point it at a fake.
@@ -249,7 +254,8 @@ func New(token string, deps Deps) (*Bot, error) {
 func (b *Bot) botOptions() []bot.Option {
 	return []bot.Option{
 		bot.WithDefaultHandler(b.defaultHandler),
-		bot.WithMiddlewares(b.offsetMiddleware),
+		bot.WithNotAsyncHandlers(),
+		bot.WithMiddlewares(b.trackedAsyncMiddleware, b.offsetMiddleware),
 		bot.WithAllowedUpdates(allowedUpdates),
 	}
 }
@@ -279,6 +285,9 @@ func (b *Bot) Run(ctx context.Context) error {
 
 	b.log.Info("telegram bot starting (long poll)")
 	b.api.Start(ctx)
+	// Dispatch adds synchronously before returning to the SDK, so no
+	// handler can be added after Start has joined its polling workers.
+	b.inboundHandlers.Wait()
 	// Albums still in their collection window become turns now, before
 	// the store closes (inbound_context.go).
 	b.flushPendingAlbums()
@@ -317,6 +326,20 @@ func (b *Bot) publishCommands(ctx context.Context) {
 	}
 	b.log.Info("telegram: published commands",
 		slog.Int("count", len(cmds)))
+}
+
+// trackedAsyncMiddleware keeps concurrent update handling (including Stop)
+// while letting Run join every handler before draining albums and closing
+// storage. It must be outermost and paired with WithNotAsyncHandlers:
+// the Add happens on the SDK worker before ProcessUpdate returns.
+func (b *Bot) trackedAsyncMiddleware(next bot.HandlerFunc) bot.HandlerFunc {
+	return func(ctx context.Context, api *bot.Bot, update *models.Update) {
+		b.inboundHandlers.Add(1)
+		go func() {
+			defer b.inboundHandlers.Done()
+			next(ctx, api, update)
+		}()
+	}
 }
 
 // offsetMiddleware persists the Telegram update_id on every update

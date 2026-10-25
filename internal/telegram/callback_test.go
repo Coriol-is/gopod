@@ -247,10 +247,14 @@ func TestCallbackHandlerLeavesMessagesToDefault(t *testing.T) {
 
 	ctx := context.Background()
 	api.ProcessUpdate(ctx, &models.Update{Message: &models.Message{ID: 1, Chat: models.Chat{ID: streamChat}, Text: "hello"}})
+	srvBot.inboundHandlers.Wait() // join the tracked asynchronous handler
 	api.ProcessUpdate(ctx, &models.Update{Message: &models.Message{ID: 2, Chat: models.Chat{ID: streamChat}, Text: "st:1"}})
+	srvBot.inboundHandlers.Wait() // join the tracked asynchronous handler
 	api.ProcessUpdate(ctx, stopUpdate(streamChat, 3))
+	srvBot.inboundHandlers.Wait() // join the tracked asynchronous handler
 	api.ProcessUpdate(ctx, cbUpdate("q1", streamChat, 0, 5, "zz"))
 
+	srvBot.inboundHandlers.Wait()
 	if strings.Join(seen, ",") != "message,message,stop" {
 		t.Fatalf("default handler saw %v", seen)
 	}

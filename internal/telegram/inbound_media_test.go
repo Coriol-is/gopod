@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
 	"github.com/Coriol-is/gopod/internal/control"
@@ -488,5 +489,114 @@ func TestSendDocument_ShowsUploadAction(t *testing.T) {
 	acts := fake.callsTo("sendChatAction")
 	if len(acts) != 1 || acts[0].Form["action"] != string(models.ChatActionUploadDocument) || acts[0].Form["message_thread_id"] != "7" {
 		t.Errorf("chat actions = %+v, want one upload_document in thread 7", acts)
+	}
+}
+
+func TestAlbum_ExpiredTimerCannotFlushRestartedWindow(t *testing.T) {
+	f := newInboundFixture(t, nil)
+	clock := newManualClock()
+	f.b.albumClock = clock
+	f.handle(albumPart(11, "p1", ""))
+	// Simulate a timer whose callback was dispatched just before Stop:
+	// cancellation cannot retract it, but it has not acquired albumMu yet.
+	clock.mu.Lock()
+	old := clock.timers[clock.seq].f
+	clock.mu.Unlock()
+	f.handle(albumPart(12, "p2", ""))
+	old()
+	if n := len(f.fake.callsTo("getFile")); n != 0 {
+		t.Fatalf("obsolete timer downloaded %d files before the new window ended", n)
+	}
+	clock.Advance(albumWindow)
+	it := f.next(t)
+	if n := strings.Count(it.Text, "/workspace/chat/uploads/"); n != 2 {
+		t.Fatalf("album has %d paths, want 2", n)
+	}
+	f.none(t)
+}
+
+func TestAlbum_ShutdownWaitsForTimerDownload(t *testing.T) {
+	f := newInboundFixture(t, nil)
+	clock := newManualClock()
+	f.b.albumClock = clock
+	started, release := make(chan struct{}), make(chan struct{})
+	var releaseOnce sync.Once
+	t.Cleanup(func() { releaseOnce.Do(func() { close(release) }) })
+	original := f.fake.respond
+	f.fake.respond = func(method string, form map[string]string) (int, string) {
+		if method == "getFile" {
+			close(started)
+			<-release
+		}
+		return original(method, form)
+	}
+	f.handle(albumPart(11, "p1", ""))
+	timerDone := make(chan struct{})
+	go func() { clock.Advance(albumWindow); close(timerDone) }()
+	select {
+	case <-started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("album download did not start")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	done := make(chan struct{})
+	go func() { _ = f.b.Run(ctx); close(done) }()
+	select {
+	case <-done:
+		t.Fatal("Run returned before the in-flight album was persisted")
+	case <-time.After(100 * time.Millisecond):
+	}
+	releaseOnce.Do(func() { close(release) })
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run failed to return after the download completed")
+	}
+	<-timerDone
+	if it := f.next(t); it.ID == 0 {
+		t.Fatal("album has no persisted turn id")
+	}
+}
+
+func TestRun_WaitsForDispatchedHandlerBeforeDrainingAlbums(t *testing.T) {
+	f := newInboundFixture(t, nil)
+	f.b.albumClock = newManualClock()
+	started, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	t.Cleanup(func() { once.Do(func() { close(release) }) })
+	srv := httptest.NewServer(f.fake)
+	defer srv.Close()
+	defer once.Do(func() { close(release) })
+	opts := append(f.b.botOptions(), bot.WithServerURL(srv.URL), bot.WithSkipGetMe(),
+		bot.WithDefaultHandler(func(ctx context.Context, _ *bot.Bot, update *models.Update) {
+			close(started)
+			<-release
+			f.b.defaultHandler(context.WithoutCancel(ctx), nil, update)
+		}))
+	api, err := bot.New("123:test", opts...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.b.api = api
+	api.ProcessUpdate(context.Background(), &models.Update{Message: albumPart(11, "p1", "")})
+	<-started
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	done := make(chan struct{})
+	go func() { _ = f.b.Run(ctx); close(done) }()
+	select {
+	case <-done:
+		t.Fatal("Run returned while an SDK-dispatched handler was still collecting an album")
+	case <-time.After(100 * time.Millisecond):
+	}
+	once.Do(func() { close(release) })
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not join inbound handler")
+	}
+	if it := f.next(t); it.ID == 0 {
+		t.Fatal("late album not persisted")
 	}
 }

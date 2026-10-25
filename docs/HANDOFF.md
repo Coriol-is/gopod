@@ -12,7 +12,7 @@
 **Phase:** Core complete. gopod is a working personal Telegram
 Claude assistant with session continuity, long-term memory, voice,
 vision, scheduling, and multi-provider architecture ready for Codex.
-**Last updated:** 2026-10-24
+**Last updated:** 2026-10-25
 **Last working session (2026-10-24):** Telegram chat-UI parity, built
 autonomously through worktrees and PRs #3–#10 (agent implementer + separate
 reviewer per task, CI green, admin squash-merge). On `main`, **not deployed
@@ -42,7 +42,11 @@ disables; compose `stop_grace_period: 30s`. Not verified live: on the Pi a
 `feat/ux-phase6`, PR open, not merged): replied, quoted and forwarded
 text reaches the prompt as a header (`internal/telegram/inbound_context.go`),
 albums become one turn after a 1 s window, audio files and video notes
-are transcribed like voice. Unit-tested only; live checklist 0Y.
+are transcribed like voice. Review fixes reject media before downloading or
+transcribing for unregistered chats, sanitize and distinguish upload names,
+and drain inbound handlers plus pending/in-flight album downloads on graceful
+shutdown. Obsolete timer callbacks cannot shorten a restarted album window.
+Unit-tested only; live checklist 0Y.
 **Previous session (2026-10-05):** production deploy + Codex harness.
 `main` (`b254e01`) is deployed on the production host via `docker compose`
 (data at `/opt/gopod/data`, live owner workspace at
@@ -477,8 +481,11 @@ pending: a 20-line and a 100-line block in a private chat and in a topic.
    reply shows "recording audio…" while TTS runs; (7) stop gopod
    (`docker compose restart`) right after sending an album: the album
    still becomes one turn after the restart (flushed at shutdown, replayed
-   by Recover). Known limits: video and audio items inside an album are
-   skipped silently (photos and documents only); an item arriving more
+   by Recover); repeat while the album's download is in progress. Known limits:
+   abrupt termination (`SIGKILL`, power loss, or the 30 s container stop deadline)
+   can still lose an album before its turn is persisted; downloads are bounded
+   at 2 minutes, which can exceed that deadline; video and audio items inside
+   an album are skipped silently (photos and documents only); an item arriving more
    than 1 s after the previous one starts a second turn; an album caption
    starting with `/` is sent to the agent, not to the Router, and an
    album never feeds a waiting `/login` code; audio files and video notes

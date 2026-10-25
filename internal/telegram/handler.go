@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"sync"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-telegram/bot"

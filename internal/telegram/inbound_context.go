@@ -28,10 +28,11 @@ type albumKey struct {
 // albumBuf is an album being collected: its messages so far, the chat
 // it belongs to, and the timer that flushes it.
 type albumBuf struct {
-	ctx  context.Context
-	rc   store.RegisteredChat
-	msgs []*models.Message
-	stop func() bool
+	ctx        context.Context
+	rc         store.RegisteredChat
+	msgs       []*models.Message
+	stop       func() bool
+	generation uint64
 }
 
 // collectAlbum adds m, one item of an album, to its album, and
@@ -62,22 +63,29 @@ func (b *Bot) collectAlbum(ctx context.Context, m *models.Message) {
 		a.stop()
 	}
 	a.msgs = append(a.msgs, m)
-	a.stop = clock.AfterFunc(albumWindow, func() { b.flushAlbum(k, a) })
+	a.generation++
+	generation := a.generation
+	a.stop = clock.AfterFunc(albumWindow, func() { b.flushAlbum(k, a, generation) })
 }
 
 // flushAlbum takes album a out of collection and queues it. A timer
 // that fires after another item restarted the window finds the album
-// gone or already taken and does nothing.
-func (b *Bot) flushAlbum(k albumKey, a *albumBuf) {
+// gone, already taken, or on a different generation and does nothing.
+func (b *Bot) flushAlbum(k albumKey, a *albumBuf, generation uint64) {
 	b.albumMu.Lock()
-	if b.albums[k] != a {
+	if b.albums[k] != a || (generation != 0 && a.generation != generation) {
 		b.albumMu.Unlock()
 		return
 	}
+	if a.stop != nil {
+		a.stop()
+	}
+	b.albumDownloads.Add(1)
 	delete(b.albums, k)
 	msgs := a.msgs
 	b.albumMu.Unlock()
 
+	defer b.albumDownloads.Done()
 	sort.Slice(msgs, func(i, j int) bool { return msgs[i].ID < msgs[j].ID })
 	b.enqueueAlbum(a.ctx, a.rc, msgs)
 }
@@ -94,8 +102,11 @@ func (b *Bot) flushPendingAlbums() {
 	}
 	b.albumMu.Unlock()
 	for k, a := range pending {
-		b.flushAlbum(k, a) // skips one its own timer took meanwhile
+		b.flushAlbum(k, a, 0) // skips one its own timer took meanwhile
 	}
+	// A timer may already have claimed and removed an album while its
+	// files are still downloading. Do not return before its turn is saved.
+	b.albumDownloads.Wait()
 }
 
 // enqueueAlbum downloads every photo and document of an album and
