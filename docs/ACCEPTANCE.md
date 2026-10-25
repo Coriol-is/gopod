@@ -1,11 +1,12 @@
 # Live acceptance register
 
-Last reconciled: 2026-10-25. Application deployed: `ea38581`.
+Last reconciled: 2026-10-25. Application deployed: `01c18fe`.
 Code merged/deployed is distinct from a real-client scenario being accepted.
 Items below are pending unless explicit evidence is linked. Do not infer a pass
 from unit tests, CLI --help/version, startup notices or a green CI job.
 
 ## Verified operational baseline
+- [Private-login rollout](deployments/2026-10-25-01c18fe.md): image/startup/polling and immediate before/after state preserved. No live OAuth flow invoked; actual owner-DM/client proof stays A20.
 - [Doctor output rollout](deployments/2026-10-25-ea38581.md): running/startup/polling and state preservation verified. Corrected client rendering remains to be observed; group operation after privacy re-add confirmed by owner separately.
 - [Startup readiness rollout](deployments/2026-10-25-0a25267.md): actual selected Claude container starts automatically, CLI/local auth ready, management quota honestly unknown; database/schedule preserved. Live Codex quota remains A19.
 - [CP-017 rollout](deployments/2026-10-25-f1f4532.md): running revision/polling, integrity, preserved counts/schedule and read-only getMe/private-menu checks verified. Real diagnostic client behavior remains A18.

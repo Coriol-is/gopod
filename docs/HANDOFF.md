@@ -11,7 +11,10 @@ Core Telegram assistant, Docker runtime, Claude/Codex native sessions,
 conversation-scoped history, memory, voice, scheduler and filesystem IPC are
 implemented. No other runtime, channel, guest agent or bot-to-bot peer is enabled.
 
-Reference Pi runs application **ea38581**, deployed 2026-10-25 19:58 UTC.
+Reference Pi runs application **01c18fe**, deployed 2026-10-25 20:35 UTC.
+[Private-login rollout](deployments/2026-10-25-01c18fe.md): group auth now requires
+private owner confirmation, preserving the group target/tier. Actual client login
+visibility remains A20; no account login was performed by rollout.
 [Doctor output rollout](deployments/2026-10-25-ea38581.md): underscore rendering,
 manual-refresh labels and historical owner startup cache corrected; client
 reverification pending.
@@ -24,7 +27,7 @@ Claude Code2.1.310 and Codex CLI 0.164.0 agent tags remain unchanged. Build/revi
 full tests and runner/Telegram/queue races passed. A real no-network Docker
 preemption test passed on the Pi: a silent background shell was gone before a
 foreground waiter reused the slot (no model request). Running version/image,
-startup/integrity verified. Latest doctor rollout preserved sessions12/tasks1 and both registrations; history33 before activation,37 after additional live work;
+startup/integrity verified. Latest login rollout preserved sessions12/history37/tasks1 and both registrations;
 restarts 0, OOMKilled false, no unfinished user turns at the post-ready verification snapshot.
 [Background-preemption deployment evidence](deployments/2026-10-25-18e0c86.md) records backup,
 rollback, tests and limits. New authenticated Codex replies were observed before
@@ -154,12 +157,22 @@ were changed. Use Reply for a supported group delivery test; Guest integration
 and private unregistered-chat hints remain separately scoped.
 
 ## Open questions / blockers
-Private-login hardening and owner-DM group confirmation are implemented in a
-feature branch, not yet deployed. See [login delivery contract](LOGIN.md).
-The running doctor rollout still has the older group-login behavior until that
-hotfix is activated; full container/service isolation remains separate. Deep personal/group container isolation audit
-and plan are requested (env, vault/mounts, memory, connected services). Broad
-profile changes are not yet implemented.
+Private-login hardening and owner-DM group confirmation are merged and deployed
+as01c18fe. See [login delivery contract](LOGIN.md); actual private-client
+visibility remains A20. Full container/service isolation remains separate.
+
+CP-020 [deep audit](research/2026-10-25-personal-group-isolation-audit.md),
+[contract](superpowers/specs/2026-10-25-personal-group-container-isolation.md) and
+[six-PR plan](superpowers/plans/2026-10-25-personal-group-container-isolation.md)
+are saved and independently reviewed; broad implementation has not started.
+Confirmed group exposure includes personal vault RO/global credential env, plus
+synthetic host-bind symlink escape and IPC basename leakage. Account connectors
+need a real credential/network boundary, not only CLI flags. P0 containment
+precedes identity migration/billing decisions. Draft group/channel agent policies
+are not installed; channel_post support is not implemented. Dedicated scoped
+integration grants are allowed only explicitly; no personal account inheritance.
+[One-way read idea](research/2026-10-25-one-way-private-group-access.md) is deferred:
+private-agent reads of approved group data never imply reverse access/publishing.
 
 No open implementation decision for the initial CP-017 slice. Implementation-specific choices
 are in accepted specs or pending proposals, not stale "should we build buttons?"
