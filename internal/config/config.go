@@ -120,6 +120,12 @@ type Config struct {
 	// Default: true. Set GOPOD_STREAM_ENABLED=false to disable.
 	StreamEnabled bool
 
+	// ProgressEnabled runs streamed Claude turns with structured
+	// output, so the Telegram draft shows the agent's tool steps
+	// instead of a bare cursor. Default: true. Set GOPOD_PROGRESS=0
+	// for plain `claude -p` text mode.
+	ProgressEnabled bool
+
 	// --- Agent admission control (D026) ---
 
 	// MaxAgents caps agent processes running at once across all chats.
@@ -163,6 +169,7 @@ func Load(loadDotenv bool) (Config, error) {
 		ContainerImage:         getenvDefault("GOPOD_CONTAINER_IMAGE", "gopod-agent:latest"),
 		LeftoverCleanupEnabled: !envFlag("GOPOD_LEFTOVER_CLEANUP_DISABLED"),
 		StreamEnabled:          !envFlag("GOPOD_STREAM_DISABLED"),
+		ProgressEnabled:        !envOff("GOPOD_PROGRESS"),
 		CompactAfter:           compactAfter,
 		CompactInterval:        os.Getenv("GOPOD_COMPACT_INTERVAL"),
 		CompactTime:            os.Getenv("GOPOD_COMPACT_TIME"),
@@ -282,6 +289,18 @@ func getenvDefault(key, def string) string {
 func envFlag(key string) bool {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
 	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+// envOff reports whether an on-by-default env var is switched off:
+// 0, false, no or off (case-insensitive). Unset or anything else is
+// not off.
+func envOff(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	case "0", "false", "no", "off":
 		return true
 	default:
 		return false

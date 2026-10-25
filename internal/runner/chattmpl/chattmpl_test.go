@@ -136,3 +136,17 @@ func TestSeedWritesAgentsMDForCodex(t *testing.T) {
 		t.Error("AGENTS.md differs from CLAUDE.md")
 	}
 }
+
+func TestSeedCLAUDEHasOutputPolicy(t *testing.T) {
+	chatDir, memoryDir := setupDirs(t)
+	if _, err := Seed(chatDir, memoryDir, Vars{ChatFolder: "c"}); err != nil {
+		t.Fatalf("Seed: %v", err)
+	}
+	body, err := os.ReadFile(filepath.Join(chatDir, "CLAUDE.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "Report work, don't paste it.") {
+		t.Error("new chat CLAUDE.md lacks the output policy")
+	}
+}

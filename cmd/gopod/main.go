@@ -208,6 +208,7 @@ func run() error {
 			if cfg.CompactAfter > 0 {
 				r.SetCompactAfter(cfg.CompactAfter)
 			}
+			r.SetProgress(cfg.ProgressEnabled)
 
 			// Start compact watcher for interval/daily triggers.
 			var compactInterval time.Duration
