@@ -88,7 +88,9 @@ requires an explicit supported account/budget decision; no silent paid migration
 An additional candidate preserves the existing subscription: keep the native
 authenticated CLI in a trusted group-specific runtime and expose only scoped
 tools that execute outside its credential boundary. The [offline spike](../../../experiments/subscription-isolation/README.md)
-proves synthetic tool-container isolation, not authenticated CLI compatibility.
+proves synthetic tool-container isolation. Follow-up [Pi canaries](../../research/2026-10-25-subscription-cli-tool-isolation-prototype.md)
+also passed native subscription new/resume round trips for both pinned providers;
+they do not establish complete production/account-service isolation.
 All native file/code/integration paths must be excluded or externally constrained,
 including on resume; readable auth plus unrestricted native tools is not accepted.
 
