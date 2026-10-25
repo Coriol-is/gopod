@@ -13,14 +13,19 @@
 Claude assistant with session continuity, long-term memory, voice,
 vision, scheduling, and multi-provider architecture ready for Codex.
 **Last updated:** 2026-10-25
-**Current deployment (2026-10-25 14:37 UTC):** reference Pi host runs
-`a9146f0` (PR #32), including native-context continuity, confirmed quota
-switch-and-retry and dynamic UX phases 4/6. Version and image id verified from
-running container; SQLite integrity/schema and memory API unauthenticated 401
-checked; Telegram startup notification sent and one new real Claude turn has a
-persisted Telegram reply id. Container running, restarts 0, OOMKilled false.
-Detailed client acceptance remains open (0X/0Y/0Z/0Q). Backup, rollback image
-and evidence: [deployment report](deployments/2026-10-25-a9146f0.md).
+**Current deployment (2026-10-25 15:44 UTC):** reference Pi host runs
+`1e0a21b` (PR #35), including voice provenance metadata (PR #34), generic agent
+scheduling, provider continuity and confirmed quota switching. Running version
+and image id verified, schema/integrity and memory API unauthenticated 401
+checked, Telegram polling/startup notice confirmed; restarts 0, OOMKilled false.
+The existing owner workspace now has the rendered scheduling guide and optional
+skill; custom CLAUDE/AGENTS files were not overwritten. Read-only IPC list and
+invalid-op probes returned correct source-scoped receipts/archives; scheduled
+count stayed 0. Read-only IPC roundtrips also passed from both actual agent
+images as UID 1000 using the real mounted IPC path. Backup, rollback and evidence:
+[latest deployment report](deployments/2026-10-25-1e0a21b.md).
+Detailed client acceptance remains open (0X/0Y/0Z/0Q and real voice/task execution).
+Earlier `a9146f0` delivery evidence remains in its dated report.
 
 **Extensibility specs saved (design only):** CP-011 sandbox runtime and CP-012
 provider registry separate agent behaviour from execution backend lifecycle.
@@ -35,7 +40,7 @@ when known. Typed audio captions stay separate; commands/login see the original
 raw text. The queued text carries this metadata into retries/recovery and the
 D030 journal/handoff. No filename/id, speaker, language, emotion or confidence
 is inferred. Implementation and tests are complete; live voice acceptance remains
-open. The deployed payload above is still `a9146f0` until a later deployment.
+open. Deployed in `1e0a21b`; no old transcripts were backfilled.
 
 **Media planning (CP-014):** the owner approved three queues in
 [the media spec](superpowers/specs/2026-10-25-telegram-media-input.md) and
@@ -57,8 +62,9 @@ refresh and task mutations are coordinated, and nonregular IPC files are
 rejected without blocking. Full task ids are usable from `/tasks list`.
 Schedule stdout remains silent; explicit IPC message delivery is documented.
 Owner DB-file RW does not provide a writable WAL directory or a supported
-scheduling API. Source/test work is complete; independent review/CI gate final
-merge and deployment. No live schedules were created for this investigation.
+scheduling API. Source/test work, independent review and CI passed; PR #35 is
+merged and deployed in `1e0a21b`. Live nonmutating receipt/guide checks passed; no live
+schedules were created for this investigation.
 See [the capability spec](superpowers/specs/2026-10-25-agent-scheduling.md).
 
 **Earlier working session (2026-10-24):** Telegram chat-UI parity, built
@@ -556,7 +562,8 @@ pending: a 20-line and a 100-line block in a private chat and in a topic.
    second message in the same thread, keeps 👀); earlier messages of a
    batched turn keep 👀; elapsed time counts from the agent start, not from
    receipt; stall timers are not stopped by a shutdown mid-turn.
-0R. **Generic agent scheduling (CP-015).** After deployment, verify the additive
+0R. **Generic agent scheduling (CP-015).** Guide/read-only list/invalid-op
+   probes passed on `1e0a21b` (deployment report). For future releases, verify the additive
    guide is readable in an existing chat without overwriting its CLAUDE/AGENTS.
    Submit a read-only IPC list request and inspect its result receipt; submit an
    invalid operation and verify a machine-readable reason and failed archive.
