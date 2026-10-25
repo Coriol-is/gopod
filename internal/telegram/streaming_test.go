@@ -63,7 +63,7 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 func draftShowing(fake *fakeTelegram, text string) func() bool {
 	return func() bool {
 		for _, c := range fake.callsTo("sendMessageDraft") {
-			if strings.HasPrefix(c.Form["text"], text) {
+			if strings.HasPrefix(stripHeader(c.Form["text"]), text) {
 				return true
 			}
 		}

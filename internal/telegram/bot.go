@@ -144,6 +144,16 @@ type Bot struct {
 	// was stored; nil means runLogin. Tests stub it (login.go).
 	loginRun func(ctx context.Context, m *models.Message, thread int, rc store.RegisteredChat) bool
 
+	// statuses holds each user message's reaction state machine
+	// (status.go); reactClock is its clock, nil means the real one.
+	statusMu   sync.Mutex
+	statuses   map[statusKey]*statusReactor
+	reactClock reactClock
+	// busyThreads counts turns streaming per chat thread; queueWaits
+	// holds the queue-position draft loops of waiting turns
+	// (statusline.go). Both under statusMu.
+	busyThreads map[chatThread]int
+	queueWaits  map[chatThread][]*queueWaiter
 	// rows is the reply action row state (replyrow.go), under rowMu.
 	rowMu sync.Mutex
 	rows  replyRow

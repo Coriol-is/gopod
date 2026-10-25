@@ -946,3 +946,61 @@ func TestCloseWhileWaitingForQueueSlot(t *testing.T) {
 	default:
 	}
 }
+
+func TestQueuePosition_Waiting(t *testing.T) {
+	started := make(chan int64, 8)
+	release := make(chan struct{})
+	handler := func(ctx context.Context, items []Item) error {
+		started <- items[0].ID
+		<-release
+		return nil
+	}
+	q := New(context.Background(), handler, 10, nil, silentLog())
+	defer q.Close()
+	ctx := context.Background()
+
+	q.Enqueue(ctx, Item{ID: 1, Folder: "alice", ThreadID: 1})
+	if id := <-started; id != 1 {
+		t.Fatalf("first batch = turn %d", id)
+	}
+	// Waiting behind turn 1: a batch holds one thread's consecutive
+	// items, so 2 and 3 run together, then 4, then 5.
+	q.Enqueue(ctx, Item{ID: 2, Folder: "alice", ThreadID: 2})
+	q.Enqueue(ctx, Item{ID: 3, Folder: "alice", ThreadID: 2})
+	q.Enqueue(ctx, Item{ID: 4, Folder: "alice", ThreadID: 1})
+	q.Enqueue(ctx, Item{ID: 5, Folder: "alice", ThreadID: 3})
+
+	for _, c := range []struct {
+		folder string
+		id     int64
+		want   int
+	}{
+		{"alice", 1, 0}, // running
+		{"alice", 2, 1},
+		{"alice", 3, 1},
+		{"alice", 4, 2},
+		{"alice", 5, 3},
+		{"alice", 99, 0}, // unknown
+		{"alice", 0, 0},  // no id
+		{"bob", 2, 0},    // another chat
+	} {
+		if got := q.Position(c.folder, c.id); got != c.want {
+			t.Errorf("Position(%s, %d) = %d, want %d", c.folder, c.id, got, c.want)
+		}
+	}
+
+	release <- struct{}{} // turn 1 done; 2+3 start
+	if id := <-started; id != 2 {
+		t.Fatalf("second batch starts with turn %d", id)
+	}
+	if got := q.Position("alice", 3); got != 0 {
+		t.Errorf("turn 3 runs in the batch of 2: position %d", got)
+	}
+	if got := q.Position("alice", 4); got != 1 {
+		t.Errorf("turn 4 is next: position %d", got)
+	}
+	if got := q.Position("alice", 5); got != 2 {
+		t.Errorf("turn 5: position %d", got)
+	}
+	close(release)
+}

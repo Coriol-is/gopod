@@ -138,9 +138,10 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 		return
 	}
 
-	// Instant acknowledgement: 👀 reaction so the user knows the
-	// message was received, even before container spawns (~15s).
-	b.react(ctx, m.Chat.ID, m.ID, emojiThinking)
+	// Instant acknowledgement: the queued reaction (👀) so the user
+	// knows the message was received, even before container spawns
+	// (~15s). The turn moves it through its states (status.go).
+	b.newStatusReactor(m.Chat.ID, m.ID).Set(stQueued)
 
 	item := queue.Item{
 		ChatID:    m.Chat.ID,
@@ -159,7 +160,11 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 	if b.queue != nil {
 		// WithoutCancel: a shutdown mid-handler must still persist the
 		// turn row so Recover picks it up, not drop the message.
-		b.queue.Enqueue(context.WithoutCancel(ctx), item)
+		if id, dup := b.queue.Enqueue(context.WithoutCancel(ctx), item); !dup {
+			item.ID = id
+			// Waiting behind another conversation: show the position.
+			b.startQueueWait(context.WithoutCancel(ctx), item)
+		}
 		return
 	}
 	// Sync fallback (no queue).
@@ -218,10 +223,23 @@ func (b *Bot) dispatchSlash(ctx context.Context, m *models.Message, text string)
 		},
 	}
 
+	// /compact runs an agent summary that can take a while: ✍ on the
+	// command while it runs, then done or error like a turn.
+	var status *statusReactor
+	if cmdName == "compact" {
+		status = b.newStatusReactor(m.Chat.ID, m.ID)
+		status.Set(stCompacting)
+	}
 	resp, err := b.router.Dispatch(ctx, cmd)
 	if err != nil {
+		status.Set(stError)
 		b.replyTo(ctx, m.Chat.ID, thread, m.ID, resp.Text)
 		return
+	}
+	if resp.Code != 0 {
+		status.Set(stError) // e.g. "Chat not registered.": not done
+	} else {
+		status.Set(stDone)
 	}
 	if resp.Text != "" {
 		b.replyTo(ctx, m.Chat.ID, thread, m.ID, resp.Text)
@@ -282,6 +300,8 @@ func (b *Bot) runAgentSync(ctx context.Context, item queue.Item) {
 	}
 
 	// 👀 already set by defaultHandler before enqueue.
+	status := b.turnStatus(item)
+	status.Set(stThinking)
 	stopTyping := b.startTyping(ctx, item.ChatID, item.ThreadID)
 	defer stopTyping()
 
@@ -295,10 +315,7 @@ func (b *Bot) runAgentSync(ctx context.Context, item queue.Item) {
 		return
 	}
 
-	// ✅ reaction on success
-	if item.MessageID > 0 {
-		b.react(ctx, item.ChatID, item.MessageID, emojiDone)
-	}
+	status.Set(stDone)
 
 	if reply == "" {
 		reply = "(empty reply)"

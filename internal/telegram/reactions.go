@@ -38,9 +38,10 @@ func (b *Bot) clearReaction(ctx context.Context, chatID int64, messageID int) {
 	})
 }
 
-// Standard reaction emojis. Must be from Telegram's allowed reaction
-// list — not all Unicode emoji work. ✅ and ❌ are NOT valid reactions.
-// See https://core.telegram.org/bots/api#reactiontypeemoji
+// Reaction emojis for direct react calls; a turn's states use the
+// status reactor (status.go, stateEmoji). Must be from Telegram's
+// allowed reaction list — not all Unicode emoji work. ✅ and ❌ are NOT
+// valid reactions. See https://core.telegram.org/bots/api#reactiontypeemoji
 const (
 	emojiThinking = "👀"
 	emojiDone     = "👍"

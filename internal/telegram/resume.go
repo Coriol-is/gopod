@@ -29,7 +29,7 @@ func resumePrompt(userText string) string {
 		"\n\nContinue where you left off, or reply."
 }
 
-// NewDoneHook returns a queue.OnDone hook that reacts ❌ and explains
+// NewDoneHook returns a queue.OnDone hook that reacts 😱 and explains
 // when a turn was abandoned as a crash loop, in the turn's thread.
 // Every other completion is already handled by the agent handler itself.
 func (b *Bot) NewDoneHook() func(queue.Item, error) {
@@ -39,9 +39,7 @@ func (b *Bot) NewDoneHook() func(queue.Item, error) {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if it.MessageID > 0 {
-			b.react(ctx, it.ChatID, it.MessageID, emojiError)
-		}
+		b.turnStatus(it).Set(stError)
 		b.replyTo(ctx, it.ChatID, it.ThreadID, it.MessageID, crashLoopNotice)
 	}
 }

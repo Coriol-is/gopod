@@ -395,7 +395,8 @@ pending: a 20-line and a 100-line block in a private chat and in a topic.
    two chats at once); (3) a forced agent failure (e.g. stop the container
    mid-turn) replies in Russian with `🔁 Повторить` and no error text; Retry
    answers in the same topic with the original text, a double tap makes one
-   turn, the button disappears; a second failure within 60 s only sets 👎; an
+   turn, the button disappears; a second failure within 60 s only sets the error
+   reaction (😱 since phase 3, 👎 before); an
    expired login replies with `🔑 Войти`, which starts the `/login` flow in
    that topic. Known limits: `errBusy` is never produced yet (the D026 gate
    waits without a timeout); a Retry pressed twice across a restart can make
@@ -429,6 +430,25 @@ pending: a 20-line and a 100-line block in a private chat and in a topic.
    restart restores the row without Copy; Regenerate pressed twice across a
    restart can make two turns; the regenerated turn is not linked to the
    original in the store.
+0W. **Live checklist for dynamic Telegram UX, phase 3** (branch
+   `feat/ux-phase3`; spec "Verify live" item 6; nothing run on a real bot
+   yet): (1) every status reaction is accepted (👀 on receipt, 🤔 when the
+   agent starts, 👨‍💻 on tool steps, 👍/😱/👌 at done/error/stop, ✍ on
+   `/compact`), no 429 in the log during a 20-step tool turn, and the final
+   reaction is always the last one; (2) a slow turn (a `sleep 70` tool
+   call) shows 🥱 after ~25 s and 😨 after ~60 s, and goes back to 🤔/👨‍💻
+   when output resumes; (3) in a registered group where the bot has no
+   reaction rights nothing breaks and the log has only debug lines; (4) the
+   draft shows `⏳ m:ss · N шагов` above the steps, ticking every second,
+   and the header disappears when the answer streams; on the edit path
+   (group) it updates at most every 5 s and the `⏹ Стоп` button stays on
+   every edit; (5) in a private chat with topics, a message in topic B
+   while topic A runs shows `в очереди: 1-й` in B, replaced by the turn's
+   own draft when it starts. Known limits: the queue position is shown only
+   on the draft path and only when another thread is running (a group, or a
+   second message in the same thread, keeps 👀); earlier messages of a
+   batched turn keep 👀; elapsed time counts from the agent start, not from
+   receipt; stall timers are not stopped by a shutdown mid-turn.
 0. **Run the manual crash-recovery test for durable turns** (plan Task 8
    step 5, still not run; the branch is merged and deployed, cold start
    of the agent container is verified, but a `kill -9` of gopod itself
