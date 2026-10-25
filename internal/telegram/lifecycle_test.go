@@ -89,7 +89,15 @@ type lcFixture struct {
 	b    *Bot
 	st   *store.Store
 	lc   *Lifecycle
+	cfg  LifecycleConfig
 	now  time.Time
+}
+
+// newRun replaces the Lifecycle with a fresh one on the same store and
+// clock, as a restarted process would have.
+func (f *lcFixture) newRun() {
+	f.lc = f.b.NewLifecycle(f.cfg)
+	f.lc.now = func() time.Time { return f.now }
 }
 
 func newLCFixture(t *testing.T, fake *fakeTelegram, cfg LifecycleConfig) *lcFixture {
@@ -115,9 +123,9 @@ func newLCFixture(t *testing.T, fake *fakeTelegram, cfg LifecycleConfig) *lcFixt
 	if cfg.Version == "" {
 		cfg.Version = "v1"
 	}
-	f.lc = f.b.NewLifecycle(cfg)
+	f.cfg = cfg
 	f.now = time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
-	f.lc.now = func() time.Time { return f.now }
+	f.newRun()
 	return f
 }
 
@@ -262,6 +270,7 @@ func TestLifecycleDisabledSendsNothing(t *testing.T) {
 		f.lc.Started(ctx, 0) // first start
 		f.lc.Shutdown(ctx)
 		f.now = f.now.Add(time.Hour)
+		f.newRun()
 		f.lc.Started(ctx, 1) // graceful restart
 		if got := f.sends(); len(got) != 0 {
 			t.Errorf("cfg %+v: sends = %q, want none", cfg, got)
@@ -294,6 +303,7 @@ func TestLifecycleAcrossRestarts(t *testing.T) {
 	step("shutdown", []string{"1001/0: " + noticeShutdown})
 
 	f.now = f.now.Add(time.Minute)
+	f.newRun()
 	f.lc.Started(ctx, 2)
 	step("graceful restart", []string{"1001/0: ✅ Снова на связи (версия v1). Продолжаю 2 незавершённых запроса."})
 	if v, _ := f.st.GetState(ctx, stateGracefulShutdownAt); v != "" {
@@ -303,19 +313,23 @@ func TestLifecycleAcrossRestarts(t *testing.T) {
 	// Deploy restarts gopod again quickly: no second "back".
 	f.lc.Shutdown(ctx)
 	f.now = f.now.Add(30 * time.Second)
+	f.newRun()
 	f.lc.Started(ctx, 0)
 	step("quick second restart", []string{"1001/0: " + noticeShutdown})
 
 	// Crash (no Shutdown) well after the last notice.
 	f.now = f.now.Add(10 * time.Minute)
+	f.newRun()
 	f.lc.Started(ctx, 1)
 	step("crash", []string{"1001/0: ⚠️ Был неожиданный перезапуск (версия v1). Продолжаю 1 незавершённый запрос."})
 
 	// Crash loop: the next crash inside the window is only logged.
 	f.now = f.now.Add(time.Minute)
+	f.newRun()
 	f.lc.Started(ctx, 0)
 	step("crash loop", nil)
 	f.now = f.now.Add(2 * time.Minute)
+	f.newRun()
 	f.lc.Started(ctx, 0)
 	step("crash after window", []string{"1001/0: ⚠️ Был неожиданный перезапуск (версия v1)."})
 }
@@ -334,10 +348,34 @@ func TestStartedNotifiesOwnerOnly(t *testing.T) {
 	f.fake.mu.Unlock()
 
 	f.now = f.now.Add(time.Hour)
+	f.newRun()
 	f.lc.Started(ctx, 2)
 	got := f.sends()
 	if len(got) != 1 || !strings.HasPrefix(got[0], "1001/0: ✅") {
 		t.Fatalf("startup sends = %q, want one notice to the owner's main chat", got)
+	}
+}
+
+func TestSignalDuringStartupKeepsMarker(t *testing.T) {
+	f := newLCFixture(t, &fakeTelegram{}, LifecycleConfig{Enabled: true, OwnerChatID: lcOwner})
+	ctx := context.Background()
+	f.lc.Started(ctx, 0) // run 1
+	f.newRun()
+	// Run 2 gets SIGTERM before its Started ran: the marker it wrote
+	// must survive for run 3, not be cleared as run 1's.
+	f.lc.Shutdown(ctx)
+	f.lc.Started(ctx, 0)
+	if v, _ := f.st.GetState(ctx, stateGracefulShutdownAt); v == "" {
+		t.Fatal("graceful marker of this run cleared by its own late Started")
+	}
+	f.fake.mu.Lock()
+	f.fake.calls = nil
+	f.fake.mu.Unlock()
+	f.now = f.now.Add(time.Hour)
+	f.newRun()
+	f.lc.Started(ctx, 0)
+	if got := f.sends(); len(got) != 1 || !strings.HasPrefix(got[0], "1001/0: ✅") {
+		t.Fatalf("run 3 sends = %q, want the graceful back notice", got)
 	}
 }
 

@@ -153,6 +153,12 @@ type Lifecycle struct {
 	timeout time.Duration
 	log     *slog.Logger
 	now     func() time.Time
+
+	// mu orders Started's state section against Shutdown's marker: a
+	// signal during startup must not have its marker read and cleared
+	// as if it were the previous run's.
+	mu           sync.Mutex
+	shuttingDown bool
 }
 
 // NewLifecycle returns the notice sender for this bot.
@@ -182,6 +188,11 @@ func (l *Lifecycle) Started(ctx context.Context, replayed int) {
 	}
 	// State must be kept even if a signal is already cancelling ctx.
 	stCtx := context.WithoutCancel(ctx)
+	l.mu.Lock()
+	if l.shuttingDown {
+		l.mu.Unlock()
+		return
+	}
 	now := l.now()
 	prevStarted := l.getTime(stCtx, stateStartedAt)
 	graceful := l.getTime(stCtx, stateGracefulShutdownAt)
@@ -192,8 +203,12 @@ func (l *Lifecycle) Started(ctx context.Context, replayed int) {
 		l.setState(stCtx, stateGracefulShutdownAt, "")
 	}
 	l.setTime(stCtx, stateStartedAt, now)
-
 	kind, send := decideStart(!prevStarted.IsZero(), !graceful.IsZero(), lastNotice, now)
+	if send && l.enabled {
+		l.setTime(stCtx, stateLastStartNoticeAt, now)
+	}
+	l.mu.Unlock()
+
 	attrs := []any{slog.String("previous_run", kind.String()), slog.Int("replayed", replayed)}
 	switch {
 	case kind == startFirst:
@@ -207,7 +222,6 @@ func (l *Lifecycle) Started(ctx context.Context, replayed int) {
 		l.log.Info("lifecycle: startup notice disabled", attrs...)
 		return
 	}
-	l.setTime(stCtx, stateLastStartNoticeAt, now)
 	sctx, cancel := context.WithTimeout(ctx, startNoticeTimeout)
 	defer cancel()
 	if err := l.b.sendNotice(sctx, l.owner, 0, startText(kind, l.version, replayed)); err != nil {
@@ -227,9 +241,12 @@ func (l *Lifecycle) Shutdown(ctx context.Context) {
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), l.timeout)
 	defer cancel()
+	l.mu.Lock()
+	l.shuttingDown = true
 	if l.st != nil {
 		l.setTime(ctx, stateGracefulShutdownAt, l.now())
 	}
+	l.mu.Unlock()
 	if !l.enabled {
 		return
 	}
