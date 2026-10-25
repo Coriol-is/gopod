@@ -86,7 +86,7 @@ func newFakeBot(t *testing.T, fake *fakeTelegram) *Bot {
 	if err != nil {
 		t.Fatalf("bot.New: %v", err)
 	}
-	return &Bot{api: api, log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	return &Bot{api: api, log: slog.New(slog.NewTextHandler(io.Discard, nil)), logins: newLoginSessions()}
 }
 
 // apiError renders a Bot API error body.

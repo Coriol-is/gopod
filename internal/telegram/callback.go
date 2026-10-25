@@ -90,12 +90,19 @@ type cbQuery struct {
 // error text never reaches the chat).
 type cbHandler func(ctx context.Context, q cbQuery) (toast string, err error)
 
-// onCallback registers h for callback data whose act is act.
+// onCallback registers h for callback data whose act is act. It panics
+// when act is already registered.
 func (b *Bot) onCallback(act string, h cbHandler) {
 	b.cbMu.Lock()
 	defer b.cbMu.Unlock()
 	if b.callbacks == nil {
 		b.callbacks = make(map[string]cbHandler)
+	}
+	if _, dup := b.callbacks[act]; dup {
+		// Two features claiming one act is a programming error: fail
+		// at startup, not by silently routing one feature's buttons
+		// to the other.
+		panic("telegram: callback act " + act + " registered twice")
 	}
 	b.callbacks[act] = h
 }

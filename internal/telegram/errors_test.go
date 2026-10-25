@@ -21,11 +21,15 @@ type memTurns struct {
 	mu    sync.Mutex
 	items []queue.Item
 	seen  map[string]bool
+	fail  bool // InsertTurn fails: the turn is not saved
 }
 
 func (m *memTurns) InsertTurn(_ context.Context, it queue.Item) (int64, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.fail {
+		return 0, false, errors.New("disk full")
+	}
 	if m.seen == nil {
 		m.seen = map[string]bool{}
 	}

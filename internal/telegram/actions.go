@@ -65,8 +65,15 @@ func (b *Bot) retryTurn(ctx context.Context, q cbQuery) (string, error) {
 	}
 	// WithoutCancel: like an inbound message, a retry is persisted even
 	// when shutdown starts mid-callback.
-	if _, dup := b.queue.Enqueue(context.WithoutCancel(ctx), item); dup {
+	id, dup := b.queue.Enqueue(context.WithoutCancel(ctx), item)
+	if dup {
 		return retryToastAlready, nil
+	}
+	if id == 0 {
+		// Not saved (the queue logged why): nothing will run. Keep the
+		// button and let the user press it again.
+		b.unmarkRetried(turnID)
+		return retryToastFailed, nil
 	}
 	b.log.Info("turn retried by user",
 		slog.Int64("turn", turnID), slog.Int64("chat_id", q.ChatID), slog.Int("thread", q.ThreadID))
@@ -98,14 +105,27 @@ func (b *Bot) markRetried(turnID int64) bool {
 	return true
 }
 
+// unmarkRetried forgets a Retry of turnID whose turn was not queued.
+func (b *Bot) unmarkRetried(turnID int64) {
+	b.errMu.Lock()
+	defer b.errMu.Unlock()
+	delete(b.retried, turnID)
+}
+
 // loginCallback handles 🔑 (lg) under an auth error reply: the /login
 // flow for the chat the button sits in, answering in its topic. The
 // flow waits for the agent's login URL, so it runs in the background
 // and the press is answered at once.
 func (b *Bot) loginCallback(ctx context.Context, q cbQuery) (string, error) {
-	// startLogin needs the chat only; it is registered (the dispatcher
+	// The slot is claimed here, before answering, so a second press
+	// (or /login) while this one starts gets a toast, not a second exec.
+	if !b.logins.reserve(q.ChatID) {
+		return loginToastAlready, nil
+	}
+	b.clearKeyboard(ctx, q.ChatID, q.MessageID)
+	// The flow needs the chat only; it is registered (the dispatcher
 	// checked).
 	m := &models.Message{ID: q.MessageID, Chat: models.Chat{ID: q.ChatID}}
-	go b.startLogin(ctx, m, q.ThreadID)
+	go b.loginReserved(ctx, m, q.ThreadID, q.Chat)
 	return loginToastStarting, nil
 }

@@ -139,6 +139,10 @@ type Bot struct {
 
 	// now is the clock of the error cooldown; nil means time.Now.
 	now func() time.Time
+
+	// loginRun starts a reserved login and reports whether a session
+	// was stored; nil means runLogin. Tests stub it (login.go).
+	loginRun func(ctx context.Context, m *models.Message, thread int, rc store.RegisteredChat) bool
 }
 
 // allowedUpdates is the explicit getUpdates allowed_updates list. Before
