@@ -153,6 +153,9 @@ func (b *Bot) runAgentStreaming(ctx context.Context, item queue.Item) error {
 	runCtx, cancelRun := context.WithCancel(ctx)
 	defer cancelRun()
 	defer b.registerInflight(item.ID, item.ChatID, cancelRun)()
+	// No queue-position draft may land in this thread from now on.
+	defer b.markThreadBusy(item)()
+	b.stopQueueWaits(item.ChatID, item.ThreadID)
 
 	waitCtx := runner.WithWaitNotice(runCtx, b.waitNotice(ctx, item))
 	stream, err := b.runner.RunStream(waitCtx, item.Folder, item.ThreadID, tier, b.allowlist, prompt)
@@ -266,13 +269,30 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 	// Until answer text arrives after the latest step, the view is the
 	// last progressShown steps instead of the text.
 	var steps []string
+	stepCount := 0     // every step of the turn, for the header
 	answering := false // answer text arrived since the latest step
+	// Until answer text streams, the status header (elapsed time, step
+	// count) sits above the steps; a turn with neither steps nor text
+	// shows it only after headerQuiet.
+	started := b.statusNow()
 	view := func() string {
-		if !answering && len(steps) > 0 {
-			return progressView(steps)
+		if answering {
+			return accumulated.String()
+		}
+		elapsed := b.statusNow().Sub(started)
+		if len(steps) > 0 {
+			return statusHeader(elapsed, stepCount, 0) + "\n" + progressView(steps)
+		}
+		if elapsed >= headerQuiet {
+			return statusHeader(elapsed, 0, 0) + "\n"
 		}
 		return accumulated.String()
 	}
+	// Edit path: what the placeholder shows, when it was last edited,
+	// and no edits before editHold (a 429's retry_after).
+	var lastEditText string
+	var lastEdit, editHold time.Time
+	var lastDraftText string
 
 	// addChunk applies one answer chunk. Returns false when the turn
 	// had to be finished by drainAndSend.
@@ -353,6 +373,7 @@ loop:
 			// Text before a tool step was narration: the answer (and
 			// what a stop delivers) starts again after it.
 			status.Set(stTool)
+			stepCount++
 			steps = append(steps, progressLine(ev))
 			if len(steps) > progressShown {
 				steps = steps[len(steps)-progressShown:]
@@ -365,16 +386,19 @@ loop:
 
 		case <-ticker.C:
 			if draftID != 0 {
-				if !dirty && time.Since(lastDraft) < draftRefresh {
+				// The header's clock changes the text by itself: drafts
+				// are free, so it goes out on the tick like any change.
+				text := view() + "❘" // ▍ cursor, never empty
+				if !dirty && text == lastDraftText && time.Since(lastDraft) < draftRefresh {
 					continue
 				}
 				if time.Now().Before(draftHold) {
 					continue // rate limited: wait out retry_after
 				}
-				text := view() + "❘" // ▍ cursor, never empty
 				err := b.sendDraftOpts(ctx, item.ChatID, item.ThreadID, draftID, text, stopOpts)
 				if err == nil {
 					lastDraft = time.Now()
+					lastDraftText = text
 					dirty = false
 					continue
 				}
@@ -396,10 +420,27 @@ loop:
 					return nil
 				}
 			}
-			if v := view(); dirty && v != "" {
-				b.editMessageKB(ctx, item.ChatID, placeholder, v+"❘", kb)
-				dirty = false
+			// Edit path: a changed view goes out on the tick; a change
+			// of the header's clock alone at most every headerEditEvery.
+			// Every edit carries kb, so the Stop button stays.
+			v := view()
+			if v == "" || time.Now().Before(editHold) {
+				continue
 			}
+			text := v + "❘"
+			now := b.statusNow()
+			headerOnly := !dirty && !answering && now.Sub(lastEdit) >= headerEditEvery
+			if text == lastEditText || !dirty && !headerOnly {
+				dirty = false
+				continue
+			}
+			err := b.editMessageKB(ctx, item.ChatID, placeholder, text, kb)
+			if wait, ok := retryAfter(err); ok {
+				editHold = time.Now().Add(wait)
+				continue // dirty stays: retried after the wait
+			}
+			lastEditText, lastEdit = text, now
+			dirty = false
 
 		case <-stop:
 			return stopped()

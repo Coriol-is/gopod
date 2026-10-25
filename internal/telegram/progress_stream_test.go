@@ -147,7 +147,7 @@ func TestStreamReply_EditPathShowsProgressInPlaceholder(t *testing.T) {
 	s.progress <- runner.ProgressEvent{Tool: "Edit", Detail: "/workspace/chat/a.go"}
 	waitFor(t, "placeholder with step", func() bool {
 		for _, c := range fake.callsTo("editMessageText") {
-			if c.Form["text"] == "✏️ a.go\n❘" {
+			if stripHeader(c.Form["text"]) == "✏️ a.go\n❘" {
 				return true
 			}
 		}

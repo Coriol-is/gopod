@@ -149,6 +149,11 @@ type Bot struct {
 	statusMu   sync.Mutex
 	statuses   map[statusKey]*statusReactor
 	reactClock reactClock
+	// busyThreads counts turns streaming per chat thread; queueWaits
+	// holds the queue-position draft loops of waiting turns
+	// (statusline.go). Both under statusMu.
+	busyThreads map[chatThread]int
+	queueWaits  map[chatThread][]*queueWaiter
 }
 
 // allowedUpdates is the explicit getUpdates allowed_updates list. Before

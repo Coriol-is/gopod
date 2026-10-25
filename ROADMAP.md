@@ -179,7 +179,7 @@ Spec: [docs/superpowers/specs/2026-10-24-telegram-threads-and-drafts-design.md](
 | T7 | Rich messages (`sendRichMessage`: tables, thinking/details blocks) | ⬜ | Same spec, F13; plan phase 7, behind `GOPOD_RICH_REPLIES`; verify in private chats first |
 | T10 | Callback layer, Stop button on the edit path, humane errors with Retry | 🟦 | Dynamic UX plan phase 1 (`docs/superpowers/plans/2026-10-25-telegram-dynamic-ux-plan.md`), branch `feat/ux-phase1`: unit-tested, live check HANDOFF 0U pending; ADR D028 comes with plan Task 9 |
 | T11 | Reply actions under the newest reply: Regenerate, Copy, Steps, As file | ⬜ | Plan phase 2; owner Q1, Q2 |
-| T12 | Visible state: status reactions, elapsed time and queue position in the draft | ⬜ | Plan phase 3; needs PR #22 (D024); owner Q3 |
+| T12 | Visible state: status reactions, elapsed time and queue position in the draft | 🟦 | Plan phase 3, branch `feat/ux-phase3`: unit-tested, live check HANDOFF 0V pending; owner Q3 |
 | T13 | Command buttons: model/provider pickers, confirmations, paged outputs | ⬜ | Plan phase 4; `control.Response.Buttons`; owner Q6 |
 | T14 | Commands menu per scope and one strings file | ⬜ | Plan phase 5; owner Q4 |
 | T15 | Input context: replied/quoted/forwarded text, albums, audio, video notes | ⬜ | Plan phase 6 |

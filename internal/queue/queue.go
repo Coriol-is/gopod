@@ -455,6 +455,33 @@ func (q *Queue) finish(items []Item, status string, err error) {
 	}
 }
 
+// Position reports where turn turnID of folder waits: n means n-th
+// batch to run next (1 = runs as soon as the current batch, if any,
+// ends), counted with drainPending's rule that a batch is one leading
+// run of items sharing a ThreadID. 0 means running, finished or unknown
+// (including turnID 0, a turn without a store row). Read-only.
+func (q *Queue) Position(folder string, turnID int64) int {
+	if turnID == 0 {
+		return 0
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	cs := q.chats[folder]
+	if cs == nil {
+		return 0
+	}
+	batch := 0
+	for i, it := range cs.pending {
+		if i == 0 || it.ThreadID != cs.pending[i-1].ThreadID {
+			batch++
+		}
+		if it.ID == turnID {
+			return batch
+		}
+	}
+	return 0
+}
+
 // drainPending atomically takes the leading same-thread run of pending
 // items for the chat. The worker calls this at the
 // start of each loop iteration to pick up any messages that arrived

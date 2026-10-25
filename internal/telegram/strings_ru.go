@@ -40,6 +40,15 @@ const (
 	loginTextStarting = "Вход ещё запускается, подождите ссылку…"
 )
 
+// Status header (statusline.go): elapsed time and steps of a working
+// turn, or its queue position.
+const (
+	headerQueued = "в очереди: %d-й"
+	headerSteps1 = "шаг"
+	headerSteps2 = "шага"
+	headerSteps5 = "шагов"
+)
+
 // Error replies (errors.go): what happened and what to do next. Never
 // the error text itself: no stderr, paths or tokens reach the chat.
 const (

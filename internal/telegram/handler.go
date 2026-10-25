@@ -160,7 +160,11 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 	if b.queue != nil {
 		// WithoutCancel: a shutdown mid-handler must still persist the
 		// turn row so Recover picks it up, not drop the message.
-		b.queue.Enqueue(context.WithoutCancel(ctx), item)
+		if id, dup := b.queue.Enqueue(context.WithoutCancel(ctx), item); !dup {
+			item.ID = id
+			// Waiting behind another conversation: show the position.
+			b.startQueueWait(context.WithoutCancel(ctx), item)
+		}
 		return
 	}
 	// Sync fallback (no queue).
