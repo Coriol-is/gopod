@@ -119,6 +119,11 @@ type Config struct {
 	// buffered path (wait for full response, then send).
 	// Default: true. Set GOPOD_STREAM_ENABLED=false to disable.
 	StreamEnabled bool
+
+	// NotifyLifecycle sends the restart notices (D027): a "restarting"
+	// message on graceful shutdown and a "back" message on startup.
+	// Default true; GOPOD_NOTIFY_LIFECYCLE=0/false/no/off disables them.
+	NotifyLifecycle bool
 }
 
 // Load reads environment, applies defaults, validates, and returns a
@@ -148,6 +153,7 @@ func Load(loadDotenv bool) (Config, error) {
 		ContainerImage:         getenvDefault("GOPOD_CONTAINER_IMAGE", "gopod-agent:latest"),
 		LeftoverCleanupEnabled: !envFlag("GOPOD_LEFTOVER_CLEANUP_DISABLED"),
 		StreamEnabled:          !envFlag("GOPOD_STREAM_DISABLED"),
+		NotifyLifecycle:        envFlagDefault("GOPOD_NOTIFY_LIFECYCLE", true),
 		CompactAfter:           compactAfter,
 		CompactInterval:        os.Getenv("GOPOD_COMPACT_INTERVAL"),
 		CompactTime:            os.Getenv("GOPOD_COMPACT_TIME"),
@@ -233,6 +239,20 @@ func envFlag(key string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+// envFlagDefault is envFlag for a setting that has a default: unset or
+// unrecognised returns def, 1/true/yes/on returns true and 0/false/no/off
+// returns false (case-insensitive).
+func envFlagDefault(key string, def bool) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return def
 	}
 }
 

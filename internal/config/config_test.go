@@ -89,3 +89,23 @@ func TestParseLevel(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadNotifyLifecycle(t *testing.T) {
+	for _, tc := range []struct {
+		val  string
+		want bool
+	}{
+		{"", true}, {"1", true}, {"true", true}, {"ON", true},
+		{"0", false}, {"false", false}, {"no", false}, {" Off ", false},
+		{"maybe", true},
+	} {
+		t.Setenv("GOPOD_NOTIFY_LIFECYCLE", tc.val)
+		cfg, err := Load(false)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if cfg.NotifyLifecycle != tc.want {
+			t.Errorf("GOPOD_NOTIFY_LIFECYCLE=%q: NotifyLifecycle = %v, want %v", tc.val, cfg.NotifyLifecycle, tc.want)
+		}
+	}
+}
