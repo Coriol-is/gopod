@@ -2,10 +2,14 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import signal
+import shutil
 import tempfile
+import time
 import unittest
+from unittest import mock
 
-from tool_server import Executor, OUTPUT_LIMIT, dispatch
+from tool_server import Executor, OUTPUT_LIMIT, REQUEST_LIMIT, dispatch
 
 
 class ProtocolTests(unittest.TestCase):
@@ -18,6 +22,30 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(dispatch({"id": 1, "method": "host/read"}, None)["error"]["code"], -32601)
         with self.assertRaises(ValueError):
             dispatch({"id": 2, "method": "tools/call", "params": {"name": "host_exec"}}, None)
+
+    @unittest.skipUnless(shutil.which("docker"), "requires Docker client executable, not a running daemon")
+    def test_idle_sigterm_and_oversized_frame(self):
+        with tempfile.TemporaryDirectory(prefix="gopod-protocol-") as workspace:
+            argv = ["python3", str(Path(__file__).with_name("tool_server.py")),
+                    "--workspace", str(Path(workspace).resolve()), "--image", "unused:offline"]
+            proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            try:
+                proc.stdin.write(json.dumps({"id": 1, "method": "ping"}) + "\n")
+                proc.stdin.flush()
+                self.assertEqual(json.loads(proc.stdout.readline())["result"], {})
+                proc.send_signal(signal.SIGTERM)
+                _, stderr = proc.communicate(timeout=3)
+                self.assertEqual(proc.returncode, 128 + signal.SIGTERM)
+                self.assertEqual(stderr, "")
+            finally:
+                if proc.poll() is None:
+                    proc.kill()
+                    proc.communicate()
+            result = subprocess.run(argv, input="x" * (REQUEST_LIMIT + 1), text=True,
+                                    capture_output=True, timeout=3)
+            self.assertEqual(result.returncode, 2)
+            self.assertEqual(result.stdout, "")
+            self.assertEqual(result.stderr, "")
 
 
 @unittest.skipUnless(os.environ.get("GOPOD_ISOLATION_DOCKER_TEST") == "1", "opt-in real Docker qualification")
@@ -69,12 +97,58 @@ printf boundary-ok
 
     def test_timeout_and_output_limit(self):
         self.assertEqual(self.executor.run({"command": "sleep 30"})["stopped"], "timeout")
+        own_names = [self.executor.last_container_name]
         result = self.executor.run({"command": "yes x"})
+        own_names.append(self.executor.last_container_name)
         self.assertEqual(result["stopped"], "output_limit")
         self.assertEqual(len(result["output"].encode()), OUTPUT_LIMIT)
-        # No canary container remains after timeout/output cancellation.
-        names = subprocess.check_output([self.executor.docker, "ps", "-a", "--format", "{{.Names}}"], text=True)
-        self.assertFalse(any(x.startswith("gopod-isolation-spike-") for x in names.splitlines()))
+        self.assert_containers_absent(own_names)
+
+    def assert_containers_absent(self, names):
+        remaining = subprocess.check_output([self.executor.docker, "ps", "-a", "--format", "{{.Names}}"], text=True).splitlines()
+        for name in names:
+            self.assertNotIn(name, remaining)
+
+    def test_sigterm_cleans_running_request(self):
+        # Name discovery is scoped by the unique mounted synthetic workspace,
+        # never by every other concurrent experiment's name prefix.
+        proc = subprocess.Popen(["python3", str(Path(__file__).with_name("tool_server.py")),
+                                 "--workspace", str(self.workspace), "--image", self.executor.image],
+                                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        def stop_server():
+            if proc.poll() is None:
+                proc.terminate()
+                proc.communicate(timeout=8)
+        self.addCleanup(stop_server)
+        request = {"id": 1, "method": "tools/call", "params": {"name": "group_exec", "arguments": {"command": "touch started; sleep 30"}}}
+        proc.stdin.write(json.dumps(request) + "\n")
+        proc.stdin.flush()
+        deadline = time.monotonic() + 5
+        while not (self.workspace / "started").exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        self.assertTrue((self.workspace / "started").exists())
+        own_names = subprocess.check_output([self.executor.docker, "ps", "--filter", f"volume={self.executor.workspace}", "--format", "{{.Names}}"], text=True).splitlines()
+        self.assertEqual(len(own_names), 1)
+        proc.send_signal(signal.SIGTERM)
+        stdout, stderr = proc.communicate(timeout=8)
+        self.assertEqual(proc.returncode, 128 + signal.SIGTERM)
+        result = json.loads(json.loads(stdout)["result"]["content"][0]["text"])
+        self.assertEqual(result["stopped"], "cancelled")
+        self.assertEqual(stderr, "")
+        self.assert_containers_absent(own_names)
+
+    def test_cancel_during_create_never_starts_command(self):
+        original = self.executor._capture
+        def cancel_after_create(argv, deadline, cancelable=True):
+            value = original(argv, deadline, cancelable)
+            if argv[1] == "create":
+                self.executor.cancel(signal.SIGTERM, None)
+            return value
+        with mock.patch.object(self.executor, "_capture", side_effect=cancel_after_create):
+            result = self.executor.run({"command": "touch must-not-start"})
+        self.assertEqual(result["stopped"], "cancelled")
+        self.assertFalse((self.workspace / "must-not-start").exists())
+        self.assert_containers_absent([self.executor.last_container_name])
 
     def test_stdio_protocol(self):
         frames = [

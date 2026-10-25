@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import selectors
+import signal
 import shutil
 import subprocess
 import sys
@@ -39,33 +40,27 @@ class Executor:
         self.docker = shutil.which("docker")
         if not self.docker:
             raise ValueError("docker not found")
+        self.cancel_signal = None
+        self.last_container_name = None
 
-    def run(self, arguments):
-        if not isinstance(arguments, dict) or set(arguments) != {"command"}:
-            raise ValueError("only command is accepted")
-        command = arguments["command"]
-        if not isinstance(command, str) or not command or len(command) > 16384 or "\0" in command:
-            raise ValueError("invalid command")
-        name = "gopod-isolation-spike-" + uuid.uuid4().hex
-        argv = [self.docker, "run", "--rm", "--pull=never", "--name", name,
-                "--network=none", "--read-only", "--cap-drop=ALL",
-                "--security-opt=no-new-privileges", "--pids-limit=64",
-                "--memory=128m", "--cpus=0.5", "--user=1000:1000",
-                "--tmpfs=/tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777",
-                "--mount", f"type=bind,src={self.workspace},dst=/workspace/chat",
-                "--workdir=/workspace/chat", "--env=HOME=/tmp/group-home",
-                "--entrypoint=/bin/sh", self.image, "-c", command]
-        # Docker client environment is not passed into the container. No -e NAME
-        # inheritance, socket mount, host gateway, privileges or model image.
+    def cancel(self, signum, _frame):
+        # Do not raise from a signal handler: interrupting docker create can
+        # race its daemon-side creation with cleanup. First collect create's
+        # acknowledgement, then refuse to start and remove that exact name.
+        self.cancel_signal = signum
+
+    def _capture(self, argv, deadline, cancelable=True):
         proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                 stdin=subprocess.DEVNULL)
         output, reason = bytearray(), None
-        deadline = time.monotonic() + self.timeout
         try:
             with selectors.DefaultSelector() as selector:
                 selector.register(proc.stdout, selectors.EVENT_READ)
                 while True:
                     remaining = deadline - time.monotonic()
+                    if cancelable and self.cancel_signal is not None:
+                        reason = "cancelled"
+                        break
                     if remaining <= 0:
                         reason = "timeout"
                         break
@@ -86,12 +81,76 @@ class Executor:
                 proc.kill()
                 proc.wait()
             proc.stdout.close()
+        return code, output[:OUTPUT_LIMIT], reason
+
+    def run(self, arguments):
+        if not isinstance(arguments, dict) or set(arguments) != {"command"}:
+            raise ValueError("only command is accepted")
+        command = arguments["command"]
+        if not isinstance(command, str) or not command or len(command) > 16384 or "\0" in command:
+            raise ValueError("invalid command")
+        if self.cancel_signal is not None:
+            raise ValueError("executor is stopping")
+        name = "gopod-isolation-spike-" + uuid.uuid4().hex
+        self.last_container_name = name
+        argv = [self.docker, "create", "--rm", "--pull=never", "--name", name,
+                "--network=none", "--read-only", "--cap-drop=ALL",
+                "--security-opt=no-new-privileges", "--pids-limit=64",
+                "--memory=128m", "--cpus=0.5", "--user=1000:1000",
+                "--tmpfs=/tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777",
+                "--mount", f"type=bind,src={self.workspace},dst=/workspace/chat",
+                "--workdir=/workspace/chat", "--env=HOME=/tmp/group-home",
+                "--entrypoint=/bin/sh", self.image, "-c", command]
+        # Docker client environment is not passed into the container. No -e NAME
+        # inheritance, socket mount, host gateway, privileges or model image.
+        output, reason = bytearray(), None
+        deadline = time.monotonic() + self.timeout
+        try:
+            # Create cannot execute the model's command. Let it acknowledge
+            # cancellation before cleanup; unlike `run`, there is no late
+            # create/start request capable of launching after rm has returned.
+            code, create_output, reason = self._capture(argv, deadline, cancelable=False)
+            if self.cancel_signal is not None:
+                reason = "cancelled"
+            if code == 0 and reason is None:
+                code, output, reason = self._capture([self.docker, "start", "--attach", name], deadline)
+            elif reason is None:
+                output = create_output
+        finally:
             # Killing docker's client does not kill the container. Remove only
             # the unique container created by this request, including timeout.
             subprocess.run([self.docker, "rm", "-f", name], stdin=subprocess.DEVNULL,
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
         return {"exit_code": code, "stopped": reason,
                 "output": bytes(output[:OUTPUT_LIMIT]).decode("utf-8", errors="replace")}
+
+
+def request_lines(executor):
+    """Bounded framing, also responsive to shutdown while stdin stays open."""
+    pending = bytearray()
+    with selectors.DefaultSelector() as selector:
+        selector.register(sys.stdin.buffer, selectors.EVENT_READ)
+        while executor.cancel_signal is None:
+            if not selector.select(0.2):
+                continue
+            chunk = os.read(sys.stdin.fileno(), 4096)
+            if not chunk:
+                if pending:
+                    yield bytes(pending)
+                return
+            pending.extend(chunk)
+            while b"\n" in pending:
+                line, _, rest = pending.partition(b"\n")
+                pending = bytearray(rest)
+                if len(line) > REQUEST_LIMIT:
+                    yield None
+                    return
+                yield bytes(line)
+                if executor.cancel_signal is not None:
+                    return
+            if len(pending) > REQUEST_LIMIT:
+                yield None
+                return
 
 
 def dispatch(request, executor):
@@ -128,7 +187,11 @@ def main():
     parser.add_argument("--image", required=True, help="trusted preloaded tool-only image, preferably digest")
     options = parser.parse_args()
     executor = Executor(options.workspace, options.image)
-    while line := sys.stdin.buffer.readline(REQUEST_LIMIT + 1):
+    for signum in (signal.SIGTERM, signal.SIGINT):
+        signal.signal(signum, executor.cancel)
+    for line in request_lines(executor):
+        if line is None:
+            return 2
         request = None
         try:
             if len(line) > REQUEST_LIMIT:
@@ -143,7 +206,7 @@ def main():
                         "error": {"code": -32602, "message": "Request rejected or execution unavailable"}}
         if response is not None:
             print(json.dumps(response), flush=True)
-    return 0
+    return 128 + executor.cancel_signal if executor.cancel_signal is not None else 0
 
 
 if __name__ == "__main__":
