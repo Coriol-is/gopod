@@ -158,6 +158,13 @@ type Bot struct {
 	rowMu sync.Mutex
 	rows  replyRow
 
+	// cmdBtns maps a command button's token to its command
+	// (cmdbuttons.go), pages a paged reply's token to its pages
+	// (pages.go); both under btnMu.
+	btnMu   sync.Mutex
+	cmdBtns map[string]cmdButton
+	pages   map[string]pagedReply
+
 	// inboundHandlers tracks our async handlers; the SDK only waits for
 	// its polling workers, not its default async handler goroutines.
 	inboundHandlers sync.WaitGroup

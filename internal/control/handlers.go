@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"runtime"
 	"runtime/debug"
+	"slices"
 	"strings"
 )
 
@@ -76,6 +77,9 @@ func RegisterSessionCommands(r *Router, compactFn CompactFunc, chatFolderLookup 
 			folder := chatFolderLookup(cmd.Caller.ChatID)
 			if folder == "" {
 				return Response{Text: "Chat not registered.", Code: 1}, nil
+			}
+			if !cmd.Confirmed {
+				return Confirm(cmd, "Clear this conversation's context? Long-term memory is kept."), nil
 			}
 			_, err := compactFn(ctx, folder, cmd.Caller.ThreadID, true) // clear = true → no summary
 			if err != nil {
@@ -154,7 +158,10 @@ func RegisterVoiceCommand(r *Router, setMode func(chatID int64, mode string)) {
 type ProviderSwitchFunc func(chatFolder, providerName string) (string, error)
 
 // RegisterProviderCommand adds /provider for per-chat agent switching.
-func RegisterProviderCommand(r *Router, switchFn ProviderSwitchFunc, chatFolderLookup func(chatID int64) string) {
+// currentFn returns the chat's provider name; names are the providers a
+// picker offers. With no args /provider answers with a picker; a switch
+// clears the main conversation, so it asks to confirm first (D028).
+func RegisterProviderCommand(r *Router, switchFn ProviderSwitchFunc, currentFn func(chatFolder string) string, names []string, chatFolderLookup func(chatID int64) string) {
 	r.Register("provider", "provider", "switch agent provider (claude, codex)", PermChatLocal,
 		func(ctx context.Context, cmd Command) (Response, error) {
 			folder := chatFolderLookup(cmd.Caller.ChatID)
@@ -162,10 +169,25 @@ func RegisterProviderCommand(r *Router, switchFn ProviderSwitchFunc, chatFolderL
 				return Response{Text: "Chat not registered.", Code: 1}, nil
 			}
 			if len(cmd.Args) == 0 {
+				cur := currentFn(folder)
 				return Response{
-					Text: "Usage: /provider <name>\n\nAvailable: claude, codex\n\n/provider claude — Claude Code CLI (default)\n/provider codex — OpenAI Codex CLI",
+					Text:    "Current provider: " + cur + "\n\nUsage: /provider <name>\n\n/provider claude — Claude Code CLI (default)\n/provider codex — OpenAI Codex CLI\n\nSwitching clears the main conversation.",
+					Buttons: pickerButtons("provider", names, cur),
+				}, nil
+			}
+			// Validate before asking: an unknown name or the current
+			// provider must not cost a confirmation (or a cleared session).
+			if !slices.Contains(names, cmd.Args[0]) {
+				return Response{
+					Text: fmt.Sprintf("unknown provider %q (available: %s)", cmd.Args[0], strings.Join(names, ", ")),
 					Code: 1,
 				}, nil
+			}
+			if cmd.Args[0] == currentFn(folder) {
+				return Response{Text: "Already using " + cmd.Args[0] + ". Nothing changed."}, nil
+			}
+			if !cmd.Confirmed {
+				return Confirm(cmd, "Switch this chat to "+cmd.Args[0]+"? The main conversation is cleared."), nil
 			}
 			result, err := switchFn(folder, cmd.Args[0])
 			if err != nil {
@@ -178,7 +200,10 @@ func RegisterProviderCommand(r *Router, switchFn ProviderSwitchFunc, chatFolderL
 // RegisterModelCommand adds /model for per-chat model selection
 // (CP-008). currentFn returns the stored override ("" = provider
 // default); setFn stores one ("" clears) and returns the reply text.
-func RegisterModelCommand(r *Router, currentFn func(chatFolder string) string, setFn func(chatFolder, model string) (string, error), chatFolderLookup func(chatID int64) string) {
+// choicesFn returns the names a picker offers for the chat's provider
+// (nil: none known); with no args /model answers with those buttons
+// plus "default", the current one marked.
+func RegisterModelCommand(r *Router, currentFn func(chatFolder string) string, setFn func(chatFolder, model string) (string, error), choicesFn func(chatFolder string) []string, chatFolderLookup func(chatID int64) string) {
 	r.Register("model", "model", "show or set the model for this chat", PermChatLocal,
 		func(ctx context.Context, cmd Command) (Response, error) {
 			folder := chatFolderLookup(cmd.Caller.ChatID)
@@ -190,7 +215,16 @@ func RegisterModelCommand(r *Router, currentFn func(chatFolder string) string, s
 				if cur == "" {
 					cur = "default"
 				}
-				return Response{Text: "Current model: " + cur + "\n\nUsage: /model <name> | /model default\nClaude aliases: fable, opus, sonnet, haiku (or a full model id)\nCodex: any model id the account can use (e.g. gpt-5)\nApplies from the next message; unknown names fail on the next turn."}, nil
+				var choices []string
+				if choicesFn != nil {
+					// A copy: the "default" appended below must not
+					// write into the caller's slice.
+					choices = append(choices, choicesFn(folder)...)
+				}
+				return Response{
+					Text:    "Current model: " + cur + "\n\nUsage: /model <name> | /model default\nClaude aliases: fable, opus, sonnet, haiku (or a full model id)\nCodex: any model id the account can use (e.g. gpt-5)\nApplies from the next message; unknown names fail on the next turn.",
+					Buttons: pickerButtons("model", append(choices, "default"), cur),
+				}, nil
 			}
 			model := cmd.Args[0]
 			if model == "default" {

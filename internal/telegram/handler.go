@@ -298,9 +298,7 @@ func (b *Bot) dispatchSlash(ctx context.Context, m *models.Message, text string)
 	} else {
 		status.Set(stDone)
 	}
-	if resp.Text != "" {
-		b.replyTo(ctx, m.Chat.ID, thread, m.ID, resp.Text)
-	}
+	b.sendCommandResponse(ctx, m.Chat.ID, thread, m.ID, resp)
 }
 
 func userID(u *models.User) int64 {
@@ -571,14 +569,26 @@ func (b *Bot) sendFormattedErr(ctx context.Context, chatID int64, thread int, re
 // row sits under the end of the reply. The reply redirected to main from
 // a gone topic gets none.
 func (b *Bot) sendRendered(ctx context.Context, chatID int64, thread int, replyToMsgID int, text string, render func(string) string, markup models.ReplyMarkup) (int, error) {
+	return b.sendRenderedOpts(ctx, chatID, thread, replyToMsgID, text, render, markup, false)
+}
+
+// sendRenderedOpts is sendRendered; keepMarkup keeps the buttons on the
+// topic-gone fallback in main. Command replies (pickers and pages)
+// need theirs there: their tokens are bound to the chat, not the
+// topic, and a question without its buttons cannot be answered.
+func (b *Bot) sendRenderedOpts(ctx context.Context, chatID int64, thread int, replyToMsgID int, text string, render func(string) string, markup models.ReplyMarkup, keepMarkup bool) (int, error) {
 	if !b.threadGone(chatID, thread) {
 		id, err := b.sendChunks(ctx, chatID, thread, replyToMsgID, text, render, markup)
 		if !b.checkThreadGone(chatID, thread, err) {
 			return id, err
 		}
 	}
-	// The topic-gone fallback in main carries no buttons (replyrow.go).
-	return b.sendChunks(ctx, chatID, 0, 0, threadGoneNote+text, render, nil)
+	// The topic-gone fallback in main carries no reply action row
+	// (replyrow.go): that row is the topic conversation's.
+	if !keepMarkup {
+		markup = nil
+	}
+	return b.sendChunks(ctx, chatID, 0, 0, threadGoneNote+text, render, markup)
 }
 
 // sendChunks sends text as HTML chunks into thread, falling back to

@@ -31,8 +31,11 @@ func TestSessionCommandsActOnCallerThread(t *testing.T) {
 	for _, name := range []string{"clear", "compact"} {
 		got = nil
 		_, err := r.Dispatch(context.Background(), Command{
-			Name:   name,
-			Caller: Caller{ChatID: 5, ThreadID: 9, Source: SourceTelegram},
+			Name: name,
+			// /clear asks to confirm first (D028); this test is about
+			// where a confirmed clear acts.
+			Confirmed: true,
+			Caller:    Caller{ChatID: 5, ThreadID: 9, Source: SourceTelegram},
 		})
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)

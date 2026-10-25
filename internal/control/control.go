@@ -59,6 +59,12 @@ type Command struct {
 	Name   string   // dot-separated, e.g. "ping", "chats.register"
 	Args   []string // positional arguments after the command name
 	Caller Caller
+	// Confirmed is set when the caller already confirmed a risky
+	// command: the Yes button of a confirmation, or the CLI --yes flag.
+	// A confirmable handler without it answers with Confirm instead of
+	// acting. It skips the question only, never a permission check:
+	// the Router checks Perm on every Dispatch, confirmed or not (D028).
+	Confirmed bool
 }
 
 // Response carries the handler's result. Frontends pick whichever
@@ -66,8 +72,40 @@ type Command struct {
 type Response struct {
 	Text string         // pre-rendered text
 	Data map[string]any // structured payload (CLI --json, future HTTP)
-	Code int            // 0 = OK, non-zero = logical error
+	Code int            // 0 = OK, CodeConfirm = asks to confirm, other non-zero = logical error
+	// Buttons are follow-up commands offered with the text, in rows
+	// (D028). Telegram shows them as inline buttons whose press
+	// dispatches the Button's command through the Router; text
+	// frontends print them (FormatText). Optional.
+	Buttons [][]Button
 }
+
+// CodeConfirm is the Response.Code of a command that asks the caller
+// to confirm before it acts (Confirm). Nothing has changed yet.
+const CodeConfirm = 2
+
+// Button is one follow-up action of a Response: pressing it dispatches
+// Command with Args through the Router as a new Command from the same
+// caller, so Perm applies exactly as to a typed command. A Button with
+// an empty Command dismisses the prompt (the Cancel of a confirmation).
+// Args are ids and names only: a frontend may keep them in memory, but
+// never puts secrets into a button (D012, D028).
+type Button struct {
+	Label   string
+	Command string // canonical command name, e.g. "model"; "" = dismiss
+	Args    []string
+	Style   string // "", StylePrimary, StyleDanger or StyleSuccess
+	// Confirmed dispatches the command with Command.Confirmed: the Yes
+	// of a confirmation. A frontend makes such a button single-use.
+	Confirmed bool
+}
+
+// Button styles: a hint, frontends without colours ignore them.
+const (
+	StylePrimary = "primary"
+	StyleDanger  = "danger"
+	StyleSuccess = "success"
+)
 
 // Handler implements one command. It receives a fully-validated
 // Command: the Router has already checked permissions before calling.
@@ -133,12 +171,30 @@ func (r *Router) Register(name, slashName, description string, perm Perm, h Hand
 // calls the handler. Returns ErrUnknownCommand if the name is not
 // registered, or ErrNotAuthorized if the caller lacks permission.
 func (r *Router) Dispatch(ctx context.Context, cmd Command) (Response, error) {
+	e, resp, err := r.lookup(cmd)
+	if err != nil {
+		return resp, err
+	}
+	return e.handler(ctx, cmd)
+}
+
+// Check reports whether Dispatch would run cmd's handler: it returns
+// the same refusal (Response and ErrUnknownCommand or ErrNotAuthorized,
+// a denial logged) without running anything. A frontend uses it to
+// refuse quickly before a slow command; Dispatch checks again.
+func (r *Router) Check(cmd Command) (Response, error) {
+	_, resp, err := r.lookup(cmd)
+	return resp, err
+}
+
+// lookup finds cmd's handler and checks the caller's permission.
+func (r *Router) lookup(cmd Command) (entry, Response, error) {
 	r.mu.RLock()
 	e, ok := r.handlers[cmd.Name]
 	r.mu.RUnlock()
 
 	if !ok {
-		return Response{Text: "unknown command", Code: 1}, ErrUnknownCommand
+		return entry{}, Response{Text: "unknown command", Code: 1}, ErrUnknownCommand
 	}
 
 	if !r.checkPerm(e.perm, cmd.Caller) {
@@ -146,11 +202,11 @@ func (r *Router) Dispatch(ctx context.Context, cmd Command) (Response, error) {
 			slog.String("command", cmd.Name),
 			slog.String("perm", permString(e.perm)),
 			slog.Int64("chat_id", cmd.Caller.ChatID),
-			slog.Bool("is_owner", cmd.Caller.IsOwner))
-		return Response{Text: "Not authorized.", Code: 1}, ErrNotAuthorized
+			slog.Bool("is_owner", cmd.Caller.IsOwner),
+			slog.Bool("confirmed", cmd.Confirmed))
+		return entry{}, Response{Text: "Not authorized.", Code: 1}, ErrNotAuthorized
 	}
-
-	return e.handler(ctx, cmd)
+	return e, Response{}, nil
 }
 
 // List returns all registered commands sorted by name. Used by

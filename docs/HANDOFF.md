@@ -28,7 +28,8 @@ CLAUDE.md (main's ruleset needs 1 approval; PRs are merged with
 **2026-10-25 incident:** the Pi voice message was downloaded and transcribed
 successfully; repeated Claude exits were an account session usage limit (429,
 reset reported as 13:50 UTC), not container restarts or OOM. Checked live:
-gopod restart count 0, OOMKilled=false. The runner now classifies the known
+gopod restart count 0, OOMKilled=false. PR #30 is merged on main
+(`5a9af2a`). The runner now classifies the known
 session/usage-limit CLI response separately on failed streaming and sync runs;
 Telegram explains the quota rather than a generic agent failure. No automatic
 retry or provider switch. Live end-to-end recovery after the allowance resets
@@ -47,8 +48,22 @@ with the replay count (one notice per 2 minutes). `GOPOD_NOTIFY_LIFECYCLE=0`
 disables; compose `stop_grace_period: 30s`. Not verified live: on the Pi a
 `docker compose up -d` recreate should show both messages, and
 `docker kill -s KILL <container>` then `docker compose up -d` the crash one.
+**2026-10-25:** dynamic UX phase 4 (branch `feat/ux-phase4`, PR open, not
+merged, not verified live; checklist 0X): `control.Response.Buttons`
+([D028](DECISIONS.md)), `/model` and `/provider` pickers, confirmations for
+`/clear` and `/provider <name>` (`control.Confirm`, `CodeConfirm`), paged
+long command replies. Command buttons are in-memory tokens (`cc:`/`cf:`/
+`cx:`/`pg:`), dispatched through the Router (`internal/telegram/cmdbuttons.go`,
+`pages.go`). Review fixes resumed after the Claude session limit:
+pages are budgeted at 3800 rendered HTML bytes (including fence balancing),
+so Cyrillic/escaped output stays one message. Slow command callbacks are
+answered before dispatch; failed/spent confirmations lose their buttons.
+Unknown providers fail before confirmation and selecting the current provider
+is a no-op. Topic-gone picker/page fallbacks retain their buttons in main. Risky
+confirmations instead ask the user to rerun the command in the desired
+conversation, without buttons, so a deleted-topic `/clear` cannot clear main.
 **2026-10-25:** dynamic Telegram UX phase 6 (input context, branch
-`feat/ux-phase6`, PR open, not merged): replied, quoted and forwarded
+`feat/ux-phase6`, PR #28 merged on main at `51cc974`): replied, quoted and forwarded
 text reaches the prompt as a header (`internal/telegram/inbound_context.go`),
 albums become one turn after a 1 s window, audio files and video notes
 are transcribed like voice. Review fixes reject media before downloading or
@@ -77,12 +92,10 @@ gopod-owner` the next message was answered first time (turn 4, 2026-10-05
 message" symptom is gone (root cause: `~/.codex` on tmpfs + 0.128
 `resume --last` failing on an empty session dir; both removed).
 
-**Also this session:** a CP (change proposal) process. Template, lifecycle
-and registry in [proposals/README.md](proposals/README.md); seven
-proposals CP-001…CP-007 written from the `codex-agent` survey, all
-`proposed`, suggested order in ROADMAP "Proposals". `/handoff` now
-cross-checks the CP registry (step 4b). Uncommitted: `docs/proposals/`,
-`CLAUDE.md`, `ROADMAP.md`, `.claude/skills/handoff/SKILL.md`, this file.
+**Change proposals:** the CP process, registry and `/handoff` cross-check
+are committed. Current proposal statuses live in
+[proposals/README.md](proposals/README.md); do not infer acceptance from this
+historical handoff.
 
 **Previous session:** durable turns (2026-10-03, branch
 `worktree-durable-turns`, merged to `main`). Every agent run is now a row
@@ -324,6 +337,14 @@ Additional completed work (post-milestone):
 
 ## What's in progress
 
+**Dynamic Telegram UX phase 4:** PR #29 (`feat/ux-phase4`) has review fixes
+and merges current main (`51cc974`, including PR #28 input context and
+PR #30 usage-limit handling). Integration build, vet, all tests and the control/Telegram race suite pass;
+independent review and CI gate its merge. No live phase 4 or phase 6 acceptance is claimed.
+Phase 6 is merged; its remaining work is the live checklist 0Y. The quota
+classification fix is merged; live recovery after the allowance resets
+remains unverified.
+
 **Phase 7 — Streaming output** ([STREAMING.md](STREAMING.md)). ✅ **Done.**
 
 Real-time agent output to Telegram via message editing (~1s updates).
@@ -467,6 +488,40 @@ pending: a 20-line and a 100-line block in a private chat and in a topic.
    second message in the same thread, keeps 👀); earlier messages of a
    batched turn keep 👀; elapsed time counts from the agent start, not from
    receipt; stall timers are not stopped by a shutdown mid-turn.
+0X. **Live checklist for dynamic Telegram UX, phase 4** (branch
+   `feat/ux-phase4`; spec F7-F9, plan Tasks 9-11,
+   [D028](DECISIONS.md), CONTROL.md §6.1; nothing run on a real bot yet;
+   run 0U first): (1) `/model` with no args shows buttons `fable opus
+   sonnet / haiku default` on a Claude chat (only `default` on Codex), the
+   current one `✓` and `primary`; a press edits the same message to "Model
+   set to …" without buttons and the next turn uses that model; (2)
+   `/provider` with no args shows `claude`/`codex`; a press turns the same
+   message into "Switch this chat to …?" with `Yes` (`danger`) / `Cancel`;
+   `Yes` switches (main conversation cleared), `Cancel` edits to
+   «Отменено.»; (3) `/clear` asks first, in the topic it was sent in;
+   `Yes` clears that conversation only, a double tap clears once, `Cancel`
+   then toasts «Кнопка устарела»; after 5 minutes `Yes` toasts expired;
+   (4) in a registered **non-owner** chat a command button for an
+   owner-only command toasts "Not authorized." and the log has the
+   Router's `permission denied` warn; (5) `/logs` (or `/recall` with many
+   hits) over 3800 rendered HTML bytes arrives as one message with `‹ 1/N ›`; `›`
+   and `‹` edit the same message, a code block cut by a page stays
+   formatted; after a restart or 10 minutes a press toasts «Страницы
+   устарели, повторите команду»; (6) after a restart every old picker and
+   confirmation toasts expired; (7) unknown `/provider xyz` fails without
+   a question and selecting the current provider changes nothing; failed
+   Yes removes its buttons; a slow command stops the spinner before work;
+   a deleted-topic picker/page fallback retains its buttons in main; a
+   deleted-topic `/clear` offers no confirmation and asks to rerun in the
+   desired conversation, leaving main untouched. Include Cyrillic memories, escaped JSON logs,
+   and fenced code in paging checks. Known limits: button labels and texts from
+   `internal/control` are English (Phase 5 moves strings); buttons in an
+   unregistered chat toast «Этот чат не подключён» (slash commands work
+   there, callbacks need a registered chat); `/chats unregister` and
+   `/container restart|stop` are on the Q6 list but do not exist yet; the
+   CLI frontend (C3) is still not built, only `control.FormatText` and
+   `ParseConfirmFlag` for it; a picker press re-sends the whole result,
+   so a picker pressed after its model was changed elsewhere still applies.
 0Y. **Live checklist for dynamic Telegram UX, phase 6** (branch
    `feat/ux-phase6`; spec F10, F11 and "Verify live" items 8 and 9, plan
    Phase 6; nothing run on a real bot yet): (1) reply to one of gopod's

@@ -12,6 +12,7 @@ func TestModelCommand(t *testing.T) {
 	RegisterModelCommand(r,
 		func(folder string) string { return current[folder] },
 		func(folder, model string) (string, error) { current[folder] = model; return "ok " + model, nil },
+		nil,
 		func(chatID int64) string {
 			if chatID == 1 {
 				return "owner"

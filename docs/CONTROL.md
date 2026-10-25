@@ -89,8 +89,28 @@ type Response struct {
     Text     string         // pre-rendered text suitable for any frontend
     Markdown string         // optional richer rendering
     Data     map[string]any // structured payload (used by CLI --json, future HTTP)
-    Code     int            // exit-code-style: 0 = OK, non-zero = error
+    Code     int            // exit-code-style: 0 = OK, CodeConfirm = asks to confirm, other non-zero = error
+    Buttons  [][]Button     // optional follow-up commands, in rows (D028)
 }
+
+// A Button offers a follow-up command. Pressing it dispatches Command
+// with Args through the Router as a new Command from the same caller,
+// so Perm applies exactly as to a typed command. Command "" dismisses
+// (the Cancel of a confirmation). Args are names and ids, never secrets.
+type Button struct {
+    Label     string
+    Command   string   // canonical name, e.g. "model"; "" = dismiss
+    Args      []string
+    Style     string   // "", "primary", "danger", "success" (a hint)
+    Confirmed bool     // dispatch with Command.Confirmed: the Yes of a confirmation
+}
+
+const CodeConfirm = 2 // the command asks to confirm; nothing changed yet
+
+// Command.Confirmed bool: set by a confirmation's Yes button or the CLI
+// --yes flag. A confirmable handler without it returns
+// Confirm(cmd, question) instead of acting. It skips the question only:
+// the Router checks Perm on every Dispatch.
 
 // Router is the central dispatch table. One per process.
 type Router struct { ... }
@@ -101,6 +121,13 @@ func (r *Router) Register(name string, perm Perm, h Handler)
 func (r *Router) Dispatch(ctx context.Context, cmd Command) (Response, error)
 func (r *Router) List() []CommandInfo            // for /help, gopod help
 ```
+
+The code is the source of truth where this sketch differs (`Args` is a
+`[]string`, `Register` also takes the slash name and description, there is
+no `Markdown` field). Frontends without buttons print them with
+`control.FormatText(resp)`: the text, then `[label]  command args` per
+button, or for `CodeConfirm` a hint to re-run with `--yes`
+(`control.ParseConfirmFlag` strips `--yes`/`-y` from CLI args).
 
 `Deps` carries the handles every handler needs: store, queue, runner,
 scheduler, skills loader, memory store, telegram sender (for replies that
@@ -156,6 +183,9 @@ all DB queries by `cmd.Caller.ChatID`.
 | Telegram | CLI | Perm | What |
 |---|---|---|---|
 | `/compact` | — | ChatLocal | Force a context compact + summarize this chat |
+| `/clear` | — | ChatLocal | Clear this conversation's context; asks to confirm (§6.1) |
+| `/model [name\|default]` | — | ChatLocal | Show (picker) or set this chat's model |
+| `/provider [claude\|codex]` | — | ChatLocal | Show (picker) or switch this chat's provider; a switch asks to confirm |
 | `/remember <text>` | — | ChatLocal | `memory_add` convenience for the calling chat |
 | `/recall <query>` | — | ChatLocal | `memory_search` over the calling chat's memories |
 | `/tasks list` | — | ChatLocal | List scheduled tasks for the calling chat |
@@ -252,6 +282,45 @@ handlers** registered with `go-telegram/bot`. The control dispatcher matches
 on `/` prefix and runs first; if it consumes the update, the default handler
 still saves the message (because users may want to see "Alice ran /whoami"
 in the chat history). Storage is independent of dispatch.
+
+### 6.1 Buttons, pickers and confirmations ([D028](DECISIONS.md))
+
+As implemented (`internal/telegram/cmdbuttons.go`), a Response's `Buttons`
+are sent as inline buttons under the reply (last chunk). Each button's
+callback data is a random token, never the command:
+
+| Data | Button | Valid | On press |
+|---|---|---|---|
+| `cc:<token>` | a follow-up command (picker choice) | 10 min | `Router.Dispatch(Command{Name, Args})`; the message is edited in place to the result (its text and buttons) |
+| `cf:<token>` | Yes of a confirmation | 5 min, single use | the same with `Confirmed = true`; spends the Yes/Cancel pair, so Yes runs at most once |
+| `cx:<token>` | Cancel (a Button with no Command) | 5 min, single use | spends the pair; the message becomes «Отменено.» without buttons |
+| `pg:<token>:<n>` | `‹ n/N ›` of a long reply | 10 min | edits the same message to page n |
+
+Long replies: a command reply over 3000 characters (`/logs`, `/recall`,
+`/tasks list`, `/help`, any command) is one message with a `‹ n/N ›` row
+instead of several chunks, split on line boundaries; a code block cut by a
+page boundary is closed and reopened. The Response's own buttons stay under
+every page. Handlers need nothing for this: paging is the frontend's.
+
+The token is bound to the chat its message is in. The press is authorized
+like a typed command: the chat of the message carrying the button must be
+registered, the `Caller` gets that chat, its topic, the pressing user, and
+`IsOwner = chat == GOPOD_OWNER_CHAT_ID`; the Router checks `Perm` on every
+press, including a confirmed one. A refusal ("Not authorized.") is a toast
+and the message is not changed. A restart forgets every token: the press
+toasts «Кнопка устарела».
+
+Pickers: `/model` with no args offers the provider's model names (Claude:
+`fable`, `opus`, `sonnet`, `haiku`; Codex: none, any id is typed) plus
+`default`; `/provider` with no args offers `claude`, `codex`. The current
+one is marked `✓` and styled `primary`.
+
+Confirmations (owner Q6): `/clear` and `/provider <name>` (it clears the
+main conversation) answer `CodeConfirm` with Yes (`danger`) / Cancel; a
+provider picked from the picker is confirmed the same way. `/chats
+unregister` and `/container restart|stop` are on the Q6 list but do not
+exist yet: they must use `control.Confirm` when they are added. The CLI
+(C3, not built yet) confirms with `--yes` (`control.ParseConfirmFlag`).
 
 ---
 
@@ -457,10 +526,10 @@ inventing local plumbing.
    plane? For personal scale, probably not. Note in HANDOFF if it ever
    becomes a real issue.
 
-4. **Telegram inline keyboards for confirmations.** `/container stop foo`
-   could pop an inline button "Confirm / Cancel" instead of executing
-   immediately. Would be a Telegram-frontend-only enhancement; the Router
-   and handlers don't need to know. Defer.
+4. ~~**Telegram inline keyboards for confirmations.**~~ Resolved by
+   [D028](DECISIONS.md) (§6.1): the handler decides what needs a
+   confirmation (`control.Confirm`), so the CLI asks the same questions;
+   the Yes re-dispatches through the Router.
 
 ---
 

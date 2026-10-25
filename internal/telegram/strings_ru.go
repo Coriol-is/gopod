@@ -77,3 +77,13 @@ const (
 	fileToastFailed   = "Не получилось отправить файл, попробуйте ещё раз"
 	stepsHeader       = "Шаги агента:"
 )
+
+// Command buttons, confirmations and pages (cmdbuttons.go, pages.go).
+const (
+	cmdTextDone      = "Готово."
+	cmdTextCancelled = "Отменено."
+
+	btnPagePrev       = "‹"
+	btnPageNext       = "›"
+	pagesToastExpired = "Страницы устарели, повторите команду"
+)
