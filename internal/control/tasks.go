@@ -7,8 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/robfig/cron/v3"
-
 	"github.com/Coriol-is/gopod/internal/scheduler"
 	"github.com/Coriol-is/gopod/internal/store"
 )
@@ -89,10 +87,10 @@ func tasksList(ctx context.Context, st *store.Store, folder string) (Response, e
 	for _, t := range tasks {
 		nextStr := "—"
 		if t.NextRun > 0 {
-			nextStr = time.UnixMilli(t.NextRun).Format("2006-01-02 15:04")
+			nextStr = time.UnixMilli(t.NextRun).UTC().Format(time.RFC3339)
 		}
 		fmt.Fprintf(&sb, "[%s] %s %s %s\n  prompt: %s\n  next: %s\n\n",
-			t.Status, t.ID[:8], t.ScheduleType, t.ScheduleValue,
+			t.Status, t.ID, t.ScheduleType, t.ScheduleValue,
 			truncate(t.Prompt, 60), nextStr)
 	}
 	return Response{Text: sb.String()}, nil
@@ -102,15 +100,15 @@ func tasksList(ctx context.Context, st *store.Store, folder string) (Response, e
 // language scheduling requests into structured JSON.
 const parsePrompt = `You are a scheduling parser. The user wants to create a scheduled task.
 Parse their request into this exact JSON format (no markdown, no explanation, ONLY the JSON object):
-{"type":"cron","schedule":"<5-field cron expression>","prompt":"<the task prompt>"}
+{"type":"cron","schedule":"<5-field cron expression, optionally prefixed CRON_TZ=IANA/Zone>","prompt":"<the task prompt>"}
 OR {"type":"interval","schedule":"<Go duration like 1h or 30m>","prompt":"<the task prompt>"}
 OR {"type":"once","schedule":"<RFC3339 datetime like 2026-12-25T09:00:00Z>","prompt":"<the task prompt>"}
 
 Rules:
 - "type" must be exactly one of: "cron", "interval", "once"
-- For cron: use standard 5-field (minute hour dom month dow), e.g. "0 9 * * *" for daily at 9am
+- For cron: use standard 5-field (minute hour dom month dow). Preserve an explicit user timezone as CRON_TZ=IANA/Zone, e.g. "CRON_TZ=Europe/Belgrade 0 9 * * *". Bare cron uses the current process timezone shown below, not a guessed Telegram/device timezone.
 - For interval: use Go duration format, e.g. "1h", "30m", "2h30m"
-- For once: use RFC3339, assume UTC if no timezone given
+- For once: use RFC3339 with an explicit offset. Preserve any user-specified timezone using the offset valid at that date (including DST). Assume UTC only if no timezone was specified.
 - "prompt" is what the agent should be asked to do when the task fires
 - Extract the prompt from the user's natural language, removing the scheduling part
 - Current time is: %s
@@ -184,42 +182,10 @@ func tasksAdd(ctx context.Context, st *store.Store, folder string, caller Caller
 		}
 	}
 
-	// Validate the parsed result.
-	var nextRun int64
-
-	switch parsed.Type {
-	case "cron":
-		if err := scheduler.ValidateCron(parsed.Schedule); err != nil {
-			return Response{Text: fmt.Sprintf("Invalid cron from parser: %v\nTry rephrasing.", err), Code: 1}, nil
-		}
-		sched, _ := cronParserForAdd().Parse(parsed.Schedule)
-		nextRun = sched.Next(now).UnixMilli()
-
-	case "interval":
-		if err := scheduler.ValidateInterval(parsed.Schedule); err != nil {
-			return Response{Text: fmt.Sprintf("Invalid interval from parser: %v\nTry rephrasing.", err), Code: 1}, nil
-		}
-		d, _ := time.ParseDuration(parsed.Schedule)
-		nextRun = now.Add(d).UnixMilli()
-
-	case "once":
-		t, err := time.Parse(time.RFC3339, parsed.Schedule)
-		if err != nil {
-			t, err = time.Parse("2006-01-02T15:04", parsed.Schedule)
-			if err != nil {
-				return Response{
-					Text: fmt.Sprintf("Invalid datetime from parser: %q\nTry rephrasing.", parsed.Schedule),
-					Code: 1,
-				}, nil
-			}
-		}
-		nextRun = t.UnixMilli()
-
-	default:
-		return Response{
-			Text: fmt.Sprintf("Parser returned unknown type %q. Try rephrasing.", parsed.Type),
-			Code: 1,
-		}, nil
+	now = time.Now()
+	nextRun, err := scheduler.FirstRunAt(parsed.Type, parsed.Schedule, now)
+	if err != nil {
+		return Response{Text: fmt.Sprintf("Invalid schedule: %v", err), Code: 1}, nil
 	}
 
 	if parsed.Prompt == "" {
@@ -227,6 +193,8 @@ func tasksAdd(ctx context.Context, st *store.Store, folder string, caller Caller
 	}
 
 	chatJID := fmt.Sprintf("tg:%d", caller.ChatID)
+	release := scheduler.LockTasks(st)
+	defer release()
 	id, err := st.CreateTask(ctx, store.TaskRecord{
 		ChatFolder:    folder,
 		ChatJID:       chatJID,
@@ -240,10 +208,10 @@ func tasksAdd(ctx context.Context, st *store.Store, folder string, caller Caller
 		return Response{}, err
 	}
 
-	nextStr := time.UnixMilli(nextRun).Format("2006-01-02 15:04")
+	nextStr := time.UnixMilli(nextRun).UTC().Format(time.RFC3339)
 	return Response{
-		Text: fmt.Sprintf("Task created: %s\nType: %s %s\nNext run: %s\nPrompt: %s",
-			id[:8], parsed.Type, parsed.Schedule, nextStr, truncate(parsed.Prompt, 80)),
+		Text: fmt.Sprintf("Task created: %s\nType: %s %s\nNext run (UTC): %s\nPrompt: %s",
+			id, parsed.Type, parsed.Schedule, nextStr, truncate(parsed.Prompt, 80)),
 	}, nil
 }
 
@@ -271,6 +239,8 @@ func extractJSON(s string) string {
 }
 
 func tasksSetStatus(ctx context.Context, st *store.Store, folder string, args []string, status string) (Response, error) {
+	release := scheduler.LockTasks(st)
+	defer release()
 	if len(args) == 0 {
 		return Response{Text: "Usage: /tasks " + status + " <task_id>", Code: 1}, nil
 	}
@@ -290,6 +260,9 @@ func tasksSetStatus(ctx context.Context, st *store.Store, folder string, args []
 		// Resuming: recompute next_run from now.
 		now := time.Now().UnixMilli()
 		nextRun, _ = computeNextRunForResume(t, now)
+		if nextRun == 0 {
+			return Response{Text: "Task has no future run. Update its schedule or create a new task.", Code: 1}, nil
+		}
 	}
 	if status == "paused" {
 		nextRun = 0 // paused tasks don't fire
@@ -298,10 +271,12 @@ func tasksSetStatus(ctx context.Context, st *store.Store, folder string, args []
 	if err := st.UpdateTaskStatus(ctx, id, status, nextRun, t.LastRun); err != nil {
 		return Response{}, err
 	}
-	return Response{Text: fmt.Sprintf("Task %s → %s", id[:8], status)}, nil
+	return Response{Text: fmt.Sprintf("Task %s → %s", id, status)}, nil
 }
 
 func tasksCancel(ctx context.Context, st *store.Store, folder string, args []string) (Response, error) {
+	release := scheduler.LockTasks(st)
+	defer release()
 	if len(args) == 0 {
 		return Response{Text: "Usage: /tasks cancel <task_id>", Code: 1}, nil
 	}
@@ -318,31 +293,19 @@ func tasksCancel(ctx context.Context, st *store.Store, folder string, args []str
 	if err := st.DeleteTask(ctx, id); err != nil {
 		return Response{}, err
 	}
-	return Response{Text: fmt.Sprintf("Task %s cancelled and deleted.", id[:8])}, nil
+	return Response{Text: fmt.Sprintf("Task %s cancelled and deleted.", id)}, nil
 }
 
 // computeNextRunForResume recomputes next_run when a paused task is
 // resumed. For cron: next occurrence from now. For interval: now + interval.
 // For once: if the original time is in the past, keep it (will fire immediately).
 func computeNextRunForResume(t store.TaskRecord, now int64) (int64, string) {
-	switch t.ScheduleType {
-	case "cron":
-		sched, err := cronParserForAdd().Parse(t.ScheduleValue)
-		if err != nil {
-			return 0, "done"
-		}
-		return sched.Next(time.UnixMilli(now)).UnixMilli(), "active"
-	case "interval":
-		d, err := time.ParseDuration(t.ScheduleValue)
-		if err != nil {
-			return 0, "done"
-		}
-		return now + d.Milliseconds(), "active"
-	case "once":
-		return t.NextRun, "active" // keep original time
-	default:
+	next, err := scheduler.FirstRunAt(t.ScheduleType, t.ScheduleValue, time.UnixMilli(now))
+	if err != nil {
 		return 0, "done"
 	}
+	return next, "active"
+
 }
 
 func truncate(s string, n int) string {
@@ -351,14 +314,3 @@ func truncate(s string, n int) string {
 	}
 	return s[:n] + "…"
 }
-
-// cronParserForAdd returns the same parser the scheduler uses.
-// Duplicated here to avoid importing internal/scheduler into control
-// (would create a cycle since scheduler imports store which is at
-// the same level). The parser config MUST match scheduler.cronParser.
-func cronParserForAdd() cron.Parser {
-	return cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
-}
-
-// suppress unused import
-var _ = cron.Parser{}

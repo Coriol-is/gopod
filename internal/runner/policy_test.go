@@ -40,6 +40,9 @@ func TestOutputPolicyReachesAgentOnEveryTurn(t *testing.T) {
 						t.Fatalf("stream: %v", res.Err)
 					}
 					sp := systemPromptIn(t, prov, h.home.lastRun())
+					if !strings.Contains(sp, SchedulingPolicy) {
+						t.Fatal("scheduling guide reference absent from agent prompt")
+					}
 					if !strings.Contains(sp, OutputPolicy) {
 						t.Fatalf("output policy missing from the agent argv:\n%s", sp)
 					}

@@ -45,25 +45,23 @@ func (w *Watcher) handleFolder(ctx context.Context, folder string) {
 	}
 	w.processChannel(ctx, folder, "messages", w.processMessageFile)
 	w.processChannel(ctx, folder, "tasks", w.processTaskFile)
-	pruneDir(filepath.Join(w.cfg.DataDir, "ipc", folder, ".processed"), w.cfg.Retention)
-	pruneDir(filepath.Join(w.cfg.DataDir, "ipc", folder, ".failed"), w.cfg.Retention)
+	w.pruneNamespace(folder)
 }
 
 // moveProcessed renames path to <folder>/.processed/<base>.
-func (w *Watcher) moveProcessed(folder, path string) {
-	dst := filepath.Join(w.cfg.DataDir, "ipc", folder, ".processed", filepath.Base(path))
-	if err := os.Rename(path, dst); err != nil {
+func (w *Watcher) moveProcessed(folder, path string) bool {
+	if err := w.archiveFile(folder, path, ".processed"); err != nil {
 		w.log.Error("ipc: rename to .processed",
 			"folder", folder, "path", path, "err", err)
-		return
+		return false
 	}
 	delete(w.retries, path)
+	return true
 }
 
 // moveFailed renames path to <folder>/.failed/<base> and logs the cause.
 func (w *Watcher) moveFailed(folder, path string, cause error) {
-	dst := filepath.Join(w.cfg.DataDir, "ipc", folder, ".failed", filepath.Base(path))
-	if err := os.Rename(path, dst); err != nil {
+	if err := w.archiveFile(folder, path, ".failed"); err != nil {
 		w.log.Error("ipc: rename to .failed",
 			"folder", folder, "path", path, "err", err)
 		return

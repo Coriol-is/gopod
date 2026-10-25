@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/Coriol-is/gopod/internal/ipc"
 	"github.com/Coriol-is/gopod/internal/store"
@@ -23,25 +24,33 @@ func NewIPCSink(st *store.Store) *IPCSink { return &IPCSink{st: st} }
 // Validation errors are wrapped with ipc.ErrPermanent so the watcher
 // stops retrying.
 func (a *IPCSink) Schedule(ctx context.Context, rec store.TaskRecord) error {
-	switch rec.ScheduleType {
-	case "cron":
-		if err := ValidateCron(rec.ScheduleValue); err != nil {
-			return fmt.Errorf("validate cron %q: %w: %w",
-				rec.ScheduleValue, err, ipc.ErrPermanent)
-		}
-	case "interval":
-		if err := ValidateInterval(rec.ScheduleValue); err != nil {
-			return fmt.Errorf("validate interval %q: %w: %w",
-				rec.ScheduleValue, err, ipc.ErrPermanent)
-		}
-	case "once":
-		if rec.ScheduleValue == "" {
-			return fmt.Errorf("once: empty value: %w", ipc.ErrPermanent)
-		}
-	default:
-		return fmt.Errorf("unknown scheduleType %q: %w",
-			rec.ScheduleType, ipc.ErrPermanent)
+	release := taskOperationLock(ctx, a.st)
+	defer release()
+	if rec.Prompt == "" {
+		return fmt.Errorf("prompt is required: %w", ipc.ErrPermanent)
 	}
+	if rec.ID != "" {
+		existing, err := a.st.GetTask(ctx, rec.ID)
+		if err == nil {
+			if existing.ChatFolder == rec.ChatFolder && existing.ChatJID == rec.ChatJID && existing.Prompt == rec.Prompt && existing.ScheduleType == rec.ScheduleType && existing.ScheduleValue == rec.ScheduleValue {
+				return nil
+			}
+			return fmt.Errorf("taskId already exists with different definition; use update: %w", ipc.ErrPermanent)
+		}
+		if !errors.Is(err, store.ErrTaskNotFound) {
+			return err
+		}
+	}
+	now := time.Now()
+	if rec.CreatedAt > 0 {
+		now = time.UnixMilli(rec.CreatedAt)
+	}
+	next, err := FirstRunAt(rec.ScheduleType, rec.ScheduleValue, now)
+	if err != nil {
+		return fmt.Errorf("invalid schedule: %w: %w", err, ipc.ErrPermanent)
+	}
+	rec.NextRun = next
+
 	if _, err := a.st.CreateTask(ctx, rec); err != nil {
 		return err
 	}
@@ -51,12 +60,17 @@ func (a *IPCSink) Schedule(ctx context.Context, rec store.TaskRecord) error {
 // Cancel marks an active task as "done". Unknown IDs are permanent
 // failures so the IPC watcher does not retry.
 func (a *IPCSink) Cancel(ctx context.Context, id string) error {
+	release := taskOperationLock(ctx, a.st)
+	defer release()
 	t, err := a.st.GetTask(ctx, id)
 	if err != nil {
 		if errors.Is(err, store.ErrTaskNotFound) {
 			return fmt.Errorf("cancel %q: %w: %w", id, err, ipc.ErrPermanent)
 		}
 		return err
+	}
+	if scope, ok := ipc.TaskScopeFromContext(ctx); ok && !scope.IsOwner && t.ChatFolder != scope.SourceFolder {
+		return fmt.Errorf("task unavailable in this scope: %w", ipc.ErrPermanent)
 	}
 	if t.Status == "done" {
 		return nil

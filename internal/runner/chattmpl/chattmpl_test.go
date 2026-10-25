@@ -24,8 +24,8 @@ func TestSeedFreshDirCreatesBoth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Seed: %v", err)
 	}
-	if len(created) != 3 {
-		t.Errorf("created %d files, want 3 (CLAUDE.md, AGENTS.md, MEMORY.md): %v", len(created), created)
+	if len(created) != 4 {
+		t.Errorf("created %d files, want 4 (CLAUDE.md, AGENTS.md, SCHEDULING.md, MEMORY.md): %v", len(created), created)
 	}
 
 	// Verify CLAUDE.md exists, includes the chat folder name and the
@@ -75,8 +75,8 @@ func TestSeedDoesNotOverwrite(t *testing.T) {
 		t.Fatalf("Seed: %v", err)
 	}
 	// CLAUDE.md was pre-existing; only AGENTS.md and MEMORY.md should have been created.
-	if len(created) != 2 {
-		t.Errorf("created %d files, want 2 (CLAUDE.md should be left alone): %v", len(created), created)
+	if len(created) != 3 {
+		t.Errorf("created %d files, want 3 (CLAUDE.md should be left alone): %v", len(created), created)
 	}
 
 	body, _ := os.ReadFile(filepath.Join(chatDir, "CLAUDE.md"))
@@ -148,5 +148,36 @@ func TestSeedCLAUDEHasOutputPolicy(t *testing.T) {
 	}
 	if !strings.Contains(string(body), "Report work, don't paste it.") {
 		t.Error("new chat CLAUDE.md lacks the output policy")
+	}
+}
+
+func TestSchedulingGuideAddedToExistingCustomWorkspace(t *testing.T) {
+	chatDir, memoryDir := setupDirs(t)
+	for _, name := range []string{"CLAUDE.md", "AGENTS.md"} {
+		if err := os.WriteFile(filepath.Join(chatDir, name), []byte("operator custom "+name), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(memoryDir, "MEMORY.md"), []byte("existing memory"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	created, err := Seed(chatDir, memoryDir, Vars{ChatFolder: "owner", IsOwner: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(created) != 1 || filepath.Base(created[0]) != "SCHEDULING.md" {
+		t.Fatalf("unexpected files: %v", created)
+	}
+	for _, name := range []string{"CLAUDE.md", "AGENTS.md"} {
+		b, _ := os.ReadFile(filepath.Join(chatDir, name))
+		if string(b) != "operator custom "+name {
+			t.Fatal("custom identity overwritten")
+		}
+	}
+	guide, _ := os.ReadFile(filepath.Join(chatDir, "SCHEDULING.md"))
+	for _, s := range []string{"\"op\":\"schedule\"", "CRON_TZ=Europe/Belgrade", "/workspace/ipc/results", "does not automatically"} {
+		if !strings.Contains(string(guide), s) {
+			t.Fatalf("guide missing %q", s)
+		}
 	}
 }

@@ -26,9 +26,10 @@ elevated access in addition to the standard per-chat tools:
   read-only. You can read source, docs, and git history to answer
   questions about how gopod works or to help with maintenance.
 - `/workspace/store/store.sqlite` is the gopod persistence
-  database, mounted **read-write**. Touching it directly can corrupt
-  gopod's state — use only when explicitly asked, and prefer the
-  /memory_* tools when they cover the use case.
+  database file bind. Its parent directory remains read-only, so WAL
+  sidecar creation is not available: do not write SQL from the agent.
+  Use the memory API for memory and the documented IPC task protocol
+  for scheduling; see `/workspace/chat/SCHEDULING.md`.
 - `/workspace/project/.env` is masked to an empty file by design;
   you cannot read environment secrets that way (per gopod's
   D012 secrets policy).
@@ -48,6 +49,12 @@ chats' state or the gopod checkout itself.
 | `/workspace/memory` | Anthropic Memory Tool scratchpad. Long-lived facts, summaries, decisions. Survives container restarts. |
 | `/workspace/ipc` | Filesystem IPC namespace for talking back to gopod asynchronously (post-M7). |
 | `/home/node/.claude` | Your CLI's session state (login credentials, recent transcripts). The operator manages this via gopod; do not edit by hand. |
+
+## Scheduling and recurring work
+
+Read `/workspace/chat/SCHEDULING.md` before creating or managing tasks. It gives
+exact IPC JSON, explicit timezone handling, result receipts and notification
+semantics. Use it instead of guessing payloads or inserting rows into SQLite.
 
 ## Conventions
 

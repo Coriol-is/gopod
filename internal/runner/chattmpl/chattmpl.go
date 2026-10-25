@@ -1,5 +1,5 @@
 // Package chattmpl seeds new gopod chat workspaces with default
-// CLAUDE.md, AGENTS.md (same content, for Codex) and MEMORY.md files
+// CLAUDE.md, AGENTS.md (same content, for Codex), SCHEDULING.md and MEMORY.md files
 // so the agent wakes up with identity,
 // a workspace map, and memory format hints instead of an empty
 // directory.
@@ -31,6 +31,9 @@ import (
 //go:embed CLAUDE.md.tmpl
 var claudeTmplSrc string
 
+//go:embed SCHEDULING.md.tmpl
+var schedulingTmplSrc string
+
 //go:embed MEMORY.md.tmpl
 var memoryTmplSrc string
 
@@ -47,7 +50,7 @@ type Vars struct {
 	Date string
 }
 
-// Seed writes CLAUDE.md, AGENTS.md and memory/MEMORY.md into chatDir if they do
+// Seed writes CLAUDE.md, AGENTS.md, SCHEDULING.md and memory/MEMORY.md if they do
 // not already exist. Idempotent. Returns the list of files actually
 // created (empty when both already existed).
 //
@@ -74,6 +77,13 @@ func Seed(chatDir, memoryDir string, vars Vars) ([]string, error) {
 		} else if wrote {
 			created = append(created, path)
 		}
+	}
+
+	schedulingPath := filepath.Join(chatDir, "SCHEDULING.md")
+	if wrote, err := writeIfMissing(schedulingPath, schedulingTmplSrc, vars); err != nil {
+		return created, err
+	} else if wrote {
+		created = append(created, schedulingPath)
 	}
 
 	memoryPath := filepath.Join(memoryDir, "MEMORY.md")

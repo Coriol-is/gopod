@@ -10,7 +10,7 @@ import (
 // Returns "" if the key doesn't exist (not an error).
 func (s *Store) GetState(ctx context.Context, key string) (string, error) {
 	var value string
-	err := s.db.QueryRowContext(ctx,
+	err := s.taskDB(ctx).QueryRowContext(ctx,
 		`SELECT value FROM router_state WHERE key = ?`, key).Scan(&value)
 	if err == sql.ErrNoRows {
 		return "", nil
@@ -23,7 +23,7 @@ func (s *Store) GetState(ctx context.Context, key string) (string, error) {
 
 // SetState upserts a value in the router_state KV table.
 func (s *Store) SetState(ctx context.Context, key, value string) error {
-	_, err := s.db.ExecContext(ctx, `
+	_, err := s.taskDB(ctx).ExecContext(ctx, `
 		INSERT INTO router_state (key, value) VALUES (?, ?)
 		ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
 		key, value)
