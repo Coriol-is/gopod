@@ -72,6 +72,11 @@ command replies and errors private, including every callback/page/failure path;
 there is no implementation or privacy-flag activation yet.
 
 ## What's in progress
+Doctor output follow-up is being implemented: protect technical identifiers from
+Markdown emphasis, label refresh eligibility as manual-only, and expose a scoped
+historical startup observation without claiming current runtime health. Owner
+provided a real doctor response; remaining A18 client checks stay open.
+
 CP-017 initial private-DM slice is reviewed, merged and deployed as f1f4532.
 The separate owner-startup runtime/self-diagnostic slice is merged and deployed;
 see [startup contract](STARTUP.md) and D035. It restores selections before
@@ -125,7 +130,7 @@ unreviewed proposal. Pending proposed CP-002–007 still need their bounded desi
   fallback is not session retirement. CP-016 separates closure from deletion.
 - Dated getMe research: Guest/topics on; inline/business off; group privacy on.
   Gopod subscribes only to message/callback/Stop, no guest handler. SDK inline
-  capability JSON tag is wrong; true fixture decodes false (CP-017 fix planned).
+  capability JSON tag is wrong; CP-017 now bypasses it with the tested raw decoder.
 - Media baseline is download/path/transcription, not universal understanding:
   ordinary video lacks a handler, album audio/video skipped, captionless-photo
   prompt path gap and hidden entity/button URL loss remain CP-014 queue1.

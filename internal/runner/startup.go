@@ -20,10 +20,10 @@ type StartupReport struct {
 
 // StartupCheck warms only the requested trusted chat, before queue recovery.
 // It never runs a model, adopts a session or mutates conversation/task state.
-func (r *Runner) StartupCheck(ctx context.Context, folder string, tier Tier, allowlist *mountsec.Allowlist) StartupReport {
+func (r *Runner) StartupCheck(ctx context.Context, folder string, tier Tier, allowlist *mountsec.Allowlist) (report StartupReport) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	report := StartupReport{Container: "unknown", CLI: "unknown", Auth: "unknown"}
+	report = StartupReport{Container: "unknown", CLI: "unknown", Auth: "unknown"}
 	release, err := r.acquireAgentSlot(ctx, folder)
 	if err != nil {
 		report.Container = startupFailure(ctx)
@@ -34,8 +34,9 @@ func (r *Runner) StartupCheck(ctx context.Context, folder string, tier Tier, all
 		report.Container = "selection_unavailable"
 		return report
 	}
-	prov := r.ProviderForChat(folder)
-	report.Provider, report.Model, report.Image = prov.Name(), r.ModelForChat(folder), prov.Image()
+	prov, model, generation := r.startupSelection(folder)
+	report.Provider, report.Model, report.Image = prov.Name(), model, prov.Image()
+	defer func() { r.rememberStartupObservation(folder, report, generation) }()
 	var id string
 	if r.ensureFn != nil {
 		id, err = r.ensure(ctx, folder, tier, allowlist)
@@ -157,4 +158,61 @@ func localProbeFailure(ctx context.Context, err error) string {
 		return "cleanup_failed"
 	}
 	return startupFailure(ctx)
+}
+
+// StartupObservation is historical local evidence, never a current health probe.
+// Values are copied; no container identifiers or credentials are needed by readers.
+type StartupObservation struct {
+	Report    StartupReport
+	CheckedAt time.Time
+}
+
+func (r *Runner) startupSelection(folder string) (AgentProvider, string, uint64) {
+	r.providersMu.RLock()
+	defer r.providersMu.RUnlock()
+	p := r.chatProviders[folder]
+	if p == nil {
+		p = r.provider
+	}
+	return p, r.chatModels[folder], r.selectionGenerations[folder]
+}
+func (r *Runner) invalidateStartupLocked(folder string) {
+	if r.selectionGenerations == nil {
+		r.selectionGenerations = make(map[string]uint64)
+	}
+	r.selectionGenerations[folder]++
+	delete(r.startupObservations, folder)
+}
+func (r *Runner) rememberStartupObservation(folder string, report StartupReport, generation uint64) {
+	r.providersMu.Lock()
+	defer r.providersMu.Unlock()
+	if r.selectionBlocks[folder] || r.selectionGenerations[folder] != generation {
+		return
+	}
+	if r.startupObservations == nil {
+		r.startupObservations = make(map[string]StartupObservation)
+	}
+	r.startupObservations[folder] = StartupObservation{Report: report, CheckedAt: time.Now().UTC()}
+}
+
+// CachedStartupObservation reads only the last matching startup snapshot. It
+// performs no I/O, and does not assert the container still exists after idle cleanup.
+func (r *Runner) CachedStartupObservation(folder string) (StartupObservation, bool) {
+	r.providersMu.RLock()
+	defer r.providersMu.RUnlock()
+	if r.selectionBlocks[folder] {
+		return StartupObservation{}, false
+	}
+	observation, ok := r.startupObservations[folder]
+	if !ok {
+		return StartupObservation{}, false
+	}
+	p := r.chatProviders[folder]
+	if p == nil {
+		p = r.provider
+	}
+	if p == nil || observation.Report.Provider != p.Name() || observation.Report.Image != p.Image() || observation.Report.Model != r.chatModels[folder] {
+		return StartupObservation{}, false
+	}
+	return observation, true
 }

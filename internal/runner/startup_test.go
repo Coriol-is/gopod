@@ -5,6 +5,7 @@ import (
 	"errors"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -304,5 +305,95 @@ func TestStartupCleanupFailureStopsFurtherProbes(t *testing.T) {
 	got := r.StartupCheck(t.Context(), "owner", TierOwner, nil)
 	if got.CLI != "cleanup_failed" || got.Auth != "unknown" || calls != 1 {
 		t.Fatal(got, calls)
+	}
+}
+
+func cachedStartupRunner(t *testing.T) *Runner {
+	t.Helper()
+	return startupRunner(t, NewClaudeProvider("selected-image"), func(_ context.Context, cmd []string) (*ExecResult, error) {
+		if reflect.DeepEqual(cmd, []string{"claude", "--version"}) {
+			return &ExecResult{Stdout: "2.1.310 (Claude Code)"}, nil
+		}
+		return &ExecResult{Stdout: `{"loggedIn":true,"authMethod":"oauth"}`}, nil
+	})
+}
+func TestCachedStartupObservationCopiedAndInvalidated(t *testing.T) {
+	r := cachedStartupRunner(t)
+	if _, ok := r.CachedStartupObservation("owner"); ok {
+		t.Fatal("fabricated observation before check")
+	}
+	report := r.StartupCheck(t.Context(), "owner", TierOwner, nil)
+	if report.Auth != "authenticated" {
+		t.Fatalf("startup %+v", report)
+	}
+	observed, ok := r.CachedStartupObservation("owner")
+	if !ok || observed.CheckedAt.IsZero() || observed.Report.Version != "2.1.310" {
+		t.Fatal(observed, ok)
+	}
+	// Cached reads cannot invoke Docker/exec, and returned values are isolated.
+	r.ex = nil
+	r.d = nil
+	r.ensureFn = nil
+	observed.Report.Version = "changed"
+	again, ok := r.CachedStartupObservation("owner")
+	if !ok || again.Report.Version != "2.1.310" {
+		t.Fatal("cache mutated through returned value")
+	}
+	r.SetChatModel("owner", "different")
+	r.SetChatModel("owner", "")
+	if _, ok := r.CachedStartupObservation("owner"); ok {
+		t.Fatal("model change/revert revived old observation")
+	}
+}
+func TestCachedStartupSelectionChangesDuringProbeCannotRevive(t *testing.T) {
+	r := cachedStartupRunner(t)
+	r.ex = &startupExec{fakeAgentExec: newFakeAgentExec(), run: func(_ context.Context, cmd []string) (*ExecResult, error) {
+		if reflect.DeepEqual(cmd, []string{"claude", "--version"}) {
+			r.SetChatModel("owner", "other")
+			r.SetChatModel("owner", "")
+			return &ExecResult{Stdout: "2.1.310"}, nil
+		}
+		return &ExecResult{Stdout: `{"loggedIn":true,"authMethod":"oauth"}`}, nil
+	}}
+	r.StartupCheck(t.Context(), "owner", TierOwner, nil)
+	if _, ok := r.CachedStartupObservation("owner"); ok {
+		t.Fatal("in-flight old generation cached")
+	}
+}
+func TestCachedStartupObservationProviderAndBlockInvalidation(t *testing.T) {
+	for _, change := range []func(*Runner){
+		func(r *Runner) {
+			r.RestoreChatProvider("owner", NewCodexProvider(""))
+			r.RestoreChatProvider("owner", NewClaudeProvider("selected-image"))
+		},
+		func(r *Runner) { r.BlockChatSelection("owner") },
+		func(r *Runner) { r.ClearChatProvider("owner") },
+	} {
+		r := cachedStartupRunner(t)
+		r.StartupCheck(t.Context(), "owner", TierOwner, nil)
+		change(r)
+		if _, ok := r.CachedStartupObservation("owner"); ok {
+			t.Fatal("selection change revived snapshot")
+		}
+	}
+}
+func TestCachedStartupObservationConcurrentReadsAndSelection(t *testing.T) {
+	r := cachedStartupRunner(t)
+	r.StartupCheck(t.Context(), "owner", TierOwner, nil)
+	var wg sync.WaitGroup
+	for n := 0; n < 10; n++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 100; i++ {
+				r.CachedStartupObservation("owner")
+				r.SetChatModel("owner", "other")
+				r.SetChatModel("owner", "")
+			}
+		}()
+	}
+	wg.Wait()
+	if _, ok := r.CachedStartupObservation("owner"); ok {
+		t.Fatal("stale cache retained")
 	}
 }
