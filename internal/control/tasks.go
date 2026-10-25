@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -37,6 +38,7 @@ type PromptFunc func(ctx context.Context, folder string, prompt string) (string,
 func RegisterTaskCommands(r *Router, st *store.Store, chatFolderLookup func(chatID int64) string, promptFn PromptFunc) {
 	r.Register("tasks", "tasks", "manage scheduled tasks (try: /tasks add)", PermChatLocal,
 		tasksDispatch(st, chatFolderLookup, promptFn))
+	r.Register("tasks.state", "", "change a task state from its list", PermChatLocal, tasksStateButton(st, chatFolderLookup))
 }
 
 func tasksDispatch(st *store.Store, lookup func(int64) string, promptFn PromptFunc) Handler {
@@ -55,7 +57,15 @@ func tasksDispatch(st *store.Store, lookup func(int64) string, promptFn PromptFu
 
 		switch sub {
 		case "list":
-			return tasksList(ctx, st, folder)
+			page := 0
+			if len(args) > 0 {
+				var err error
+				page, err = strconv.Atoi(args[0])
+				if err != nil || page < 0 {
+					return Response{Text: "Invalid task page. Use /tasks.", Code: 1}, nil
+				}
+			}
+			return tasksListPage(ctx, st, folder, page)
 		case "add":
 			return tasksAdd(ctx, st, folder, cmd.Caller, args, promptFn)
 		case "pause":
@@ -73,27 +83,92 @@ func tasksDispatch(st *store.Store, lookup func(int64) string, promptFn PromptFu
 	}
 }
 
+const taskPageSize = 3
+
 func tasksList(ctx context.Context, st *store.Store, folder string) (Response, error) {
+	return tasksListPage(ctx, st, folder, 0)
+}
+
+func tasksListPage(ctx context.Context, st *store.Store, folder string, page int) (Response, error) {
 	tasks, err := st.ListTasksByChat(ctx, folder)
 	if err != nil {
 		return Response{}, err
 	}
 	if len(tasks) == 0 {
-		return Response{Text: "No scheduled tasks for this chat."}, nil
+		return Response{Text: "No scheduled tasks for this chat.\nCreate one: /tasks add <description and timezone>", Buttons: [][]Button{{{Label: "Refresh", Command: "tasks"}}}}, nil
 	}
-
+	pages := (len(tasks) + taskPageSize - 1) / taskPageSize
+	if page < 0 {
+		page = 0
+	}
+	if page >= pages {
+		page = pages - 1
+	}
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Tasks for %s:\n\n", folder))
-	for _, t := range tasks {
-		nextStr := "—"
+	fmt.Fprintf(&sb, "Scheduled tasks — page %d/%d (%d total)\n\n", page+1, pages, len(tasks))
+	var buttons [][]Button
+	end := min((page+1)*taskPageSize, len(tasks))
+	for i := page * taskPageSize; i < end; i++ {
+		t := tasks[i]
+		next := "—"
 		if t.NextRun > 0 {
-			nextStr = time.UnixMilli(t.NextRun).UTC().Format(time.RFC3339)
+			next = time.UnixMilli(t.NextRun).UTC().Format(time.RFC3339)
 		}
-		fmt.Fprintf(&sb, "[%s] %s %s %s\n  prompt: %s\n  next: %s\n\n",
-			t.Status, t.ID, t.ScheduleType, t.ScheduleValue,
-			truncate(t.Prompt, 60), nextStr)
+		fmt.Fprintf(&sb, "%d. [%s] %s\n%s %s\n%s\nNext (UTC): %s\n\n", i+1, t.Status, t.ID, truncate(t.ScheduleType, 12), truncate(t.ScheduleValue, 60), truncate(t.Prompt, 70), next)
+		label, target, style := "", "", ""
+		switch t.Status {
+		case "active":
+			label, target, style = "Pause", "paused", StylePrimary
+		case "paused":
+			label, target, style = "Resume", "active", StyleSuccess
+		}
+		if target != "" {
+			buttons = append(buttons, []Button{{Label: fmt.Sprintf("%d · %s", i+1, label), Command: "tasks.state", Args: []string{t.ID, t.Status, target, strconv.Itoa(page)}, Style: style}})
+		}
 	}
-	return Response{Text: sb.String()}, nil
+	var nav []Button
+	if page > 0 {
+		nav = append(nav, Button{Label: "‹ Previous", Command: "tasks", Args: []string{"list", strconv.Itoa(page - 1)}})
+	}
+	nav = append(nav, Button{Label: fmt.Sprintf("↻ %d/%d", page+1, pages), Command: "tasks", Args: []string{"list", strconv.Itoa(page)}})
+	if page+1 < pages {
+		nav = append(nav, Button{Label: "Next ›", Command: "tasks", Args: []string{"list", strconv.Itoa(page + 1)}})
+	}
+	buttons = append(buttons, nav)
+	return Response{Text: sb.String(), Buttons: buttons}, nil
+}
+
+func tasksStateButton(st *store.Store, lookup func(int64) string) Handler {
+	return func(ctx context.Context, cmd Command) (Response, error) {
+		folder := lookup(cmd.Caller.ChatID)
+		if folder == "" {
+			return Response{Text: "This chat is not registered.", Code: 1}, nil
+		}
+		if len(cmd.Args) != 4 {
+			return Response{Text: "Task button expired. Use /tasks.", Code: 1}, nil
+		}
+		page, err := strconv.Atoi(cmd.Args[3])
+		if err != nil || page < 0 {
+			return Response{Text: "Invalid task page. Use /tasks.", Code: 1}, nil
+		}
+		expected, target := cmd.Args[1], cmd.Args[2]
+		if !((expected == "active" && target == "paused") || (expected == "paused" && target == "active")) {
+			return Response{Text: "Invalid task state action.", Code: 1}, nil
+		}
+		changed, err := tasksSetStatusExpected(ctx, st, folder, []string{cmd.Args[0]}, target, expected)
+		if err != nil {
+			return Response{}, err
+		}
+		panel, err := tasksListPage(ctx, st, folder, page)
+		if err != nil {
+			return Response{}, err
+		}
+		if changed.Code != 0 {
+			panel.Text = changed.Text + "\n\n" + panel.Text
+			panel.Code = changed.Code
+		}
+		return panel, nil
+	}
 }
 
 // parsePrompt is the system prompt sent to Claude to parse natural
@@ -239,6 +314,10 @@ func extractJSON(s string) string {
 }
 
 func tasksSetStatus(ctx context.Context, st *store.Store, folder string, args []string, status string) (Response, error) {
+	return tasksSetStatusExpected(ctx, st, folder, args, status, "")
+}
+
+func tasksSetStatusExpected(ctx context.Context, st *store.Store, folder string, args []string, status, expected string) (Response, error) {
 	release := scheduler.LockTasks(st)
 	defer release()
 	if len(args) == 0 {
@@ -253,6 +332,16 @@ func tasksSetStatus(ctx context.Context, st *store.Store, folder string, args []
 	}
 	if t.ChatFolder != folder {
 		return Response{Text: "Task belongs to a different chat.", Code: 1}, nil
+	}
+
+	if t.Status != "active" && t.Status != "paused" {
+		return Response{Text: "Completed tasks cannot be resumed or paused. Create a new task.", Code: 1}, nil
+	}
+	if expected != "" && t.Status != expected {
+		return Response{Text: "Task state changed; list refreshed. No change made.", Code: 1}, nil
+	}
+	if t.Status == status {
+		return Response{Text: fmt.Sprintf("Task %s is already %s", id, status)}, nil
 	}
 
 	nextRun := t.NextRun
@@ -309,8 +398,9 @@ func computeNextRunForResume(t store.TaskRecord, now int64) (int64, string) {
 }
 
 func truncate(s string, n int) string {
-	if len(s) <= n {
+	r := []rune(s)
+	if len(r) <= n {
 		return s
 	}
-	return s[:n] + "…"
+	return string(r[:n]) + "…"
 }
