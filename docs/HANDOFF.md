@@ -38,6 +38,11 @@ with the replay count (one notice per 2 minutes). `GOPOD_NOTIFY_LIFECYCLE=0`
 disables; compose `stop_grace_period: 30s`. Not verified live: on the Pi a
 `docker compose up -d` recreate should show both messages, and
 `docker kill -s KILL <container>` then `docker compose up -d` the crash one.
+**2026-10-25:** dynamic Telegram UX phase 6 (input context, branch
+`feat/ux-phase6`, PR open, not merged): replied, quoted and forwarded
+text reaches the prompt as a header (`internal/telegram/inbound_context.go`),
+albums become one turn after a 1 s window, audio files and video notes
+are transcribed like voice. Unit-tested only; live checklist 0Y.
 **Previous session (2026-10-05):** production deploy + Codex harness.
 `main` (`b254e01`) is deployed on the production host via `docker compose`
 (data at `/opt/gopod/data`, live owner workspace at
@@ -449,6 +454,34 @@ pending: a 20-line and a 100-line block in a private chat and in a topic.
    second message in the same thread, keeps 👀); earlier messages of a
    batched turn keep 👀; elapsed time counts from the agent start, not from
    receipt; stall timers are not stopped by a shutdown mid-turn.
+0Y. **Live checklist for dynamic Telegram UX, phase 6** (branch
+   `feat/ux-phase6`; spec F10, F11 and "Verify live" items 8 and 9, plan
+   Phase 6; nothing run on a real bot yet): (1) reply to one of gopod's
+   answers with "что я процитировал?" / "explain this": the agent answers
+   about that answer; select part of it with Telegram's quote and ask
+   again: it names exactly the quoted part; (2) forward a message from a
+   user, a channel, and a user who hides forwards: the agent sees
+   `[forwarded from <name>]`, `[forwarded from channel <title>]`,
+   `[forwarded from a hidden user]` (ask "откуда это?"), never an id or a
+   username of a named user; (3) in a private-chat topic, a plain message
+   (no reply) gets no `[in reply to …]` header, so check that Telegram
+   really stamps the topic root as `reply_to_message` with
+   `forum_topic_created` or `is_topic_message` (the matching rule is from
+   the Bot API docs, not a recorded update); (4) an album of 3 photos with
+   a caption makes one turn, one 👀 on the first photo, one reply that
+   sees all three (`[Album attached: …]`); the same in a topic answers in
+   the topic; (5) an audio file (mp3/m4a) and a video note are transcribed
+   and answered in text, a failed transcription replies "Failed to
+   transcribe audio."; a sticker gets no reply and no reaction; (6) a long
+   code reply shows "sending a file…" before the `📎` snippet and a voice
+   reply shows "recording audio…" while TTS runs. Known limits: an album
+   is collected in memory for 1 s after its last item, so a shutdown in
+   that window loses it; video and audio items inside an album are
+   skipped (photos and documents only); two album documents with the same
+   file name overwrite each other in `uploads/`; audio files and video
+   notes do not switch the reply to voice; a caption-less single photo's
+   prompt still does not name its upload path (pre-existing, noted, not
+   changed here).
 0. **Run the manual crash-recovery test for durable turns** (plan Task 8
    step 5, still not run; the branch is merged and deployed, cold start
    of the agent container is verified, but a `kill -9` of gopod itself
