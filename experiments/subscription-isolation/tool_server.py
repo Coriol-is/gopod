@@ -155,6 +155,29 @@ def request_lines(executor):
                 return
 
 
+def mcp_command(arguments):
+    """Strict external cmd schema; the internal Executor API stays command."""
+    if not isinstance(arguments, dict) or set(arguments) != {"cmd"}:
+        raise ValueError("invalid command")
+    command = arguments["cmd"]
+    if not isinstance(command, str) or not command or len(command) > 16384 or "\0" in command:
+        raise ValueError("invalid command")
+    return command
+
+
+def call_tool(params, executor):
+    if params.get("name") != "group_exec":
+        raise ValueError("unknown tool")
+    try:
+        value = executor.run({"command": mcp_command(params.get("arguments"))})
+    except ValueError as error:
+        if str(error) not in {"only command is accepted", "invalid command"}:
+            raise
+        return {"content": [{"type": "text", "text": ARGUMENT_HINT}], "isError": True}
+    return {"content": [{"type": "text", "text": json.dumps(value)}],
+            "isError": value["stopped"] is not None or value["exit_code"] != 0}
+
+
 def dispatch(request, executor):
     method = request.get("method")
     if "id" not in request:
@@ -171,27 +194,7 @@ def dispatch(request, executor):
     elif method == "tools/list":
         result = {"tools": [TOOL]}
     elif method == "tools/call":
-        params = request.get("params", {})
-        if params.get("name") != "group_exec":
-            raise ValueError("unknown tool")
-        try:
-            arguments = params.get("arguments")
-            # One canonical external schema; do not accept aliases, nested
-            # payloads or extra authority-bearing fields. Executor's internal
-            # command API remains unchanged and is validated independently.
-            if not isinstance(arguments, dict) or set(arguments) != {"cmd"}:
-                raise ValueError("invalid command")
-            command = arguments["cmd"]
-            if not isinstance(command, str) or not command or len(command) > 16384 or "\0" in command:
-                raise ValueError("invalid command")
-            value = executor.run({"command": command})
-        except ValueError as error:
-            if str(error) not in {"only command is accepted", "invalid command"}:
-                raise
-            result = {"content": [{"type": "text", "text": ARGUMENT_HINT}], "isError": True}
-        else:
-            result = {"content": [{"type": "text", "text": json.dumps(value)}],
-                      "isError": value["stopped"] is not None or value["exit_code"] != 0}
+        result = call_tool(request.get("params", {}), executor)
     else:
         return {"jsonrpc": "2.0", "id": request["id"],
                 "error": {"code": -32601, "message": "Method not found"}}

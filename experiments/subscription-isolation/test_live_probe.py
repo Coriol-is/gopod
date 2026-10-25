@@ -33,6 +33,24 @@ class ProofTests(unittest.TestCase):
 
 
 class EventTests(unittest.TestCase):
+    def test_auth_evidence_accepts_only_native_subscription_metadata(self):
+        for method in ('claude.ai', 'oauth_token'):
+            value = live_probe.Capture(0, json.dumps({'loggedIn': True, 'authMethod': method,
+                                                     'email': 'private-account-value'}))
+            report = live_probe.auth_evidence('claude', value)
+            self.assertTrue(report['subscription_auth_verified'])
+            self.assertNotIn('private-account-value', json.dumps(report))
+        for method in ('api_key', 'api_key_helper', 'third_party', 'none', 'private-value'):
+            value = live_probe.Capture(0, json.dumps({'loggedIn': True, 'authMethod': method}))
+            self.assertFalse(live_probe.auth_evidence('claude', value)['subscription_auth_verified'])
+        self.assertTrue(live_probe.auth_evidence('codex', live_probe.Capture(0, 'Logged in using ChatGPT\n'))['subscription_auth_verified'])
+        for value in (live_probe.Capture(0, 'Logged in using API key - private-value'),
+                      live_probe.Capture(1, 'Logged in using ChatGPT'),
+                      live_probe.Capture(0, 'Logged in using ChatGPT', stopped='cancelled')):
+            report = live_probe.auth_evidence('codex', value)
+            self.assertFalse(report['subscription_auth_verified'])
+            self.assertNotIn('private-value', json.dumps(report))
+
     def test_claude_inventory_is_required_and_unexpected_strings_never_reported(self):
         output = json.dumps({'type': 'system', 'subtype': 'init',
                              'tools': ['mcp__group__group_exec', 'EndConversation']})
@@ -127,18 +145,35 @@ class ToolAuditTests(unittest.TestCase):
 
 
 class LifecycleTests(unittest.TestCase):
+    def fixture_capture(self, script, cancellation, timeout):
+        original = subprocess.Popen
+        def fixture(argv, **kwargs):
+            self.assertEqual(argv, ['docker', 'exec', 'synthetic-only', 'offline-fixture'])
+            self.assertIs(kwargs['shell'], False)
+            return original([sys.executable, '-c', script], **kwargs)
+        with mock.patch.object(live_probe.subprocess, 'Popen', side_effect=fixture):
+            return live_probe.capture(['docker', 'exec', 'synthetic-only', 'offline-fixture'], cancellation, timeout)
+
+    def test_capture_rejects_arbitrary_binaries_and_docker_operations(self):
+        with mock.patch.object(live_probe.subprocess, 'Popen') as spawn:
+            for argv in ([sys.executable, '-c', 'private-command'], ['docker', 'run', 'image'],
+                         ['docker', 'exec'], ['docker', 'start', 'invalid\0name']):
+                with self.assertRaises(ValueError):
+                    live_probe.capture(argv, live_probe.Cancellation(), timeout=1)
+            spawn.assert_not_called()
+
     def test_capture_deadline_output_and_sigterm_are_bounded(self):
         cancellation = live_probe.Cancellation()
-        value = live_probe.capture([sys.executable, '-c', 'import time;time.sleep(5)'], cancellation, timeout=0.1)
+        value = self.fixture_capture('import time;time.sleep(5)', cancellation, timeout=0.1)
         self.assertEqual(value.stopped, 'deadline')
-        value = live_probe.capture([sys.executable, '-c', 'print("x"*300000)'], cancellation, timeout=3)
+        value = self.fixture_capture('print("x"*300000)', cancellation, timeout=3)
         self.assertEqual(value.stopped, 'output_limit')
         self.assertEqual(len(value.stdout), live_probe.CAPTURE_LIMIT)
         with cancellation:
             timer = threading.Timer(0.1, lambda: os.kill(os.getpid(), signal.SIGTERM))
             timer.start()
             try:
-                value = live_probe.capture([sys.executable, '-c', 'import time;time.sleep(5)'], cancellation, timeout=3)
+                value = self.fixture_capture('import time;time.sleep(5)', cancellation, timeout=3)
             finally:
                 timer.join()
         self.assertEqual(value.stopped, 'cancelled')
@@ -173,6 +208,80 @@ class LifecycleTests(unittest.TestCase):
             self.assertEqual(report['failure'], 'cancelled')
             self.assertFalse(report['roundtrip_passed'])
             self.assertFalse(report['isolation_qualified'])
+
+    def test_new_resume_builders_preserve_both_provider_flows_offline(self):
+        for provider in ('claude', 'codex'):
+            with self.subTest(provider=provider), tempfile.TemporaryDirectory() as root:
+                auth = Path(root) / 'synthetic-auth'
+                auth.write_text('synthetic-never-read')
+                options = SimpleNamespace(auth_file=str(auth.resolve()), cli_image='unused:offline',
+                                          tool_image='unused:offline', provider=provider)
+                holder, commands = {}, []
+                marker = 'gopod_subscription_canary'
+                def execute(arguments):
+                    turn = 'new' if len(holder['turns']) == 1 else 'resume'
+                    proof = f'{provider}-{turn}.txt'
+                    self.assertEqual(arguments, {'command': f'printf {marker} > {proof}; cat {proof}'})
+                    (holder['work'] / proof).write_text(marker)
+                    return {'exit_code': 0, 'stopped': None, 'output': marker}
+                server = SimpleNamespace(executor=SimpleNamespace(run=execute), close=mock.Mock())
+                def bridge(workspace, *_args, **_kwargs):
+                    holder.update(work=Path(workspace), turns=[])
+                    return server, 'http://127.0.0.1:12345/mcp/synthetic'
+                def fake_capture(argv, _cancellation, timeout, cancelable=True):
+                    commands.append(live_probe.docker_command(argv))
+                    if argv[1] != 'exec':
+                        return live_probe.Capture(0, 'synthetic-container-id')
+                    if argv[-1] == '--version':
+                        return live_probe.Capture(0, live_probe.EXPECTED_VERSIONS[provider])
+                    if 'auth' in argv and 'status' in argv:
+                        return live_probe.Capture(0, json.dumps({'loggedIn': True, 'authMethod': 'claude.ai'}))
+                    if 'login' in argv and 'status' in argv:
+                        return live_probe.Capture(0, 'Logged in using ChatGPT')
+                    holder['turns'].append(argv)
+                    turn = 'new' if len(holder['turns']) == 1 else 'resume'
+                    proof = f'{provider}-{turn}.txt'
+                    server.executor.run({'command': f'printf {marker} > {proof}; cat {proof}'})
+                    event = ({'type': 'system', 'subtype': 'init', 'tools': ['mcp__group__group_exec']}
+                             if provider == 'claude' else
+                             {'type': 'thread.started', 'thread_id': '00000000-0000-0000-0000-000000000001'})
+                    return live_probe.Capture(0, json.dumps(event))
+                with mock.patch.object(live_probe, 'start_bridge', side_effect=bridge):
+                    with mock.patch.object(live_probe, 'capture', side_effect=fake_capture):
+                        with mock.patch.object(live_probe.subprocess, 'run'):
+                            report = live_probe._run(options, live_probe.Cancellation())
+                self.assertTrue(report['passed'])
+                self.assertTrue(report['roundtrip_passed'])
+                self.assertFalse(report['isolation_qualified'])
+                self.assertTrue(report['subscription_auth_verified'])
+                self.assertEqual([command[1] for command in commands], ['create', 'start', 'exec', 'exec', 'exec', 'exec'])
+                resume_flag = '--resume' if provider == 'claude' else 'resume'
+                self.assertIn(resume_flag, holder['turns'][1])
+                server.close.assert_called_once_with()
+
+    def test_auth_only_never_executes_inference_turn(self):
+        with tempfile.TemporaryDirectory() as root:
+            auth = Path(root) / 'synthetic-auth'
+            auth.write_text('synthetic-never-read')
+            options = SimpleNamespace(auth_file=str(auth.resolve()), cli_image='unused:offline',
+                                      tool_image='unused:offline', provider='claude', auth_only=True)
+            server = mock.Mock()
+            values = [live_probe.Capture(0, 'created'), live_probe.Capture(0, 'started'),
+                      live_probe.Capture(0, live_probe.EXPECTED_VERSIONS['claude']),
+                      live_probe.Capture(0, '{"loggedIn":true,"authMethod":"claude.ai","email":"private-account-value"}')]
+            with mock.patch.object(live_probe, 'start_bridge', return_value=(server, 'http://127.0.0.1:12345/mcp/synthetic')):
+                with mock.patch.object(live_probe, 'capture', side_effect=values):
+                    with mock.patch.object(live_probe.subprocess, 'run'):
+                        with mock.patch.object(live_probe, 'execute_turn') as inference:
+                            report = live_probe._run(options, live_probe.Cancellation())
+            inference.assert_not_called()
+            self.assertTrue(report['passed'])
+            self.assertTrue(report['auth_only'])
+            self.assertTrue(report['subscription_auth_verified'])
+            self.assertFalse(report['roundtrip_passed'])
+            self.assertEqual(report['turns'], [])
+            self.assertNotIn('private-account-value', json.dumps(report))
+            server.close.assert_called_once_with()
 
 
 if __name__ == '__main__':

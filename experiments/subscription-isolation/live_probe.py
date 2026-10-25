@@ -26,6 +26,7 @@ from http_tool_bridge import start_bridge
 
 CAPTURE_LIMIT = 262144
 CLAUDE_ALLOWED_TOOLS = {"mcp__group__group_exec", "EndConversation"}
+EXPECTED_VERSIONS = {'claude': '2.1.310 (Claude Code)', 'codex': 'codex-cli 0.164.0'}
 
 
 @dataclass
@@ -54,12 +55,24 @@ class Cancellation:
             signal.signal(signum, handler)
 
 
+def docker_command(argv):
+    """The canary never accepts an arbitrary executable or Docker operation."""
+    if not isinstance(argv, (list, tuple)) or len(argv) < 3 or argv[0] != 'docker':
+        raise ValueError('fixed Docker command required')
+    if argv[1] not in {'create', 'start', 'exec'}:
+        raise ValueError('Docker operation is not allowed')
+    if not all(isinstance(value, str) and '\0' not in value for value in argv[2:]):
+        raise ValueError('invalid Docker arguments')
+    return ['docker', argv[1], *argv[2:]]
+
+
 def capture(argv, cancellation, timeout, *, cancelable=True):
     """Bounded in-memory diagnostics; never log native command/output."""
+    command = docker_command(argv)
     if cancelable and cancellation.signum is not None:
         return Capture(-1, "", stopped="cancelled")
-    proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT)
+    proc = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, shell=False)
     deadline = time.monotonic() + timeout
     output = bytearray()
     stopped = None
@@ -268,17 +281,174 @@ def run(options):
         return _run(options, cancellation)
 
 
-def _run(options, cancellation):
+def validated_inputs(options):
     auth = Path(options.auth_file)
     if not auth.is_absolute() or auth.is_symlink() or not auth.is_file():
         raise ValueError("operator must supply an existing absolute native auth file")
     image = options.cli_image
     if not image or image.startswith("-"):
         raise ValueError("explicit trusted CLI image required")
+    return auth, image
+
+
+def write_policy(provider, policy, endpoint):
+    if provider == "claude":
+        target = "/home/node/.claude/.credentials.json"
+        (policy / "mcp.json").write_text(json.dumps({"mcpServers": {"group": {"type": "http", "url": endpoint}}}))
+    else:
+        target = "/home/node/.codex/auth.json"
+        lines = ['approval_policy = "never"', 'sandbox_mode = "read-only"', 'web_search = "disabled"',
+                 'check_for_update_on_startup = false', 'model_reasoning_effort = "low"', '[features]']
+        lines += [key + " = false" for key in DISABLED_FEATURES]
+        lines += ['[apps._default]', 'enabled = false', '[mcp_servers.group]',
+                  'url = ' + json.dumps(endpoint), 'required = true', 'enabled_tools = ["group_exec"]',
+                  'startup_timeout_sec = 10', 'tool_timeout_sec = 15',
+                  '[mcp_servers.group.tools.group_exec]', 'approval_mode = "approve"']
+        (policy / "config.toml").write_text("\n".join(lines) + "\n")
+    return target
+
+
+def container_command(options, auth, policy, name, target, image):
+    command = ['docker', 'create', '--rm', '--pull=never', '--init', '--name', name,
+               '--read-only', '--cap-drop=ALL', '--security-opt=no-new-privileges',
+               '--pids-limit=128', '--memory=768m', '--cpus=1', '--user=1000:1000',
+               '--add-host=host.docker.internal:host-gateway',
+               '--tmpfs=/tmp:rw,nosuid,nodev,size=64m,mode=1777',
+               '--tmpfs=/home/node:rw,nosuid,nodev,size=96m,uid=1000,gid=1000,mode=700',
+               '--tmpfs=/home/node/.claude:rw,nosuid,nodev,size=32m,uid=1000,gid=1000,mode=700',
+               '--tmpfs=/home/node/.codex:rw,nosuid,nodev,size=32m,uid=1000,gid=1000,mode=700',
+               '--tmpfs=/workspace/chat:rw,nosuid,nodev,size=16m,uid=1000,gid=1000,mode=700',
+               '--mount', f'type=bind,src={auth},dst={target},readonly',
+               '--mount', f'type=bind,src={policy},dst=/qualification,readonly',
+               '--workdir=/workspace/chat', '--env=HOME=/home/node']
+    if options.provider == "codex":
+        command += ['--mount', f'type=bind,src={policy / "config.toml"},dst=/home/node/.codex/config.toml,readonly']
+    command += ['--entrypoint=/bin/sleep', image, 'infinity']
+    return command
+
+
+def turn_command(provider, name, session, turn, prompt):
+    cli = ['docker', 'exec']
+    if provider == "claude":
+        for key, value in ENV_OVERRIDES.items():
+            cli += ['--env', key + '=' + value]
+        cli += [name, 'claude', '--restricted', '--tools', '', '--strict-mcp-config',
+                '--mcp-config', '/qualification/mcp.json', '--settings', json.dumps(SETTINGS),
+                '--setting-sources', '', '--disable-slash-commands', '--permission-mode', 'dontAsk',
+                '--allowedTools', 'mcp__group__group_exec', '--system-prompt-snapshot', 'off',
+                '--system-prompt', 'Use only the supplied isolated group MCP tool for the synthetic canary.',
+                '--model', 'claude-haiku-4-5', '--max-turns', '3',
+                '--session-id' if turn == "new" else '--resume', session,
+                '--output-format', 'stream-json', '--verbose', '-p', prompt]
+    else:
+        cli += ['--env', 'CODEX_HOME=/home/node/.codex', name, 'codex', 'exec']
+        if turn == "resume":
+            cli += ['resume', session]
+        cli += ['--strict-config', '--skip-git-repo-check', '--json', prompt]
+    return cli
+
+
+def codex_session(events, session):
+    for event in events:
+        if event.get('type') != 'thread.started':
+            continue
+        try:
+            session = str(uuid.UUID(event.get('thread_id')))
+        except (ValueError, TypeError, AttributeError):
+            session = None
+    return session
+
+
+def collect_turn(provider, turn, result, work, proof, marker, audit, session):
+    metadata, events = sanitized_events(result.stdout, provider)
+    if provider == 'codex':
+        session = codex_session(events, session)
+    external_proof = result.returncode == 0 and proof_matches(work, proof, marker)
+    inventory_allowed = provider != 'claude' or metadata['inventory_allowed']
+    passed = external_proof and inventory_allowed
+    entry = {'turn': turn, 'exit_code': result.returncode, 'external_tool_proof': external_proof,
+             'roundtrip_passed': external_proof, 'passed': passed, 'metadata': metadata,
+             'tool_execution': audit.snapshot()}
+    if not passed:
+        combined = (result.stdout + result.stderr).lower()
+        entry['failure'] = next((label for needle, label in [
+            ('rate limit', 'quota_or_rate_limit'), ('usage limit', 'quota_or_rate_limit'),
+            ('not logged in', 'auth_unavailable'), ('unauthorized', 'auth_unavailable'),
+            ('expired', 'auth_refresh_unavailable'), ('requires approval', 'tool_approval'),
+            ('failed to connect', 'connection'), ('read-only file system', 'readonly_state')]
+            if needle in combined), 'unclassified_no_raw_output')
+        if not inventory_allowed:
+            entry['failure'] = 'live_inventory_unqualified'
+    return entry, session
+
+
+def execute_turn(provider, turn, name, session, work, marker, audit, cancellation):
+    proof = f"{provider}-{turn}.txt"
+    expected_command = f"printf {marker} > {proof}; cat {proof}"
+    audit.configure(expected_command, proof)
+    prompt = (f"This is an isolation canary, not a user chat. Use only the group MCP tool group_exec once "
+              f"to run exactly: {expected_command}. "
+              "Do not inspect accounts, environment, other files, network or any other tools. "
+              f"Then reply exactly {marker}. No planning or extra work.")
+    cli = turn_command(provider, name, session, turn, prompt)
+    result = capture(cli, cancellation, timeout=90)
+    if result.stopped:
+        return ({'turn': turn, 'passed': False, 'failure': result.stopped,
+                 'tool_execution': audit.snapshot()}, session)
+    return collect_turn(provider, turn, result, work, proof, marker, audit, session)
+
+
+def initial_session(provider):
+    return str(uuid.uuid4()) if provider == 'claude' else None
+
+
+def auth_status_command(provider, name):
+    if provider == 'claude':
+        return ['docker', 'exec', name, 'claude', 'auth', 'status', '--json']
+    return ['docker', 'exec', '--env', 'CODEX_HOME=/home/node/.codex', name, 'codex', 'login', 'status']
+
+
+def auth_evidence(provider, result):
+    method, logged_in = 'unknown', False
+    if provider == 'claude':
+        try:
+            status = json.loads(result.stdout)
+            allowed = {'claude.ai', 'oauth_token', 'api_key', 'api_key_helper', 'third_party', 'none'}
+            if isinstance(status, dict) and status.get('authMethod') in allowed:
+                method = status['authMethod']
+                logged_in = status.get('loggedIn') is True
+        except (ValueError, TypeError):
+            pass
+    else:
+        text = result.stdout.strip().lower()
+        if 'api key' in text:
+            method = 'api_key'
+        elif text == 'logged in using chatgpt':
+            method, logged_in = 'chatgpt', True
+        elif text == 'not logged in':
+            method = 'none'
+    verified = (result.returncode == 0 and result.stopped is None and logged_in
+                and method in {'claude.ai', 'oauth_token', 'chatgpt'})
+    return {'auth_method': method, 'subscription_auth_verified': verified}
+
+
+def qualify_runtime(options, name, cancellation):
+    version_result = capture(['docker', 'exec', name, options.provider, '--version'], cancellation, timeout=10)
+    version_match = version_result.stdout.strip() == EXPECTED_VERSIONS[options.provider]
+    report = {'version_match': version_match, 'auth_method': 'unknown', 'subscription_auth_verified': False}
+    if version_match and version_result.returncode == 0 and version_result.stopped is None:
+        status = capture(auth_status_command(options.provider, name), cancellation, timeout=10)
+        report.update(auth_evidence(options.provider, status))
+    return report
+
+
+def _run(options, cancellation):
+    auth, image = validated_inputs(options)
     name = "gopod-trusted-cli-canary-" + uuid.uuid4().hex
     marker = "gopod_subscription_canary"
     report = {"provider": options.provider, "scope": "synthetic new/resume; existing native subscription auth",
               "auth_mounted_readonly": True, "auth_copied": False, "api_key_fallback": False,
+              "auth_method": "unknown", "subscription_auth_verified": False,
               "roundtrip_passed": False, "isolation_qualified": False, "turns": []}
     with tempfile.TemporaryDirectory(prefix="gopod-live-canary-") as root:
         root = Path(root)
@@ -290,34 +460,8 @@ def _run(options, cancellation):
         audit = ToolAudit(server.executor, work, marker, cancellation)
         endpoint = url.replace("127.0.0.1", "host.docker.internal", 1)
         try:
-            if options.provider == "claude":
-                target = "/home/node/.claude/.credentials.json"
-                (policy / "mcp.json").write_text(json.dumps({"mcpServers": {"group": {"type": "http", "url": endpoint}}}))
-            else:
-                target = "/home/node/.codex/auth.json"
-                lines = ['approval_policy = "never"', 'sandbox_mode = "read-only"', 'web_search = "disabled"',
-                         'check_for_update_on_startup = false', 'model_reasoning_effort = "low"', '[features]']
-                lines += [key + " = false" for key in DISABLED_FEATURES]
-                lines += ['[apps._default]', 'enabled = false', '[mcp_servers.group]',
-                          'url = ' + json.dumps(endpoint), 'required = true', 'enabled_tools = ["group_exec"]',
-                          'startup_timeout_sec = 10', 'tool_timeout_sec = 15',
-                          '[mcp_servers.group.tools.group_exec]', 'approval_mode = "approve"']
-                (policy / "config.toml").write_text("\n".join(lines) + "\n")
-            command = ['docker', 'create', '--rm', '--pull=never', '--init', '--name', name,
-                       '--read-only', '--cap-drop=ALL', '--security-opt=no-new-privileges',
-                       '--pids-limit=128', '--memory=768m', '--cpus=1', '--user=1000:1000',
-                       '--add-host=host.docker.internal:host-gateway',
-                       '--tmpfs=/tmp:rw,nosuid,nodev,size=64m,mode=1777',
-                       '--tmpfs=/home/node:rw,nosuid,nodev,size=96m,uid=1000,gid=1000,mode=700',
-                       '--tmpfs=/home/node/.claude:rw,nosuid,nodev,size=32m,uid=1000,gid=1000,mode=700',
-                       '--tmpfs=/home/node/.codex:rw,nosuid,nodev,size=32m,uid=1000,gid=1000,mode=700',
-                       '--tmpfs=/workspace/chat:rw,nosuid,nodev,size=16m,uid=1000,gid=1000,mode=700',
-                       '--mount', f'type=bind,src={auth},dst={target},readonly',
-                       '--mount', f'type=bind,src={policy},dst=/qualification,readonly',
-                       '--workdir=/workspace/chat', '--env=HOME=/home/node']
-            if options.provider == "codex":
-                command += ['--mount', f'type=bind,src={policy / "config.toml"},dst=/home/node/.codex/config.toml,readonly']
-            command += ['--entrypoint=/bin/sleep', image, 'infinity']
+            target = write_policy(options.provider, policy, endpoint)
+            command = container_command(options, auth, policy, name, target, image)
             # A create request cannot execute a command. Wait for its bounded
             # acknowledgement even on cancellation, then never start if stopped.
             created = capture(command, cancellation, timeout=20, cancelable=False)
@@ -328,69 +472,18 @@ def _run(options, cancellation):
             if started.returncode != 0 or started.stopped:
                 report['failure'] = started.stopped or 'start_unavailable'
                 return report
-            version_result = capture(['docker', 'exec', name, options.provider, '--version'], cancellation, timeout=10)
-            version = version_result.stdout.strip()
-            expected = '2.1.310 (Claude Code)' if options.provider == "claude" else 'codex-cli 0.164.0'
-            report['version_match'] = version == expected
-            if version != expected:
+            report.update(qualify_runtime(options, name, cancellation))
+            if not report['subscription_auth_verified']:
+                report.update(passed=False, failure='subscription_auth_unverified')
                 return report
-            session = str(uuid.uuid4()) if options.provider == "claude" else None
+            if getattr(options, 'auth_only', False):
+                report.update(passed=True, auth_only=True, scope='native subscription auth metadata only; no inference')
+                return report
+            session = initial_session(options.provider)
             for turn in ("new", "resume"):
-                proof = f"{options.provider}-{turn}.txt"
-                expected_command = f"printf {marker} > {proof}; cat {proof}"
-                audit.configure(expected_command, proof)
-                prompt = (f"This is an isolation canary, not a user chat. Use only the group MCP tool group_exec once "
-                          f"to run exactly: {expected_command}. "
-                          "Do not inspect accounts, environment, other files, network or any other tools. "
-                          f"Then reply exactly {marker}. No planning or extra work.")
-                cli = ['docker', 'exec']
-                if options.provider == "claude":
-                    for key, value in ENV_OVERRIDES.items():
-                        cli += ['--env', key + '=' + value]
-                    cli += [name, 'claude', '--restricted', '--tools', '', '--strict-mcp-config',
-                            '--mcp-config', '/qualification/mcp.json', '--settings', json.dumps(SETTINGS),
-                            '--setting-sources', '', '--disable-slash-commands', '--permission-mode', 'dontAsk',
-                            '--allowedTools', 'mcp__group__group_exec', '--system-prompt-snapshot', 'off',
-                            '--system-prompt', 'Use only the supplied isolated group MCP tool for the synthetic canary.',
-                            '--model', 'claude-haiku-4-5', '--max-turns', '3',
-                            '--session-id' if turn == "new" else '--resume', session,
-                            '--output-format', 'stream-json', '--verbose', '-p', prompt]
-                else:
-                    cli += ['--env', 'CODEX_HOME=/home/node/.codex', name, 'codex', 'exec']
-                    if turn == "resume":
-                        cli += ['resume', session]
-                    cli += ['--strict-config', '--skip-git-repo-check', '--json', prompt]
-                result = capture(cli, cancellation, timeout=90)
-                if result.stopped:
-                    report['turns'].append({'turn': turn, 'passed': False, 'failure': result.stopped,
-                                            'tool_execution': audit.snapshot()})
-                    break
-                metadata, events = sanitized_events(result.stdout, options.provider)
-                if options.provider == "codex":
-                    for event in events:
-                        if event.get('type') == 'thread.started':
-                            try:
-                                session = str(uuid.UUID(event.get('thread_id')))
-                            except (ValueError, TypeError, AttributeError):
-                                session = None
-                external_proof = result.returncode == 0 and proof_matches(work, proof, marker)
-                inventory_allowed = options.provider != 'claude' or metadata['inventory_allowed']
-                passed = external_proof and inventory_allowed
-                entry = {'turn': turn, 'exit_code': result.returncode, 'external_tool_proof': external_proof,
-                         'roundtrip_passed': external_proof, 'passed': passed, 'metadata': metadata,
-                         'tool_execution': audit.snapshot()}
-                if not passed:
-                    combined = (result.stdout + result.stderr).lower()
-                    entry['failure'] = next((label for needle, label in [
-                        ('rate limit', 'quota_or_rate_limit'), ('usage limit', 'quota_or_rate_limit'),
-                        ('not logged in', 'auth_unavailable'), ('unauthorized', 'auth_unavailable'),
-                        ('expired', 'auth_refresh_unavailable'), ('requires approval', 'tool_approval'),
-                        ('failed to connect', 'connection'), ('read-only file system', 'readonly_state')]
-                        if needle in combined), 'unclassified_no_raw_output')
-                    if not inventory_allowed:
-                        entry['failure'] = 'live_inventory_unqualified'
+                entry, session = execute_turn(options.provider, turn, name, session, work, marker, audit, cancellation)
                 report['turns'].append(entry)
-                if not passed or not session:
+                if not entry['passed'] or not session:
                     break
             report['roundtrip_passed'] = (len(report['turns']) == 2
                                           and all(x.get('roundtrip_passed') for x in report['turns']))
@@ -408,12 +501,14 @@ if __name__ == '__main__':
     parser.add_argument('--auth-file', required=True)
     parser.add_argument('--cli-image', required=True)
     parser.add_argument('--tool-image', required=True)
+    parser.add_argument('--auth-only', action='store_true', help='verify native auth metadata without model calls')
     options = parser.parse_args()
     try:
         report = run(options)
     except Exception:
         # Do not expose native CLI streams, endpoint capabilities or credentials.
         report = {'provider': options.provider, 'passed': False, 'roundtrip_passed': False,
+                  'auth_method': 'unknown', 'subscription_auth_verified': False,
                   'isolation_qualified': False, 'failure': 'qualification_unavailable_no_raw_output'}
     print(json.dumps(report, indent=2))
     raise SystemExit(0 if report.get('passed') else 1)
