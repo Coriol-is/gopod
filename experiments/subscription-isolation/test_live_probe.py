@@ -59,6 +59,51 @@ class EventTests(unittest.TestCase):
         self.assertNotIn('private-secret-value', json.dumps(report))
 
 
+class ToolAuditTests(unittest.TestCase):
+    def test_execution_status_is_sanitized_without_arguments_or_output(self):
+        with tempfile.TemporaryDirectory() as root:
+            workspace = Path(root)
+            marker = 'synthetic_marker'
+            executor = SimpleNamespace(run=mock.Mock(return_value={'exit_code': 7, 'stopped': 'private-stop-value',
+                                                                   'output': marker + ' private-output-value'}))
+            audit = live_probe.ToolAudit(executor, workspace, marker, live_probe.Cancellation())
+            audit.configure('expected-command', 'proof')
+            (workspace / 'proof').write_text(marker)
+            executor.run({'command': 'private-argument-value'})
+            report = audit.snapshot()
+            self.assertEqual(report['calls'], [{'command_matches_expected': False, 'exit_code': 7,
+                                               'stopped': 'other', 'marker_returned': True,
+                                               'proof_matches_after': True}])
+            self.assertNotIn('private-', json.dumps(report))
+
+    def test_call_budget_revokes_executor_without_more_execution(self):
+        with tempfile.TemporaryDirectory() as root:
+            executor = SimpleNamespace(run=mock.Mock(return_value={'exit_code': 0, 'stopped': None, 'output': ''}))
+            cancellation = live_probe.Cancellation()
+            audit = live_probe.ToolAudit(executor, Path(root), 'marker', cancellation)
+            audit.configure('expected-command', 'proof')
+            for _ in range(audit.MAX_CALLS):
+                executor.run({'command': 'expected-command'})
+            with self.assertRaises(ValueError):
+                executor.run({'command': 'must-not-execute'})
+            report = audit.snapshot()
+            self.assertEqual(audit.original_run.call_count, audit.MAX_CALLS)
+            self.assertEqual(len(report['calls']), audit.MAX_CALLS)
+            self.assertTrue(report['call_limit_exceeded'])
+            self.assertEqual(executor.cancel_signal, signal.SIGTERM)
+            self.assertEqual(cancellation.signum, signal.SIGTERM)
+
+    def test_execution_exception_does_not_retain_error_text(self):
+        with tempfile.TemporaryDirectory() as root:
+            executor = SimpleNamespace(run=mock.Mock(side_effect=ValueError('private-error-value')))
+            audit = live_probe.ToolAudit(executor, Path(root), 'marker', live_probe.Cancellation())
+            audit.configure('expected-command', 'proof')
+            with self.assertRaises(ValueError):
+                executor.run({'command': 'expected-command'})
+            self.assertEqual(audit.snapshot()['calls'][0]['stopped'], 'execution_unavailable')
+            self.assertNotIn('private-error-value', json.dumps(audit.snapshot()))
+
+
 class LifecycleTests(unittest.TestCase):
     def test_capture_deadline_output_and_sigterm_are_bounded(self):
         cancellation = live_probe.Cancellation()

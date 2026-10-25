@@ -13,6 +13,7 @@ import signal
 import stat
 import subprocess
 import tempfile
+import threading
 import time
 import uuid
 from collections import Counter
@@ -116,6 +117,61 @@ def proof_matches(workspace, name, marker):
             os.close(directory)
 
 
+class ToolAudit:
+    """Trusted bounded execution evidence; never retain arguments or output."""
+    MAX_CALLS = 8
+
+    def __init__(self, executor, workspace, marker, cancellation):
+        self.executor = executor
+        self.workspace = workspace
+        self.marker = marker
+        self.cancellation = cancellation
+        self.original_run = executor.run
+        self.lock = threading.Lock()
+        self.count = 0
+        self.over_budget = False
+        self.expected = None
+        self.proof = None
+        self.records = []
+        executor.run = self.run
+
+    def configure(self, expected, proof):
+        with self.lock:
+            self.expected, self.proof = expected, proof
+            self.records = []
+
+    def snapshot(self):
+        with self.lock:
+            return {'calls': [dict(x) for x in self.records], 'total_calls': self.count,
+                    'call_limit': self.MAX_CALLS, 'call_limit_exceeded': self.over_budget}
+
+    def run(self, arguments):
+        with self.lock:
+            if self.count >= self.MAX_CALLS or self.expected is None:
+                self.over_budget = True
+                self.executor.cancel_signal = signal.SIGTERM
+                self.cancellation.cancel(signal.SIGTERM)
+                raise ValueError('tool call budget unavailable')
+            self.count += 1
+            expected, proof = self.expected, self.proof
+            record = {'command_matches_expected': isinstance(arguments, dict) and arguments.get('command') == expected,
+                      'exit_code': None, 'stopped': 'execution_unavailable',
+                      'marker_returned': False, 'proof_matches_after': False}
+            self.records.append(record)
+        try:
+            result = self.original_run(arguments)
+            code, stopped, output = result.get('exit_code'), result.get('stopped'), result.get('output')
+            with self.lock:
+                record['exit_code'] = code if type(code) is int else None
+                record['stopped'] = stopped if stopped in (None, 'timeout', 'output_limit', 'cancelled') else 'other'
+                record['marker_returned'] = isinstance(output, str) and self.marker in output
+            return result
+        finally:
+            matched = proof_matches(self.workspace, proof, self.marker)
+            with self.lock:
+                record['proof_matches_after'] = matched
+
+
 def sanitized_events(output, provider):
     event_types, item_types, tool_names = Counter(), Counter(), Counter()
     inventory_seen, inventory_valid, unexpected = False, True, 0
@@ -198,6 +254,7 @@ def _run(options, cancellation):
         work.chmod(0o777)
         policy.mkdir()
         server, url = start_bridge(str(work), options.tool_image, bind="0.0.0.0")
+        audit = ToolAudit(server.executor, work, marker, cancellation)
         endpoint = url.replace("127.0.0.1", "host.docker.internal", 1)
         try:
             if options.provider == "claude":
@@ -247,8 +304,10 @@ def _run(options, cancellation):
             session = str(uuid.uuid4()) if options.provider == "claude" else None
             for turn in ("new", "resume"):
                 proof = f"{options.provider}-{turn}.txt"
+                expected_command = f"printf {marker} > {proof}; cat {proof}"
+                audit.configure(expected_command, proof)
                 prompt = (f"This is an isolation canary, not a user chat. Use only the group MCP tool group_exec once "
-                          f"to run exactly: printf {marker} > {proof}; cat {proof}. "
+                          f"to run exactly: {expected_command}. "
                           "Do not inspect accounts, environment, other files, network or any other tools. "
                           f"Then reply exactly {marker}. No planning or extra work.")
                 cli = ['docker', 'exec']
@@ -270,7 +329,8 @@ def _run(options, cancellation):
                     cli += ['--strict-config', '--skip-git-repo-check', '--json', prompt]
                 result = capture(cli, cancellation, timeout=90)
                 if result.stopped:
-                    report['turns'].append({'turn': turn, 'passed': False, 'failure': result.stopped})
+                    report['turns'].append({'turn': turn, 'passed': False, 'failure': result.stopped,
+                                            'tool_execution': audit.snapshot()})
                     break
                 metadata, events = sanitized_events(result.stdout, options.provider)
                 if options.provider == "codex":
@@ -284,7 +344,8 @@ def _run(options, cancellation):
                 inventory_allowed = options.provider != 'claude' or metadata['inventory_allowed']
                 passed = external_proof and inventory_allowed
                 entry = {'turn': turn, 'exit_code': result.returncode, 'external_tool_proof': external_proof,
-                         'roundtrip_passed': external_proof, 'passed': passed, 'metadata': metadata}
+                         'roundtrip_passed': external_proof, 'passed': passed, 'metadata': metadata,
+                         'tool_execution': audit.snapshot()}
                 if not passed:
                     combined = (result.stdout + result.stderr).lower()
                     entry['failure'] = next((label for needle, label in [
