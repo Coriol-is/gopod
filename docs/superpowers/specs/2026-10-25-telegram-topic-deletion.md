@@ -46,7 +46,10 @@ observed topic metadata kept separate from confirmed Telegram state.
    this conversation. Cancel queued/running turns and wait for their writes to
    quiesce. Do not restart the entire chat container or affect another topic.
 2. Call deleteForumTopic with the exact stored chat/thread. A definite refusal
-   preserves history/session mappings and returns an actionable error. A timeout
+   preserves history/session mappings, clears the pending deleting state and
+   restores local admission/availability (no deleted tombstone). Canceled attempts
+   remain honestly canceled/interrupted; do not silently replay their side effects.
+   Return an actionable error. A timeout
    is uncertain, not success; preserve the intent for bounded reconciliation.
 3. After confirmed success, retire all Claude/Codex session mappings, continuity
    tail/last-provider state, pending confirmations and per-topic counters/drafts.

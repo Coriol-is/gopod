@@ -4,7 +4,7 @@ Date: 2026-10-25. Research only; no peer contacted or mode enabled.
 
 ## Verified platform behavior
 Current official Bot Features documents bot-to-bot communication. In groups,
-explicit bot commands/mentions and replies can be delivered when at least one
+commands explicitly addressed as /command@OtherBot and direct replies can be delivered when at least one
 participant has the mode enabled. Receiving all other bots' messages additionally
 requires the receiver's mode and group admin status or disabled group privacy.
 Private bot-to-bot sends accept a bot @username and require both peers' modes.
