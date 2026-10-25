@@ -93,3 +93,4 @@ not enabling the feature merely by merging that document.
 | [CP-017](CP-017-telegram-capability-diagnostics.md) | Telegram capability diagnostics (initial private-DM slice) | done | M |
 | [CP-018](CP-018-per-thread-providers.md) | Provider selection per conversation (design only) | accepted | M |
 | [CP-019](CP-019-telegram-ephemeral-commands.md) | Private command/service/error replies in groups (design only) | accepted | M |
+| [CP-020](CP-020-personal-group-isolation.md) | Personal/group memory, runtime, env and connected-service isolation (design/plan only) | accepted | L |

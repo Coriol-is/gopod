@@ -261,3 +261,15 @@ Specifications are accepted for planning only; no associated mode or routing
 change is enabled by the documents. CP-015 follow-up: the task control panel
 adds bounded task pages and explicit Pause/Resume actions; UTF-8 truncation fixes
 previously silent Cyrillic task-list replies.
+
+## CP-020 — shared-space isolation security follow-up
+
+[Audit](docs/research/2026-10-25-personal-group-isolation-audit.md),
+[contract](docs/superpowers/specs/2026-10-25-personal-group-container-isolation.md)
+and [six-PR plan](docs/superpowers/plans/2026-10-25-personal-group-container-isolation.md)
+are saved. Status: accepted requirements/design, no broad implementation.
+P0 containment is a prerequisite for claiming safe group operation; memory API
+scoping alone is insufficient. Personal services default off; dedicated scoped
+integration grants are exceptions. Draft group/channel agent policies are not
+installed runtime controls. Billing/accounts, enforced network boundary and clean
+epoch carryover remain explicit implementation/release decisions.
