@@ -159,9 +159,11 @@ type Bot struct {
 	rows  replyRow
 
 	// cmdBtns maps a command button's token to its command
-	// (cmdbuttons.go), under btnMu.
+	// (cmdbuttons.go), pages a paged reply's token to its pages
+	// (pages.go); both under btnMu.
 	btnMu   sync.Mutex
 	cmdBtns map[string]cmdButton
+	pages   map[string]pagedReply
 }
 
 // allowedUpdates is the explicit getUpdates allowed_updates list. Before

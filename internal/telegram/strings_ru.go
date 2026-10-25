@@ -81,4 +81,8 @@ const (
 const (
 	cmdTextDone      = "Готово."
 	cmdTextCancelled = "Отменено."
+
+	btnPagePrev       = "‹"
+	btnPageNext       = "›"
+	pagesToastExpired = "Страницы устарели, повторите команду"
 )

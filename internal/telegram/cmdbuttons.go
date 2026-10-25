@@ -111,11 +111,16 @@ func (b *Bot) commandRows(chatID int64, rows [][]control.Button) [][]models.Inli
 	return out
 }
 
-// pruneButtonsLocked drops expired tokens. Called under btnMu.
+// pruneButtonsLocked drops expired tokens and pages. Called under btnMu.
 func (b *Bot) pruneButtonsLocked(now time.Time) {
 	for tok, e := range b.cmdBtns {
 		if now.After(e.expires) {
 			delete(b.cmdBtns, tok)
+		}
+	}
+	for tok, p := range b.pages {
+		if now.After(p.expires) {
+			delete(b.pages, tok)
 		}
 	}
 }
@@ -250,39 +255,28 @@ func (b *Bot) runButtonCommand(ctx context.Context, q cbQuery, cmd control.Comma
 	return "", nil
 }
 
-// commandReplyMarkup renders a Response's buttons as a reply markup for
-// chatID; nil when it has none.
-func (b *Bot) commandReplyMarkup(chatID int64, resp control.Response) models.ReplyMarkup {
-	rows := b.commandRows(chatID, resp.Buttons)
-	if len(rows) == 0 {
-		return nil
-	}
-	return &models.InlineKeyboardMarkup{InlineKeyboard: rows}
-}
-
 // sendCommandResponse sends a command's Response as a reply to the
-// command message, with its buttons under the last chunk.
+// command message: one message (paged when long, pages.go) with its
+// buttons.
 func (b *Bot) sendCommandResponse(ctx context.Context, chatID int64, thread, replyTo int, resp control.Response) {
 	if resp.Text == "" && len(resp.Buttons) == 0 {
 		return
 	}
-	text := resp.Text
-	if text == "" {
-		text = cmdTextDone
-	}
-	_, _ = b.sendRendered(ctx, chatID, thread, replyTo, text, markdownToTelegramHTML,
-		b.commandReplyMarkup(chatID, resp))
+	text, markup := b.commandMessage(chatID, resp)
+	_, _ = b.sendRendered(ctx, chatID, thread, replyTo, text, markdownToTelegramHTML, markup)
 }
 
 // editCommandMessage replaces a command message (a picker, a
 // confirmation) with resp in place: its text and its buttons, or none.
 // Best-effort: a failed edit is logged only.
 func (b *Bot) editCommandMessage(ctx context.Context, chatID int64, msgID int, resp control.Response) {
-	text := resp.Text
-	if text == "" {
-		text = cmdTextDone
-	}
-	markup := b.commandReplyMarkup(chatID, resp)
+	text, markup := b.commandMessage(chatID, resp)
+	b.editCommandText(ctx, chatID, msgID, text, markup)
+}
+
+// editCommandText edits a command message to text (markdown) and markup
+// (nil: no buttons). Best-effort: a failure is logged only.
+func (b *Bot) editCommandText(ctx context.Context, chatID int64, msgID int, text string, markup models.ReplyMarkup) {
 	if markup == nil {
 		markup = noKeyboard()
 	}

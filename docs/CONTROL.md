@@ -294,6 +294,13 @@ callback data is a random token, never the command:
 | `cc:<token>` | a follow-up command (picker choice) | 10 min | `Router.Dispatch(Command{Name, Args})`; the message is edited in place to the result (its text and buttons) |
 | `cf:<token>` | Yes of a confirmation | 5 min, single use | the same with `Confirmed = true`; spends the Yes/Cancel pair, so Yes runs at most once |
 | `cx:<token>` | Cancel (a Button with no Command) | 5 min, single use | spends the pair; the message becomes «Отменено.» without buttons |
+| `pg:<token>:<n>` | `‹ n/N ›` of a long reply | 10 min | edits the same message to page n |
+
+Long replies: a command reply over 3000 characters (`/logs`, `/recall`,
+`/tasks list`, `/help`, any command) is one message with a `‹ n/N ›` row
+instead of several chunks, split on line boundaries; a code block cut by a
+page boundary is closed and reopened. The Response's own buttons stay under
+every page. Handlers need nothing for this: paging is the frontend's.
 
 The token is bound to the chat its message is in. The press is authorized
 like a typed command: the chat of the message carrying the button must be

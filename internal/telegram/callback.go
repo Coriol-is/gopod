@@ -120,6 +120,7 @@ func (b *Bot) registerCallbacks() {
 	b.onCallback("cc", b.commandButton) // a control.Button (pickers, D028)
 	b.onCallback("cf", b.confirmButton) // Yes of a confirmation (D028)
 	b.onCallback("cx", b.cancelButton)  // Cancel of a confirmation (D028)
+	b.onCallback("pg", b.pageButton)    // ‹ n/N › of a paged command reply
 }
 
 // callbackHandler is the dispatcher for every callback_query.
