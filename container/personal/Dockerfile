@@ -1,0 +1,87 @@
+# gopod agent container
+#
+# Minimum viable image for M5e. The container is long-lived per chat
+# (see docs/ARCHITECTURE.md §5.2 and docs/ISOLATION.md §7): gopod
+# spawns it, the entrypoint waits forever, and every agent turn is a
+# fresh `docker exec ... claude ...` invocation driven by the host Go
+# runner.
+#
+# Design notes:
+#
+#   - Base image is `node:22-slim`. The Claude Code npm installer
+#     requires Node 22+ and installs a per-platform native binary.
+#     Node also supports agent scripts; gopod itself is Go on the host.
+#   - Only four extra binaries go in: `git`, `ripgrep`, `ca-certificates`,
+#     and `curl`. `git` is needed by most agent workflows, `ripgrep`
+#     is the search tool Claude Code shells out to, `ca-certificates`
+#     is required for outbound TLS to the Anthropic API, and `curl` is
+#     a common agent primitive.
+#   - Non-root. The image runs as the pre-existing `node` user
+#     (uid 1000, gid 1000). docs/ISOLATION.md §6.1 requires non-root;
+#     gopod passes `--user <host_uid>:<host_gid>` at spawn time, so
+#     this image's USER is a build-time sanity default, not the final
+#     runtime identity.
+#   - Working directory is `/workspace/chat`. gopod bind-mounts the
+#     per-chat workspace there (mounts.go).
+#   - No entrypoint.sh hand-off — the entrypoint is `sleep infinity`.
+#     There is no state to set up; the bind-mounts carry all the
+#     per-chat configuration and there is nothing for a shell script
+#     to massage. If bootstrapping gets complicated later, a real
+#     entrypoint.sh can land next to this Dockerfile.
+
+# --- Stage 1: build frf CLI from source ---
+FROM golang:1.24-bookworm AS frf-builder
+WORKDIR /src
+COPY skills/frf-tui/ .
+RUN go build -trimpath -o /frf ./cmd/frf
+
+# --- Stage 2: runtime image ---
+FROM node:22-slim
+
+# Install runtime dependencies. `--no-install-recommends` keeps the
+# image small; apt cache is cleaned in the same layer so it does not
+# leak into the image.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      ca-certificates \
+      curl \
+      git \
+      ripgrep \
+ && rm -rf /var/lib/apt/lists/*
+
+# frf — FreeFeed CLI (built in stage 1).
+COPY --from=frf-builder /frf /usr/local/bin/frf
+
+# Install the Claude Code CLI globally, pinned so the version in the
+# image is reproducible and visible in git. Bump deliberately:
+#   docker build --build-arg CLAUDE_CODE_VERSION=x.y.z ...
+# or edit the default below. Check what is baked in with
+#   docker run --rm --entrypoint claude gopod-agent:latest --version
+ARG CLAUDE_CODE_VERSION=2.1.310
+RUN npm install -g --ignore-scripts "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
+ && native_arch="$(node -p process.arch)" \
+ && case "$native_arch" in arm64|x64) ;; *) exit 1 ;; esac \
+ && native_binary="/usr/local/lib/node_modules/@anthropic-ai/claude-code/node_modules/@anthropic-ai/claude-code-linux-${native_arch}/claude" \
+ && test -x "$native_binary" \
+ && ln -sf "$native_binary" /usr/local/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe \
+ && test "$(claude --version)" = "${CLAUDE_CODE_VERSION} (Claude Code)" \
+ && npm cache clean --force
+
+# gopod bind-mounts /workspace/chat at spawn time per ISOLATION.md
+# §3. The directory needs to exist first — Docker bind-mount targets
+# are created on demand but explicit mkdir keeps the layer permissions
+# predictable.
+RUN mkdir -p /workspace/chat /workspace/memory /workspace/ipc
+
+# Run as the stock non-root `node` user baked into node:22-slim
+# (uid 1000). gopod overrides this at spawn time via
+# --user <host_uid>:<host_gid> so bind-mount writes are owned by the
+# host operator rather than container-side uid 1000.
+USER node
+
+WORKDIR /workspace/chat
+
+# Long-lived container. There is nothing to do here except keep the
+# PID 1 process alive so `docker exec` has somewhere to run. `sleep
+# infinity` is the shortest, clearest way to say that.
+CMD ["sleep", "infinity"]
