@@ -50,6 +50,15 @@ Personal-only maintenance can ship before quiet delivery. Quiet delivery require
   the revision through Store helpers. Use the shared scope, never a provider-global history.
   The maintenance prompt includes the snapshot; “summarize our conversation” in a fresh
   native session is insufficient. Truncation and the covered source range are recorded.
+- Summary/extraction generation uses a new maintenance-only native adapter (proposed
+  `RunMaintenanceCmd`), not today's powerful RunFresh flags. It receives only the bounded
+  host-supplied snapshot and immutable host policy: zero OS execution, filesystem, web,
+  connector or service tools; no inherited plugins/MCP, mutable settings or account-connected
+  integrations. The role cannot inspect the workspace or mutate files. A prompt requesting
+  read-only behavior is not enforcement. Validate the effective policy and tool inventory for
+  both pinned providers on fresh/new-session paths. Unknown or unsupported enforcement blocks
+  managed-maintenance enablement; leave the replacement staged/off rather than call it a
+  qualified read-only curator. Preserve foreground personal CLI defaults and subscriptions.
 - Perform generation and embeddings outside SQLite transactions. Commit only if the revision
   and requested source range still match. Insert replacement memory, FTS/vector effects,
   supersession and the idempotency/checkpoint receipt in **one Store-owned transaction**.
@@ -106,7 +115,11 @@ bot messages do not become ephemeral as part of this feature.
 
 ## Acceptance and rollout
 
-Use synthetic providers, fake clocks and temporary stores. Prove same-folder yield, other-folder
+Use synthetic providers, fake clocks and temporary stores. Verify effective maintenance-only
+policy/tool inventory for both pinned providers and fresh/new-session paths; malicious source
+text must not invoke OS/service tools or mutate files. CLI policy verification uses fixtures
+and command/config inspection here, not real model/account calls.
+ Prove same-folder yield, other-folder
 independence, idle coalescing, restart/revision races, failed embeddings/storage, exact native
 cleanup recovery and unchanged state after every pre-commit failure. Test counter/watcher success
 semantics and all-fact transactional replacement. Extend existing `fresh_test.go`, memory

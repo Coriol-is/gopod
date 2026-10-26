@@ -50,8 +50,16 @@ Rollback: disable new maintenance admission; retain records and reconcile runnin
 ## 2. Atomic memory application and recoverable compaction rotation
 
 Files: `internal/memory/{memory,extract}.go`, new transaction helpers in `internal/store`,
-`cmd/gopod/main.go`, `internal/runner/{runner,compact}.go`; memory/runner tests.
+`cmd/gopod/main.go`, `internal/runner/{runner,compact}.go`, provider command/policy
+adapters `internal/runner/{provider,provider_claude,provider_codex}.go`; memory/runner tests.
 
+- First add a maintenance-only generation adapter (proposed `RunMaintenanceCmd`) with
+  immutable host policy and zero execution/filesystem/web/connector/service tools. Do not
+  reuse powerful RunFresh flags, inherit native plugins/MCP/mutable settings or change
+  foreground personal defaults/subscriptions. Supply only bounded host snapshot text.
+  Prompt-only read-only instructions do not qualify as enforcement. Verify effective command,
+  configuration and tool inventory for both pinned providers on fresh/new-session paths;
+  unsupported/unknown enforcement leaves managed maintenance staged/off.
 - Capture bounded scoped conversation history with source range/revision, then feed that
   explicit history to fresh summary generation. Compute embeddings outside the transaction.
 - Replace ignored summary insert errors with propagated failures. Introduce a Store-owned
@@ -65,7 +73,10 @@ Files: `internal/memory/{memory,extract}.go`, new transaction helpers in `intern
 - On crash after summary commit, resume exact cleanup without inference. If process ownership
   is uncertain, expose the blocked state and require verified settlement before slot reuse.
 
-Tests: embedding/insert/vector/FTS/supersession failures roll back whole batch; deduplicated
+Tests: provider command/config fixtures prove zero effective maintenance tools on both
+fresh/new-session paths; malicious source cannot invoke OS/service tools, read extra workspace
+files or mutate files. Do not make real model/account calls for these docs or policy fixtures.
+Embedding/insert/vector/FTS/supersession failures roll back whole batch; deduplicated
 source replay; cancellation before/after commit; new intake between snapshot and commit;
 crash during each rotation phase; no unrelated provider/thread deletion. Optional existing
 synthetic docker_integration cleanup test uses no auth or model. Review full transaction call
