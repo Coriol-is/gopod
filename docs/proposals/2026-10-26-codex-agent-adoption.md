@@ -34,6 +34,13 @@ CP-005 explicitly evolves the old no-sidecar draft into a lightweight base plus
 optional controller-owned tool runtimes; it does not change personal defaults.
 CP-021–030 are new candidates, not accepted implementation work.
 
+## Reliability planning readiness
+
+The owner selected the reliability documentation wave: seven source-backed specs,
+three bounded implementation plans and one [integration order](../superpowers/plans/2026-10-26-reliability-wave.md).
+The plans identify concrete source changes, failure tests and release gates;
+merging them does not authorize runtime changes or promote CP implementation status.
+
 ## Candidate first wave: reliable results
 
 Goal: a scheduled/agent task has an honest status, a safe execution session and a

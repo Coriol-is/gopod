@@ -26,7 +26,7 @@ has passed. The proposal registry remains the single CP status source;
 | Order | Workstream | Ordered work / dependencies | State |
 |---|---|---|---|
 | 1 | Qualify the deployed release | Tasks panel, delivery, upgraded CLIs, quota/provider continuity, Stop/recovery and media baseline — A01–A17 | Implemented/deployed baseline; live checks open |
-| 2 | Reliability and diagnostics | CP-017 Telegram diagnosis -> CP-002 bounded outbox/uncertain delivery -> CP-004 isolated task sessions -> CP-007 scheduled backups/restore -> CP-006 maintenance/quiet hours | CP-017 private-DM slice implemented; live acceptance pending; remaining draft specs saved 2026-10-26, implementation not started |
+| 2 | Reliability and diagnostics | CP-017 Telegram diagnosis -> CP-002 bounded outbox/uncertain delivery -> CP-004 isolated task sessions -> CP-007 scheduled backups/restore -> CP-006 maintenance/quiet hours | CP-017 private-DM slice implemented; live acceptance pending; remaining source-backed specs and implementation plans saved 2026-10-26, implementation not started |
 | 3 | Conversation management | CP-016 topic deletion/retirement -> CP-018 per-conversation providers/models/quota scope | Specs saved; no implementation |
 | 4 | Group service UX | CP-019 ephemeral command/service/error replies; T14 scoped menu/strings work coordinated with transport | Spec saved; ordinary output stays public |
 | 5 | Media, three queues | CP-014 Q1 cards/links/attachment fidelity -> Q2 document/OCR/image/speech -> Q3 video speech+frames/export; CP-003 typed IPC artifacts and CP-005 qualified tools support appropriate slices | Specs/proposals only beyond existing baseline |
@@ -44,6 +44,11 @@ Telegram account reading, location, peer mailboxes and optional heavy tool packs
 The map groups reliability, research and quality slices for discussion; it does
 not change the approved queue above, mark any feature implemented, or enable
 new credentials, integrations, automatic learning or tool runtimes.
+
+The reliability documentation wave now has a [shared implementation order](docs/superpowers/plans/2026-10-26-reliability-wave.md)
+and separate delivery, task and operations plans. This refines dependencies within
+the reliability stream; the approved workstream queue and implementation statuses
+above remain unchanged.
 
 ## Build order (reordered by [D018](docs/DECISIONS.md))
 

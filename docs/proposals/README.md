@@ -34,6 +34,14 @@ proposed ──► accepted ──► in-progress ──► done
   few packages; L = needs its own milestone row in ROADMAP.
 - "Acceptance" must be checkable by someone who did not do the work.
 
+## Reliability documentation wave — 2026-10-26
+
+CP-002/003/004/006/007/021/022 have source-backed specifications and bounded
+implementation plans. See the [integration order](../superpowers/plans/2026-10-26-reliability-wave.md).
+Documentation readiness does not mark implementation started or features enabled.
+The owner waived CI waiting for this Markdown-only wave; independent review and
+local consistency/link checks remain required.
+
 ## Template
 
 ```markdown
