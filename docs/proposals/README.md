@@ -68,6 +68,8 @@ Bullet list someone else can verify.
 ## Index
 
 Priority/order lives in [ROADMAP.md](../../ROADMAP.md), approved 2026-10-25.
+The [2026-10-26 adoption map](2026-10-26-codex-agent-adoption.md) groups new and
+updated designs for discussion; it does not replace that approved queue.
 `done` means implemented on main; live acceptance remains a separate register.
 `accepted` entries explicitly marked design-only authorize their saved design,
 not enabling the feature merely by merging that document.
@@ -76,11 +78,11 @@ not enabling the feature merely by merging that document.
 |---|---|---|---|
 | [CP-001](CP-001-memory-api-capability-token.md) | Capability token for the memory API | done | S |
 | [CP-002](CP-002-telegram-outbox.md) | Telegram outbox with retry and `uncertain` state | proposed | M |
-| [CP-003](CP-003-typed-replies-via-ipc.md) | Files and voice as typed replies via IPC | proposed | S |
+| [CP-003](CP-003-typed-replies-via-ipc.md) | Typed IPC replies with immutable file/voice snapshots | proposed | M |
 | [CP-004](CP-004-isolated-task-sessions.md) | Scheduled tasks run in their own session | proposed | S–M |
-| [CP-005](CP-005-tools-base-image.md) | Shared tools base image for agent containers | proposed | M |
-| [CP-006](CP-006-yielding-maintenance-and-quiet-hours.md) | Maintenance yields to the user; quiet hours | proposed | S |
-| [CP-007](CP-007-store-backups.md) | Scheduled store backups on the production host | proposed | S |
+| [CP-005](CP-005-tools-base-image.md) | Lightweight bases and optional tool runtimes | proposed | L |
+| [CP-006](CP-006-yielding-maintenance-and-quiet-hours.md) | Maintenance yields to the user; quiet hours | proposed | S–M |
+| [CP-007](CP-007-store-backups.md) | Matched scheduled backups and restore qualification | proposed | M |
 | [CP-008](CP-008-model-per-chat.md) | `/model` per chat | done | S |
 | [CP-009](CP-009-provider-continuity.md) | Continue conversations across providers | done | M |
 | [CP-010](CP-010-quota-switch-confirmation.md) | Confirm switching after quota exhaustion | done | M |
@@ -94,3 +96,13 @@ not enabling the feature merely by merging that document.
 | [CP-018](CP-018-per-thread-providers.md) | Provider selection per conversation (design only) | accepted | M |
 | [CP-019](CP-019-telegram-ephemeral-commands.md) | Private command/service/error replies in groups (design only) | accepted | M |
 | [CP-020](CP-020-personal-group-isolation.md) | Personal/group memory, runtime, env and connected-service isolation (design/plan only) | accepted | L |
+| [CP-021](CP-021-task-outcomes-checkpoints.md) | Task outcomes, evidence and checkpoints | proposed | M |
+| [CP-022](CP-022-schedule-execution-policies.md) | Schedule overlap, misfire and model-free reminders | proposed | M |
+| [CP-023](CP-023-research-dossiers.md) | Source-backed research dossiers and reviewed reports | proposed | L |
+| [CP-024](CP-024-memory-provenance-corrections.md) | Versioned memory provenance, corrections and forgetting | proposed | L |
+| [CP-025](CP-025-managed-profile-updates.md) | Managed profile sections and concurrent edit protection | proposed | M |
+| [CP-026](CP-026-reversible-learning.md) | Sourced reversible learning with host evidence | proposed | L |
+| [CP-027](CP-027-scoped-action-approvals.md) | Exact scoped action approvals and publication grants | proposed | M |
+| [CP-028](CP-028-telegram-account-reading.md) | Scoped Telegram user-account reading | proposed | L |
+| [CP-029](CP-029-scoped-location.md) | Scoped location context and expiry | proposed | M |
+| [CP-030](CP-030-agent-mailboxes.md) | Authenticated agent mailboxes and bounded delegation | proposed | L |

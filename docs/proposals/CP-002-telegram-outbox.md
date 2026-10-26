@@ -8,7 +8,7 @@
 | Size | M |
 | Touches | `internal/store` (new `outbox` table), `internal/telegram` (all sends and edits go through it) |
 | Depends on | DT (durable turns, done) |
-| Spec | `—` |
+| Spec | [Design](../superpowers/specs/2026-10-26-telegram-outbox.md) |
 
 ## Problem
 Final Telegram delivery lacks a durable outbox; many sends and edits are best-effort (`sendFormatted`, `editMessage*`, `react`). Bounded retries can still exhaust on 429/5xx and lose a best-effort reply; a network blip after the send but before `SetTurnReply` leaves the turn without a memo, so recovery replays it and the user gets a duplicate (parked finding from the durable-turns review). Auth URLs and device codes are sent immediately and may be stale by the time Telegram delivers them.
@@ -34,3 +34,10 @@ but are diagnostic and not a durable outbox. This proposal remains open.
 Delivery target/visibility must be retained across retry; CP-019 private results
 must never become public when eligibility expires. Do not broaden streaming
 edits into a durable queue merely to implement final-message reliability.
+
+## 2026-10-26 adoption design
+
+The linked spec now defines this candidate in the [adoption map](2026-10-26-codex-agent-adoption.md),
+wave **1**. Status remains proposed; a saved design does not approve
+implementation or change the existing delivery queue. New acceptance/migration
+requirements in the dated spec supersede conflicting early shorthand here.

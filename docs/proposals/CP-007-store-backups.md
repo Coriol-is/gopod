@@ -5,10 +5,10 @@
 | Status | proposed |
 | Date | 2026-10-05 |
 | Origin | feature survey of `rzaytsev/codex-agent` (2026-10-05) and the 2026-10-03 public-release audit |
-| Size | S |
+| Size | M |
 | Touches | `deploy/` (new: systemd unit + timer + script) or `docker-compose.yml` sidecar, `README.md` production section |
 | Depends on | — |
-| Spec | `—` |
+| Spec | [Design](../superpowers/specs/2026-10-26-matched-store-backups.md) |
 
 ## Problem
 `data/store.sqlite` (chats, messages, turns, memory, vectors) and `data/sessions/` (Claude and Codex session state, auth) exist in one copy on the Pi. Several manual online database snapshots now exist (see dated deployment reports), but no scheduled backup/retention or restore drill is established by repository evidence.
@@ -31,3 +31,10 @@ Manual SQLite backups before deployments do not close this proposal. Qualify
 session/workspace coverage, protected backup permissions and a scratch restore
 before treating it as automated disaster recovery. Do not print or commit auth
 files. Off-host transport and a healthcheck are distinct acceptance claims.
+
+## 2026-10-26 adoption design
+
+The linked spec now defines this candidate in the [adoption map](2026-10-26-codex-agent-adoption.md),
+wave **1 support**. Status remains proposed; a saved design does not approve
+implementation or change the existing delivery queue. New acceptance/migration
+requirements in the dated spec supersede conflicting early shorthand here.

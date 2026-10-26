@@ -1,34 +1,54 @@
-# CP-005 — Shared tools base image for agent containers
+# CP-005 — Lightweight bases and optional tool runtimes
 
 | | |
 |---|---|
 | Status | proposed |
-| Date | 2026-10-05 |
-| Origin | feature survey of `rzaytsev/codex-agent` (2026-10-05) and the 2026-10-03 public-release audit |
-| Size | M |
-| Touches | `container/Dockerfile.tools` (new), `container/Dockerfile`, `container/Dockerfile.codex`, `container/README.md`, Pi build procedure |
-| Depends on | — |
-| Spec | `—` |
+| Date | 2026-10-05; revised 2026-10-26 |
+| Origin | Earlier codex-agent survey; owner requested optional tool images for Pi |
+| Size | L |
+| Planning wave | 4 deferred; candidate, not an implementation queue change |
+| Touches | profile/provider builds, controlled tool workers, cache/resources |
+| Depends on | CP-011, CP-014, CP-020; CP-003 for exports |
+| Spec | [Design](../superpowers/specs/2026-10-26-optional-tool-images.md) |
 
 ## Problem
-Both images currently share Node/system-tool and frf build patterns plus their separate pinned CLI. Useful tools (PDF text extraction, document conversion, a Python runtime for the agent's own scripts) are missing, so PDF input is unsupported and agents shell out to nothing. Adding tools to both Dockerfiles duplicates layers and couples tool bumps to CLI pin bumps. Running the CLIs "inside" a separate tools container is not possible without giving agent containers a Docker socket, and a tools sidecar over MCP adds a network hop and a second auth perimeter per chat.
+
+Installing Chromium, LibreOffice, OCR and speech stacks in every CLI image grows Pi disk/build
+costs and broadens tool grants even when a task needs none of them.
 
 ## Proposal
-A layered image set: `gopod-tools:latest` (node:22-slim + git, ripgrep, curl, `poppler-utils` for `pdftotext`, `pandoc`, `python3` + `uv`, `ffmpeg` if voice work needs it) built once; `gopod-agent` and `gopod-agent-codex` become `FROM gopod-tools` plus the pinned CLI. One tools layer shared by both, CLI bumps do not rebuild tools, tool bumps do not touch CLI pins. Heavy items (LibreOffice, Chromium, local whisper) stay out until a concrete use case exists.
+
+Keep a lightweight qualified shared base where useful, preserve the current
+personal defaults, and offer named optional tool packs through controller-owned
+isolated workers. The model chooses a capability, not a Docker image/socket,
+host path or flags. Private auth stays outside tool execution. Follow the
+[adoption map](2026-10-26-codex-agent-adoption.md); no pack is enabled by this proposal.
+
+## Design evolution
+
+The 2026-10-05 draft excluded tools sidecars/MCP and proposed adding extractors to
+both CLI images. The 2026-10-26 owner-requested design supersedes that exclusion:
+separate optional controller-brokered tool runtimes are now candidates. Two
+personal/group Dockerfile sets and independent provider selection remain intact.
+This is a proposed design change, not evidence of deployed isolation or a new
+heavy default image.
 
 ## Out of scope
-A sidecar tools container. MCP tool servers. Per-chat tool allowlists.
+
+Enabling office/browser/video tools immediately, a Docker socket inside an agent, automatic
+arbitrary package installation or copying the donor's whole runtime.
 
 ## Risks
-Image size grows once (expected a few hundred MB); the Pi build time grows; `container/README.md` build order must say tools first.
+
+Heavy images can exhaust Pi storage and memory. Tool/runtime isolation, codec safety and
+deterministic versions need independent qualification.
 
 ## Acceptance
-- `docker build -f container/Dockerfile.tools` then both agent builds succeed on arm64 and amd64.
-- `pdftotext --version`, `pandoc --version`, `uv --version` work inside a spawned agent container as the non-root user.
-- Integration test asserts the tool set; README documents the build order and the bump procedure.
 
-## 2026-10-25 reconciliation
-The current images already include git, curl, ripgrep and frf. Additional
-extractors and a shared base are unimplemented and should be qualified only for
-the selected CP-014 queue-2 formats. This work must not block queue-1 link/card
-fidelity or diagnostics. Installing a tool does not prove extraction quality.
+- arm64/amd64 builds and pinned capability manifest pass known synthetic format fixtures.
+- Untrusted image/flags/env/mount requests are rejected; worker cannot see personal credentials
+  or Docker socket.
+- Cold and warm Pi runs record memory, disk, latency and foreground responsiveness before a pack
+  is enabled.
+- Corrupt/oversized input, OOM and timeout yield bounded failures; output remains source-scoped
+  and immutable.
