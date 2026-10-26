@@ -41,3 +41,11 @@ The linked spec now defines this candidate in the [adoption map](2026-10-26-code
 wave **1**. Status remains proposed; a saved design does not approve
 implementation or change the existing delivery queue. New acceptance/migration
 requirements in the dated spec supersede conflicting early shorthand here.
+
+## 2026-10-26 implementation planning
+
+Canonical design refined against Go source at `33e026a291fbe577efabf43e9d0b6e760fd19ece`.
+[Bounded implementation plan](../superpowers/plans/2026-10-26-reliability-delivery.md)
+defines schema, failure recovery, test criteria and staged release gates. Status remains
+**proposed**; no runtime code or feature enablement is included. The canonical spec supersedes
+earlier retry shorthand: generic 5xx/timeouts are uncertain, never presumed safe to resend.
