@@ -269,6 +269,10 @@ func (p *Proxy) forward(ctx context.Context, conn net.Conn, r *http.Request, hos
 	}
 	stripHopHeaders(response.Header)
 	response.Close = true
+	response.ProtoMajor, response.ProtoMinor = 1, 1
+	if response.ContentLength < 0 {
+		response.TransferEncoding = []string{"chunked"}
+	}
 	response.Request = r
 	response.Body = &boundedBody{ReadCloser: response.Body, remaining: p.maxResponseBytes}
 	if err = response.Write(conn); err != nil {
