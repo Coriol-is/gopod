@@ -63,7 +63,7 @@ RUN npm install -g --ignore-scripts "@anthropic-ai/claude-code@${CLAUDE_CODE_VER
  && case "$native_arch" in arm64|x64) ;; *) exit 1 ;; esac \
  && native_binary="/usr/local/lib/node_modules/@anthropic-ai/claude-code/node_modules/@anthropic-ai/claude-code-linux-${native_arch}/claude" \
  && test -x "$native_binary" \
- && ln -sf "$native_binary" /usr/local/bin/claude \
+ && ln -sf "$native_binary" /usr/local/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe \
  && test "$(claude --version)" = "${CLAUDE_CODE_VERSION} (Claude Code)" \
  && npm cache clean --force
 
