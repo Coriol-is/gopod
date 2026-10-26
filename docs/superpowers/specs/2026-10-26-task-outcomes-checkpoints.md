@@ -201,3 +201,40 @@ Assert no model replay for any started/unknown/frozen task; invalid reports cann
 mint success. Cancel-requested/unknown work retains the affected reservation,
 while another namespace uses available capacity. Matched backup/restore and
 binary downgrade must not reactivate quarantined started work.
+
+### Definition deletion, tombstones and evidence retention
+
+Current `Store.DeleteTask` hard-deletes `scheduled_tasks`; managed definitions must
+instead be tombstoned atomically (`deleted_at`, host `deletion_reason`, incremented
+revision, future admission disabled). Hide tombstones from the ordinary active task
+panel while retaining scoped operator inspection by exact ID. Keep task IDs reserved;
+recreating a similarly named task creates a new ID and cannot inherit old attempts.
+Use `ON DELETE RESTRICT` (never cascade) for managed definition → occurrence/run and
+run → attempt/verification references; publication/result references likewise must not
+silently erase evidence. Legacy deletion may remain physical only when no managed
+ledger/reference exists; `DeleteTask` must check this within its transaction.
+
+Deleting a definition is not proof that its execution stopped. In the tombstone
+transaction, cancel proven-never-started queued turns and mark their occurrences/runs
+cancelled so recovery cannot dispatch them. Serialize against dispatch: an attempt
+already reserved or potentially started takes the cancellation path instead. For running
+or uncertain attempts, persist `cancel_requested`, revoke grants and request termination;
+retain `execution_unknown` and its capacity reservation unless exit/reconciliation
+actually establishes settlement. Preserve frozen results, uncertain effects and all
+publication/delivery states. Do not retract already committed outbox work implicitly:
+request cancellation through CP-002 before dispatch where possible; a potentially sent
+message remains unknown/reconciled rather than being marked unsent by task deletion.
+
+Initial retention is conservative: no automatic purge of managed tombstones, runs,
+attempts, occurrences, results, verification or outbox references. Later explicit host
+maintenance may purge only after all dependent execution/effect/delivery states are
+settled, reservations released, retention policy approved and required audit export
+verified. Unknown states block purge indefinitely until reconciliation; age alone never
+releases capacity or deletes evidence. Purge follows dependency order in a transaction
+with referential checks, and must refuse a dangling reference or active capability.
+Backup/restore retains tombstones and reservations alongside run/outbox data.
+
+Acceptance includes managed DeleteTask with queued, running, frozen-result,
+execution-unknown and unknown-delivery fixtures; delete/dispatch races; attempted raw
+SQL parent deletion rejected by foreign keys; no cascade loss; recreate-name isolation;
+backup/restore and explicit purge refusal for every unresolved reference/reservation.

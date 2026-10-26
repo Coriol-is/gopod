@@ -67,7 +67,13 @@ The API returns committed turn/outbox IDs for later dispatch. Separate schedule
 Acceptance: temporary SQLite tests for concurrent admission/CAS, constraint violations,
 revision edits, wrong scope, complete rollback at every inserted row, and legacy fixture
 round-trip. Prove one admission after competing callers; no partial cursor advance.
-Keep activation off. Migration is additive and restart-idempotent.
+Keep activation off. Migration is additive and restart-idempotent. Replace managed
+`Store.DeleteTask` hard deletion with revisioned tombstones; use RESTRICT/no-cascade
+foreign keys for managed ledger references. Legacy physical deletion is allowed only
+with no managed references, checked transactionally. No automatic managed evidence
+purge in this slice; later explicit maintenance requires settled dependencies, released
+reservations and verified audit export. Test raw parent deletion rejection and refusal
+to purge unresolved execution/effect/delivery evidence.
 
 ## PR 2 — managed dispatch and conservative recovery
 
@@ -165,6 +171,12 @@ Cancellation first persists request/revokes reporting grant, then requests termi
 and awaits actual exit; missing exit becomes unknown with held reservation. Final text
 from a cancellation race is retained diagnostically but cannot fabricate completed status.
 Use CP-002 publication identity so a legacy agent's own IPC send is not duplicated.
+Definition deletion disables future admission and transactionally cancels proven-unstarted
+turns; synchronize with dispatch so reserved/potentially started attempts follow actual
+cancellation/unknown settlement instead. Tombstones preserve run/result/outbox evidence.
+Pending delivery cancellation uses CP-002's state machine; deletion cannot relabel an
+uncertain send as unsent. Add delete/dispatch races, queued/running/unknown attempts,
+frozen results, unknown delivery, name reuse and backup/restore fixtures.
 
 Acceptance: stop vs result races, nil stopped error, invalid reports with valid frozen
 result, result freeze/publication crash failpoints, pending publication after restart,
