@@ -173,3 +173,29 @@ func (s *Store) ValidateScopeTx(ctx context.Context, tx *sql.Tx, expected ScopeR
 	}
 	return nil
 }
+
+// ListNamespaceFolders is host-only ownership inventory for lifecycle guards.
+// It includes retired keys so a legacy process cannot disappear from migration
+// checks when the active registration moves to a clean epoch. It exposes no data.
+func (s *Store) ListNamespaceFolders(ctx context.Context, namespaceID string) ([]string, error) {
+	if !namespaceIDPattern.MatchString(namespaceID) {
+		return nil, ErrNamespaceIdentityConflict
+	}
+	rows, err := s.taskDB(ctx).QueryContext(ctx, `SELECT folder FROM namespace_ownership WHERE namespace_id=? ORDER BY namespace_epoch,folder`, namespaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var folder string
+		if err = rows.Scan(&folder); err != nil {
+			return nil, err
+		}
+		if !folderPattern.MatchString(folder) {
+			return nil, ErrNamespaceIdentityConflict
+		}
+		out = append(out, folder)
+	}
+	return out, rows.Err()
+}

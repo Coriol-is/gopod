@@ -380,3 +380,125 @@ func TestUpstreamErrorsNeverDiscloseCredentials(t *testing.T) {
 		t.Fatalf("unsafe upstream error: %q", data)
 	}
 }
+
+func TestRequiredMCPToolsEveryInferenceRequest(t *testing.T) {
+	config := testConfig()
+	config.AllowedTools = append(config.AllowedTools, "mcp__group__group_request")
+	config.RequiredTools = []string{"mcp__group__group_exec", "mcp__group/group_request"}
+	p, err := New(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	for _, tc := range []struct {
+		body   string
+		policy BodyPolicy
+		valid  bool
+	}{
+		{`{}`, Responses, false},
+		{`{"tools":[]}`, Responses, false},
+		{`{"tools":[{"type":"function","name":"mcp__group__group_exec"}]}`, Responses, false},
+		{`{"tools":[{"type":"namespace","name":"mcp__group","tools":[{"type":"function","name":"group_exec"},{"type":"function","name":"group_request"}]}]}`, Responses, true},
+		{`{"tools":[{"type":"function","name":"mcp__group/group_exec"},{"type":"function","name":"mcp__group__group_request"}],"client_metadata":{}}`, Responses, true},
+		{`{"tools":[{"name":"mcp__group__group_exec"},{"name":"mcp__group__group_request"}]}`, AnthropicMessages, true},
+		{`{"tools":[{"name":"mcp__group__group_exec"},{"name":"mcp__group__group_request","defer_loading":true}]}`, AnthropicMessages, false},
+		{`{"tools":[{"name":"mcp__group__group_exec"},{"name":"mcp__group__group_request"}],"tool_choice":{"type":"none"}}`, AnthropicMessages, false},
+		{`{"tools":[{"type":"function","name":"mcp__group__group_exec"},{"type":"function","name":"mcp__group__group_request"}],"tool_choice":"none"}`, Responses, false},
+	} {
+		r := httptest.NewRequest("POST", "https://api.example.com/v1/messages", strings.NewReader(tc.body))
+		r.Header.Set("Content-Type", "application/json")
+		_, err := p.validateBody(r, Route{Body: tc.policy})
+		if (err == nil) != tc.valid {
+			t.Errorf("valid=%v body=%s err=%v", tc.valid, tc.body, err)
+		}
+	}
+	config.RequiredTools = []string{"foreign"}
+	if _, err := New(config); err == nil {
+		t.Fatal("required ungranted tool accepted")
+	}
+}
+func TestWebSocketUpgradeOnlySignalsFallbackOnGrantedInference(t *testing.T) {
+	p, c := makeProxy(t)
+	p.transport = roundTripFunc(func(*http.Request) (*http.Response, error) { t.Fatal("WebSocket reached upstream"); return nil, nil })
+	for _, tc := range []struct {
+		address string
+		status  int
+	}{{"https://chatgpt.example.com/backend-api/codex/responses", 426}, {"https://chatgpt.example.com/account", 403}, {"https://api.example.com/v1/messages", 403}} {
+		r, err := http.NewRequest("GET", tc.address, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.Header.Set("Upgrade", "websocket")
+		r.Header.Set("Connection", "Upgrade")
+		res, err := c.Do(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		io.Copy(io.Discard, res.Body)
+		res.Body.Close()
+		if res.StatusCode != tc.status {
+			t.Fatalf("%s status=%d", tc.address, res.StatusCode)
+		}
+	}
+}
+
+func TestSharedSubscriptionCannotFallBackToAPIKeyOrAnonymousAuth(t *testing.T) {
+	p, c := makeProxy(t)
+	p.requireSubscriptionBearer = true
+	var calls atomic.Int32
+	p.transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		calls.Add(1)
+		if r.Header.Get("Authorization") != "Bearer subscription-canary" {
+			t.Error("subscription bearer changed")
+		}
+		return response("ok"), nil
+	})
+	for _, tc := range []struct {
+		name, authorization, apiKey string
+		duplicate                   bool
+		status                      int
+	}{
+		{name: "subscription", authorization: "Bearer subscription-canary", status: 200},
+		{name: "anonymous", status: 403}, {name: "basic", authorization: "Basic unsafe", status: 403},
+		{name: "empty bearer", authorization: "Bearer ", status: 403},
+		{name: "API key", apiKey: "synthetic-api-key", status: 403},
+		{name: "API key alongside OAuth", authorization: "Bearer subscription-canary", apiKey: "synthetic-api-key", status: 403},
+		{name: "duplicate bearer", authorization: "Bearer subscription-canary", duplicate: true, status: 403},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r, _ := http.NewRequest("POST", "https://api.example.com/v1/messages", strings.NewReader(`{}`))
+			r.Header.Set("Content-Type", "application/json")
+			if tc.authorization != "" {
+				r.Header.Set("Authorization", tc.authorization)
+			}
+			if tc.apiKey != "" {
+				r.Header.Set("X-Api-Key", tc.apiKey)
+			}
+			if tc.duplicate {
+				r.Header.Add("Authorization", "Bearer other")
+			}
+			res, err := c.Do(r)
+			if err != nil {
+				t.Fatal(err)
+			}
+			io.Copy(io.Discard, res.Body)
+			res.Body.Close()
+			if res.StatusCode != tc.status {
+				t.Fatalf("status=%d", res.StatusCode)
+			}
+		})
+	}
+	if calls.Load() != 1 {
+		t.Fatal("disallowed authentication reached inference upstream")
+	}
+	cfg := testConfig()
+	cfg.RequireSubscriptionBearer = true
+	q, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer q.Close()
+	if !q.requireSubscriptionBearer {
+		t.Fatal("subscription guard lost from configuration")
+	}
+}

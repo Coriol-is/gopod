@@ -203,7 +203,7 @@ func TestGroupNativeInventoryAndHostileToolDenial(t *testing.T) {
 					if err = os.Mkdir(codexHome, 0700); err != nil {
 						t.Fatal(err)
 					}
-					data := []byte("model = \"gpt-5\"\nmodel_provider = \"offline_group\"\n" + string(bytesReplaceEndpoint(cfg[groupCodexConfig], mcp.URL)) + "\n[model_providers.offline_group]\nname = \"Synthetic group test\"\nbase_url = " + strconvQuote(model.URL+"/v1") + "\nwire_api = \"responses\"\nrequires_openai_auth = false\nsupports_websockets = false\n")
+					data := []byte("model = \"gpt-5\"\n" + strings.Replace(string(bytesReplaceEndpoint(cfg[groupCodexConfig], mcp.URL)), "model_provider = \"gopod_group_native\"", "model_provider = \"offline_group\"", 1) + "\n[model_providers.offline_group]\nname = \"Synthetic group test\"\nbase_url = " + strconvQuote(model.URL+"/v1") + "\nwire_api = \"responses\"\nrequires_openai_auth = false\nsupports_websockets = false\n")
 					if err = os.WriteFile(filepath.Join(codexHome, "config.toml"), data, 0400); err != nil {
 						t.Fatal(err)
 					}
@@ -264,7 +264,7 @@ func TestGroupNativeInventoryAndHostileToolDenial(t *testing.T) {
 				}
 				allowed := map[string]bool{"mcp__group__group_exec": true, "mcp__group__group_request": true, "EndConversation": true}
 				if provider == "codex" {
-					for _, name := range []string{"list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource", "request_user_input", "get_goal", "create_goal", "update_goal", "mcp__group", "mcp__group.group_exec", "mcp__group.group_request"} {
+					for _, name := range []string{"list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource", "request_user_input", "mcp__group", "mcp__group.group_exec", "mcp__group.group_request"} {
 						allowed[name] = true
 					}
 				}

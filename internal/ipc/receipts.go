@@ -34,7 +34,7 @@ func (w *Watcher) writeReceipt(folder, path, directory string, receipt any) bool
 	if err != nil {
 		return false
 	}
-	root, err := os.OpenRoot(filepath.Join(w.cfg.DataDir, "ipc", folder))
+	root, err := w.openNamespace(folder)
 	if err != nil {
 		w.log.Error("ipc: open receipt namespace", "folder", folder, "err", err)
 		return false

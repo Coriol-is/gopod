@@ -317,3 +317,38 @@ func TestTaskIPCResponseFailureReplaysCommittedDelete(t *testing.T) {
 	}
 	t.Fatal("committed delete could not replay its receipt")
 }
+
+func TestGroupTaskManagementDoesNotRevealForeignIDs(t *testing.T) {
+	f := newWorkflow(t)
+	if err := f.st.RegisterChat(t.Context(), store.RegisteredChat{JID: "tg:-200", Folder: "group", AddedAt: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(f.root, "ipc", "group", "tasks"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	created := f.submit(t, "owner", map[string]any{"op": "schedule", "taskId": "private-task-id", "prompt": "private-canary", "scheduleType": "interval", "scheduleValue": "1h"})
+	if created.Status != "ok" {
+		t.Fatalf("owner control failed: %+v", created)
+	}
+	for _, op := range []string{"get", "pause", "resume", "update", "delete", "cancel"} {
+		known := f.submit(t, "group", map[string]any{"op": op, "taskId": "private-task-id"})
+		missing := f.submit(t, "group", map[string]any{"op": op, "taskId": "missing-task-id"})
+		if known.Status != "error" || missing.Status != "error" || known.Error != missing.Error || strings.Contains(known.Error, "private-task-id") {
+			t.Fatalf("%s exposes foreign task: %+v %+v", op, known, missing)
+		}
+	}
+	for _, id := range []string{"private-task-id", "missing-task-id"} {
+		result := f.submit(t, "group", map[string]any{"op": "schedule", "taskId": id, "prompt": "group request", "scheduleType": "interval", "scheduleValue": "1h"})
+		if result.Status != "error" || !strings.Contains(result.Error, "omit taskId") {
+			t.Fatal("global custom task ID probe accepted")
+		}
+	}
+	own := f.submit(t, "group", map[string]any{"op": "schedule", "prompt": "group request", "scheduleType": "interval", "scheduleValue": "1h"})
+	if own.Status != "ok" || own.Result.TaskID == "" {
+		t.Fatalf("host-assigned group schedule failed: %+v", own)
+	}
+	managed := f.submit(t, "group", map[string]any{"op": "get", "taskId": own.Result.TaskID})
+	if managed.Status != "ok" {
+		t.Fatalf("group cannot manage its returned ID: %+v", managed)
+	}
+}

@@ -19,21 +19,27 @@ import (
 // Config must be generated from trusted namespace/policy state, never an agent
 // file. Routes are explicit qualified grants, with no provider default/fallback.
 type Config struct {
-	Token            string
-	Routes           []Route
-	AllowedTools     []string
-	CACertificatePEM []byte
-	CAPrivateKeyPEM  []byte
-	MaxRequestBytes  int64
-	MaxResponseBytes int64
-	MaxDuration      time.Duration
-	MaxConnections   int
+	Token        string
+	Routes       []Route
+	AllowedTools []string
+	// RequiredTools prevents inference if required external MCP tools are absent.
+	RequiredTools []string
+	// Shared readonly native auth can never fall back to API-key billing.
+	RequireSubscriptionBearer bool
+	CACertificatePEM          []byte
+	CAPrivateKeyPEM           []byte
+	MaxRequestBytes           int64
+	MaxResponseBytes          int64
+	MaxDuration               time.Duration
+	MaxConnections            int
 }
 
 type Proxy struct {
 	token                             string
 	routes                            []Route
 	allowedTools                      map[string]bool
+	requiredTools                     map[string]bool
+	requireSubscriptionBearer         bool
 	ca                                []byte
 	certificates                      map[string]tls.Certificate
 	transport                         http.RoundTripper
@@ -111,9 +117,20 @@ func New(c Config) (*Proxy, error) {
 		if name == "" || len(name) > 200 {
 			return nil, errors.New("invalid tool grant")
 		}
-		tools[name] = true
+		tools[canonicalToolName(name)] = true
 	}
-	return &Proxy{token: c.Token, routes: routes, allowedTools: tools, ca: bytes.Clone(cert), certificates: certificates, transport: publicTransport(), maxRequestBytes: c.MaxRequestBytes, maxResponseBytes: c.MaxResponseBytes, maxDuration: c.MaxDuration, slots: make(chan struct{}, c.MaxConnections), connections: map[net.Conn]struct{}{}}, nil
+	required := map[string]bool{}
+	if len(c.RequiredTools) > 64 {
+		return nil, errors.New("too many required tools")
+	}
+	for _, name := range c.RequiredTools {
+		key := canonicalToolName(name)
+		if !tools[key] {
+			return nil, errors.New("required tool is not granted")
+		}
+		required[key] = true
+	}
+	return &Proxy{token: c.Token, routes: routes, allowedTools: tools, requiredTools: required, requireSubscriptionBearer: c.RequireSubscriptionBearer, ca: bytes.Clone(cert), certificates: certificates, transport: publicTransport(), maxRequestBytes: c.MaxRequestBytes, maxResponseBytes: c.MaxResponseBytes, maxDuration: c.MaxDuration, slots: make(chan struct{}, c.MaxConnections), connections: map[net.Conn]struct{}{}}, nil
 }
 
 func (p *Proxy) CertificatePEM() []byte { return bytes.Clone(p.ca) }
@@ -230,6 +247,16 @@ func (c *bufferedConn) Read(b []byte) (int, error) { return c.reader.Read(b) }
 
 func (p *Proxy) forward(ctx context.Context, conn net.Conn, r *http.Request, host string, reader io.Reader) bool {
 	defer r.Body.Close()
+	// The pinned Codex client uses 426 as its explicit WebSocket-to-HTTPS
+	// fallback signal. This response authorizes no upstream request or tunnel.
+	if r.Method == http.MethodGet && strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+		probe := r.Clone(ctx)
+		probe.Method = http.MethodPost
+		if grant, ok := p.route(probe, host); ok && grant.Body == Responses {
+			writeFailure(conn, http.StatusUpgradeRequired)
+			return false
+		}
+	}
 	route, allowed := p.route(r, host)
 	if !allowed || r.ProtoMajor != 1 || r.Header.Get("Expect") != "" || r.Header.Get("Proxy-Authorization") != "" || len(r.Trailer) != 0 {
 		writeFailure(conn, http.StatusForbidden)

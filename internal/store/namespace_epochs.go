@@ -139,3 +139,32 @@ func (s *Store) CompleteGroupEpoch(ctx context.Context, expected ScopeRef) (Scop
 	current.RegistrationRevision++
 	return current, tx.Commit()
 }
+
+// SetNamespaceDisabled atomically binds an admission flag to the current group
+// scope. Revocation need not wait behind a running model: it blocks future tool
+// and runtime admission immediately without killing the active process.
+func (s *Store) SetNamespaceDisabled(ctx context.Context, expected ScopeRef, disabled bool) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err = s.ValidateScopeTx(ctx, tx, expected); err != nil {
+		return err
+	}
+	c, err := readRegistered(ctx, tx, "jid = ?", expected.JID)
+	if err != nil {
+		return err
+	}
+	if !groupJID(c.JID) || c.IsOwner || !disabled && !c.GroupEpochReady {
+		return ErrNamespaceIdentityConflict
+	}
+	value := "0"
+	if disabled {
+		value = "1"
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO router_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, "group_disabled:"+expected.NamespaceID, value); err != nil {
+		return err
+	}
+	return tx.Commit()
+}

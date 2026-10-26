@@ -1,0 +1,9 @@
+# Untrusted group commands only: no provider CLI, credentials, private tools or
+# network services. Runtime supplies readonly root, network=none, tmpfs workspace,
+# hard process/address-space ceilings and no host bind mounts.
+FROM debian:bookworm-slim
+LABEL org.gopod.profile="group-tools" org.gopod.native-policy="group-boundary-v1"
+RUN mkdir -p /workspace/chat
+WORKDIR /workspace/chat
+USER 1000:1000
+CMD ["sleep", "infinity"]

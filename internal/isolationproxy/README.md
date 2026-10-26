@@ -7,7 +7,9 @@ provision credentials or contact a real provider during its tests.
 CONNECT for explicit DNS host/443 grants. It terminates TLS with a per-lease CA,
 parses the inner HTTP request, and forwards only an exact host/method/path/query
 route. It never provides a raw TCP tunnel. Each tunnel handles one request and
-closes; HTTP/2, WebSockets, upgrades and redirects are unavailable. Streaming
+closes; HTTP/2, WebSockets, upgrades and redirects are unavailable. An authenticated
+WebSocket handshake on an exact granted Responses inference route receives 426
+without upstream forwarding, allowing the pinned Codex native HTTPS fallback. Streaming
 HTTPS/SSE is supported, with request/response/duration/connection/header bounds.
 An interrupted client or `Proxy.Close()` cancels upstream work.
 
@@ -46,12 +48,26 @@ login, account, models or metadata route is inferred. Routes remain denied until
 qualified for the pinned CLI. ExactJSON supports a reviewed refresh envelope with
 an explicit top-level field set, but no refresh route is installed automatically.
 Missing/expired credentials are not permission to bypass the proxy or switch billing.
+Production readonly-shared native profiles permit only pinned inference and
+explicit model-catalog routes, never OAuth/token refresh or account routes.
+Refreshing a readonly reference could rotate the owner's refresh token without
+persisting its replacement; expiry therefore fails closed until personal native
+management refreshes the source. Production `RequireSubscriptionBearer` requires
+one Bearer Authorization and rejects API-key headers before upstream forwarding;
+provider status and endpoint restrictions remain necessary to establish native
+subscription use, since a Bearer scheme alone does not prove an account type.
 
 AnthropicMessages and Responses policies validate duplicate-free bounded JSON,
 known inference fields and explicit local tool names. Hosted MCP, connectors,
 web search, computer/browser/custom tools, remote account file/history references
 and unknown future inference fields are denied. Responses namespace tools must
-contain only allowlisted fully qualified local function names. Metadata/text is
+contain only allowlisted fully qualified local function names. Production must
+set `RequiredTools` to both scoped `mcp__group__group_exec` and
+`mcp__group__group_request`: every inference request must advertise both tools,
+non-deferred and enabled. Flat qualified names and namespace function names map
+to the same identity. Missing MCP, deferred tools and `tool_choice=none` deny
+inference before upstream authentication is forwarded. Nil RequiredTools remains
+a foundation-only mode and must not qualify a production group runtime. Metadata/text is
 not host verification or authority to change these grants. A tool schema/body
 mismatch fails closed and must be requalified; do not broaden grants from logs.
 

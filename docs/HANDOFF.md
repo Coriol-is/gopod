@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-10-26
+**Last updated:** 2026-10-27
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -14,7 +14,9 @@ implemented. No other runtime, channel, guest agent or bot-to-bot peer is enable
 Reference Pi runs application **c82399b**, deployed 2026-10-26 21:03 UTC.
 [CP-020 P0 rollout](deployments/2026-10-26-isolation-p0.md) blocks unqualified
 non-owner runtimes and pending IPC; only the personal owner runtime is active.
-Full group isolation and re-enablement remain pending.
+The full CP-020 implementation is now present on the working branch; exact-Pi
+qualification and activation remain pending. Do not treat that branch status as
+an upgrade of the recorded deployed P0 baseline.
 [Private-login rollout](deployments/2026-10-25-01c18fe.md): group auth now requires
 private owner confirmation, preserving the group target/tier. Actual client login
 visibility remains A20; no account login was performed by rollout.
@@ -81,6 +83,16 @@ command replies and errors private, including every callback/page/failure path;
 there is no implementation or privacy-flag activation yet.
 
 ## What's in progress
+CP-020 full source implementation is in the active worktree: namespace/epoch/CAS,
+protected roots, split personal/group images, read-only native-auth references,
+isolated offline tools, exact-route HTTPS relay, local group memory/IPC and
+confirmed owner controls. Local full tests/races/vet and real Docker tool checks
+passed. Final code review/CI, exact-Pi provider/network qualification and deployment
+remain open; use [the plan](superpowers/plans/2026-10-25-personal-group-container-isolation.md)
+and [current policy/config](ISOLATION.md) for gates. Group speech and automatic
+maintenance/extraction/compaction are unavailable; personal behavior is unchanged.
+No T9 memory-cgroup change/reboot, account refresh or paid API fallback is included.
+
 Doctor output follow-up is merged and deployed: protect technical identifiers from
 Markdown emphasis, label refresh eligibility as manual-only, and expose a scoped
 historical startup observation without claiming current runtime health. Owner
@@ -123,7 +135,9 @@ Preserve other agents' work/worktrees and use reviewed, green-CI squash PRs.
    MCP/tool ecosystem, extra providers and observability remain deferred.
 
 Queue agreement sets priority, not automatic implementation approval for every
-unreviewed proposal. Pending proposed CP-002–007 still need their bounded design.
+unreviewed proposal. The [reliability wave](superpowers/plans/2026-10-26-reliability-wave.md)
+now has source-backed specs/plans; its runtime implementation remains separate.
+The owner specifically advanced CP-020 full implementation ahead of that wave.
 
 ## Known limitations and follow-ups
 - [Acceptance register](ACCEPTANCE.md) is the actionable current live checklist.
@@ -164,25 +178,20 @@ Private-login hardening and owner-DM group confirmation are merged and deployed
 as01c18fe. See [login delivery contract](LOGIN.md); actual private-client
 visibility remains A20. Full container/service isolation remains separate.
 
-CP-020 [deep audit](research/2026-10-25-personal-group-isolation-audit.md),
-[contract](superpowers/specs/2026-10-25-personal-group-container-isolation.md) and
-[six-PR plan](superpowers/plans/2026-10-25-personal-group-container-isolation.md)
-are saved and independently reviewed. CP-020 P0 now blocks all unqualified
-non-owner agent execution/management and legacy IPC dispatch through live
-host-owned owner-private registration checks. Non-owner mounts cannot inherit
-vault, global skills or extras; container env grants remain personal only.
-New non-owner agent files use matching restricted templates for both providers;
-existing files remain preserved and cannot enable execution. These templates are
-dormant until later immutable runtime policy qualification. No group re-enablement
-or full filesystem/credential/network isolation is claimed. PRs 2–6 remain open.
-Production activation and evidence: [P0 rollout](deployments/2026-10-26-isolation-p0.md).
-The prior audit confirmed personal vault RO/global credential env exposure, plus
-synthetic host-bind symlink escape and IPC basename leakage. Account connectors
-need a real credential/network boundary, not only CLI flags. P0 containment
-precedes identity migration/billing decisions. Trusted group/channel runtime policies are not yet enabled; channel_post support is not implemented. Dedicated scoped
-integration grants are allowed only explicitly; no personal account inheritance.
-[One-way read idea](research/2026-10-25-one-way-private-group-access.md) is deferred:
-private-agent reads of approved group data never imply reverse access/publishing.
+CP-020 source implementation follows the [contract](superpowers/specs/2026-10-25-personal-group-container-isolation.md)
+and [acceptance plan](superpowers/plans/2026-10-25-personal-group-container-isolation.md).
+Only P0 is currently recorded as deployed. The new native CLI sees a fresh
+inference directory, group-only state and an explicit read-only auth-only inode;
+actual files execute in a separate no-network sandbox. Missing/expired auth fails
+closed until private management refreshes the source. It is not a separate
+account/quota. Exact-Pi image/network/real account and client checks remain gates.
+Old scope data is preserved under retired keys, old group schedules are paused,
+and an interrupted preparation stays disabled. Timed-out host callbacks remain
+tracked until drain proof; orphan cleanup cannot authorize replay or delete native
+history. Controlled sandboxes permit incremental checks, not an unqualified real
+group rollout. Personal services, channel/Guest transport, T9 reboot and automatic
+group maintenance remain off. [One-way private reads](research/2026-10-25-one-way-private-group-access.md)
+remain a separate future grant, never reciprocal access.
 
 No open implementation decision for the initial CP-017 slice. Implementation-specific choices
 are in accepted specs or pending proposals, not stale "should we build buttons?"

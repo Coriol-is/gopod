@@ -17,20 +17,21 @@ vault mounts, global credentials, mutable host bind sources or account-level
 connectors. Running containers can retain authority after policy changes.
 
 ## Proposal
-Implement the accepted isolation contract in reviewed slices, beginning with P0
-containment independent of billing/namespace migration. Group integrations are
-explicit dedicated scoped grants, not inherited personal services. P0 containment is implemented; namespace, credential/network qualification,
-migration and group re-enablement remain open. Production evidence is separate.
+The full working-branch implementation separates personal/group Claude and Codex
+images, immutable namespace epochs, protected roots, trusted native inference,
+credential-free offline tools and exact-route network egress. Existing native
+subscription auth is an explicit read-only auth-only reference; group execution
+cannot refresh it or inherit personal HOME, connectors, env or services.
 
-Owner decision: two Dockerfile sets (`personal`, `group`) and two runtime profiles,
-each independently supporting Claude and Codex. Preserve personal-chat behavior;
-restrict group images and runtime authority. See the spec for the build matrix
-and fail-closed image selection contract.
+P0 is deployed. Local full tests/race/vet and real Docker tool checks passed;
+final review/CI and exact-Pi native/network qualification remain open. No full
+runtime deployment or group re-enablement is claimed here. Owner-private behavior
+remains the baseline; group speech and automatic maintenance remain unavailable.
 
-An [experimental native-subscription prototype](../research/2026-10-25-subscription-cli-tool-isolation-prototype.md)
-has passed new/resume inference-to-isolated-tool canaries for both pinned CLIs
-on Pi. It is not integrated into Runner or enabled for production group chats;
-the broad isolation implementation and release gates remain open.
+[Current architecture, disabled configuration example and limits](../ISOLATION.md)
+record implementation behavior. [Earlier native-subscription prototype](../research/2026-10-25-subscription-cli-tool-isolation-prototype.md)
+canaries are historical evidence, not acceptance of this new runtime. Incremental
+checks use controlled sandboxes; no real-group rollout or T9 reboot is implied.
 
 ## Out of scope
 Silently changing billing, deleting historical data, revoking accounts, enabling

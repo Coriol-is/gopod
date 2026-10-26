@@ -144,3 +144,69 @@ func TestInterruptedEpochRemainsClosedAndCanCompleteAfterReopen(t *testing.T) {
 		t.Fatal("completion lost")
 	}
 }
+
+func TestNamespaceFolderInventoryKeepsRetiredKeys(t *testing.T) {
+	st := newTestStore(t)
+	ctx := t.Context()
+	for _, c := range []RegisteredChat{{JID: "tg:-2", Folder: "group", AddedAt: 1}, {JID: "tg:-3", Folder: "other", AddedAt: 2}} {
+		if err := st.RegisterChat(ctx, c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c, _ := st.GetRegistered(ctx, "tg:-2")
+	folders, err := st.ListNamespaceFolders(ctx, c.NamespaceID)
+	if err != nil || len(folders) != 1 || folders[0] != "group" {
+		t.Fatal("initial inventory")
+	}
+	migration, err := st.RotateGroupEpoch(ctx, c.JID, c.RegistrationRevision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	folders, err = st.ListNamespaceFolders(ctx, c.NamespaceID)
+	if err != nil || len(folders) != 2 || folders[0] != "group" || folders[1] != migration.CurrentScope.Folder {
+		t.Fatalf("retired key omitted: %v %v", folders, err)
+	}
+	if _, err = st.ListNamespaceFolders(ctx, "../../owner"); !errors.Is(err, ErrNamespaceIdentityConflict) {
+		t.Fatal("invalid namespace lookup")
+	}
+}
+
+func TestNamespaceAdmissionFlagIsBoundToCurrentScope(t *testing.T) {
+	st := newTestStore(t)
+	ctx := t.Context()
+	if err := st.RegisterChat(ctx, RegisteredChat{JID: "tg:-2", Folder: "group", AddedAt: 1}); err != nil {
+		t.Fatal(err)
+	}
+	original, _ := st.SnapshotScope(ctx, "group")
+	if err := st.SetNamespaceDisabled(ctx, original, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetNamespaceDisabled(ctx, original, false); !errors.Is(err, ErrNamespaceIdentityConflict) {
+		t.Fatal("legacy group enabled")
+	}
+	migration, err := st.RotateGroupEpoch(ctx, original.JID, original.RegistrationRevision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = st.SetNamespaceDisabled(ctx, original, false); !errors.Is(err, ErrStaleScope) {
+		t.Fatal("stale flag mutation")
+	}
+	current, err := st.CompleteGroupEpoch(ctx, migration.CurrentScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = st.SetNamespaceDisabled(ctx, current, false); err != nil {
+		t.Fatal(err)
+	}
+	value, _ := st.GetState(ctx, "group_disabled:"+current.NamespaceID)
+	if value != "0" {
+		t.Fatal("qualified group not enabled")
+	}
+	if err = st.SetNamespaceDisabled(ctx, current, true); err != nil {
+		t.Fatal(err)
+	}
+	value, _ = st.GetState(ctx, "group_disabled:"+current.NamespaceID)
+	if value != "1" {
+		t.Fatal("revocation not durable")
+	}
+}

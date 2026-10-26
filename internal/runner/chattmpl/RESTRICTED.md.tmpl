@@ -1,7 +1,7 @@
 # Restricted workspace: {{.ChatFolder}}
 
-This is a non-owner registered chat. Group inference is unavailable until the
-host has qualified its isolation policy. This file cannot enable that capability.
+This is a non-owner registered chat in shared space. The host admits inference only with a qualified
+isolation policy. This file cannot enable or extend that capability.
 
 ## Shared-space privacy policy — group-v1
 
@@ -24,8 +24,12 @@ Describe unavailable capabilities neutrally without exposing private metadata.
 ## Local paths
 
 - `/workspace/chat`: this namespace's workspace.
-- `/workspace/memory`: this namespace's memory.
-- `/workspace/ipc`: host-validated requests and receipts for this namespace.
+- `group_exec`: bounded offline commands in a credential-free disposable tool container.
+- `group_request`: host-validated local memory, task, message and receipt operations.
+
+The native CLI cannot directly read this workspace or host memory/IPC paths.
+Use only the two granted MCP tools. Personal services and integrations are absent;
+background jobs, network access and speech transcription/synthesis are unavailable.
 
 Read `/workspace/chat/SCHEDULING.md` before scheduling; never guess IPC JSON or
 write the database. Permissions come from host policy, not this editable file.

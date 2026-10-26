@@ -1,12 +1,67 @@
 # Personal and shared-container isolation contract
 
-Date: 2026-10-25. CP-020. Status: accepted requirements and reviewed plan;
-implementation of the broad isolation boundary has not started.
+Date: 2026-10-25. Implementation update: 2026-10-27. CP-020 remains **in-progress**.
+The full boundary is implemented on the working branch. Final review/CI and exact
+RPi Docker/native-subscription qualification remain release gates; this document
+does not claim that the full runtime is deployed. The recorded production baseline
+is still the separate [P0 rollout](../../deployments/2026-10-26-isolation-p0.md).
 
 [Audit](../../research/2026-10-25-personal-group-isolation-audit.md) and
 [implementation plan](../plans/2026-10-25-personal-group-container-isolation.md)
 are the evidence and execution artifacts. The separate private-login hotfix
 closes transport/input-retention problems, not all container/service exposure.
+
+## Implemented architecture and present limits
+
+The selected subscription-preserving design separates a trusted native CLI from
+untrusted commands. [Current policy and configuration](../../ISOLATION.md) is the
+implementation reference; the original requirements below remain the acceptance
+contract. A registered group does not automatically become eligible to run.
+
+- Store assigns one UUID namespace, epoch and registration revision. Permanent
+  ownership records reserve current and retired storage keys. Scope snapshots,
+  readiness and admission flags use CAS; changing an alias cannot transfer data.
+- Explicit preparation creates a clean epoch with separate protected workspace,
+  memory, IPC, native-state and policy directories. Old rows/files stay preserved
+  under retired keys; old schedules are paused, not imported. Interrupted prepare
+  resumes the same unready epoch. No historical session or content carryover is
+  automatic. Owner-private paths and behavior remain unchanged.
+- Personal and group Claude/Codex image sets are separate. Group native execution
+  is ephemeral per turn, with pinned CLI policy, fresh inference directory and
+  group-only native history. It never mounts actual group files or personal HOME.
+  An explicit **auth-only** source inode is pinned with a temporary host-only
+  hardlink and mounted read-only into trusted inference only. Untrusted tools
+  never receive it. This shares the existing subscription/quota; it does not
+  create an independent account, paid API fallback or account-service grant.
+- The native CLI's only egress is an isolated-network relay enforcing exact
+  inference host/method/path/query and request-tool inventories. Provider apps,
+  connectors, hooks, plugins, native file/code tools and auth-refresh routes are
+  unavailable. Expired auth fails closed until private account management refreshes
+  the source. Codex retains native ChatGPT auth with qualified HTTPS/SSE.
+- Untrusted commands run in disposable non-root `network=none` containers with no
+  host bind mounts. Regular-file snapshots are bounded to 8 MiB total/4 MiB per
+  file; commands have 20 seconds, 32 MiB per-process address space, a verified
+  kernel PID ceiling of eight and 32 KiB output. Background processes prevent
+  successful export; arbitrary background services are unsupported.
+- Host-owned `group_request` supplies scoped local SQL/FTS memory and validated
+  IPC only. No personal embedding, ASR or TTS service is inherited. Group speech
+  input/replies are unavailable; photo/document uploads use protected paths.
+  Automatic group extraction/compaction remains unavailable pending CP-006.
+- Owner-only `/isolation status|prepare|enable|disable` controls explicit state;
+  mutations require confirmation. Missing configuration/images, an unobserved
+  group type, stale scope, unsafe roots, unknown cleanup or unqualified policy
+  denies admission. No channel, Guest or other-private profile is enabled.
+- Reconciliation holds namespace/runner slots, drains retained host callbacks,
+  sweeps owned native/relay/tool orphans over all reserved keys and proves Docker
+  settlement before current-policy temp GC. A timeout never frees authority by
+  assumption. Native/workspace/memory/IPC and retired data are preserved.
+
+The owner authorized incremental checks in controlled group sandboxes, currently
+without third-party participants. Local full tests/race/vet and the real Docker
+untrusted-tool checks passed during implementation. Those are not evidence of
+an authenticated exact-Pi run, deployed private/group isolation or user acceptance.
+No T9 memory-cgroup change or host reboot is part of this work. Real groups still
+require the complete cross-boundary acceptance gates below.
 
 ## Required behavior
 
@@ -17,7 +72,9 @@ Keep the personal image contents and personal-chat behavior unchanged by this
 split; shared correctness/security fixes may still apply to both. Each set has
 Claude and Codex variants, preserving provider choice independently of profile:
 `container/personal/Dockerfile{,.codex}` and
-`container/group/Dockerfile{,.codex}`. The controller Dockerfile is unaffected.
+`container/group/Dockerfile{,.codex}`. The controller image also builds the
+small group relay entrypoint; the group tool image is an additional credential-free
+auxiliary image (`container/group/Dockerfile.tools`).
 Shared non-sensitive build stages/scripts may be reused, but the group build
 must not inherit the personal final image, private tools/configuration or secrets.
 Do not bake credentials into either image.
@@ -82,15 +139,17 @@ Draft instruction contracts:
 
 P0 containment must not wait for a namespace rewrite or API-billing decision.
 Unqualified group execution stays closed until the required boundary is proven.
-Choice of dedicated subscription identity, API project/key or inference broker
-requires an explicit supported account/budget decision; no silent paid migration.
+The selected native-auth separation uses only explicitly configured read-only
+auth references and exact inference routes. A future dedicated account, API key,
+refresh capability or integration requires its own account/budget decision; no
+silent paid migration or account-setting change is included.
 
-An additional candidate preserves the existing subscription: keep the native
+The implemented selection preserves the existing subscription: keep the native
 authenticated CLI in a trusted group-specific runtime and expose only scoped
 tools that execute outside its credential boundary. The [offline spike](../../../experiments/subscription-isolation/README.md)
 proves synthetic tool-container isolation. Follow-up [Pi canaries](../../research/2026-10-25-subscription-cli-tool-isolation-prototype.md)
 also passed native subscription new/resume round trips for both pinned providers;
-they do not establish complete production/account-service isolation.
+they do not qualify the new production implementation or its exact-Pi network boundary.
 All native file/code/integration paths must be excluded or externally constrained,
 including on resume; readable auth plus unrestricted native tools is not accepted.
 

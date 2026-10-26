@@ -121,7 +121,7 @@ func (r *Runner) sessionGone(ctx context.Context, containerID string, prov Agent
 	res, err := r.ex.Exec(ctx, containerID, prov.SessionExistsCmd(id), nil)
 	if err != nil {
 		r.log.Warn("checking agent session failed; assuming it exists",
-			slog.String("session", id), slog.Any("err", err))
+			slog.String("session", id), slog.Any("err", outwardProviderError(prov, err)))
 		return false
 	}
 	switch res.ExitCode {
@@ -133,7 +133,7 @@ func (r *Runner) sessionGone(ctx context.Context, containerID string, prov Agent
 		r.log.Warn("checking agent session failed; assuming it exists",
 			slog.String("session", id),
 			slog.Int("exit", res.ExitCode),
-			slog.String("stderr", tailString(res.Stderr, 300)))
+			slog.String("stderr", groupPublicStderr(prov, tailString(res.Stderr, 300))))
 		return false
 	}
 }
@@ -217,7 +217,7 @@ func (r *Runner) captureSession(ctx context.Context, folder string, thread int, 
 		r.unlockChat(folder)
 		if err != nil {
 			r.log.Error("storing announced agent session failed",
-				slog.String("chat", folder), slog.Int("thread", thread), slog.Any("err", err))
+				slog.String("chat", folder), slog.Int("thread", thread), slog.Any("err", outwardProviderError(prov, err)))
 		}
 		return
 	}

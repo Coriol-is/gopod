@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"strings"
 
 	"github.com/Coriol-is/gopod/internal/store"
 )
@@ -53,6 +54,13 @@ func (w *Watcher) processTaskFile(ctx context.Context, folder, path string) (com
 	sourceJID, sourceOK := w.resolve(folder)
 	if !sourceOK {
 		return fail(&errUnauthorized{reason: "source folder not registered"})
+	}
+	// Group IDs are host-assigned from this namespace and request filename.
+	// A user-selected global ID would reveal whether a private task already uses
+	// that ID by collision/success responses. Returned IDs remain valid for get,
+	// pause/resume/update/cancel/delete; only schedule creation omits taskId.
+	if p.Op == "schedule" && p.TaskID != "" && folder != w.cfg.OwnerFolder && strings.HasPrefix(sourceJID, "tg:-") {
+		return fail(&errUnauthorized{reason: "group schedules must omit taskId; use the host-returned task ID for management"})
 	}
 	targetJID := ""
 	if p.Op == "schedule" || p.Op == "list" {

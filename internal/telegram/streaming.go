@@ -817,6 +817,9 @@ func drainStream(stream *runner.AgentStream) {
 // maybeVoiceReply sends a TTS voice reply if the chat's reply mode
 // includes voice. Extracted here to share between sync and streaming paths.
 func (b *Bot) maybeVoiceReply(ctx context.Context, item queue.Item, text string) {
+	if item.ChatID <= 0 {
+		return
+	}
 	mode := b.getReplyMode(item.ChatID, item.IsVoice)
 	if mode != "voice" && mode != "voice+text" {
 		return

@@ -52,6 +52,7 @@ func newInboundFixture(t *testing.T, filePaths map[string]string) *inboundFixtur
 	b.ownerChatID = streamChat
 	b.logins = newLoginSessions()
 	b.runner = &runner.Runner{}
+	b.runner.SetAdmissionPolicy(streamChat, b.store)
 	items := make(chan queue.Item, 4)
 	q := queue.New(context.Background(), func(_ context.Context, batch []queue.Item) error {
 		for _, it := range batch {
@@ -391,6 +392,7 @@ func TestReplyContext_SlashCommandReachesRouterRaw(t *testing.T) {
 	fake := threadFake()
 	b, _ := commandBot(t, fake)
 	b.runner = &runner.Runner{}
+	b.runner.SetAdmissionPolicy(streamChat, b.store)
 	b.logins = newLoginSessions()
 	var gotArgs []string
 	b.router.Register("echo", "echo", "test", control.PermPublic,

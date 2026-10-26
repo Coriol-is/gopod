@@ -216,6 +216,7 @@ func TestInboundMediaInThread(t *testing.T) {
 		b.ownerChatID = streamChat
 		b.logins = newLoginSessions()
 		b.runner = &runner.Runner{}
+		b.runner.SetAdmissionPolicy(streamChat, b.store)
 		got := make(chan queue.Item, 1)
 		q := queue.New(context.Background(), func(_ context.Context, items []queue.Item) error {
 			got <- items[len(items)-1]

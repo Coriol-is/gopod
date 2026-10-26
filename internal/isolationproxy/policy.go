@@ -93,6 +93,13 @@ func (p *Proxy) route(r *http.Request, host string) (Route, bool) {
 }
 
 func (p *Proxy) validateBody(r *http.Request, grant Route) ([]byte, error) {
+	if p.requireSubscriptionBearer {
+		values := r.Header.Values("Authorization")
+		scheme, token, ok := strings.Cut(r.Header.Get("Authorization"), " ")
+		if len(r.Header.Values("X-Api-Key")) != 0 || len(values) != 1 || !ok || !strings.EqualFold(scheme, "Bearer") || token == "" || strings.ContainsAny(token, " \t\r\n,") {
+			return nil, errors.New("subscription authentication required")
+		}
+	}
 	if r.Header.Get("Content-Encoding") != "" || r.Header.Get("Upgrade") != "" {
 		return nil, errors.New("unsupported envelope")
 	}
@@ -135,7 +142,7 @@ func (p *Proxy) validateBody(r *http.Request, grant Route) ([]byte, error) {
 	allowedFields := map[string]bool{}
 	fields := []string{"model", "messages", "system", "max_tokens", "tools", "tool_choice", "stream", "thinking", "metadata", "temperature", "top_p", "top_k", "stop_sequences", "service_tier", "context_management", "output_config"}
 	if grant.Body == Responses {
-		fields = []string{"model", "instructions", "input", "tools", "tool_choice", "parallel_tool_calls", "stream", "reasoning", "text", "max_output_tokens", "temperature", "top_p", "truncation", "include", "store", "metadata", "service_tier", "safety_identifier", "prompt_cache_key", "prompt_cache_retention", "stream_options"}
+		fields = []string{"model", "instructions", "input", "tools", "tool_choice", "parallel_tool_calls", "stream", "reasoning", "text", "max_output_tokens", "temperature", "top_p", "truncation", "include", "store", "metadata", "service_tier", "safety_identifier", "prompt_cache_key", "prompt_cache_retention", "stream_options", "client_metadata"}
 	}
 	for _, field := range fields {
 		allowedFields[field] = true
@@ -148,6 +155,7 @@ func (p *Proxy) validateBody(r *http.Request, grant Route) ([]byte, error) {
 	if !localContextOnly(value) {
 		return nil, errors.New("unapproved remote context")
 	}
+	seenTools := map[string]bool{}
 	tools, ok := value["tools"]
 	if ok {
 		array, ok := tools.([]any)
@@ -155,9 +163,23 @@ func (p *Proxy) validateBody(r *http.Request, grant Route) ([]byte, error) {
 			return nil, errors.New("invalid tools")
 		}
 		for _, tool := range array {
-			if !p.toolAllowed(tool, "", grant.Body) {
+			if !p.toolAllowed(tool, "", grant.Body, seenTools) {
 				return nil, errors.New("unapproved tool")
 			}
+		}
+	}
+	if len(p.requiredTools) > 0 {
+		choice := value["tool_choice"]
+		if choice == "none" {
+			return nil, errors.New("required external tools disabled")
+		}
+		if fields, ok := choice.(map[string]any); ok && fields["type"] == "none" {
+			return nil, errors.New("required external tools disabled")
+		}
+	}
+	for name := range p.requiredTools {
+		if !seenTools[name] {
+			return nil, errors.New("required external tool unavailable")
 		}
 	}
 	return data, nil
@@ -231,7 +253,7 @@ func decodeUnique(d *json.Decoder, depth int) (any, error) {
 	return nil, errors.New("unexpected JSON delimiter")
 }
 
-func (p *Proxy) toolAllowed(value any, namespace string, policy BodyPolicy) bool {
+func (p *Proxy) toolAllowed(value any, namespace string, policy BodyPolicy, seen map[string]bool) bool {
 	m, ok := value.(map[string]any)
 	if !ok {
 		return false
@@ -252,7 +274,7 @@ func (p *Proxy) toolAllowed(value any, namespace string, policy BodyPolicy) bool
 			return false
 		}
 		for _, tool := range tools {
-			if !p.toolAllowed(tool, name, policy) {
+			if !p.toolAllowed(tool, name, policy, seen) {
 				return false
 			}
 		}
@@ -273,7 +295,14 @@ func (p *Proxy) toolAllowed(value any, namespace string, policy BodyPolicy) bool
 	if namespace != "" {
 		name = namespace + "." + name
 	}
-	return p.allowedTools[name]
+	name = canonicalToolName(name)
+	if !p.allowedTools[name] {
+		return false
+	}
+	if deferred, _ := m["defer_loading"].(bool); !deferred {
+		seen[name] = true
+	}
+	return true
 }
 
 // An allowed inference route must not become an account file/history retrieval
@@ -308,4 +337,19 @@ func localContextOnly(value any) bool {
 		}
 	}
 	return true
+}
+
+// Normalize native flat MCP names and Responses namespace function names to
+// one logical identity. It does not turn arbitrary native tools into MCP grants.
+func canonicalToolName(name string) string {
+	if !strings.HasPrefix(name, "mcp__") {
+		return name
+	}
+	if strings.ContainsAny(name, "./") {
+		return strings.ReplaceAll(name, "/", ".")
+	}
+	if i := strings.LastIndex(name, "__"); i > len("mcp__") && i+2 < len(name) {
+		return name[:i] + "." + name[i+2:]
+	}
+	return name
 }

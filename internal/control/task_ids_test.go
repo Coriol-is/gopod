@@ -74,3 +74,58 @@ func TestTasksExplicitShortIDs(t *testing.T) {
 		})
 	}
 }
+
+func TestTasksControlForeignAndMissingIDsAreIndistinguishable(t *testing.T) {
+	st := testStore(t)
+	ctx := t.Context()
+	for _, record := range []store.TaskRecord{{ID: "private-owner-task", ChatFolder: "owner", Prompt: "OWNER-PRIVATE-CANARY", ScheduleType: "interval", ScheduleValue: "1h", Status: "active"}, {ID: "private-group-task", ChatFolder: "group", Prompt: "GROUP-PRIVATE-CANARY", ScheduleType: "interval", ScheduleValue: "1h", Status: "active"}} {
+		if _, err := st.CreateTask(ctx, record); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r := New(silentLog())
+	RegisterTaskCommands(r, st, func(id int64) string {
+		if id == 100 {
+			return "owner"
+		}
+		return "group"
+	}, nil)
+	for _, caller := range []Caller{{Source: SourceTelegram, ChatID: 100, IsOwner: true}, {Source: SourceTelegram, ChatID: -200}} {
+		foreign := "private-owner-task"
+		own := "private-group-task"
+		if caller.IsOwner {
+			foreign, own = own, foreign
+		}
+		dispatch := func(name string, args ...string) Response {
+			t.Helper()
+			resp, err := r.Dispatch(ctx, Command{Name: name, Args: args, Caller: caller})
+			if err != nil {
+				t.Fatal(err)
+			}
+			return resp
+		}
+		for _, op := range []string{"pause", "resume", "cancel"} {
+			known := dispatch("tasks", op, foreign)
+			missing := dispatch("tasks", op, "unknown-task")
+			if known.Code == 0 || known.Code != missing.Code || known.Text != missing.Text || strings.Contains(known.Text, "PRIVATE-CANARY") {
+				t.Fatalf("%s exposes foreign metadata: %+v %+v", op, known, missing)
+			}
+		}
+		known := dispatch("tasks.state", foreign, "active", "paused", "0")
+		missing := dispatch("tasks.state", "unknown-task", "active", "paused", "0")
+		if known.Code == 0 || known.Code != missing.Code || known.Text != missing.Text {
+			t.Fatalf("inline action exposes foreign metadata: %+v %+v", known, missing)
+		}
+		if positive := dispatch("tasks", "pause", own); positive.Code != 0 {
+			t.Fatal("positive own-scope control blocked")
+		}
+	}
+	owner, err := st.GetTask(ctx, "private-owner-task")
+	if err != nil || owner.Prompt != "OWNER-PRIVATE-CANARY" {
+		t.Fatal("owner task changed or deleted by foreign request")
+	}
+	group, err := st.GetTask(ctx, "private-group-task")
+	if err != nil || group.Prompt != "GROUP-PRIVATE-CANARY" {
+		t.Fatal("group task changed or deleted by foreign request")
+	}
+}

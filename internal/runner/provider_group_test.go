@@ -123,6 +123,16 @@ func TestGroupNativePolicyFilesAreFixedAndProviderScoped(t *testing.T) {
 			}
 		} else {
 			s := string(files[groupCodexConfig])
+			for _, forbidden := range []string{"base_url", "env_key", "experimental_bearer_token", "auth.command", "[model_providers.openai]"} {
+				if strings.Contains(s, forbidden) {
+					t.Errorf("group native auth bypass: %s", forbidden)
+				}
+			}
+			for _, required := range []string{"model_provider = \"gopod_group_native\"", "requires_openai_auth = true", "supports_websockets = false"} {
+				if !strings.Contains(s, required) {
+					t.Errorf("missing native SSE authority: %s", required)
+				}
+			}
 			for _, wanted := range []string{"sandbox_mode = \"read-only\"", "approval_policy = \"never\"", "required = true", "enabled_tools = [\"group_exec\", \"group_request\"]"} {
 				if !strings.Contains(s, wanted) {
 					t.Errorf("missing %s", wanted)
