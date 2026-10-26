@@ -35,7 +35,7 @@ func (e *startupExec) Exec(ctx context.Context, _ string, cmd, _ []string) (*Exe
 }
 func startupRunner(t *testing.T, prov AgentProvider, run func(context.Context, []string) (*ExecResult, error)) *Runner {
 	t.Helper()
-	return &Runner{provider: prov, ex: &startupExec{fakeAgentExec: newFakeAgentExec(), run: run}, log: quietLog(), activity: make(map[string]time.Time), ensureFn: func(context.Context, string, Tier, *mountsec.Allowlist) (string, error) { return "container-id", nil }}
+	return &Runner{profilePolicy: testPersonalPolicy(), provider: prov, ex: &startupExec{fakeAgentExec: newFakeAgentExec(), run: run}, log: quietLog(), activity: make(map[string]time.Time), ensureFn: func(context.Context, string, Tier, *mountsec.Allowlist) (string, error) { return "container-id", nil }}
 }
 func TestStartupCheckUsesRestoredProviderModel(t *testing.T) {
 	var calls [][]string

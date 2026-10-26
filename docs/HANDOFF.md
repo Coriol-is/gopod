@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-10-25
+**Last updated:** 2026-10-26
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -164,12 +164,19 @@ visibility remains A20. Full container/service isolation remains separate.
 CP-020 [deep audit](research/2026-10-25-personal-group-isolation-audit.md),
 [contract](superpowers/specs/2026-10-25-personal-group-container-isolation.md) and
 [six-PR plan](superpowers/plans/2026-10-25-personal-group-container-isolation.md)
-are saved and independently reviewed; broad implementation has not started.
-Confirmed group exposure includes personal vault RO/global credential env, plus
+are saved and independently reviewed. CP-020 P0 now blocks all unqualified
+non-owner agent execution/management and legacy IPC dispatch through live
+host-owned owner-private registration checks. Non-owner mounts cannot inherit
+vault, global skills or extras; container env grants remain personal only.
+New non-owner agent files use matching restricted templates for both providers;
+existing files remain preserved and cannot enable execution. These templates are
+dormant until later immutable runtime policy qualification. No group re-enablement
+or full filesystem/credential/network isolation is claimed. PRs 2–6 remain open.
+Production activation/evidence is recorded separately.
+The prior audit confirmed personal vault RO/global credential env exposure, plus
 synthetic host-bind symlink escape and IPC basename leakage. Account connectors
 need a real credential/network boundary, not only CLI flags. P0 containment
-precedes identity migration/billing decisions. Draft group/channel agent policies
-are not installed; channel_post support is not implemented. Dedicated scoped
+precedes identity migration/billing decisions. Trusted group/channel runtime policies are not yet enabled; channel_post support is not implemented. Dedicated scoped
 integration grants are allowed only explicitly; no personal account inheritance.
 [One-way read idea](research/2026-10-25-one-way-private-group-access.md) is deferred:
 private-agent reads of approved group data never imply reverse access/publishing.

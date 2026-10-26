@@ -34,13 +34,18 @@ type FolderResolver func(folder string) (jid string, ok bool)
 // Config bundles every knob the watcher exposes. Defaults are filled
 // in by New when fields are zero-valued.
 type Config struct {
-	DataDir      string          // ${GOPOD_DATA_DIR}; ipc lives at <DataDir>/ipc
-	OwnerFolder  string          // e.g. "owner"
-	Tick         time.Duration   // default 1s
-	MaxRetries   int             // default 3
-	Retention    int             // default 200 per .processed / .failed
-	RetryBackoff []time.Duration // default [5s, 15s, 45s]
-	NowFn        func() time.Time
+	// NamespaceAllowed is a host-owned execution-policy gate. A denied namespace
+	// is left untouched: no sends, task mutations, receipts, archives or pruning.
+	// Nil preserves the standalone watcher's behavior; production wires Runner's
+	// trusted admission policy so legacy blocked runtimes cannot dispatch IPC.
+	NamespaceAllowed func(context.Context, string) bool
+	DataDir          string          // ${GOPOD_DATA_DIR}; ipc lives at <DataDir>/ipc
+	OwnerFolder      string          // e.g. "owner"
+	Tick             time.Duration   // default 1s
+	MaxRetries       int             // default 3
+	Retention        int             // default 200 per .processed / .failed
+	RetryBackoff     []time.Duration // default [5s, 15s, 45s]
+	NowFn            func() time.Time
 }
 
 // New constructs a Watcher. The returned value is ready to Run.

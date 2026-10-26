@@ -226,7 +226,7 @@ func newStreamTestRunner(t *testing.T) *streamTestRunner {
 	t.Helper()
 	fx := newFakeAgentExec()
 	extracts := make(chan string, 4)
-	r := &Runner{
+	r := &Runner{profilePolicy: testPersonalPolicy(),
 		ex:           fx,
 		log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
 		turnCount:    make(map[convKey]int),
@@ -463,7 +463,7 @@ func TestStartStreamNextTurnWaitsForKill(t *testing.T) {
 }
 
 func TestAcquireAgentSlotRespectsCtx(t *testing.T) {
-	r := &Runner{}
+	r := &Runner{profilePolicy: testPersonalPolicy()}
 	release, err := r.acquireAgentSlot(context.Background(), "chat")
 	if err != nil {
 		t.Fatal(err)

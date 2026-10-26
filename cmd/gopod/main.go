@@ -199,6 +199,7 @@ func run() error {
 			}
 			agentRunner = r
 			r.SetStore(st)
+			r.SetAdmissionPolicy(cfg.OwnerChatID, st)
 			r.SetAgentLimits(runner.AgentLimits{
 				MaxAgents:      cfg.MaxAgents,
 				MinAvailableMB: cfg.MinAvailableMB,
@@ -562,9 +563,9 @@ func run() error {
 		// telegram + scheduler. See
 		// docs/superpowers/specs/2026-05-07-m7-ipc-design.md.
 		ipcLog := logger.With(slog.String("subsys", "ipc"))
-		ownerFolder := "owner"
-		if cfg.OwnerChatID != 0 {
-			if rc, err := st.GetRegistered(ctx, fmt.Sprint(cfg.OwnerChatID)); err == nil {
+		ownerFolder := ""
+		if cfg.OwnerChatID > 0 && agentRunner != nil {
+			if rc, err := st.GetRegistered(ctx, fmt.Sprintf("tg:%d", cfg.OwnerChatID)); err == nil && agentRunner.CheckAdmission(ctx, rc.Folder) == nil {
 				ownerFolder = rc.Folder
 			}
 		}
@@ -573,6 +574,9 @@ func run() error {
 		ipcWatcher := ipc.New(ipc.Config{
 			DataDir:     cfg.DataDir,
 			OwnerFolder: ownerFolder,
+			NamespaceAllowed: func(c context.Context, folder string) bool {
+				return agentRunner != nil && agentRunner.CheckAdmission(c, folder) == nil
+			},
 		}, ipcMsgs, ipcTasks, ipcLog,
 			func(folder string) (string, bool) {
 				c, err := st.GetByFolder(ctx, folder)

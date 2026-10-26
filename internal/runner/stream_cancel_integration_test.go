@@ -59,7 +59,7 @@ func startShContainer(t *testing.T, d *Docker, name string) string {
 }
 
 func integrationStreamRunner(d *Docker) *Runner {
-	return &Runner{
+	return &Runner{profilePolicy: testPersonalPolicy(),
 		d:            d,
 		ex:           d,
 		log:          testLogger(),

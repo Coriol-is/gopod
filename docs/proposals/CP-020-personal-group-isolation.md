@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | accepted |
+| Status | in-progress |
 | Date | 2026-10-25 |
 | Origin | Owner requested deep isolation audit and plan for group/private memory, env, connected services and public-space agent instructions |
 | Size | L |
@@ -19,8 +19,8 @@ connectors. Running containers can retain authority after policy changes.
 ## Proposal
 Implement the accepted isolation contract in reviewed slices, beginning with P0
 containment independent of billing/namespace migration. Group integrations are
-explicit dedicated scoped grants, not inherited personal services. Planning and
-requirements are accepted; broad implementation has not started.
+explicit dedicated scoped grants, not inherited personal services. P0 containment is implemented; namespace, credential/network qualification,
+migration and group re-enablement remain open. Production evidence is separate.
 
 Owner decision: two Dockerfile sets (`personal`, `group`) and two runtime profiles,
 each independently supporting Claude and Codex. Preserve personal-chat behavior;

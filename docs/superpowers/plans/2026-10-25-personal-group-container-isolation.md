@@ -1,7 +1,7 @@
 # Personal and group container isolation — implementation plan
 
 Date: 2026-10-25. Baseline: `ea38581e95ae214ff2a4c0dd5fc8f7f40b1f7d86`.
-Status: **plan ready for review; implementation not started**. This document
+Status: **P0 containment implemented; PRs 2–6 remain open**. This document
 neither changes production nor authorizes billing, account settings or data deletion.
 
 Contract: [isolation specification](../specs/2026-10-25-personal-group-container-isolation.md).
@@ -91,6 +91,12 @@ through receipts although content remains blocked. Open the channel from its
 namespace root with `Root.OpenFile` and `O_NOFOLLOW` (verify directory/platform
 semantics), enumerate that handle, and apply rooted operations to dispatch,
 archive and retention. Never put outside filenames in group receipts.
+
+P0 delivery boundary: all non-owner inference remains denied, so restricted
+seeding is dormant and legacy files are preserved without rewrite. Trusted
+versioned policy injection and backed-up legacy-file migration must qualify with
+the later group runtime before it can be enabled; no prompt-only boundary is
+claimed by P0.
 
 Implement the user-requested privacy-aware base agent-file contract in both
 trusted `AGENTS.md` and `CLAUDE.md` profiles, with identical semantics for Codex
@@ -344,6 +350,16 @@ credential rotation, historical deletion or production recreation occurs as an
 implicit audit/plan action; those are separate explicit operations.
 
 ### 6. Adversarial acceptance, review and staged release
+
+Owner update, 2026-10-26: current group chats are controlled sandboxes with no
+third-party participants. Run targeted acceptance with each implementation slice
+and fix discovered issues incrementally; do not wait for a separate exhaustive
+acceptance campaign before sandbox deployment. Keep independent code review and
+CI for code changes. Full cross-boundary acceptance remains required before real
+group admission. Synthetic sandbox data must not require personal credentials or
+services. P0 disables group inference; this acceleration does not enable an
+unqualified group profile.
+
 
 **Owner:** test/release implementer; **review:** independent end-to-end reviewer.
 **Dependency:** PRs 1–5 and recorded inference decision.

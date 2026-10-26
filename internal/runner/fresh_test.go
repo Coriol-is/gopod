@@ -37,7 +37,7 @@ func (*stuckFreshExec) ExecStream(context.Context, string, []string, []string) (
 func freshFixture(t *testing.T) (*Runner, *stuckFreshExec) {
 	t.Helper()
 	f := &stuckFreshExec{started: make(chan context.Context, 1), killStarted: make(chan struct{}), killRelease: make(chan struct{})}
-	r := &Runner{ex: f, provider: NewCodexProvider("img"), log: quietLog(), activity: make(map[string]time.Time), turnCount: make(map[convKey]int)}
+	r := &Runner{profilePolicy: testPersonalPolicy(), ex: f, provider: NewCodexProvider("img"), log: quietLog(), activity: make(map[string]time.Time), turnCount: make(map[convKey]int)}
 	r.ensureFn = func(context.Context, string, Tier, *mountsec.Allowlist) (string, error) { return "cid", nil }
 	return r, f
 }
@@ -109,7 +109,7 @@ func TestCancelledCompactionPreservesConversation(t *testing.T) {
 		t.Run(cause.Error(), func(t *testing.T) {
 			st := newFakeSessionStore()
 			st.PutSession(context.Background(), "chat", 7, "codex", "existing-session")
-			r := &Runner{store: st, provider: NewCodexProvider("img"), log: quietLog(), turnCount: map[convKey]int{{"chat", 7}: 2}}
+			r := &Runner{profilePolicy: testPersonalPolicy(), store: st, provider: NewCodexProvider("img"), log: quietLog(), turnCount: map[convKey]int{{"chat", 7}: 2}}
 			r.SetCompactFn(func(context.Context, string, int) error { return cause })
 			_, err := r.CompactSession(context.Background(), "chat", 7, TierRegistered, nil)
 			if !errors.Is(err, cause) || st.row("chat", 7, "codex") != "existing-session" || r.getTurnCount("chat", 7) != 2 {

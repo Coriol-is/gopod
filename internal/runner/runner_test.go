@@ -289,7 +289,7 @@ type convHarness struct {
 func newConvHarness(t *testing.T, prov AgentProvider) *convHarness {
 	t.Helper()
 	h := &convHarness{home: newFakeAgentHome(t), store: newFakeSessionStore()}
-	h.r = &Runner{
+	h.r = &Runner{profilePolicy: testPersonalPolicy(),
 		ex:             h.home,
 		provider:       prov,
 		log:            slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -823,7 +823,7 @@ func newStopHarness(t *testing.T, prov AgentProvider) (*Runner, *fakeAgentExec, 
 	t.Helper()
 	fx := newFakeAgentExec()
 	st := newFakeSessionStore()
-	r := &Runner{
+	r := &Runner{profilePolicy: testPersonalPolicy(),
 		ex:             fx,
 		provider:       prov,
 		log:            slog.New(slog.NewTextHandler(io.Discard, nil)),

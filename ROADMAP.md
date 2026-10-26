@@ -281,7 +281,11 @@ previously silent Cyrillic task-list replies.
 [Audit](docs/research/2026-10-25-personal-group-isolation-audit.md),
 [contract](docs/superpowers/specs/2026-10-25-personal-group-container-isolation.md)
 and [six-PR plan](docs/superpowers/plans/2026-10-25-personal-group-container-isolation.md)
-are saved. Status: accepted requirements/design, no broad implementation.
+are saved. Status: P0 containment implemented; full isolation in progress.
+P0 admits only the verified owner-private identity, blocks legacy non-owner IPC
+and removes non-owner personal mount/env inheritance. Groups stay unavailable
+until later qualification; migration and enforced credential/network boundaries
+are not implemented by P0.
 P0 containment is a prerequisite for claiming safe group operation; memory API
 scoping alone is insufficient. Personal services default off; dedicated scoped
 integration grants are exceptions. Draft group/channel agent policies are not

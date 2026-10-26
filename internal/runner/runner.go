@@ -26,15 +26,16 @@ import (
 // is the job of M3 GroupQueue. Until then a small per-chat sync.Mutex
 // inside lastTouchMu serializes EnsureRunning calls for the same chat.
 type Runner struct {
-	d        *Docker
-	ex       agentExecer // r.d in production; the agent exec seam for tests
-	provider AgentProvider
-	paths    Paths
-	cfg      SpawnDefaults
-	allow    []string // additional env var names beyond provider's RequiredEnvVars
-	version  string
-	log      *slog.Logger
-	store    stateStore // compact timestamps and conversation sessions
+	profilePolicy *admissionPolicy
+	d             *Docker
+	ex            agentExecer // r.d in production; the agent exec seam for tests
+	provider      AgentProvider
+	paths         Paths
+	cfg           SpawnDefaults
+	allow         []string // additional env var names beyond provider's RequiredEnvVars
+	version       string
+	log           *slog.Logger
+	store         stateStore // compact timestamps and conversation sessions
 
 	// ensureFn replaces Ensure in tests (nil = r.Ensure).
 	ensureFn func(ctx context.Context, chatFolder string, tier Tier, allowlist *mountsec.Allowlist) (string, error)
@@ -170,6 +171,10 @@ func New(
 
 // ensure is Ensure, or the test seam ensureFn.
 func (r *Runner) ensure(ctx context.Context, chatFolder string, tier Tier, allowlist *mountsec.Allowlist) (string, error) {
+	if err := r.authorizeProfile(ctx, chatFolder); err != nil {
+		return "", err
+	}
+	tier = TierOwner
 	if r.selectionBlocked(chatFolder) {
 		return "", errors.New("runner: provider selection unavailable")
 	}
@@ -195,6 +200,10 @@ func (r *Runner) Ensure(
 }
 
 func (r *Runner) ensureContainer(ctx context.Context, chatFolder string, tier Tier, allowlist *mountsec.Allowlist, reconcile bool) (string, error) {
+	if err := r.authorizeProfile(ctx, chatFolder); err != nil {
+		return "", err
+	}
+	tier = TierOwner
 	if r.selectionBlocked(chatFolder) {
 		return "", errors.New("runner: provider selection unavailable")
 	}
@@ -203,6 +212,9 @@ func (r *Runner) ensureContainer(ctx context.Context, chatFolder string, tier Ti
 	}
 	r.lockChat(chatFolder)
 	defer r.unlockChat(chatFolder)
+	if err := r.authorizeProfile(ctx, chatFolder); err != nil {
+		return "", err
+	}
 
 	if err := EnsureChatDirs(r.paths, chatFolder, tier == TierOwner, r.log); err != nil {
 		return "", err
@@ -215,7 +227,7 @@ func (r *Runner) ensureContainer(ctx context.Context, chatFolder string, tier Ti
 
 	// Use per-chat provider for image + env vars.
 	prov := r.ProviderForChat(chatFolder)
-	envAllow := append(prov.RequiredEnvVars(), r.allow...)
+	envAllow := containerEnvAllow(tier, prov, r.allow)
 
 	spawn := SpawnConfig{
 		Image:        prov.Image(),
@@ -258,6 +270,9 @@ func (r *Runner) Run(
 	allowlist *mountsec.Allowlist,
 	prompt string,
 ) (string, error) {
+	if err := r.authorizeProfile(ctx, chatFolder); err != nil {
+		return "", err
+	}
 	releaseSlot, err := r.acquireAgentSlot(ctx, chatFolder)
 	if err != nil {
 		return "", err
@@ -387,6 +402,9 @@ func (r *Runner) RunStream(
 	allowlist *mountsec.Allowlist,
 	prompt string,
 ) (*AgentStream, error) {
+	if err := r.authorizeProfile(ctx, chatFolder); err != nil {
+		return nil, err
+	}
 	releaseSlot, err := r.acquireAgentSlot(ctx, chatFolder)
 	if err != nil {
 		return nil, err
@@ -717,6 +735,9 @@ func (r *Runner) RunFresh(
 	allowlist *mountsec.Allowlist,
 	prompt string,
 ) (string, error) {
+	if err := r.authorizeProfile(ctx, chatFolder); err != nil {
+		return "", err
+	}
 	ctx, cancel := context.WithTimeout(ctx, freshRunTimeout)
 	defer cancel()
 	releaseSlot, err := r.acquireBackgroundSlot(ctx, chatFolder, cancel)
@@ -878,6 +899,9 @@ func (r *Runner) ClearChatProvider(chatFolder string) {
 
 // CheckAuth probes auth state of the chat's agent container.
 func (r *Runner) CheckAuth(ctx context.Context, chatFolder string, tier Tier, allowlist *mountsec.Allowlist) (AuthStatus, error) {
+	if err := r.authorizeProfile(ctx, chatFolder); err != nil {
+		return AuthStatus{}, err
+	}
 	release, err := r.acquireAgentSlot(ctx, chatFolder)
 	if err != nil {
 		return AuthStatus{}, err
@@ -939,11 +963,17 @@ func (r *Runner) SetCompactAfter(n int) { r.compactAfter = n }
 // session as before. Old native files are retained but never resumed by the
 // continuity-aware path.
 func (r *Runner) ClearSession(ctx context.Context, chatFolder string, thread int, tier Tier, allowlist *mountsec.Allowlist) error {
+	if err := r.authorizeProfile(ctx, chatFolder); err != nil {
+		return err
+	}
 	release, err := r.acquireAgentSlot(ctx, chatFolder)
 	if err != nil {
 		return err
 	}
 	defer release()
+	if err := r.authorizeProfile(ctx, chatFolder); err != nil {
+		return err
+	}
 	if s, ok := r.store.(continuityStore); ok {
 		if err := s.ClearConversationContinuity(ctx, chatFolder, thread); err != nil {
 			return fmt.Errorf("runner: clearing conversation continuity: %w", err)
@@ -979,6 +1009,9 @@ func (r *Runner) ClearSession(ctx context.Context, chatFolder string, thread int
 // the bridge between the old conversation and the new one — the
 // Context Compiler injects it via the reserved summary slot.
 func (r *Runner) CompactSession(ctx context.Context, chatFolder string, thread int, tier Tier, allowlist *mountsec.Allowlist) (string, error) {
+	if err := r.authorizeProfile(ctx, chatFolder); err != nil {
+		return "", err
+	}
 	if r.compactFn == nil {
 		return "", r.ClearSession(ctx, chatFolder, thread, tier, allowlist)
 	}

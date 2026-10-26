@@ -125,7 +125,8 @@ func BuildMounts(p Paths, chatFolder string, tier Tier, al *mountsec.Allowlist) 
 
 	out := standardMounts(p, chatFolder, tier)
 
-	if al != nil {
+	// Legacy extras are personal grants, never group grants (even wildcard/RO).
+	if al != nil && tier == TierOwner {
 		out = append(out, extraMountsForChat(chatFolder, tier, al)...)
 	}
 
@@ -192,8 +193,8 @@ func standardMounts(p Paths, chatFolder string, tier Tier) []Mount {
 	}
 
 	// Obsidian vault mount (if configured). RW for owner so the agent
-	// can create/edit notes. RO for non-owner chats.
-	if p.ObsidianVault != "" {
+	// can create/edit notes. Never mounted for non-owner chats.
+	if p.ObsidianVault != "" && tier == TierOwner {
 		readOnly := tier != TierOwner
 		out = append(out, Mount{
 			Source:   p.ObsidianVault,
@@ -202,16 +203,19 @@ func standardMounts(p Paths, chatFolder string, tier Tier) []Mount {
 		})
 	}
 
-	// Baseline mounts — every registered chat, owner or not.
+	// Namespace-local mounts only. Non-owner admission remains blocked in P0.
 	out = append(out,
 		Mount{Source: chatDir, Target: "/workspace/chat", ReadOnly: false},
 		Mount{Source: memoryDir, Target: "/workspace/memory", ReadOnly: false},
 		Mount{Source: ipcDir, Target: "/workspace/ipc", ReadOnly: false},
 		Mount{Source: sessionDir, Target: "/home/node/.claude", ReadOnly: false},
-		Mount{Source: p.ContainerSkillsDir, Target: "/home/node/.claude/skills", ReadOnly: true},
+
 		Mount{Source: codexDir, Target: "/home/node/.codex", ReadOnly: false},
 	)
 
+	if tier == TierOwner {
+		out = append(out, Mount{Source: p.ContainerSkillsDir, Target: "/home/node/.claude/skills", ReadOnly: true})
+	}
 	return out
 }
 

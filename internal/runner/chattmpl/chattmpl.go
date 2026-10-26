@@ -37,6 +37,9 @@ var schedulingTmplSrc string
 //go:embed MEMORY.md.tmpl
 var memoryTmplSrc string
 
+//go:embed RESTRICTED.md.tmpl
+var restrictedTmplSrc string
+
 // Vars is the data passed to the templates at render time.
 type Vars struct {
 	// ChatFolder is the on-disk folder name (e.g. "owner", "myproject").
@@ -70,9 +73,13 @@ func Seed(chatDir, memoryDir string, vars Vars) ([]string, error) {
 
 	// One template, two filenames: Claude Code reads CLAUDE.md, Codex
 	// reads AGENTS.md. Both harnesses must get the same instructions.
+	src := claudeTmplSrc
+	if !vars.IsOwner {
+		src = restrictedTmplSrc
+	}
 	for _, name := range []string{"CLAUDE.md", "AGENTS.md"} {
 		path := filepath.Join(chatDir, name)
-		if wrote, err := writeIfMissing(path, claudeTmplSrc, vars); err != nil {
+		if wrote, err := writeIfMissing(path, src, vars); err != nil {
 			return created, err
 		} else if wrote {
 			created = append(created, path)
