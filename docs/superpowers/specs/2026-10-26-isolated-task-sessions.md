@@ -201,3 +201,13 @@ promote scheduled work to owner mounts, credentials or tools. Preserve current
 `IsOwner=false`; require compatible container authority before execution. Quota/provider
 errors do not prove no effects: CP-010 confirmation plus checkpoint/effect reconciliation
 precedes any explicit new attempt, never automatic provider replay.
+
+PR 3 of the executable plan owns the minimal personal task-role policy implementation:
+canonical effective-policy fingerprint, host-recorded plus Docker-inspected configuration
+validation under the per-folder lock, and safe container replacement between incompatible
+foreground/task roles. Folder/image equality and `IsOwner=false` alone are insufficient.
+Unknown execution blocks recycling; unqualified role or credential bindings deny task
+execution. Recreating containers preserves host-backed foreground credentials/session
+state and reconstructs the unchanged personal default policy for subsequent foreground
+turns. This personal compatibility gate is independent of the full CP-020 group rollout
+and does not certify native-account isolation.

@@ -95,15 +95,40 @@ to task completion. Assert current interactive batching/retry tests remain uncha
 ## PR 3 — task execution and attempt-bound reporting
 
 Files: `internal/runner/runner.go`, `provider.go`, `provider_claude.go`,
-`provider_codex.go`, `exec_interactive.go`, `policy.go`, lifecycle/session tests;
+`provider_codex.go`, `exec_interactive.go`, `policy.go`, `lifecycle.go`,
+`docker_args.go`, `mounts.go`, `agentenv.go`, lifecycle/session tests;
 `internal/telegram/handler.go`; new task execution/report helpers as appropriate.
-Depends on PR 2 and qualified personal task policy.
+Depends on PR 2. This PR implements and qualifies the bounded personal task-role
+policy below; it does not depend on the full CP-020 group migration.
 Implement dedicated `RunTaskStream`, `RunTaskCmd(prompt, systemPrompt)` and ephemeral
 native flags using the ordinary bounded task execution lifetime (default 5 minutes,
 approved maximum 60), not `RunFresh` maintenance preemption. Snapshot provider/model
 inside the actual execution slot. Compile task-scoped working set; never adopt/resolve
 foreground sessions, handoff, compact or automatic memory. A task preceding the first
 foreground request must leave no task transcript eligible for legacy adoption.
+
+Implement a host-derived `EffectiveExecutionPolicy` for roles `foreground_personal`
+and `scheduled_task_personal`. Its deterministic fingerprint covers role, immutable
+ScopeRef/policy revision, resolved mount sources/targets/modes, env allowlist names,
+provider credential binding, image identity and granted tools/IPC permissions; never
+hash/log secret values. Task defaults derive registered-tier mounts/env/tool grants,
+not owner privileges from folder; any extra required grant needs explicit host policy.
+Store the expected fingerprint on the attempt and container labels. Existing `Ensure`
+reuses folder/image and therefore does not establish this authority today.
+
+Under the existing per-folder lock, compare requested policy against host-known creation
+policy and Docker-inspected effective configuration before reuse. Missing/unknown labels,
+unsupported inspection, unqualified credential sharing or incompatible config fail
+closed. On a known mismatch, wait for proven exit of any active execution, then stop/
+remove and recreate the folder container with requested policy; do not recycle while an
+unknown attempt holds its reservation. Use the same guarded path when returning to
+foreground: reconstruct the existing personal default policy and preserve persistent
+foreground native sessions/credential files on host, never delete or import them during
+container replacement. A task's ephemeral command must not change foreground session
+selection. This is bounded runtime authority checking, not proof of filesystem or native
+account isolation. If credential persistence cannot support the proposed task role
+without exposing unauthorized state, keep that provider/task role disabled pending a
+qualified adapter; do not weaken policy merely to pass a smoke test.
 
 Use host-issued attempt capability for strict `task-results` v1 reporting, maximum
 32 KiB envelope and the canonical bounded outcome/checkpoint fields. Parse into a
@@ -114,7 +139,13 @@ checks remain in force independently of folder and image.
 
 Acceptance: fake provider command/stream tests for both ephemeral commands, system
 prompt and timeout, no foreground/session DB writes, provider switch while queued vs
-started, wrong policy/container denial, report limits/schema/token revocation. Native
+started, wrong policy/container denial, report limits/schema/token revocation. Add
+`lifecycle_test.go`, `docker_args_test.go`, `mounts_test.go` and `agentenv_test.go`
+fixtures for owner foreground → task → foreground recycle, retained personal native
+credentials/session IDs, no owner-only task mounts/env/tools, stale/missing labels,
+inspected-config mismatch, scope revision change and unknown-execution blocking recycle.
+Compatibility gate: both providers must retain unchanged foreground default behavior
+after role transitions, with task execution denied wherever authority cannot be proved. Native
 subscription smoke is a separate explicit acceptance gate, never a unit-test side effect.
 
 ## PR 4 — settlement, result publication and task visibility
