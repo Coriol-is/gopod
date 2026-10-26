@@ -11,7 +11,10 @@ Core Telegram assistant, Docker runtime, Claude/Codex native sessions,
 conversation-scoped history, memory, voice, scheduler and filesystem IPC are
 implemented. No other runtime, channel, guest agent or bot-to-bot peer is enabled.
 
-Reference Pi runs application **01c18fe**, deployed 2026-10-25 20:35 UTC.
+Reference Pi runs application **c82399b**, deployed 2026-10-26 21:03 UTC.
+[CP-020 P0 rollout](deployments/2026-10-26-isolation-p0.md) blocks unqualified
+non-owner runtimes and pending IPC; only the personal owner runtime is active.
+Full group isolation and re-enablement remain pending.
 [Private-login rollout](deployments/2026-10-25-01c18fe.md): group auth now requires
 private owner confirmation, preserving the group target/tier. Actual client login
 visibility remains A20; no account login was performed by rollout.
@@ -172,7 +175,7 @@ New non-owner agent files use matching restricted templates for both providers;
 existing files remain preserved and cannot enable execution. These templates are
 dormant until later immutable runtime policy qualification. No group re-enablement
 or full filesystem/credential/network isolation is claimed. PRs 2–6 remain open.
-Production activation/evidence is recorded separately.
+Production activation and evidence: [P0 rollout](deployments/2026-10-26-isolation-p0.md).
 The prior audit confirmed personal vault RO/global credential env exposure, plus
 synthetic host-bind symlink escape and IPC basename leakage. Account connectors
 need a real credential/network boundary, not only CLI flags. P0 containment
