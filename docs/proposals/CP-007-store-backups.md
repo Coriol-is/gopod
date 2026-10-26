@@ -8,23 +8,26 @@
 | Size | M |
 | Touches | `deploy/` (new: systemd unit + timer + script) or `docker-compose.yml` sidecar, `README.md` production section |
 | Depends on | — |
+| Plan | [Implementation slices](../superpowers/plans/2026-10-26-reliability-operations.md) |
 | Spec | [Design](../superpowers/specs/2026-10-26-matched-store-backups.md) |
 
 ## Problem
 `data/store.sqlite` (chats, messages, turns, memory, vectors) and `data/sessions/` (Claude and Codex session state, auth) exist in one copy on the Pi. Several manual online database snapshots now exist (see dated deployment reports), but no scheduled backup/retention or restore drill is established by repository evidence.
 
 ## Proposal
-A `deploy/backup.sh` that takes an online SQLite snapshot (`sqlite3 .backup` or the Python fallback already used in ops) plus a tar of `sessions/` and `chats/`, rotated daily/weekly, run by a systemd timer; README documents restore. `restic` optional for off-host copies. `/healthz` from observability O2 is wired into `docker-compose.yml` as a healthcheck in the same change.
+Separate database-only SQLite API snapshots from full matched backups. The first full mode
+uses a host-only admission fence and verified stopped writers, then private manifest-based
+DB/workspace/session/auth capture. Offline validation and startup quarantine precede any
+activation. Timer stays off until a restore drill and accepted maintenance window are qualified.
 
 ## Out of scope
-Backing up the agent images or the repo. Encryption at rest.
+Automatic cloud uploads, image/repository byte copies, live credential use and automatic
+production restore. Compose healthchecks are separate from disaster recovery acceptance.
 
-## Risks
-A snapshot taken mid-WAL-checkpoint must use the SQLite backup API, not `cp`; auth files are secrets and the backup location must be `0700`.
-
-## Acceptance
-- Timer fires nightly; `backup.sh` produces a restorable snapshot; a restore drill on a scratch directory opens with `gopod` and lists the same message count.
-- `docker compose ps` shows `healthy` for the gopod service.
+## Risks and acceptance
+Live tar plus SQLite backup is not a matched cut. Tests must prove writer exclusion, protected
+permissions, complete manifest bytes, bounded retention and no effects/poller/auth during scratch
+restore. CP-003 adds a joint artifact-manifest rollout gate without blocking baseline backups.
 
 ## 2026-10-25 reconciliation
 Manual SQLite backups before deployments do not close this proposal. Qualify
