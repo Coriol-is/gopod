@@ -77,9 +77,10 @@ func TestProviderFallbackRejectsForeignAndStaleOffers(t *testing.T) {
 			case "thread":
 				cmd.Caller.ThreadID = 8
 			case "folder":
-				if err := st.RegisterChat(context.Background(), store.RegisteredChat{JID: "tg:100", Folder: "new-owner", AddedAt: 1}); err != nil {
-					t.Fatal(err)
+				if err := st.RegisterChat(context.Background(), store.RegisteredChat{JID: "tg:100", Folder: "new-owner", AddedAt: 1}); !errors.Is(err, store.ErrNamespaceIdentityConflict) {
+					t.Fatalf("registration rebind must fail: %v", err)
 				}
+				return // immutable registration prevents the stale-folder transition itself
 			case "unconfirmed":
 				cmd.Confirmed = false
 			case "no-offer":

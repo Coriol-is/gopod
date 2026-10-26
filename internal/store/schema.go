@@ -22,6 +22,11 @@ import (
 // row in router_state and a migrations runner here. For now everything
 // is additive and IF NOT EXISTS keeps re-runs safe.
 var schemaStatements = []string{
+	`CREATE TABLE IF NOT EXISTS namespace_ownership (
+ folder TEXT PRIMARY KEY, namespace_id TEXT NOT NULL, chat_jid TEXT NOT NULL,
+ namespace_epoch INTEGER NOT NULL, retired INTEGER NOT NULL DEFAULT 0,
+ created_at INTEGER NOT NULL, retired_at INTEGER
+ )`,
 	`CREATE TABLE IF NOT EXISTS ipc_task_requests (
  source_folder TEXT NOT NULL,request_file TEXT NOT NULL,payload_hash TEXT NOT NULL,
  result_json BLOB NOT NULL,created_at INTEGER NOT NULL, archived INTEGER NOT NULL DEFAULT 0,
@@ -203,6 +208,10 @@ var schemaStatements = []string{
 // tables. SQLite doesn't support IF NOT EXISTS for columns, so we
 // run each one and ignore "duplicate column name" errors.
 var migrations = []string{
+	`ALTER TABLE registered_chats ADD COLUMN namespace_id TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE registered_chats ADD COLUMN namespace_epoch INTEGER NOT NULL DEFAULT 1`,
+	`ALTER TABLE registered_chats ADD COLUMN registration_revision INTEGER NOT NULL DEFAULT 1`,
+	`ALTER TABLE registered_chats ADD COLUMN group_epoch_ready INTEGER NOT NULL DEFAULT 0`,
 	// Phase C: memory lifecycle fields.
 	`ALTER TABLE memories ADD COLUMN status TEXT DEFAULT 'active'`,
 	`ALTER TABLE memories ADD COLUMN superseded_by INTEGER`,
@@ -234,7 +243,7 @@ func (s *Store) applySchema(ctx context.Context) error {
 			}
 		}
 	}
-	return nil
+	return s.initializeNamespaceMetadata(ctx)
 }
 
 func isDuplicateColumn(err error) bool {

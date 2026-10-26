@@ -151,6 +151,7 @@ func TestGetByFolder(t *testing.T) {
 
 	if err := st.RegisterChat(ctx, RegisteredChat{
 		JID:     "1001",
+		IsOwner: true,
 		Name:    "Owner",
 		Folder:  "owner",
 		AddedAt: 1700000000000,

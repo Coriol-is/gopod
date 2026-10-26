@@ -19,13 +19,17 @@ var folderPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
 // container for. Chats gopod has merely *seen* (chats table) are
 // not the same thing as chats it is *registered* with.
 type RegisteredChat struct {
-	JID             string
-	Name            string
-	Folder          string
-	TriggerPattern  string
-	RequiresTrigger bool
-	IsOwner         bool
-	AddedAt         int64 // unix ms
+	JID                  string
+	Name                 string
+	Folder               string
+	TriggerPattern       string
+	RequiresTrigger      bool
+	IsOwner              bool
+	AddedAt              int64 // unix ms
+	NamespaceID          string
+	NamespaceEpoch       int64
+	RegistrationRevision int64
+	GroupEpochReady      bool // clean epoch completed by host; not a runtime qualification grant
 }
 
 // ErrChatNotRegistered is returned by GetRegistered when no row exists.
@@ -33,9 +37,8 @@ var ErrChatNotRegistered = errors.New("store: chat not registered")
 
 // RegisterChat inserts or updates a registered_chats row.
 //
-// Idempotent on jid: re-registering an existing chat updates the
-// folder, name, trigger fields, and is_owner flag, but preserves the
-// original added_at so the registration history stays meaningful.
+// Idempotent metadata updates preserve namespace, folder, owner flag and AddedAt.
+// Workspace transfer is forbidden; explicit clean epoch migration is separate.
 //
 // folder must match folderPattern (the same regex mountsec uses for
 // AllowedChats entries) so registered chat folders can never become
@@ -52,55 +55,51 @@ func (s *Store) RegisterChat(ctx context.Context, c RegisteredChat) error {
 		return errors.New("store: RegisterChat: AddedAt is zero")
 	}
 
-	const stmt = `
-		INSERT INTO registered_chats (
-		  jid, name, folder, trigger_pattern, requires_trigger, is_owner, added_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(jid) DO UPDATE SET
-		  name             = excluded.name,
-		  folder           = excluded.folder,
-		  trigger_pattern  = excluded.trigger_pattern,
-		  requires_trigger = excluded.requires_trigger,
-		  is_owner         = excluded.is_owner`
-
-	if _, err := s.db.ExecContext(ctx, stmt,
-		c.JID,
-		nullableString(c.Name),
-		c.Folder,
-		nullableString(c.TriggerPattern),
-		boolToInt(c.RequiresTrigger),
-		boolToInt(c.IsOwner),
-		c.AddedAt,
-	); err != nil {
+	if c.Folder == "owner" && !c.IsOwner {
+		return errors.New("store: reserved personal workspace")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var old RegisteredChat
+	old, err = readRegistered(ctx, tx, "jid = ?", c.JID)
+	if err == nil {
+		if old.Folder != c.Folder || old.IsOwner != c.IsOwner {
+			return ErrNamespaceIdentityConflict
+		}
+		if old.Name == c.Name && old.TriggerPattern == c.TriggerPattern && old.RequiresTrigger == c.RequiresTrigger {
+			return tx.Commit()
+		}
+		_, err = tx.ExecContext(ctx, `UPDATE registered_chats SET name=?,trigger_pattern=?,requires_trigger=?,registration_revision=registration_revision+1 WHERE jid=?`, nullableString(c.Name), nullableString(c.TriggerPattern), boolToInt(c.RequiresTrigger), c.JID)
+	} else if errors.Is(err, ErrChatNotRegistered) {
+		var claimed int
+		if err = tx.QueryRowContext(ctx, `SELECT count(*) FROM namespace_ownership WHERE folder=?`, c.Folder).Scan(&claimed); err != nil {
+			return err
+		}
+		if claimed != 0 {
+			return ErrNamespaceIdentityConflict
+		}
+		id, e := newNamespaceID()
+		if e != nil {
+			return e
+		}
+		_, err = tx.ExecContext(ctx, `INSERT INTO registered_chats(jid,name,folder,trigger_pattern,requires_trigger,is_owner,added_at,namespace_id,namespace_epoch,registration_revision,group_epoch_ready) VALUES(?,?,?,?,?,?,?,?,1,1,0)`, c.JID, nullableString(c.Name), c.Folder, nullableString(c.TriggerPattern), boolToInt(c.RequiresTrigger), boolToInt(c.IsOwner), c.AddedAt, id)
+		if err == nil {
+			_, err = tx.ExecContext(ctx, `INSERT INTO namespace_ownership(folder,namespace_id,chat_jid,namespace_epoch,created_at) VALUES(?,?,?,1,?)`, c.Folder, id, c.JID, c.AddedAt)
+		}
+	}
+	if err != nil {
 		return fmt.Errorf("store: RegisterChat: %w", err)
 	}
-	return nil
+	return tx.Commit()
 }
 
 // GetRegistered fetches one registered chat by jid. Returns
 // ErrChatNotRegistered if no row exists.
 func (s *Store) GetRegistered(ctx context.Context, jid string) (RegisteredChat, error) {
-	const q = `
-		SELECT jid, IFNULL(name, ''), folder, IFNULL(trigger_pattern, ''),
-		       requires_trigger, is_owner, added_at
-		  FROM registered_chats
-		 WHERE jid = ?`
-
-	var c RegisteredChat
-	var requiresTrigger, isOwner int
-	err := s.db.QueryRowContext(ctx, q, jid).Scan(
-		&c.JID, &c.Name, &c.Folder, &c.TriggerPattern,
-		&requiresTrigger, &isOwner, &c.AddedAt,
-	)
-	if errors.Is(err, sql.ErrNoRows) {
-		return RegisteredChat{}, ErrChatNotRegistered
-	}
-	if err != nil {
-		return RegisteredChat{}, fmt.Errorf("store: GetRegistered: %w", err)
-	}
-	c.RequiresTrigger = requiresTrigger != 0
-	c.IsOwner = isOwner != 0
-	return c, nil
+	return readRegistered(ctx, s.taskDB(ctx), "jid = ?", jid)
 }
 
 // IsRegistered is a thin convenience wrapper around GetRegistered for
@@ -119,61 +118,44 @@ func (s *Store) IsRegistered(ctx context.Context, jid string) (bool, error) {
 // GetByFolder returns the registered chat with the given folder name.
 // Returns ErrChatNotRegistered if no chat owns this folder.
 func (s *Store) GetByFolder(ctx context.Context, folder string) (RegisteredChat, error) {
-	const q = `
-		SELECT jid, IFNULL(name, ''), folder, IFNULL(trigger_pattern, ''),
-		       requires_trigger, is_owner, added_at
-		  FROM registered_chats
-		 WHERE folder = ?`
-
-	var c RegisteredChat
-	var requiresTrigger, isOwner int
-	err := s.db.QueryRowContext(ctx, q, folder).Scan(
-		&c.JID, &c.Name, &c.Folder, &c.TriggerPattern,
-		&requiresTrigger, &isOwner, &c.AddedAt,
-	)
-	if errors.Is(err, sql.ErrNoRows) {
-		return RegisteredChat{}, ErrChatNotRegistered
-	}
-	if err != nil {
-		return RegisteredChat{}, fmt.Errorf("store: GetByFolder: %w", err)
-	}
-	c.RequiresTrigger = requiresTrigger != 0
-	c.IsOwner = isOwner != 0
-	return c, nil
+	return readRegistered(ctx, s.taskDB(ctx), "folder = ?", folder)
 }
 
 // ListRegistered returns every registered chat ordered by added_at
 // (oldest first). Cheap on personal-assistant scale; if it ever needs
 // pagination it's a self-contained refactor.
 func (s *Store) ListRegistered(ctx context.Context) ([]RegisteredChat, error) {
-	const q = `
-		SELECT jid, IFNULL(name, ''), folder, IFNULL(trigger_pattern, ''),
-		       requires_trigger, is_owner, added_at
-		  FROM registered_chats
-		 ORDER BY added_at ASC`
-
-	rows, err := s.db.QueryContext(ctx, q)
+	rows, err := s.taskDB(ctx).QueryContext(ctx, registeredColumns+" ORDER BY added_at ASC")
 	if err != nil {
 		return nil, fmt.Errorf("store: ListRegistered: %w", err)
 	}
 	defer rows.Close()
-
 	var out []RegisteredChat
 	for rows.Next() {
-		var c RegisteredChat
-		var requiresTrigger, isOwner int
-		if err := rows.Scan(
-			&c.JID, &c.Name, &c.Folder, &c.TriggerPattern,
-			&requiresTrigger, &isOwner, &c.AddedAt,
-		); err != nil {
-			return nil, fmt.Errorf("store: ListRegistered: scan: %w", err)
+		c, e := scanRegistered(rows)
+		if e != nil {
+			return nil, e
 		}
-		c.RequiresTrigger = requiresTrigger != 0
-		c.IsOwner = isOwner != 0
 		out = append(out, c)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: ListRegistered: rows: %w", err)
+	return out, rows.Err()
+}
+
+const registeredColumns = `SELECT jid, IFNULL(name,''),folder,IFNULL(trigger_pattern,''),requires_trigger,is_owner,added_at,namespace_id,namespace_epoch,registration_revision,group_epoch_ready FROM registered_chats`
+
+type registeredScanner interface{ Scan(...any) error }
+
+func scanRegistered(row registeredScanner) (RegisteredChat, error) {
+	var c RegisteredChat
+	var trigger, owner, ready int
+	err := row.Scan(&c.JID, &c.Name, &c.Folder, &c.TriggerPattern, &trigger, &owner, &c.AddedAt, &c.NamespaceID, &c.NamespaceEpoch, &c.RegistrationRevision, &ready)
+	c.RequiresTrigger, c.IsOwner, c.GroupEpochReady = trigger != 0, owner != 0, ready != 0
+	return c, err
+}
+func readRegistered(ctx context.Context, q taskSQL, predicate string, value any) (RegisteredChat, error) {
+	c, err := scanRegistered(q.QueryRowContext(ctx, registeredColumns+" WHERE "+predicate, value))
+	if errors.Is(err, sql.ErrNoRows) {
+		return RegisteredChat{}, ErrChatNotRegistered
 	}
-	return out, nil
+	return c, err
 }
