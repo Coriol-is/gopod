@@ -6,8 +6,8 @@
 | Date | 2026-10-05 |
 | Origin | feature survey of `rzaytsev/codex-agent` (2026-10-05) and the 2026-10-03 public-release audit |
 | Size | M |
-| Touches | `internal/ipc` (payload schema), `internal/telegram/ipc_sink.go`, `container/skills` (a `reply` skill or CLAUDE.md instruction) |
-| Depends on | M7 (IPC, done) |
+| Touches | IPC schema, host artifact inventory/snapshot storage, Telegram delivery and reply instructions |
+| Depends on | M7 (IPC, done); CP-002 durable publication; CP-007 matched artifact backup before rollout |
 | Spec | [Design](../superpowers/specs/2026-10-26-immutable-artifact-delivery.md) |
 
 ## Problem

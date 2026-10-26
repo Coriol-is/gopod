@@ -7,7 +7,7 @@
 | Origin | feature survey of `rzaytsev/codex-agent` (2026-10-05) and the 2026-10-03 public-release audit |
 | Size | S–M |
 | Touches | `internal/runner` (compact watcher, extraction), `internal/scheduler`, `internal/telegram/ipc_sink.go`, `internal/config` |
-| Depends on | — |
+| Depends on | Existing cancellation/admission; CP-002 for durable quiet-hour delivery |
 | Spec | [Design](../superpowers/specs/2026-10-26-maintenance-priority-quiet-hours.md) |
 
 ## Problem
