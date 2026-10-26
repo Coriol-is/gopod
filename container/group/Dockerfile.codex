@@ -4,7 +4,7 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 ARG CODEX_VERSION=0.164.0
-RUN npm install -g @openai/codex@${CODEX_VERSION} \
+RUN npm install -g --ignore-scripts "@openai/codex@${CODEX_VERSION}" \
  && npm cache clean --force
 RUN mkdir -p /workspace/inference /etc/gopod-group /home/node/.claude /home/node/.codex \
  && chown -R node:node /home/node/.claude /home/node/.codex

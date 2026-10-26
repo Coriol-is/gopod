@@ -26,7 +26,7 @@ COPY --from=frf-builder /frf /usr/local/bin/frf
 # Pinned for reproducibility; bump deliberately. Check the baked-in
 # version with: docker run --rm --entrypoint codex gopod-agent-codex:latest --version
 ARG CODEX_VERSION=0.164.0
-RUN npm install -g @openai/codex@${CODEX_VERSION} \
+RUN npm install -g --ignore-scripts "@openai/codex@${CODEX_VERSION}" \
  && npm cache clean --force
 
 RUN mkdir -p /workspace/chat /workspace/memory /workspace/ipc

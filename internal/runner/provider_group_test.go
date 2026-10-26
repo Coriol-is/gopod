@@ -164,6 +164,24 @@ func TestGroupImageMatrixPreservesPersonalAndExcludesPersonalTools(t *testing.T)
 		if err != nil {
 			t.Fatal(err)
 		}
+		// The profile split preserves all personal contents and commands except
+		// the shared supply-chain hardening that disables npm lifecycle scripts.
+		for _, pair := range [][2]string{
+			{"npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}", `npm install -g --ignore-scripts "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"`},
+			{"npm install -g @openai/codex@${CODEX_VERSION}", `npm install -g --ignore-scripts "@openai/codex@${CODEX_VERSION}"`},
+		} {
+			old = bytes.ReplaceAll(old, []byte(pair[0]), []byte(pair[1]))
+		}
+		if suffix == "" {
+			nativeLink := ` && native_arch="$(node -p process.arch)" \
+ && case "$native_arch" in arm64|x64) ;; *) exit 1 ;; esac \
+ && native_binary="/usr/local/lib/node_modules/@anthropic-ai/claude-code/node_modules/@anthropic-ai/claude-code-linux-${native_arch}/claude" \
+ && test -x "$native_binary" \
+ && ln -sf "$native_binary" /usr/local/bin/claude \
+ && test "$(claude --version)" = "${CLAUDE_CODE_VERSION} (Claude Code)" \
+ && npm cache clean --force`
+			old = bytes.ReplaceAll(old, []byte(" && npm cache clean --force"), []byte(nativeLink))
+		}
 		if !bytes.Equal(old, personal) {
 			t.Error("personal image behavior changed")
 		}

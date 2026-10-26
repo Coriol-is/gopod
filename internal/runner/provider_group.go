@@ -35,31 +35,58 @@ type GroupProvider struct {
 }
 
 func NewGroupProvider(base AgentProvider, cfg GroupProviderConfig) (*GroupProvider, error) {
-	if base == nil || (base.Name() != "claude" && base.Name() != "codex") {
-		return nil, errors.New("group provider: unsupported native provider")
-	}
-	switch base.(type) {
-	case *ClaudeProvider, *CodexProvider:
-	default:
-		return nil, errors.New("group provider: pinned native adapter required")
+	if err := validateGroupNativeBase(base); err != nil {
+		return nil, err
 	}
 	if cfg.Image == "" || cfg.Image == base.Image() {
 		return nil, errors.New("group provider: explicit separate group image required")
 	}
-	u, err := url.Parse(cfg.MCPURL)
-	if err != nil || u.Scheme != "http" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Hostname() != "gopod-relay" || u.Port() != "8787" || u.RawPath != "" {
-		return nil, errors.New("group provider: fixed relay endpoint required")
+	endpoint, err := groupRelayEndpoint(cfg.MCPURL)
+	if err != nil {
+		return nil, err
 	}
-	cap, ok := strings.CutPrefix(u.Path, "/mcp/")
-	if !ok || len(cap) < 32 || len(cap) > 128 {
-		return nil, errors.New("group provider: invalid endpoint capability")
-	}
-	for _, c := range cap {
-		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_') {
-			return nil, errors.New("group provider: invalid endpoint capability")
+	return &GroupProvider{AgentProvider: base, image: cfg.Image, mcpURL: endpoint}, nil
+}
+func validateGroupNativeBase(base AgentProvider) error {
+	switch p := base.(type) {
+	case *ClaudeProvider:
+		if p != nil {
+			return nil
+		}
+	case *CodexProvider:
+		if p != nil {
+			return nil
 		}
 	}
-	return &GroupProvider{AgentProvider: base, image: cfg.Image, mcpURL: u.String()}, nil
+	return errors.New("group provider: pinned native adapter required")
+}
+func groupRelayEndpoint(raw string) (string, error) {
+	u, err := url.Parse(raw)
+	if err != nil || !fixedGroupRelayURL(u) {
+		return "", errors.New("group provider: fixed relay endpoint required")
+	}
+	capability, ok := strings.CutPrefix(u.Path, "/mcp/")
+	if !ok || !validGroupCapability(capability) {
+		return "", errors.New("group provider: invalid endpoint capability")
+	}
+	return u.String(), nil
+}
+func fixedGroupRelayURL(u *url.URL) bool {
+	return u.Scheme == "http" && u.User == nil && u.RawQuery == "" && u.Fragment == "" && u.Hostname() == "gopod-relay" && u.Port() == "8787" && u.RawPath == ""
+}
+func validGroupCapability(capability string) bool {
+	if len(capability) < 32 || len(capability) > 128 {
+		return false
+	}
+	for _, c := range capability {
+		if !groupCapabilityRune(c) {
+			return false
+		}
+	}
+	return true
+}
+func groupCapabilityRune(c rune) bool {
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '_'
 }
 
 func (p *GroupProvider) Image() string             { return p.image }

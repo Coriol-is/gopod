@@ -155,3 +155,9 @@ acceptance gates. Official controls: [Claude CLI](https://code.claude.com/docs/e
 [Claude MCP/connector settings](https://code.claude.com/docs/en/mcp),
 [Codex MCP settings](https://learn.chatgpt.com/docs/extend/mcp) and
 [Codex configuration](https://learn.chatgpt.com/docs/config-file/config-reference).
+
+Profile image npm installs disable package lifecycle scripts. Claude 2.1.310 ships
+an executable placeholder in the wrapper package, so the reviewed Docker build
+links `claude` directly to the installed pinned Linux optional-package binary,
+checks the supported architecture and verifies its version. No upstream installer
+script is run manually. Missing native packages or version mismatches fail build.
