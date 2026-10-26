@@ -31,6 +31,13 @@ jobs:
         run: |
           npm install --prefix "$RUNNER_TEMP/isolation-cli" @anthropic-ai/claude-code@2.1.310 @openai/codex@0.164.0
           echo "$RUNNER_TEMP/isolation-cli/node_modules/.bin" >> "$GITHUB_PATH"
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Qualify production group native policy (no accounts or inference)
+        env:
+          GOPOD_GROUP_NATIVE_TEST: '1'
+        run: go test ./internal/runner -run '^TestGroupNativeInventory' -count=1
       - name: Preload synthetic tool image
         run: |
           docker pull node@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d

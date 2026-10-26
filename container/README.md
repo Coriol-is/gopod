@@ -115,3 +115,43 @@ every agent turn is a fresh `docker exec ... claude ...` invocation
 driven by the host Go runner. There is no `entrypoint.sh` — if
 bootstrapping grows beyond one line, a real entrypoint lands next to
 the Dockerfile.
+
+## Personal and group build sets (CP-020)
+
+`container/personal/Dockerfile{,.codex}` preserves the existing personal contents
+and tags. `container/group/Dockerfile{,.codex}` builds separate trusted inference
+images, with pinned CLIs and CA roots but no FreeFeed CLI, curl, git, ripgrep,
+private skills or personal configuration. Neither group image inherits a personal
+final image. Build all four from the repository root with:
+
+```sh
+./container/build-profiles.sh
+```
+
+Group tags are `gopod-agent-group:latest` and `gopod-agent-group-codex:latest`.
+These names do not authorize group admission: the controller requires qualified
+namespace policy, exact image/client identities, protected state/policy mounts,
+scoped external MCP tools and enforced inference-only network routes.
+
+The trusted native CLI sees only its own fresh session state and a synthetic
+`/workspace/inference` directory. Actual group files are available only to the
+separate credential-free tool sandbox. Fixed policy files are controller-owned
+read-only binds; upstream native auth is a separate read-only file grant, never
+an inherited personal HOME or a fallback API key. No image includes credentials.
+The proxy CA is mounted at `/etc/gopod-group/ca.crt`; proxy credentials and the
+namespace-bound MCP capability are minted by the host, never chosen by a prompt.
+
+Pinned-CLI offline qualification uses synthetic localhost model/MCP servers and
+fresh temporary HOME/CODEX_HOME; no real authentication or inference is used:
+
+```sh
+GOPOD_GROUP_NATIVE_TEST=1 go test ./internal/runner -run '^TestGroupNativeInventory' -count=1
+```
+
+This checks actual new/resume tool inventories, successful approved MCP calls and
+rejection of model-requested native Bash/exec_command. It does not prove the live
+subscription, image network policy or route allowlist; those are separate runtime
+acceptance gates. Official controls: [Claude CLI](https://code.claude.com/docs/en/cli-reference),
+[Claude MCP/connector settings](https://code.claude.com/docs/en/mcp),
+[Codex MCP settings](https://learn.chatgpt.com/docs/extend/mcp) and
+[Codex configuration](https://learn.chatgpt.com/docs/config-file/config-reference).
