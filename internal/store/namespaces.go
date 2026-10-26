@@ -115,19 +115,24 @@ func validateOwnership(ctx context.Context, q taskSQL, ref ScopeRef) error {
 // SnapshotScope and ValidateScope enlist an existing Store task transaction from
 // ctx. They never start a nested transaction or use another SQLite connection.
 func (s *Store) SnapshotScope(ctx context.Context, folder string) (ScopeRef, error) {
-	c, err := readRegistered(ctx, s.taskDB(ctx), "folder = ?", folder)
-	if errors.Is(err, ErrChatNotRegistered) {
-		return ScopeRef{}, ErrStaleScope
+	if tx, ok := s.taskDB(ctx).(*sql.Tx); ok {
+		return s.SnapshotScopeTx(ctx, tx, folder)
 	}
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return ScopeRef{}, err
 	}
-	ref := c.Scope()
-	if err = validateOwnership(ctx, s.taskDB(ctx), ref); err != nil {
+	defer tx.Rollback()
+	ref, err := s.SnapshotScopeTx(ctx, tx, folder)
+	if err != nil {
+		return ScopeRef{}, err
+	}
+	if err = tx.Commit(); err != nil {
 		return ScopeRef{}, err
 	}
 	return ref, nil
 }
+
 func (s *Store) ValidateScope(ctx context.Context, expected ScopeRef) error {
 	got, err := s.SnapshotScope(ctx, expected.Folder)
 	if err != nil {
@@ -146,6 +151,9 @@ func (s *Store) SnapshotScopeTx(ctx context.Context, tx *sql.Tx, folder string) 
 		return ScopeRef{}, ErrStaleScope
 	}
 	c, err := readRegistered(ctx, tx, "folder = ?", folder)
+	if errors.Is(err, ErrChatNotRegistered) {
+		return ScopeRef{}, ErrStaleScope
+	}
 	if err != nil {
 		return ScopeRef{}, err
 	}

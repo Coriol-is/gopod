@@ -77,10 +77,27 @@ func TestProviderFallbackRejectsForeignAndStaleOffers(t *testing.T) {
 			case "thread":
 				cmd.Caller.ThreadID = 8
 			case "folder":
-				if err := st.RegisterChat(context.Background(), store.RegisteredChat{JID: "tg:100", Folder: "new-owner", AddedAt: 1}); !errors.Is(err, store.ErrNamespaceIdentityConflict) {
-					t.Fatalf("registration rebind must fail: %v", err)
+				ctx := context.Background()
+				if err := st.RegisterChat(ctx, store.RegisteredChat{JID: "tg:-200", Folder: "group", AddedAt: 1}); err != nil {
+					t.Fatal(err)
 				}
-				return // immutable registration prevents the stale-folder transition itself
+				id, _, err := st.InsertTurn(ctx, store.Turn{Source: "telegram", SourceID: "-200:42", ChatFolder: "group", ChatID: -200, TGMessageID: 42, ThreadID: 7, Text: "group request"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err = st.SetState(ctx, QuotaOfferKey(id), "claude"); err != nil {
+					t.Fatal(err)
+				}
+				cmd.Args[0] = strconv.FormatInt(id, 10)
+				cmd.Caller.ChatID = -200
+				cmd.Caller.IsOwner = false
+				registered, err := st.GetRegistered(ctx, "tg:-200")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err = st.RotateGroupEpoch(ctx, registered.JID, registered.RegistrationRevision); err != nil {
+					t.Fatal(err)
+				}
 			case "unconfirmed":
 				cmd.Confirmed = false
 			case "no-offer":
