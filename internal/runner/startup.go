@@ -24,6 +24,10 @@ func (r *Runner) StartupCheck(ctx context.Context, folder string, tier Tier, all
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	report = StartupReport{Container: "unknown", CLI: "unknown", Auth: "unknown"}
+	if err := r.authorizeProfile(ctx, folder); err != nil {
+		report.Container = "profile_unavailable"
+		return report
+	}
 	release, err := r.acquireAgentSlot(ctx, folder)
 	if err != nil {
 		report.Container = startupFailure(ctx)

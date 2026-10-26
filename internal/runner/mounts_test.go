@@ -220,9 +220,9 @@ func TestBuildMountsRegistered(t *testing.T) {
 		t.Fatalf("BuildMounts: %v", err)
 	}
 
-	// Registered (non-owner) = 6 baseline mounts, no project/.env/store.
-	if len(ms) != 6 {
-		t.Errorf("len(mounts) = %d, want 6\n%#v", len(ms), ms)
+	// Registered (non-owner) = 5 namespace-local mounts, no project/.env/store.
+	if len(ms) != 5 {
+		t.Errorf("len(mounts) = %d, want 5\n%#v", len(ms), ms)
 	}
 	sawCodex := false
 	for _, m := range ms {
@@ -312,26 +312,10 @@ func TestBuildMountsAllowlistExtras(t *testing.T) {
 	if err != nil {
 		t.Fatalf("alice BuildMounts: %v", err)
 	}
-	var aliceCode, aliceDl bool
 	for _, m := range aliceMounts {
-		if m.Target == "/workspace/extra/code" {
-			aliceCode = true
-			if !m.ReadOnly {
-				t.Error("alice code mount should be RO (ro entry + non_owner_read_only=true)")
-			}
+		if m.Source == codeDir || m.Source == dlDir {
+			t.Errorf("non-owner inherited personal extra: %s", m.Target)
 		}
-		if m.Target == "/workspace/extra/downloads" {
-			aliceDl = true
-			if m.ReadOnly {
-				t.Error("alice downloads mount should be RW (rw entry + non_owner_read_only=false)")
-			}
-		}
-	}
-	if !aliceCode {
-		t.Error("alice missing /workspace/extra/code")
-	}
-	if !aliceDl {
-		t.Error("alice missing /workspace/extra/downloads")
 	}
 }
 
@@ -356,4 +340,35 @@ func contains(s, sub string) bool {
 		}
 	}
 	return false
+}
+
+func TestRestrictedMountsExcludeAllPersonalSources(t *testing.T) {
+	p := mkPaths(t)
+	p.ObsidianVault = filepath.Join(t.TempDir(), "private-vault")
+	al := &mountsec.Allowlist{Version: 1, ExtraMounts: []mountsec.ExtraMount{
+		{HostPath: p.RepoRoot, ContainerPath: "/workspace/extra/private", Mode: "ro", AllowedChats: []string{"*"}},
+		{HostPath: p.ObsidianVault, ContainerPath: "/workspace/extra/vault", Mode: "rw", AllowedChats: []string{"group"}},
+	}}
+	ms, err := BuildMounts(p, "group", TierRegistered, al)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range ms {
+		if m.Source == p.ObsidianVault || m.Source == p.RepoRoot || m.Source == p.ContainerSkillsDir || m.Source == filepath.Join(p.DataDir, "store.sqlite") {
+			t.Errorf("personal mount: %#v", m)
+		}
+	}
+	owner, err := BuildMounts(p, "owner", TierOwner, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, m := range owner {
+		if m.Source == p.ObsidianVault && !m.ReadOnly {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("owner vault behavior regressed")
+	}
 }

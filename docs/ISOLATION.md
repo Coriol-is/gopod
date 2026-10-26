@@ -1,5 +1,13 @@
 # gopod — Container isolation policy
 
+> CP-020 P0 (2026-10-26) supersedes permissive non-owner behavior below:
+> only the host-verified configured owner private registration can run agents.
+> All other profiles and their pending IPC are unavailable until qualified.
+> Non-owner builders omit personal vault, shared skills, legacy extras and global
+> credential env. Historical tier/allowlist descriptions below are not permission
+> to re-enable groups. See the [current contract](superpowers/specs/2026-10-25-personal-group-container-isolation.md).
+
+
 > Companion docs: [ARCHITECTURE.md](ARCHITECTURE.md) · [DECISIONS.md](DECISIONS.md) · [SKILLS.md](SKILLS.md)
 > Decision: [D013](DECISIONS.md)
 

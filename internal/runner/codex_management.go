@@ -53,12 +53,20 @@ func (r *Runner) managementCheck(ctx context.Context, folder string, inspect fun
 	ctx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
 	report := ManagementReport{Auth: "unknown", Quota: "unknown", ErrorClass: "none", Inference: "unverified", CheckedAt: time.Now().UTC()}
+	if err := r.authorizeProfile(ctx, folder); err != nil {
+		report.ErrorClass = "profile_unavailable"
+		return report
+	}
 	release, err := r.acquireAgentSlot(ctx, folder)
 	if err != nil {
 		report.ErrorClass = managementFailure(ctx)
 		return report
 	}
 	defer release()
+	if err := r.authorizeProfile(ctx, folder); err != nil {
+		report.ErrorClass = "profile_unavailable"
+		return report
+	}
 	if r.selectionBlocked(folder) {
 		report.ErrorClass = "selection_blocked"
 		return report

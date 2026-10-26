@@ -96,7 +96,7 @@ func TestCodexManagementBoundsAndCanceled(t *testing.T) {
 	}
 }
 func TestManagementCheckSelectedProviderAndSlot(t *testing.T) {
-	r := &Runner{provider: NewClaudeProvider("")}
+	r := &Runner{profilePolicy: testPersonalPolicy(), provider: NewClaudeProvider("")}
 	r.RestoreChatProvider("owner", NewCodexProvider(""))
 	called := 0
 	inspect := func(ctx context.Context) (string, error) {

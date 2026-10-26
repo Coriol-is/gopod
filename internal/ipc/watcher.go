@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"syscall"
 )
 
 // tickOnce sweeps every <DataDir>/ipc/<chat>/{messages,tasks} dir
@@ -39,6 +40,9 @@ func (w *Watcher) tickOnce(ctx context.Context) {
 // handleFolder sweeps a single chat's IPC channels: dispatches
 // pending messages and prunes the .processed/.failed sidecars.
 func (w *Watcher) handleFolder(ctx context.Context, folder string) {
+	if w.cfg.NamespaceAllowed != nil && !w.cfg.NamespaceAllowed(ctx, folder) {
+		return
+	}
 	if w.handleFolderHook != nil {
 		w.handleFolderHook(ctx, folder)
 		return
@@ -110,12 +114,31 @@ func (w *Watcher) processChannel(ctx context.Context, folder, channel string,
 	handler func(ctx context.Context, folder, path string) bool,
 ) {
 	dir := filepath.Join(w.cfg.DataDir, "ipc", folder, channel)
-	entries, err := os.ReadDir(dir)
+	// Never enumerate a path first and validate its content later: filenames
+	// themselves are private metadata. The rooted open prevents traversal out
+	// of the namespace, and NOFOLLOW rejects a substituted channel symlink
+	// (including one pointing to another directory inside this namespace).
+	root, err := w.openNamespace(folder)
+	if err != nil {
+		return
+	}
+	defer root.Close()
+	f, err := root.OpenFile(channel, os.O_RDONLY|syscall.O_NONBLOCK|syscall.O_NOFOLLOW, 0)
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
-			w.log.Warn("ipc: readdir channel",
-				"folder", folder, "channel", channel, "err", err)
+			w.log.Warn("ipc: unsafe or unreadable channel", "folder", folder, "channel", channel)
 		}
+		return
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil || !info.IsDir() {
+		w.log.Warn("ipc: channel must be a directory", "folder", folder, "channel", channel)
+		return
+	}
+	entries, err := f.ReadDir(-1)
+	if err != nil {
+		w.log.Warn("ipc: readdir channel failed", "folder", folder, "channel", channel)
 		return
 	}
 	names := make([]string, 0, len(entries))

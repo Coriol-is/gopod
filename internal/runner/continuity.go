@@ -55,11 +55,17 @@ func (r *Runner) SwitchChatProviderIfCurrent(ctx context.Context, folder, expect
 }
 
 func (r *Runner) switchChatProvider(ctx context.Context, folder, expected string, p AgentProvider) error {
+	if err := r.authorizeProfile(ctx, folder); err != nil {
+		return err
+	}
 	release, err := r.acquireAgentSlot(ctx, folder)
 	if err != nil {
 		return err
 	}
 	defer release()
+	if err := r.authorizeProfile(ctx, folder); err != nil {
+		return err
+	}
 	r.lockChat(folder)
 	defer r.unlockChat(folder)
 	if err := ctx.Err(); err != nil {

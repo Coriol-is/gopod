@@ -181,3 +181,31 @@ func TestSchedulingGuideAddedToExistingCustomWorkspace(t *testing.T) {
 		}
 	}
 }
+
+func TestRestrictedProfileParityAndNoPersonalInstructions(t *testing.T) {
+	chatDir, memoryDir := setupDirs(t)
+	if _, err := Seed(chatDir, memoryDir, Vars{ChatFolder: "group"}); err != nil {
+		t.Fatal(err)
+	}
+	a, err := os.ReadFile(filepath.Join(chatDir, "AGENTS.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := os.ReadFile(filepath.Join(chatDir, "CLAUDE.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(a) != string(c) {
+		t.Fatal("provider policies differ")
+	}
+	for _, want := range []string{"group-v1", "visible to all participants", "confirm the existence", "Never retain authentication", "host-approved private transport"} {
+		if !strings.Contains(string(a), want) {
+			t.Errorf("missing privacy rule %q", want)
+		}
+	}
+	for _, denied := range []string{"/workspace/vault", "personal assistant", "treat every request as coming from them", "Bash**"} {
+		if strings.Contains(string(a), denied) {
+			t.Errorf("personal policy leaked: %q", denied)
+		}
+	}
+}

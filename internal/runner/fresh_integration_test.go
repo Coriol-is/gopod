@@ -37,7 +37,7 @@ func TestIntegrationFreshPreemptionKillsProcess(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = d.Remove(context.Background(), id) })
-	r := &Runner{ex: d, provider: sleepingSystemProvider{NewClaudeProvider(img)}, log: testLogger()}
+	r := &Runner{profilePolicy: testPersonalPolicy(), ex: d, provider: sleepingSystemProvider{NewClaudeProvider(img)}, log: testLogger()}
 	r.ensureFn = func(context.Context, string, Tier, *mountsec.Allowlist) (string, error) { return id, nil }
 	done := make(chan error, 1)
 	go func() { _, err := r.RunFresh(ctx, "chat", TierRegistered, nil, "ignored"); done <- err }()

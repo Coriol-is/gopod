@@ -43,7 +43,7 @@ func newGatedRunner(t *testing.T, max int) *gatedRunner {
 		}
 		return nil
 	}
-	g.r = &Runner{
+	g.r = &Runner{profilePolicy: testPersonalPolicy(),
 		ex:             g.fx,
 		provider:       NewClaudeProvider("img"),
 		log:            quietLog(),
