@@ -10,6 +10,7 @@
 | Touches | task/run store, status UI, provider result adapters |
 | Depends on | CP-004 session scope; CP-002 delivery states |
 | Spec | [Design](../superpowers/specs/2026-10-26-task-outcomes-checkpoints.md) |
+| Plan | [Task reliability plan](../superpowers/plans/2026-10-26-reliability-tasks.md) |
 
 ## Problem
 
@@ -41,3 +42,10 @@ needs explicit operator procedures.
   blindly replay effects.
 - Foreign namespace IDs, forged verification fields and oversized checkpoints fail closed;
   streaming remains usable on both providers.
+
+## 2026-10-26 source-backed refinement
+
+The linked spec and plan now define the bounded initial Go slice, concrete
+run/attempt identity, source/provider resolution boundary, crash/non-replay
+policy and migration gates. Status stays proposed/design-only. Saving this plan
+does not enable the feature, change live schedules or authorize implementation.

@@ -10,6 +10,7 @@
 | Touches | scheduler admission, schedule store, tasks panel |
 | Depends on | CP-015 existing scheduling; CP-021 outcome authority; CP-002 reliable notices |
 | Spec | [Design](../superpowers/specs/2026-10-26-schedule-execution-policies.md) |
+| Plan | [Task reliability plan](../superpowers/plans/2026-10-26-reliability-tasks.md) |
 
 ## Problem
 
@@ -41,3 +42,10 @@ expiry require explicit defaults.
 - Clock jumps, DST and multiple overdue times exercise each misfire policy and expiry.
 - A literal reminder reaches fake Telegram with zero provider invocations; no early main-slot
   acknowledgement counts as completion.
+
+## 2026-10-26 source-backed refinement
+
+The linked spec and plan now define the bounded initial Go slice, concrete
+run/attempt identity, source/provider resolution boundary, crash/non-replay
+policy and migration gates. Status stays proposed/design-only. Saving this plan
+does not enable the feature, change live schedules or authorize implementation.
