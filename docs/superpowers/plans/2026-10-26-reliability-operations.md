@@ -10,8 +10,10 @@ Specifications: [maintenance](../specs/2026-10-26-maintenance-priority-quiet-hou
 
 ## Order and integration contracts
 
-CP-006 maintenance slices 1–2 and CP-007 DB primitive slice 4 can proceed independently.
-Slice 3 consumes CP-002's outbox/ScopeRef; it must not build a parallel sender. Slices 5–7
+CP-006 maintenance slices 1–2 require CP-002's minimal scope-identity foundation first;
+after that they are independent of its outbox dispatcher and of artifacts. CP-007 DB primitive
+slice 4 can proceed before that foundation. Slice 3 requires CP-002's durable outbox and must
+not build a parallel sender. Slices 5–7
 form the first full backup feature and remain disabled until jointly qualified. CP-003 artifact
 extension slice 8 gates artifact rollout but does not block artifact-free backup baseline.
 CP-020 gates group enablement. CP-021 supplies compatible execution-unknown settlement; no

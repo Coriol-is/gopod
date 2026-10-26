@@ -28,7 +28,8 @@ and bounded durable delay of proactive output. Existing personal-chat behavior s
 Reuse CP-002's minimal additive ScopeRef and outbox foundation. CP-006 owns maintenance state
 and quiet policy, not another delivery queue or namespace migration. CP-020 gates group
 rollout; CP-019 governs private transient eligibility; CP-021 shares execution settlement.
-Personal-only maintenance can ship before quiet delivery. Quiet delivery requires CP-002.
+Personal-only maintenance requires CP-002's scope-identity foundation but can ship before
+its outbox dispatcher or artifacts. Quiet delivery additionally requires CP-002's durable outbox.
 
 ## Maintenance protocol
 
