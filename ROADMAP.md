@@ -36,6 +36,15 @@ Done implementation must not remain "in progress" just because a live check is
 pending. Host memory-cgroup changes/reboot (T9) and parallel execution (T5/T5b)
 remain paused operational/research items, not implicit deployment steps.
 
+## Planning candidates — 2026-10-26
+
+The [codex-agent adoption map](docs/proposals/2026-10-26-codex-agent-adoption.md)
+links fuller CP-002–007 specs and new proposed CP-021–030, including deferred
+Telegram account reading, location, peer mailboxes and optional heavy tool packs.
+The map groups reliability, research and quality slices for discussion; it does
+not change the approved queue above, mark any feature implemented, or enable
+new credentials, integrations, automatic learning or tool runtimes.
+
 ## Build order (reordered by [D018](docs/DECISIONS.md))
 
 The numerical IDs below are stable identifiers cited from many places —

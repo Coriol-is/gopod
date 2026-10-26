@@ -5,10 +5,10 @@
 | Status | proposed |
 | Date | 2026-10-05 |
 | Origin | feature survey of `rzaytsev/codex-agent` (2026-10-05) and the 2026-10-03 public-release audit |
-| Size | S |
+| Size | S–M |
 | Touches | `internal/runner` (compact watcher, extraction), `internal/scheduler`, `internal/telegram/ipc_sink.go`, `internal/config` |
 | Depends on | — |
-| Spec | `—` |
+| Spec | [Design](../superpowers/specs/2026-10-26-maintenance-priority-quiet-hours.md) |
 
 ## Problem
 Auto-compact and memory extraction run in background goroutines regardless of what the user is doing; a compaction that starts just before a message delays the reply by a full summarisation turn. Scheduled tasks and IPC messages are delivered at any hour. `codex-agent` aborts maintenance when the user writes and holds proactive messages during quiet hours.
@@ -40,3 +40,10 @@ budget, same-chat foreground cancellation, process cleanup and preservation of
 context on canceled compaction. See the dated incident report and release
 handoff for merge/deploy evidence. This does not complete maintenance re-arming,
 quiet-hour delivery or the full acceptance of this proposal; status stays proposed.
+
+## 2026-10-26 adoption design
+
+The linked spec now defines this candidate in the [adoption map](2026-10-26-codex-agent-adoption.md),
+wave **1 support**. Status remains proposed; a saved design does not approve
+implementation or change the existing delivery queue. New acceptance/migration
+requirements in the dated spec supersede conflicting early shorthand here.
