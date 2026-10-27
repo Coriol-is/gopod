@@ -281,12 +281,14 @@ previously silent Cyrillic task-list replies.
 [Audit](docs/research/2026-10-25-personal-group-isolation-audit.md),
 [contract](docs/superpowers/specs/2026-10-25-personal-group-container-isolation.md)
 and [implementation/acceptance plan](docs/superpowers/plans/2026-10-25-personal-group-container-isolation.md)
-track the work. **Implementation complete; rollout blocked:** full architecture merged to main in PRs #66/#67
+track the work. **Controller deployed; group activation blocked:** full architecture merged to main in PRs #66/#67
 (`a3a9c53a24456cce40678231ef048e6baba51956`), with green CI/Sonar and independent
 review. Local tests/races/vet and real Docker tools passed; Pi offline tools
 passed (6.22 s), and earlier-candidate Claude actual new/resume two-turn file/context/session checks
-passed. Production remains P0 `c82399b`. Latest-v2 both-provider inference, native TCP preflight,
-migration and activation remain blocked on SSH signing; see [draft rollout evidence](docs/deployments/2026-10-27-group-isolation.md).
+passed. Production controller is now `a3a9c53` with groups disabled. Both final-image native TCP
+preflights passed; full qualification is blocked by expired Claude auth and Codex
+post-preflight tree-budget admission. Codex simple inference passed. No production
+group epoch migration occurred; see [rollout evidence](docs/deployments/2026-10-27-group-isolation.md).
 
 Implemented: immutable namespace epochs and retired keys, protected separate
 roots, two personal/group provider image sets, read-only native-subscription auth,

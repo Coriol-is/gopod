@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | implemented; rollout blocked |
+| Status | implemented; controller deployed, group activation blocked |
 | Date | 2026-10-25 |
 | Origin | Owner requested deep isolation audit and plan for group/private memory, env, connected services and public-space agent instructions |
 | Size | L |

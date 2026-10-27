@@ -1,19 +1,15 @@
-# CP-020 full group isolation rollout evidence — DRAFT
+# CP-020 full group isolation deployment evidence
 
 Date: 2026-10-27. Target: existing RPi4 controller and owner-controlled sandbox.
 Source: main `a3a9c53a24456cce40678231ef048e6baba51956`, PRs #66/#67.
-Status: implementation complete and merged; rollout blocked on SSH signing.
+Status: controller deployed at 08:58 UTC; group activation remains blocked by live qualification failures.
 
 ## Recorded baseline
 
-The last verified production application is `c82399bb22eb3d0bc4ff74fdf48215fbf6f9f3ae`
-([P0 release evidence](2026-10-26-isolation-p0.md)). ARM64 release images were
-built locally from a clean git archive of merged main `a3a9c53`: controller,
-group Claude and group Codex policy v2. They have not been
-deployed; the final merged controller binary has not been installed on the Pi.
-Groups remain blocked until successful
-qualification and explicit scoped activation. This draft records no deployment,
-activation, native TCP preflight success, or completed Telegram UAT.
+Production now runs merged code `a3a9c53a24456cce40678231ef048e6baba51956`.
+The previous safe P0 controller is retained for application rollback. Groups
+remain blocked: production configuration has `EnabledGroups: []`; no production
+clean-epoch preparation or activation was performed. Personal images are unchanged.
 
 ## Prepared local ARM64 artifacts
 
@@ -73,30 +69,79 @@ discovery and fixed diagnostic event classes. See the
   including file state,
   context continuation and stable session identity.
 - Earlier Codex failures preceded the client-search fix; they do not establish
-  failure of the latest merged source. Final policy-v2 image canaries for both
-  providers remain pending.
+  failure of the latest merged source. Final policy-v2 image results are recorded below; neither full
+  new/resume canary passed.
 
 These observations are narrower than production acceptance. Successful auth-only
 checks or synthetic/local protocol fixtures do not prove model inference,
 network isolation, delivery or activation for the final deployed runtime.
 
-## Pending release gates and next evidence
+## Exact-Pi qualification and deployment
 
-1. Restore SSH signing access: the 1Password SSH agent stopped signing; the owner
-   has been asked to unlock it; no response is recorded yet. No deployment is
-   inferred from the interruption.
-2. Finish latest-main policy-v2 image inference qualification for both providers
-   and native TCP/network preflight. Record exact final image IDs and bounded outcomes without secrets.
-3. Record pre-rollout service/runtime inventory, recoverable backup evidence and
-   rollback artifact. Preserve personal sessions, retired group data and active
-   legitimate foreground work.
-4. Deploy the final merged controller binary/image, verify its revision and
-   health, then qualify preparation/activation in the controlled sandbox only.
-5. Record resulting namespace/epoch state and real Telegram acceptance separately
-   from host/controller checks. Admit no unqualified real group.
+SSH signing recovered. The transferred archive matched the recorded SHA256.
+Docker load on this host normalized image configuration IDs; runtime references
+use the actual post-load Pi IDs below, not the local build IDs above:
 
-No production catalog write, group migration or activation has occurred.
+| Role | Pi image ID |
+| --- | --- |
+| Controller/relay | `sha256:8eb8d64adee9b12f769ca6a185a9076e01e89218e04a4cba4fedea4f37671c77` |
+| Claude group v2 | `sha256:5033d071504c2b4eeb194b0ee77968f598e608cfa46109e29cc5495f360650e1` |
+| Codex group v2 | `sha256:169679977d912404935e549e2e75c895add78794629d9b977aeaeac12513e4ce` |
+| Previously qualified tools | `sha256:5ab09eeacbb09b5a68209b762b1f3dea8e1338eb49de1c3dfd0cf8aeee8404c1` |
 
-No secret values, auth output, request bodies or private message contents belong
-in this evidence file. Append observed results only; do not convert pending items
-into passed checks based on source status.
+- Both final provider images passed native TCP boundary preflight: direct public
+  IPv4/IPv6 and host service ports denied; fixed relay reachable.
+- Claude full new/resume qualification failed on the first turn. A separate
+  single-turn diagnostic reported unauthorized; the source subscription token
+  expiry was confirmed without printing credentials. No refresh/login occurred.
+- Codex single-turn no-tool inference returned the expected marker (exit 0).
+  Full new/resume qualification failed before first inference. A disposable
+  diagnostic build emitting only fixed stage labels localized admission failure
+  to the native/workspace/policy tree-budget check after boundary preflight.
+  The offending file/type and correction remain unverified. This is not a quota
+  diagnosis or successful tool/resume qualification. Diagnostic changes were
+  confined to a temporary source archive and were not deployed.
+- Initial canary enable failure used local-build IDs absent from Pi; config was
+  corrected to inspected post-load Pi IDs before the boundary/model checks.
+
+The existing controller was stopped gracefully with no unfinished user turns.
+A stopped-controller SQLite backup is
+`/home/spaceinvaderz/gopod-backups/pre-cp020-20261027T085856Z.sqlite`, mode 0600,
+integrity `ok`; its protected sibling `.env` backup is retained. This is a DB and
+configuration snapshot, not a matched full-filesystem/auth recovery guarantee.
+The safe P0 rollback image remains `gopod-gopod:rollback-cp020-p0`,
+`sha256:b8b578e8dde2b822f81bb05059f56a9805a65405e6e32cf0bc313010e9e01b45`.
+
+The source checkout was fast-forwarded from P0 to `a3a9c53` through a git bundle.
+Production policy and the sanitized public catalog were installed mode 0600;
+all groups are disabled. Compose recreated only the controller without building
+or retagging personal images. No production group-admin migration was invoked.
+
+## Post-deploy observations
+
+- Controller started `2026-10-27T08:58:57.596978701Z`; inspected running image is
+  the Pi controller ID above. Startup reports the full `a3a9c53...` version and
+  runner/queue/application ready. Restart count 0, OOMKilled false.
+- Startup created the existing personal `gopod-owner` runtime. No group runtime
+  was running after the checks. Unrelated host services were preserved.
+- SQLite integrity `ok`, 99 completed turns, no unfinished turns.
+- All 15 owner sessions, 3 owner schedules and 129 owner memories retained exact
+  predeploy selected-column hashes. No schedule pause/resume/edit was issued.
+- No reboot, cgroup change, Telegram test publication, new account login,
+  credential refresh or paid API fallback was performed.
+
+## Remaining gates
+
+1. Refresh Claude subscription through the existing private owner management
+   flow, then rerun its final-image two-turn canary.
+2. Identify and fix the Codex post-preflight tree-budget failure without weakening
+   no-follow/file-type protections; review, test and qualify the correction.
+3. After both providers qualify, stop the controller, take a fresh backup and
+   use revision-checked offline admin preparation/activation for the controlled
+   sandbox only. Preserve retired data and intentionally pause legacy group tasks.
+4. Record actual Telegram new/resume/tool/delivery acceptance separately. No
+   unqualified real group is admitted by this deployment.
+
+Rollback must preserve current DB/epochs and keep shared admission closed; do not
+restore a stale DB automatically. No secret values, auth output, request bodies
+or private message contents belong in this evidence file.
