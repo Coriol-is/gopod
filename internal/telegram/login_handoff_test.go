@@ -2,7 +2,6 @@ package telegram
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -128,10 +127,13 @@ func TestGroupLoginHandoffRejectsWrongActorExpiredAndRebound(t *testing.T) {
 			case "expired":
 				now = now.Add(6 * time.Minute)
 			case "rebound":
-				if err := b.store.RegisterChat(t.Context(), store.RegisteredChat{JID: buildChatJID(handoffGroup), Folder: "changed-group", AddedAt: 1}); !errors.Is(err, store.ErrNamespaceIdentityConflict) {
-					t.Fatalf("registration rebind must fail: %v", err)
+				registered, err := b.store.GetRegistered(t.Context(), buildChatJID(handoffGroup))
+				if err != nil {
+					t.Fatal(err)
 				}
-				return // immutable registration prevents the stale-folder transition itself
+				if _, err = b.store.RotateGroupEpoch(t.Context(), registered.JID, registered.RegistrationRevision); err != nil {
+					t.Fatal(err)
+				}
 			case "cancel":
 				command.Args = append(command.Args, "cancel")
 			}

@@ -1,7 +1,8 @@
 # Personal and group container isolation — implementation plan
 
 Date: 2026-10-25. Baseline: `ea38581e95ae214ff2a4c0dd5fc8f7f40b1f7d86`.
-Status: **P0 containment implemented; PRs 2–6 remain open**. This document
+Implementation update: 2026-10-27. Status: **P0 deployed; full implementation
+present on the working branch, final review/CI and exact-Pi qualification pending**. This document
 neither changes production nor authorizes billing, account settings or data deletion.
 
 Contract: [isolation specification](../specs/2026-10-25-personal-group-container-isolation.md).
@@ -12,6 +13,42 @@ and [environment/services audit](../../research/2026-10-25-isolation-env-service
 Those reports distinguish confirmed source/synthetic counterexamples from
 unverified live account behavior. Passing current SQL scoping tests does not
 establish container isolation.
+
+## Implementation status and next acceptance
+
+The original six-PR decomposition below is retained for requirements and review
+traceability; it is not a claim that six numbered release PRs have all shipped.
+The owner authorized continuing the full implementation and incremental controlled
+sandbox acceptance. Source status is distinct from production activation.
+
+| Original slice | Current source status | Release evidence still needed |
+| --- | --- | --- |
+| 1 — containment | P0 deployed; stricter group admission retained | Full runtime upgrade must preserve the private baseline |
+| 2 — identity/roots | UUID/epoch/revision, immutable ownership and rooted separate directories implemented | Exact host paths/ownership and private/group canary denial |
+| 3 — inference/tools | Two image sets, trusted native subscription CLI, offline tools, exact-route relay implemented | Both exact built provider images and read-only native-auth new/resume runs |
+| 4 — reconciliation | Per-turn image/policy checks, scoped leases, retained drains and orphan cleanup implemented | Real Docker network denial, Stop/forced-death cleanup and unknown-state refusal |
+| 5 — migration | Preview/CAS rotation, readiness and interrupted-prepare retry implemented | Verified backup/restore and explicit sandbox migration without old data import |
+| 6 — acceptance | Full local tests/races/vet and real Docker tool checks passed; synthetic native/egress tests present | Final CI, exact-Pi native/service boundary checks and real-client acceptance |
+
+Selected inference design: an explicit read-only auth-only reference to the
+existing subscription, managed native CLI with no local file/code/service tools,
+and separately isolated offline tools. Refresh/account-service endpoints are
+not allowed. This is not a dedicated account or quota partition. Missing/expired
+credentials never fall back to personal runtime or a paid API key.
+
+Configuration and the disabled example are in [ISOLATION.md](../../ISOLATION.md).
+`/isolation prepare` preserves old state and pauses old group schedules;
+`enable` requires an approved configuration and confirmed qualification. Group
+local SQL/FTS memory needs no personal embedding key. Group speech and automatic
+maintenance/extraction/compaction remain unavailable (CP-006); background tool
+processes cannot be exported as successful work. Private behavior remains the
+personal baseline. T9 memory-cgroup/reboot remains paused and is not a release step.
+
+The remaining sequence is: freeze/review source -> green code CI -> qualify the
+exact Pi images/network without secrets -> bounded approved native-auth canaries
+-> backup and explicit sandbox migration/enable -> inspect runtime and client
+behavior. Record observed revisions/digests and limitations in deployment evidence;
+do not convert a local pass or old prototype canary into a production claim.
 
 ## Required contract
 
@@ -399,8 +436,10 @@ Release is qualified only when all of these statements have evidence:
 
 1. Trusted identity selects the profile; immutable namespace/epoch scopes every
    memory/history/file/session/task/capability path, including DM-presented login.
-2. Group has no personal mounts, env, auth/config, skills or inherited connected
-   apps; any integration grant is explicit, dedicated and scoped to that group.
+2. Untrusted group tools have no personal mounts, env, auth/config, skills or
+   inherited connected apps. Trusted native inference has only its explicit
+   read-only auth-only grant, never a personal HOME or service configuration;
+   additional integration grants must be dedicated and scoped to that group.
 3. Host filesystem operations/mount sources cannot escape through writable-parent
    races or IPC enumeration. Protected paths are not disclosed even read-only.
 4. Alternate CLI/custom HTTP clients cannot bypass the credential and network
@@ -419,18 +458,20 @@ may resume only after independently checking its profile and data integrity.
 Failed recreation/network enforcement leaves group admission closed. Secret
 revocation/rotation and historical deletion require their own explicit operation.
 
-## Decisions required before implementation/release
+## Selected decisions and remaining release gates
 
-- Accept the immutable namespace/profile ADR and non-destructive clean-group
-  epoch approach; identify any approved content/task carryover.
-- Select dedicated subscription identity, explicit API billing/project, a
-  compatible inference-only broker or the candidate native CLI/external-tool
-  separation design with the existing subscription. No silent subscription-to-API migration.
-- Select an enforceable Docker-host egress mechanism and prove exact route
-  control where provider inference and account services share infrastructure.
-- Name any per-group integrations, dedicated identities and allowed scopes;
-  absent grants means disabled. No personal-service exception inferred by brand.
+- Immutable namespace ownership and non-destructive clean group epochs are
+  implemented. No automatic content, task, history or auth-home carryover exists.
+- Native subscription/external-tool separation is selected. Auth-only references
+  are explicit and read-only; no refresh route, billing conversion, copied HOME
+  or personal-service grant is enabled.
+- The exact-route HTTPS relay and isolated Docker network are implemented, but
+  real target-host network enforcement and both native account round trips still
+  require qualification against the images intended to deploy.
+- No additional integrations are enabled. Future per-group integrations require
+  dedicated nonpersonal identities, scopes and explicit grants.
+- Controlled sandbox acceptance proceeds per slice. Full real-group admission,
+  backup/restore evidence and actual deployment remain separately recorded gates.
 
-These are bounded security/account/deployment decisions. The plan itself does not
-start implementation, make paid requests, change account integrations, revoke
-credentials, purge data or claim full isolation from the separate login hotfix.
+This document does not itself perform model requests, production migration,
+account revocation/rotation, historical deletion, T9 host changes or deployment.

@@ -106,3 +106,50 @@ func TestChatsRegisterNonOwnerDenied(t *testing.T) {
 		t.Error("chat was registered despite permission denial")
 	}
 }
+
+func TestRegisterExistingGroupAfterCleanEpochUsesCurrentScope(t *testing.T) {
+	st := testStore(t)
+	ctx := t.Context()
+	if err := st.RegisterChat(ctx, store.RegisteredChat{JID: "tg:-200", Folder: "legacy-group", Name: "group metadata", TriggerPattern: "@bot", RequiresTrigger: true, AddedAt: 1}); err != nil {
+		t.Fatal(err)
+	}
+	original, _ := st.GetRegistered(ctx, "tg:-200")
+	migration, err := st.RotateGroupEpoch(ctx, original.JID, original.RegistrationRevision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := New(silentLog())
+	RegisterChatCommands(r, st, 100)
+	for _, args := range [][]string{{"-200"}, {"-200", migration.CurrentScope.Folder}} {
+		result, err := r.Dispatch(ctx, ownerCmd(args...))
+		if err != nil || result.Code != 0 {
+			t.Fatalf("idempotent register failed: %+v %v", result, err)
+		}
+		current, _ := st.GetRegistered(ctx, original.JID)
+		if current.Scope() != migration.CurrentScope || current.Name != original.Name || current.TriggerPattern != original.TriggerPattern || !current.RequiresTrigger || current.GroupEpochReady {
+			t.Fatal("registration reset scope/metadata/readiness")
+		}
+	}
+	for _, folder := range []string{"legacy-group", "owner", "foreign-new-alias"} {
+		result, _ := r.Dispatch(ctx, ownerCmd("-200", folder))
+		if result.Code == 0 {
+			t.Fatal("explicit alias transfer permitted")
+		}
+	}
+	current, _ := st.GetRegistered(ctx, original.JID)
+	if current.Scope() != migration.CurrentScope {
+		t.Fatal("failed alias transfer changed namespace")
+	}
+	ready, err := st.CompleteGroupEpoch(ctx, current.Scope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result, err := r.Dispatch(ctx, ownerCmd("-200")); err != nil || result.Code != 0 {
+		t.Fatal("ready group re-register failed")
+	}
+	current, _ = st.GetRegistered(ctx, original.JID)
+	if current.Scope() != ready || !current.GroupEpochReady {
+		t.Fatal("re-register reset qualified epoch metadata")
+	}
+
+}

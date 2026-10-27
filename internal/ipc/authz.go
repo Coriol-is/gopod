@@ -46,14 +46,13 @@ func authzTaskSchedule(sourceFolder, targetFolder, ownerFolder string, resolve F
 	if targetFolder == "" {
 		targetFolder = sourceFolder
 	}
-	if _, ok := resolve(targetFolder); !ok {
-		return &errUnauthorized{reason: fmt.Sprintf("target folder %q not registered", targetFolder)}
-	}
-	if sourceFolder == ownerFolder {
-		return nil
-	}
-	if sourceFolder != targetFolder {
+	// Reject a foreign target before resolving it; unavailable/private namespaces
+	// must not be distinguishable through an existence oracle.
+	if sourceFolder != ownerFolder && sourceFolder != targetFolder {
 		return &errUnauthorized{reason: "non-owner cross-folder schedule"}
+	}
+	if _, ok := resolve(targetFolder); !ok {
+		return &errUnauthorized{reason: "target unavailable in this scope"}
 	}
 	return nil
 }

@@ -42,6 +42,17 @@ jobs:
         run: |
           docker pull node@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d
           docker tag node@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d node:22-slim
+      - name: Build pinned group Codex fixture image
+        run: docker build -f container/group/Dockerfile.codex -t gopod-agent-group-codex:offline .
+      - name: Build credential-free group tools
+        run: docker build -f container/group/Dockerfile.tools -t gopod-group-tools:ci .
+      - name: Verify real Docker snapshots and hard tool limits
+        env:
+          GOPOD_GROUP_DOCKER_TEST: '1'
+          GOPOD_GROUP_TOOL_IMAGE: gopod-group-tools:ci
+        run: go test -v -count=1 ./internal/groupsandbox -run '^TestDockerCredentialFreeSnapshots$'
+      - name: Qualify native ChatGPT-auth SSE without internet or real credentials
+        run: python3 experiments/subscription-isolation/codex_sse_auth_probe.py --cli-image gopod-agent-group-codex:offline
       - name: Qualify isolated tools against local mock providers
         env:
           PYTHONDONTWRITEBYTECODE: '1'

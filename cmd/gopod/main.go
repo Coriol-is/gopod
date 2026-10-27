@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"strings"
@@ -227,7 +228,7 @@ func run() error {
 					slog.Any("err", err))
 			} else {
 				agentMemory = memory.New(st, embedder, runLog)
-				r.SetMemory(&memoryCompilerAdapter{mem: agentMemory})
+				r.SetMemory(&memoryCompilerAdapter{mem: agentMemory, st: st, ownerID: cfg.OwnerChatID})
 
 				// Session compact callback: summarize + store + supersede.
 				r.SetCompactFn(func(ctx context.Context, chatFolder string, thread int) error {
@@ -242,7 +243,13 @@ func run() error {
 						return err
 					}
 					if summary != "" {
-						agentMemory.AddInThread(ctx, chatFolder, thread, "conversation_summary", "session compact", summary, "compact")
+						if localMemoryScope(ctx, st, chatFolder, cfg.OwnerChatID) {
+							if _, err := agentMemory.AddLocalInThread(ctx, chatFolder, thread, "conversation_summary", "session compact", summary, "compact"); err != nil {
+								return err
+							}
+						} else {
+							agentMemory.AddInThread(ctx, chatFolder, thread, "conversation_summary", "session compact", summary, "compact")
+						}
 					}
 					return nil
 				})
@@ -253,6 +260,9 @@ func run() error {
 				// runner.Run as taskPromptFn for the LLM call. Facts are
 				// stored in the turn's conversation (D023).
 				r.SetExtractFn(func(ctx context.Context, chatFolder string, thread int, userMsg, agentReply string) {
+					if localMemoryScope(ctx, st, chatFolder, cfg.OwnerChatID) {
+						return
+					} // Shared automatic learning waits for qualified CP-006 maintenance; explicit local memory tools remain available.
 					promptFn := func(c context.Context, f, p string) (string, error) {
 						return r.RunFresh(c, f, runner.TierRegistered, allowlist, p)
 					}
@@ -262,7 +272,13 @@ func run() error {
 						return
 					}
 					if len(facts) > 0 {
-						agentMemory.IngestExtracted(ctx, chatFolder, thread, facts)
+						if localMemoryScope(ctx, st, chatFolder, cfg.OwnerChatID) {
+							for _, fact := range facts {
+								_, _ = agentMemory.AddLocalInThread(ctx, chatFolder, thread, fact.Kind, "extracted group fact", fact.Content, "extraction")
+							}
+						} else {
+							agentMemory.IngestExtracted(ctx, chatFolder, thread, facts)
+						}
 						runLog.Debug("extracted facts from turn",
 							slog.String("chat", chatFolder),
 							slog.Int("thread", thread),
@@ -317,6 +333,12 @@ func run() error {
 		}
 	}
 
+	groupManager, stopGroups, err := wireGroups(ctx, cfg, st, agentRunner, agentMemory, logger)
+	if err != nil {
+		return err
+	}
+	defer stopGroups()
+
 	// Control plane Router (M3.5). Built-in commands are registered
 	// here; subsystem-specific commands are registered by the subsystems
 	// that own them (e.g. telegram registers /login directly because
@@ -324,6 +346,10 @@ func run() error {
 	ctlLog := logger.With(slog.String("subsys", "control"))
 	router := control.New(ctlLog)
 	control.RegisterBuiltins(router)
+	if groupManager != nil {
+		control.RegisterIsolationCommands(router, control.IsolationActions{Status: groupManager.Status, Prepare: groupAction(st, agentRunner, groupManager.Prepare), Enable: groupAction(st, agentRunner, groupManager.Enable), Disable: groupManager.Disable})
+	}
+
 	control.RegisterWhoami(router, cfg.OwnerChatID)
 	control.RegisterVoiceCommand(router, telegram.SetReplyMode)
 	control.RegisterLogsCommand(router, func(level, subsystem string, limit int) (string, error) {
@@ -447,15 +473,27 @@ func run() error {
 		}, chatFolderLookup)
 	}
 
-	// Memory commands. Only wired if memory is available.
-	if agentMemory != nil {
-		control.RegisterMemoryCommands(router, &memoryOpsAdapter{mem: agentMemory}, chatFolderLookup)
+	// Shared memory stays local even without a personal embedding service.
+	commandsMemory := agentMemory
+	localOnlyMemory := false
+	if commandsMemory == nil && groupManager != nil {
+		commandsMemory = memory.New(st, nil, logger)
+		localOnlyMemory = true
+	}
+	if commandsMemory != nil {
+		control.RegisterMemoryCommands(router, &memoryOpsAdapter{mem: commandsMemory, st: st, ownerID: cfg.OwnerChatID, localOnly: localOnlyMemory}, chatFolderLookup)
 		control.RegisterMemoryGC(router,
 			func(ctx context.Context, folder string) (int64, error) {
-				return agentMemory.ArchiveStale(ctx, folder, 90, 50)
+				if localOnlyMemory && !localMemoryScope(ctx, st, folder, cfg.OwnerChatID) {
+					return 0, fmt.Errorf("personal memory service unavailable")
+				}
+				return commandsMemory.ArchiveStale(ctx, folder, 90, 50)
 			},
 			func(ctx context.Context, folder string) (string, error) {
-				items, _ := agentMemory.List(ctx, folder, 100)
+				if localOnlyMemory && !localMemoryScope(ctx, st, folder, cfg.OwnerChatID) {
+					return "", fmt.Errorf("personal memory service unavailable")
+				}
+				items, _ := commandsMemory.List(ctx, folder, 100)
 				active := 0
 				for range items {
 					active++
@@ -574,6 +612,26 @@ func run() error {
 		ipcWatcher := ipc.New(ipc.Config{
 			DataDir:     cfg.DataDir,
 			OwnerFolder: ownerFolder,
+			NamespacePath: func(folder string) (string, bool) {
+				if agentRunner == nil || agentRunner.CheckAdmission(ctx, folder) != nil {
+					return "", false
+				}
+				if groupManager != nil {
+					return groupManager.NamespacePath(folder)
+				}
+				return filepath.Join(cfg.DataDir, "ipc", folder), true
+			},
+			Namespaces: func(c context.Context) ([]string, error) {
+				rows, e := st.ListRegistered(c)
+				if e != nil {
+					return nil, e
+				}
+				out := make([]string, 0, len(rows))
+				for _, row := range rows {
+					out = append(out, row.Folder)
+				}
+				return out, nil
+			},
 			NamespaceAllowed: func(c context.Context, folder string) bool {
 				return agentRunner != nil && agentRunner.CheckAdmission(c, folder) == nil
 			},
@@ -635,17 +693,40 @@ func run() error {
 // memoryOpsAdapter adapts memory.Memory → control.MemoryOps for
 // /remember and /recall commands.
 type memoryOpsAdapter struct {
-	mem *memory.Memory
+	localOnly bool
+	ownerID   int64
+	st        *store.Store
+	mem       *memory.Memory
 }
 
 func (a *memoryOpsAdapter) Add(ctx context.Context, chatFolder, kind, title, content, source string) (int64, error) {
 	if kind == "conversation_summary" {
 		return 0, fmt.Errorf("kind conversation_summary is written by session compact only")
 	}
+	if localMemoryScope(ctx, a.st, chatFolder, a.ownerID) {
+		return a.mem.AddLocalInThread(ctx, chatFolder, 0, kind, title, content, source)
+	}
+	if a.localOnly {
+		return 0, fmt.Errorf("personal memory service unavailable")
+	}
 	return a.mem.Add(ctx, chatFolder, kind, title, content, source)
 }
 
 func (a *memoryOpsAdapter) SearchText(ctx context.Context, chatFolder, query string, k int) ([]control.MemoryResult, error) {
+	if localMemoryScope(ctx, a.st, chatFolder, a.ownerID) {
+		items, err := a.mem.SearchLocalInThread(ctx, chatFolder, 0, query, k)
+		if err != nil {
+			return nil, err
+		}
+		out := make([]control.MemoryResult, 0, len(items))
+		for _, it := range items {
+			out = append(out, control.MemoryResult{ID: it.ID, Kind: it.Kind, Title: it.Title, Content: it.Content, Score: it.Score})
+		}
+		return out, nil
+	}
+	if a.localOnly {
+		return nil, fmt.Errorf("personal memory service unavailable")
+	}
 	results, err := a.mem.SearchText(ctx, chatFolder, query, k)
 	if err != nil {
 		return nil, err
@@ -659,10 +740,19 @@ func (a *memoryOpsAdapter) SearchText(ctx context.Context, chatFolder, query str
 
 // memoryCompilerAdapter adapts memory.Memory → runner.MemoryCompiler.
 type memoryCompilerAdapter struct {
-	mem *memory.Memory
+	localOnly bool
+	ownerID   int64
+	st        *store.Store
+	mem       *memory.Memory
 }
 
 func (a *memoryCompilerAdapter) CompileContext(ctx context.Context, chatFolder string, thread int, query string) string {
+	if localMemoryScope(ctx, a.st, chatFolder, a.ownerID) {
+		return a.mem.CompileLocalContext(ctx, chatFolder, thread, query, memory.DefaultBudget)
+	}
+	if a.localOnly {
+		return ""
+	}
 	return a.mem.CompileContext(ctx, chatFolder, thread, query, memory.DefaultBudget)
 }
 
@@ -749,4 +839,13 @@ func (a turnStoreAdapter) LoadUnfinished(ctx context.Context) ([]queue.Item, err
 		})
 	}
 	return out, nil
+}
+
+// Non-owner and unresolved contexts never inherit personal embedding services.
+func localMemoryScope(ctx context.Context, st *store.Store, folder string, ownerID int64) bool {
+	if st == nil {
+		return false
+	} // legacy isolated adapter tests
+	c, err := st.GetByFolder(ctx, folder)
+	return err != nil || !c.IsOwner || ownerID <= 0 || c.JID != fmt.Sprintf("tg:%d", ownerID)
 }

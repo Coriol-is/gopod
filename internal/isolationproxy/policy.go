@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 )
 
@@ -93,6 +94,13 @@ func (p *Proxy) route(r *http.Request, host string) (Route, bool) {
 }
 
 func (p *Proxy) validateBody(r *http.Request, grant Route) ([]byte, error) {
+	if p.requireSubscriptionBearer {
+		values := r.Header.Values("Authorization")
+		scheme, token, ok := strings.Cut(r.Header.Get("Authorization"), " ")
+		if len(r.Header.Values("X-Api-Key")) != 0 || len(values) != 1 || !ok || !strings.EqualFold(scheme, "Bearer") || token == "" || strings.ContainsAny(token, " \t\r\n,") {
+			return nil, errors.New("subscription authentication required")
+		}
+	}
 	if r.Header.Get("Content-Encoding") != "" || r.Header.Get("Upgrade") != "" {
 		return nil, errors.New("unsupported envelope")
 	}
@@ -125,6 +133,18 @@ func (p *Proxy) validateBody(r *http.Request, grant Route) ([]byte, error) {
 		}
 		return data, nil
 	}
+	// The closed native SDK adds optional account prompt-comparison diagnostics.
+	// Validate their exact schema and remove them before any upstream request.
+	strippedDiagnostics, err := discardDiagnostics(value, grant.Body)
+	if err != nil {
+		return nil, err
+	}
+	if strippedDiagnostics {
+		data, err = json.Marshal(value)
+		if err != nil || int64(len(data)) > p.maxRequestBytes {
+			return nil, errors.New("request limit")
+		}
+	}
 	// Provider-hosted tools/connectors can bypass local tool controls. Reject
 	// their request selectors even if the native CLI would normally omit them.
 	for _, field := range []string{"mcp_servers", "connectors", "connector_ids", "apps", "plugins", "include_tools", "computer", "agent", "background", "previous_response_id", "conversation"} {
@@ -135,32 +155,166 @@ func (p *Proxy) validateBody(r *http.Request, grant Route) ([]byte, error) {
 	allowedFields := map[string]bool{}
 	fields := []string{"model", "messages", "system", "max_tokens", "tools", "tool_choice", "stream", "thinking", "metadata", "temperature", "top_p", "top_k", "stop_sequences", "service_tier", "context_management", "output_config"}
 	if grant.Body == Responses {
-		fields = []string{"model", "instructions", "input", "tools", "tool_choice", "parallel_tool_calls", "stream", "reasoning", "text", "max_output_tokens", "temperature", "top_p", "truncation", "include", "store", "metadata", "service_tier", "safety_identifier", "prompt_cache_key", "prompt_cache_retention", "stream_options"}
+		fields = []string{"model", "instructions", "input", "tools", "tool_choice", "parallel_tool_calls", "stream", "reasoning", "text", "max_output_tokens", "temperature", "top_p", "truncation", "include", "store", "metadata", "service_tier", "safety_identifier", "prompt_cache_key", "prompt_cache_retention", "stream_options", "client_metadata"}
 	}
 	for _, field := range fields {
 		allowedFields[field] = true
 	}
 	for field := range value {
 		if !allowedFields[field] {
+			switch field {
+			case "cache_control":
+				p.event("field_cache_control")
+			case "previous_message_id":
+				p.event("field_previous_message_id")
+			case "inference_geo":
+				p.event("field_inference_geo")
+			case "speed":
+				p.event("field_speed")
+			default:
+				p.event("field_other")
+			}
 			return nil, errors.New("unapproved inference field")
 		}
 	}
 	if !localContextOnly(value) {
 		return nil, errors.New("unapproved remote context")
 	}
+	seenTools := map[string]bool{}
+	clientSearch := false
 	tools, ok := value["tools"]
+	if grant.Body == Responses {
+		additional, present, err := responsesLiteTools(value["input"])
+		if err != nil || present && ok {
+			return nil, errors.New("invalid additional tools")
+		}
+		if present {
+			tools, ok = additional, true
+		}
+	}
+	if !ok {
+		p.event("tools_absent")
+	}
 	if ok {
 		array, ok := tools.([]any)
 		if !ok {
 			return nil, errors.New("invalid tools")
 		}
+		if len(array) == 0 {
+			p.event("tools_empty")
+		} else {
+			p.event("tools_nonempty")
+		}
 		for _, tool := range array {
-			if !p.toolAllowed(tool, "", grant.Body) {
+			if descriptor, ok := tool.(map[string]any); ok && descriptor["type"] == "tool_search" {
+				if clientSearch || grant.Body != Responses || !p.allowClientToolSearch || !validClientSearch(descriptor) {
+					return nil, errors.New("unapproved tool search")
+				}
+				clientSearch = true
+				continue
+			}
+			if !p.toolAllowed(tool, "", grant.Body, seenTools) {
 				return nil, errors.New("unapproved tool")
 			}
 		}
 	}
+	if err := p.auditSearchOutputs(value["input"], clientSearch); err != nil {
+		return nil, err
+	}
+	if clientSearch {
+		p.event("inventory_client_catalog")
+	}
+	if len(p.requiredTools) > 0 {
+		// Observe only fixed host-defined identities, never submitted tool names.
+		exec := seenTools[canonicalToolName("mcp__group__group_exec")]
+		request := seenTools[canonicalToolName("mcp__group__group_request")]
+		switch {
+		case exec && request:
+			p.event("inventory_both_present")
+		case !exec && !request:
+			p.event("inventory_both_missing")
+		case !exec:
+			p.event("inventory_exec_missing")
+		default:
+			p.event("inventory_request_missing")
+		}
+		choice := value["tool_choice"]
+		if choice == "none" {
+			p.event("required_tools_disabled")
+			return nil, errors.New("required external tools disabled")
+		}
+		if fields, ok := choice.(map[string]any); ok && fields["type"] == "none" {
+			p.event("required_tools_disabled")
+			return nil, errors.New("required external tools disabled")
+		}
+	}
+	for name := range p.requiredTools {
+		if !seenTools[name] && !clientSearch {
+			return nil, errors.New("required external tool unavailable")
+		}
+	}
 	return data, nil
+}
+
+// ResponsesLite moves the full current inventory into one developer prefix.
+// Only this exact pinned protocol wrapper is inventory; nested/history text
+// cannot satisfy required tools or grant remote tool authority.
+var additionalToolsID = regexp.MustCompile(`^at_[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$`)
+
+func responsesLiteTools(input any) (any, bool, error) {
+	items, ok := input.([]any)
+	if !ok {
+		return nil, false, nil
+	}
+	var inventory any
+	present := false
+	for i, item := range items {
+		object, isObject := item.(map[string]any)
+		if isObject && object["type"] == "additional_tools" {
+			if present || i != 0 || object["role"] != "developer" {
+				return nil, false, errors.New("invalid inventory prefix")
+			}
+			for key := range object {
+				if key != "type" && key != "id" && key != "role" && key != "tools" {
+					return nil, false, errors.New("invalid inventory field")
+				}
+			}
+			if id, exists := object["id"]; exists {
+				text, valid := id.(string)
+				if !valid || !additionalToolsID.MatchString(text) {
+					return nil, false, errors.New("invalid inventory id")
+				}
+			}
+			tools, valid := object["tools"].([]any)
+			if !valid || len(tools) == 0 || containsAdditionalTools(tools) {
+				return nil, false, errors.New("invalid inventory tools")
+			}
+			inventory, present = tools, true
+		} else if containsAdditionalTools(item) {
+			return nil, false, errors.New("nested inventory")
+		}
+	}
+	return inventory, present, nil
+}
+func containsAdditionalTools(value any) bool {
+	switch v := value.(type) {
+	case []any:
+		for _, item := range v {
+			if containsAdditionalTools(item) {
+				return true
+			}
+		}
+	case map[string]any:
+		if v["type"] == "additional_tools" {
+			return true
+		}
+		for _, item := range v {
+			if containsAdditionalTools(item) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Decode with duplicate-key rejection. encoding/json normally accepts the last
@@ -231,7 +385,7 @@ func decodeUnique(d *json.Decoder, depth int) (any, error) {
 	return nil, errors.New("unexpected JSON delimiter")
 }
 
-func (p *Proxy) toolAllowed(value any, namespace string, policy BodyPolicy) bool {
+func (p *Proxy) toolAllowed(value any, namespace string, policy BodyPolicy, seen map[string]bool) bool {
 	m, ok := value.(map[string]any)
 	if !ok {
 		return false
@@ -252,7 +406,7 @@ func (p *Proxy) toolAllowed(value any, namespace string, policy BodyPolicy) bool
 			return false
 		}
 		for _, tool := range tools {
-			if !p.toolAllowed(tool, name, policy) {
+			if !p.toolAllowed(tool, name, policy, seen) {
 				return false
 			}
 		}
@@ -271,9 +425,34 @@ func (p *Proxy) toolAllowed(value any, namespace string, policy BodyPolicy) bool
 		}
 	}
 	if namespace != "" {
-		name = namespace + "." + name
+		if namespace != "functions" || !safeControlFunction(name) {
+			name = namespace + "." + name
+		}
 	}
-	return p.allowedTools[name]
+	name = canonicalToolName(name)
+	if !p.allowedTools[name] {
+		return false
+	}
+	// Only compare fixed trusted identities; never log a submitted name.
+	switch name {
+	case "group_exec":
+		p.event("tool_bare_exec")
+	case "group_request":
+		p.event("tool_bare_request")
+	}
+	deferred, _ := m["defer_loading"].(bool)
+	if deferred {
+		switch name {
+		case "group_exec", "mcp__group.group_exec":
+			p.event("tool_exec_deferred")
+		case "group_request", "mcp__group.group_request":
+			p.event("tool_request_deferred")
+		}
+	} else {
+		seen[name] = true
+	}
+
+	return true
 }
 
 // An allowed inference route must not become an account file/history retrieval
@@ -308,4 +487,30 @@ func localContextOnly(value any) bool {
 		}
 	}
 	return true
+}
+
+// Only reviewed provider-local control functions get the pinned ResponsesLite
+// builtin namespace alias; executable/native or arbitrary namespaces never do.
+func safeControlFunction(name string) bool {
+	switch name {
+	case "update_plan", "request_user_input", "list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource":
+		return true
+	default:
+		return false
+	}
+}
+
+// Normalize native flat MCP names and Responses namespace function names to
+// one logical identity. It does not turn arbitrary native tools into MCP grants.
+func canonicalToolName(name string) string {
+	if !strings.HasPrefix(name, "mcp__") {
+		return name
+	}
+	if strings.ContainsAny(name, "./") {
+		return strings.ReplaceAll(name, "/", ".")
+	}
+	if i := strings.LastIndex(name, "__"); i > len("mcp__") && i+2 < len(name) {
+		return name[:i] + "." + name[i+2:]
+	}
+	return name
 }

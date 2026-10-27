@@ -75,3 +75,13 @@ func TestAuthzTaskScheduleTarget(t *testing.T) {
 		})
 	}
 }
+
+func TestForeignTaskTargetDoesNotRevealRegistration(t *testing.T) {
+	calls := 0
+	resolve := func(folder string) (string, bool) { calls++; return "private-jid", folder == "owner" }
+	existing := authzTaskSchedule("group", "owner", "owner", resolve)
+	missing := authzTaskSchedule("group", "missing", "owner", resolve)
+	if existing == nil || missing == nil || existing.Error() != missing.Error() || calls != 0 {
+		t.Fatal("foreign namespace existence exposed")
+	}
+}

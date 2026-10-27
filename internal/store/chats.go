@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 )
@@ -50,4 +51,18 @@ func (s *Store) CountChats(ctx context.Context) (int64, error) {
 		return 0, fmt.Errorf("store: CountChats: %w", err)
 	}
 	return n, nil
+}
+
+// IsKnownGroup reports a trusted Telegram group/supergroup observation. Negative
+// IDs and registration alone do not prove chat type; unknown/private is false.
+func (s *Store) IsKnownGroup(ctx context.Context, jid string) (bool, error) {
+	var group int
+	err := s.taskDB(ctx).QueryRowContext(ctx, `SELECT is_group FROM chats WHERE jid=?`, jid).Scan(&group)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return group == 1, nil
 }

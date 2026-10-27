@@ -123,6 +123,16 @@ func TestGroupNativePolicyFilesAreFixedAndProviderScoped(t *testing.T) {
 			}
 		} else {
 			s := string(files[groupCodexConfig])
+			for _, forbidden := range []string{"base_url", "env_key", "experimental_bearer_token", "auth.command", "[model_providers.openai]"} {
+				if strings.Contains(s, forbidden) {
+					t.Errorf("group native auth bypass: %s", forbidden)
+				}
+			}
+			for _, required := range []string{"model_provider = \"gopod_group_native\"", "requires_openai_auth = true", "supports_websockets = false"} {
+				if !strings.Contains(s, required) {
+					t.Errorf("missing native SSE authority: %s", required)
+				}
+			}
 			for _, wanted := range []string{"sandbox_mode = \"read-only\"", "approval_policy = \"never\"", "required = true", "enabled_tools = [\"group_exec\", \"group_request\"]"} {
 				if !strings.Contains(s, wanted) {
 					t.Errorf("missing %s", wanted)
@@ -203,5 +213,17 @@ func TestGroupImageMatrixPreservesPersonalAndExcludesPersonalTools(t *testing.T)
 	}
 	if _, err := (GroupImageSet{Claude: "a", Codex: "b"}).Resolve("unknown"); err == nil {
 		t.Error("unknown provider accepted")
+	}
+}
+
+// Incremental declarations require a different inference envelope. This boundary
+// requires explicit declarations rather than silently accepting hidden tools.
+func TestGroupCodexDisablesIncrementalDeclarations(t *testing.T) {
+	p, err := NewGroupProvider(NewCodexProvider(""), GroupProviderConfig{Image: "qualified-group-image", MCPURL: "http://gopod-relay:8787/mcp/abcdefghijklmnopqrstuvwxyz012345"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(p.PolicyFiles()[groupCodexConfig]), "incremental_tools = false") {
+		t.Fatal("incremental declarations enabled")
 	}
 }

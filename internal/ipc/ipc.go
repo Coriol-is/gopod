@@ -34,6 +34,12 @@ type FolderResolver func(folder string) (jid string, ok bool)
 // Config bundles every knob the watcher exposes. Defaults are filled
 // in by New when fields are zero-valued.
 type Config struct {
+	// NamespacePath returns the host-controlled current IPC root. False means
+	// unavailable, with no legacy fallback. The callback must validate its scope.
+	NamespacePath func(string) (string, bool)
+	// Namespaces enumerates host-owned current registrations instead of scanning
+	// legacy filesystem aliases. Failure skips the entire sweep without mutation.
+	Namespaces func(context.Context) ([]string, error)
 	// NamespaceAllowed is a host-owned execution-policy gate. A denied namespace
 	// is left untouched: no sends, task mutations, receipts, archives or pruning.
 	// Nil preserves the standalone watcher's behavior; production wires Runner's

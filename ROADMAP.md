@@ -280,14 +280,20 @@ previously silent Cyrillic task-list replies.
 
 [Audit](docs/research/2026-10-25-personal-group-isolation-audit.md),
 [contract](docs/superpowers/specs/2026-10-25-personal-group-container-isolation.md)
-and [six-PR plan](docs/superpowers/plans/2026-10-25-personal-group-container-isolation.md)
-are saved. Status: P0 containment implemented; full isolation in progress.
-P0 admits only the verified owner-private identity, blocks legacy non-owner IPC
-and removes non-owner personal mount/env inheritance. Groups stay unavailable
-until later qualification; migration and enforced credential/network boundaries
-are not implemented by P0.
-P0 containment is a prerequisite for claiming safe group operation; memory API
-scoping alone is insufficient. Personal services default off; dedicated scoped
-integration grants are exceptions. Draft group/channel agent policies are not
-installed runtime controls. Billing/accounts, enforced network boundary and clean
-epoch carryover remain explicit implementation/release decisions.
+and [implementation/acceptance plan](docs/superpowers/plans/2026-10-25-personal-group-container-isolation.md)
+track the work. **In progress:** P0 is deployed; the full architecture is present
+on the working branch, with local full tests/races/vet and real Docker tool checks
+passed. Final review/CI, exact-Pi native/network qualification, migration and
+activation are not completed by that source status.
+
+Implemented: immutable namespace epochs and retired keys, protected separate
+roots, two personal/group provider image sets, read-only native-subscription auth,
+credential-free offline commands, exact inference-only HTTPS egress, scoped local
+memory/IPC, owner controls and evidence-preserving drain/orphan recovery.
+No personal service or paid API fallback is granted to groups. Group speech and
+automatic maintenance remain unavailable; private behavior stays the baseline.
+
+Current groups are owner-controlled sandboxes; targeted checks run incrementally.
+Full cross-boundary acceptance precedes real-group admission. T9 host cgroup/reboot,
+CP-006 group maintenance, arbitrary integrations and one-way private-to-group data
+grants remain separate work. See [current policy/configuration](docs/ISOLATION.md).

@@ -38,6 +38,12 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 		return
 	}
 	m := update.Message
+	// Reject known auth material before persistence or command dispatch. Private
+	// login/device-flow handling remains on its existing protected path.
+	if sharedSensitiveInput(m) {
+		b.replyTo(ctx, m.Chat.ID, inboundThreadID(m), m.ID, "Authentication material cannot be processed in shared chats. Use the private chat instead.")
+		return
+	}
 	if isLoginCommand(strings.TrimSpace(messageText(m))) && !privateLoginMessage(m) {
 		b.requestLoginHandoff(ctx, m)
 		return
@@ -72,6 +78,15 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 	// thread is the private-chat topic the message came from; every
 	// answer to it below goes back into that topic.
 	thread := inboundThreadID(m)
+
+	// Host-wide speech credentials are personal services, not implicit group
+	// grants. Refuse before album collection, downloads or Whisper requests.
+	if sharedSpeechInput(m, b.ownerChatID) {
+		if _, ok := b.resolveRegistered(ctx, m); ok {
+			b.replyTo(ctx, m.Chat.ID, thread, m.ID, groupSpeechUnavailable)
+		}
+		return
+	}
 
 	// An album arrives as one message per item: collect them into one
 	// turn (inbound_context.go).
@@ -375,6 +390,11 @@ var (
 // If no override is set, auto-detects: voice input → "voice+text",
 // text input → "text".
 func (b *Bot) getReplyMode(chatID int64, isVoice bool) string {
+	// Groups/channels and silent task destinations cannot inherit personal TTS,
+	// including a previously persisted/requested voice-only preference.
+	if b.ownerChatID <= 0 || chatID != b.ownerChatID {
+		return "text"
+	}
 	replyModesMu.RLock()
 	mode := replyModes[chatID]
 	replyModesMu.RUnlock()

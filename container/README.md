@@ -156,6 +156,16 @@ acceptance gates. Official controls: [Claude CLI](https://code.claude.com/docs/e
 [Codex MCP settings](https://learn.chatgpt.com/docs/extend/mcp) and
 [Codex configuration](https://learn.chatgpt.com/docs/config-file/config-reference).
 
+Group Codex uses the documented native-auth custom provider ID
+`gopod_group_native` to select HTTPS/SSE while retaining native ChatGPT login.
+Production config supplies no base URL or API key; see the
+[pinned source and offline qualification](../docs/research/2026-10-26-codex-group-native-sse.md).
+The separate synthetic ChatGPT-auth Docker fixture runs on an internal network:
+
+```sh
+python3 experiments/subscription-isolation/codex_sse_auth_probe.py --cli-image gopod-agent-group-codex:latest
+```
+
 Profile image npm installs disable package lifecycle scripts. Claude 2.1.310 ships
 an executable placeholder in the wrapper package, so the reviewed Docker build
 links `claude` directly to the installed pinned Linux optional-package binary,

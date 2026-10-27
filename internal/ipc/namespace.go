@@ -9,8 +9,25 @@ import (
 	"syscall"
 )
 
+func (w *Watcher) namespacePath(folder string) (string, error) {
+	if w.cfg.NamespacePath != nil {
+		path, ok := w.cfg.NamespacePath(folder)
+		if !ok || !filepath.IsAbs(path) || filepath.Clean(path) != path {
+			return "", fmt.Errorf("IPC namespace unavailable")
+		}
+		return path, nil
+	}
+	if folder == "" || filepath.Base(folder) != folder || folder == "." || folder == ".." {
+		return "", fmt.Errorf("IPC namespace unavailable")
+	}
+	return filepath.Join(w.cfg.DataDir, "ipc", folder), nil
+}
 func (w *Watcher) openNamespace(folder string) (*os.Root, error) {
-	return os.OpenRoot(filepath.Join(w.cfg.DataDir, "ipc", folder))
+	path, err := w.namespacePath(folder)
+	if err != nil {
+		return nil, err
+	}
+	return os.OpenRoot(path)
 }
 
 func (w *Watcher) readTask(path, folder string) ([]byte, error) {

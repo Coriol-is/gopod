@@ -30,6 +30,9 @@ const nodeOptionsEnv = "NODE_OPTIONS"
 // NODE_OPTIONS the container already has (forwarded through the env
 // allowlist) is merged, since the exec's value replaces the container's.
 func (r *Runner) agentExecEnv(chatFolder string, thread int, prov AgentProvider) ([]string, func()) {
+	if group, ok := prov.(interface{ GroupExecEnv() []string }); ok {
+		return group.GroupExecEnv(), func() {}
+	}
 	env, release := r.agentEnv(chatFolder, thread)
 	if r.nodeHeapMB <= 0 || prov.Name() != "claude" {
 		return env, release

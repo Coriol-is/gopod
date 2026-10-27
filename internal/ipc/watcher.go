@@ -13,26 +13,37 @@ import (
 // tickOnce sweeps every <DataDir>/ipc/<chat>/{messages,tasks} dir
 // once. Errors are logged and never returned.
 func (w *Watcher) tickOnce(ctx context.Context) {
-	root := filepath.Join(w.cfg.DataDir, "ipc")
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			w.log.Warn("ipc: readdir root failed",
-				"root", root, "err", err)
+	var folders []string
+	if w.cfg.Namespaces != nil {
+		var err error
+		folders, err = w.cfg.Namespaces(ctx)
+		if err != nil {
+			w.log.Warn("ipc: namespace inventory unavailable")
+			return
 		}
-		return
-	}
-
-	// Stable per-chat order so tests are deterministic.
-	folders := make([]string, 0, len(entries))
-	for _, e := range entries {
-		if e.IsDir() {
-			folders = append(folders, e.Name())
+	} else {
+		root := filepath.Join(w.cfg.DataDir, "ipc")
+		entries, err := os.ReadDir(root)
+		if err != nil {
+			if !errors.Is(err, os.ErrNotExist) {
+				w.log.Warn("ipc: readdir root failed", "err", err)
+			}
+			return
+		}
+		for _, e := range entries {
+			if e.IsDir() {
+				folders = append(folders, e.Name())
+			}
 		}
 	}
 	sort.Strings(folders)
 
+	last := ""
 	for _, folder := range folders {
+		if folder == last {
+			continue
+		}
+		last = folder
 		w.handleFolder(ctx, folder)
 	}
 }
@@ -113,7 +124,11 @@ func (w *Watcher) shouldSkipForBackoff(path string) bool {
 func (w *Watcher) processChannel(ctx context.Context, folder, channel string,
 	handler func(ctx context.Context, folder, path string) bool,
 ) {
-	dir := filepath.Join(w.cfg.DataDir, "ipc", folder, channel)
+	base, err := w.namespacePath(folder)
+	if err != nil {
+		return
+	}
+	dir := filepath.Join(base, channel)
 	// Never enumerate a path first and validate its content later: filenames
 	// themselves are private metadata. The rooted open prevents traversal out
 	// of the namespace, and NOFOLLOW rejects a substituted channel symlink

@@ -327,11 +327,8 @@ func tasksSetStatusExpected(ctx context.Context, st *store.Store, folder string,
 
 	// Verify task belongs to this chat.
 	t, err := st.GetTask(ctx, id)
-	if err != nil {
+	if err != nil || t.ChatFolder != folder {
 		return Response{Text: "Task not found. Use full ID from /tasks list.", Code: 1}, nil
-	}
-	if t.ChatFolder != folder {
-		return Response{Text: "Task belongs to a different chat.", Code: 1}, nil
 	}
 
 	if t.Status != "active" && t.Status != "paused" {
@@ -372,11 +369,8 @@ func tasksCancel(ctx context.Context, st *store.Store, folder string, args []str
 	id := args[0]
 
 	t, err := st.GetTask(ctx, id)
-	if err != nil {
+	if err != nil || t.ChatFolder != folder {
 		return Response{Text: "Task not found.", Code: 1}, nil
-	}
-	if t.ChatFolder != folder {
-		return Response{Text: "Task belongs to a different chat.", Code: 1}, nil
 	}
 
 	if err := st.DeleteTask(ctx, id); err != nil {

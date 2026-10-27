@@ -153,6 +153,9 @@ func RegisterVoiceCommand(r *Router, setMode func(chatID int64, mode string)) {
 			if len(cmd.Args) > 0 {
 				mode = cmd.Args[0]
 			}
+			if cmd.Caller.ChatID <= 0 && mode != "text" {
+				return Response{Code: 1, Text: "Voice services are unavailable in the group profile. Replies remain text; personal speech services are not inherited."}, nil
+			}
 			switch mode {
 			case "voice", "text", "voice+text", "auto":
 				setMode(cmd.Caller.ChatID, mode)

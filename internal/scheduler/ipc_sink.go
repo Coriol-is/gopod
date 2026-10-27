@@ -63,6 +63,10 @@ func (a *IPCSink) Cancel(ctx context.Context, id string) error {
 	release := taskOperationLock(ctx, a.st)
 	defer release()
 	t, err := a.st.GetTask(ctx, id)
+	scope, scoped := ipc.TaskScopeFromContext(ctx)
+	if scoped && !scope.IsOwner && (errors.Is(err, store.ErrTaskNotFound) || err == nil && t.ChatFolder != scope.SourceFolder) {
+		return fmt.Errorf("task unavailable in this scope: %w", ipc.ErrPermanent)
+	}
 	if err != nil {
 		if errors.Is(err, store.ErrTaskNotFound) {
 			return fmt.Errorf("cancel %q: %w: %w", id, err, ipc.ErrPermanent)

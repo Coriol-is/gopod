@@ -71,3 +71,6 @@ services:
     # bypasses ufw, so the firewall must target the bridge interface.
     ports:
       - "9876:9876"
+      # Capability-authenticated group tool endpoint; native CLIs cannot reach
+      # host ports directly and use the fixed inference relay route only.
+      - "9877:9877"

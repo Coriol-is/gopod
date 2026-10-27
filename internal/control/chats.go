@@ -2,6 +2,7 @@ package control
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -31,11 +32,11 @@ func RegisterChatCommands(r *Router, st *store.Store, ownerChatID int64) {
 
 func chatsRegister(st *store.Store, ownerChatID int64) Handler {
 	return func(ctx context.Context, cmd Command) (Response, error) {
-		if len(cmd.Args) != 2 {
+		if len(cmd.Args) < 1 || len(cmd.Args) > 2 {
 			return Response{
-				Text: "Usage: /register <chat_id> <folder>\n\n" +
+				Text: "Usage: /register <chat_id> [folder]\n\n" +
 					"  chat_id  numeric Telegram chat id (run /whoami in the target chat to find it)\n" +
-					"  folder   on-disk workspace name, ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$",
+					"  folder   required for a new registration; existing registrations may omit it. On-disk name, ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$",
 				Code: 1,
 			}, nil
 		}
@@ -47,7 +48,6 @@ func chatsRegister(st *store.Store, ownerChatID int64) Handler {
 				Code: 1,
 			}, nil
 		}
-		folder := cmd.Args[1]
 
 		if ownerChatID != 0 && targetID == ownerChatID {
 			return Response{
@@ -56,11 +56,26 @@ func chatsRegister(st *store.Store, ownerChatID int64) Handler {
 			}, nil
 		}
 
-		rc := store.RegisteredChat{
-			JID:     chatJID(targetID),
-			Folder:  folder,
-			IsOwner: false,
-			AddedAt: time.Now().UnixMilli(),
+		existing, lookupErr := st.GetRegistered(ctx, chatJID(targetID))
+		if lookupErr != nil && !errors.Is(lookupErr, store.ErrChatNotRegistered) {
+			return Response{Text: "Registration unavailable.", Code: 1}, lookupErr
+		}
+		if len(cmd.Args) == 1 && lookupErr != nil {
+			return Response{Text: "Usage: /register <chat_id> <folder> for a new registration.", Code: 1}, nil
+		}
+		folder := ""
+		if len(cmd.Args) == 2 {
+			folder = cmd.Args[1]
+		} else {
+			folder = existing.Folder
+		}
+		rc := store.RegisteredChat{JID: chatJID(targetID), Folder: folder, IsOwner: false, AddedAt: time.Now().UnixMilli()}
+		if lookupErr == nil {
+			// No metadata reset or workspace alias inference on re-registration. An
+			// omitted folder uses the current key, including a clean epoch's opaque key;
+			// an explicitly supplied different folder is still rejected by Store.
+			rc = existing
+			rc.Folder = folder
 		}
 		if err := st.RegisterChat(ctx, rc); err != nil {
 			return Response{
@@ -71,7 +86,7 @@ func chatsRegister(st *store.Store, ownerChatID int64) Handler {
 
 		return Response{
 			Text: fmt.Sprintf(
-				"registered chat %d as folder %q.\n\nNext: send a message in that chat to spawn its agent container.",
+				"registered chat %d as folder %q.\n\nAgent execution remains subject to the qualified host isolation policy.",
 				targetID, folder),
 			Data: map[string]any{
 				"chat_id": targetID,

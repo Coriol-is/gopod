@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"time"
 	"unicode"
 
@@ -75,6 +76,10 @@ func (b *Bot) downloadDocument(ctx context.Context, chatFolder string, doc *mode
 // or defaultExt. The name comes from the sender, so only its last path
 // element is used: it can never leave the chat's uploads directory.
 func (b *Bot) saveUpload(ctx context.Context, chatFolder, fileID, name, defaultExt string) (hostPath, containerPath string, err error) {
+	chatDir, err := b.chatDir(ctx, chatFolder)
+	if err != nil {
+		return "", "", err
+	}
 	file, err := b.api.GetFile(ctx, &bot.GetFileParams{FileID: fileID})
 	if err != nil {
 		return "", "", fmt.Errorf("GetFile: %w", err)
@@ -103,19 +108,31 @@ func (b *Bot) saveUpload(ctx context.Context, chatFolder, fileID, name, defaultE
 		filename = prefix + ext
 	}
 
-	uploadsDir := filepath.Join(b.chatDir(chatFolder), "uploads")
-	if err := os.MkdirAll(uploadsDir, 0o755); err != nil {
-		return "", "", fmt.Errorf("mkdir uploads: %w", err)
+	if err = os.MkdirAll(chatDir, 0o755); err != nil {
+		return "", "", fmt.Errorf("upload workspace unavailable")
 	}
-	hostPath = filepath.Join(uploadsDir, filename)
-	f, err := os.Create(hostPath)
+	root, err := os.OpenRoot(chatDir)
 	if err != nil {
-		return "", "", fmt.Errorf("create file: %w", err)
+		return "", "", fmt.Errorf("upload workspace unavailable")
 	}
+	defer root.Close()
+	if err = root.Mkdir("uploads", 0o700); err != nil && !errors.Is(err, os.ErrExist) {
+		return "", "", fmt.Errorf("upload directory unavailable")
+	}
+	info, err := root.Lstat("uploads")
+	if err != nil || !info.IsDir() {
+		return "", "", fmt.Errorf("upload directory must be a regular directory")
+	}
+	relative := filepath.Join("uploads", filename)
+	f, err := root.OpenFile(relative, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0o600)
+	if err != nil {
+		return "", "", fmt.Errorf("upload file unavailable")
+	}
+	hostPath = filepath.Join(chatDir, relative)
 	_, copyErr := io.Copy(f, resp.Body)
 	closeErr := f.Close()
 	if err := errors.Join(copyErr, closeErr); err != nil {
-		_ = os.Remove(hostPath)
+		_ = root.Remove(relative)
 		return "", "", fmt.Errorf("save file: %w", err)
 	}
 	return hostPath, "/workspace/chat/uploads/" + filename, nil
@@ -143,11 +160,9 @@ func safeUploadName(name string) string {
 }
 
 // chatDir returns the host-side chat directory path.
-func (b *Bot) chatDir(chatFolder string) string {
+func (b *Bot) chatDir(ctx context.Context, chatFolder string) (string, error) {
 	if b.runner != nil {
-		// Use the runner's configured ChatsDir.
-		return filepath.Join(b.runner.ChatsDir(), chatFolder)
+		return b.runner.ChatWorkspace(ctx, chatFolder)
 	}
-	// Fallback: relative path.
-	return filepath.Join("chats", chatFolder)
+	return filepath.Join("chats", chatFolder), nil
 }

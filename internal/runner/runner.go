@@ -27,6 +27,7 @@ import (
 // inside lastTouchMu serializes EnsureRunning calls for the same chat.
 type Runner struct {
 	profilePolicy *admissionPolicy
+	groups        GroupRuntime
 	d             *Docker
 	ex            agentExecer // r.d in production; the agent exec seam for tests
 	provider      AgentProvider
@@ -200,6 +201,9 @@ func (r *Runner) Ensure(
 }
 
 func (r *Runner) ensureContainer(ctx context.Context, chatFolder string, tier Tier, allowlist *mountsec.Allowlist, reconcile bool) (string, error) {
+	if _, group := r.groupRegistration(ctx, chatFolder); group {
+		return "", ErrProfileUnavailable
+	}
 	if err := r.authorizeProfile(ctx, chatFolder); err != nil {
 		return "", err
 	}
@@ -269,8 +273,18 @@ func (r *Runner) Run(
 	tier Tier,
 	allowlist *mountsec.Allowlist,
 	prompt string,
-) (string, error) {
+) (reply string, retErr error) {
+	_, group := r.groupRegistration(ctx, chatFolder)
+	defer func() {
+		if group {
+			reply = redactGroupCapabilities(reply)
+			retErr = groupPublicError(retErr)
+		}
+	}()
 	if err := r.authorizeProfile(ctx, chatFolder); err != nil {
+		return "", err
+	}
+	if err := r.checkGroupInput(ctx, chatFolder, prompt); err != nil {
 		return "", err
 	}
 	releaseSlot, err := r.acquireAgentSlot(ctx, chatFolder)
@@ -278,10 +292,12 @@ func (r *Runner) Run(
 		return "", err
 	}
 	defer releaseSlot()
-	id, err := r.ensure(ctx, chatFolder, tier, allowlist)
+	id, prov, releaseRuntime, err := r.turnRuntime(ctx, chatFolder, thread, tier, allowlist)
 	if err != nil {
 		return "", fmt.Errorf("runner: ensure %q: %w", chatFolder, err)
 	}
+	group = group || restrictedGroupProvider(prov)
+	defer releaseRuntime()
 	r.touch(chatFolder)
 
 	// Build memory context for the system prompt via the Phase B
@@ -299,7 +315,6 @@ func (r *Runner) Run(
 	}
 	opts.AppendSystemPrompt = systemPromptWith(opts.AppendSystemPrompt)
 
-	prov := r.ProviderForChat(chatFolder)
 	agentPrompt, err := r.handoffPrompt(ctx, chatFolder, thread, prov.Name(), prompt)
 	if err != nil {
 		return "", err
@@ -329,10 +344,13 @@ func (r *Runner) Run(
 	if err != nil {
 		return "", err
 	}
-	if err := r.markConversationProvider(ctx, chatFolder, thread, prov.Name(), strings.TrimSpace(res.Stdout)); err != nil {
+	if err := validateExecution(ctx, prov); err != nil {
 		return "", err
 	}
-	reply := strings.TrimSpace(res.Stdout)
+	if err := r.markConversationProvider(ctx, chatFolder, thread, prov.Name(), groupOutputText(prov, strings.TrimSpace(res.Stdout))); err != nil {
+		return "", err
+	}
+	reply = groupOutputText(prov, strings.TrimSpace(res.Stdout))
 	r.touch(chatFolder)
 
 	// Trigger async extraction after successful agent turn.
@@ -401,8 +419,17 @@ func (r *Runner) RunStream(
 	tier Tier,
 	allowlist *mountsec.Allowlist,
 	prompt string,
-) (*AgentStream, error) {
+) (stream *AgentStream, retErr error) {
+	_, group := r.groupRegistration(ctx, chatFolder)
+	defer func() {
+		if group {
+			retErr = groupPublicError(retErr)
+		}
+	}()
 	if err := r.authorizeProfile(ctx, chatFolder); err != nil {
+		return nil, err
+	}
+	if err := r.checkGroupInput(ctx, chatFolder, prompt); err != nil {
 		return nil, err
 	}
 	releaseSlot, err := r.acquireAgentSlot(ctx, chatFolder)
@@ -415,10 +442,13 @@ func (r *Runner) RunStream(
 			releaseSlot()
 		}
 	}()
-	id, err := r.ensure(ctx, chatFolder, tier, allowlist)
+	id, prov, releaseRuntime, err := r.turnRuntime(ctx, chatFolder, thread, tier, allowlist)
 	if err != nil {
 		return nil, fmt.Errorf("runner: ensure %q: %w", chatFolder, err)
 	}
+	group = group || restrictedGroupProvider(prov)
+	originalRelease := releaseSlot
+	releaseSlot = func() { releaseRuntime(); originalRelease() }
 	r.touch(chatFolder)
 
 	// Build memory context (same as Run).
@@ -434,7 +464,6 @@ func (r *Runner) RunStream(
 	}
 	systemPrompt = systemPromptWith(systemPrompt)
 
-	prov := r.ProviderForChat(chatFolder)
 	agentPrompt, err := r.handoffPrompt(ctx, chatFolder, thread, prov.Name(), prompt)
 	if err != nil {
 		return nil, err
@@ -473,7 +502,13 @@ func (r *Runner) startStream(
 	prompt string,
 	mkCmd func(SessionRef) []string,
 	heldSlot ...func(),
-) (*AgentStream, error) {
+) (stream *AgentStream, retErr error) {
+	group := restrictedGroupProvider(prov)
+	defer func() {
+		if group {
+			retErr = groupPublicError(retErr)
+		}
+	}()
 	chatFolder := conv.folder
 	var releaseSlot func()
 	var err error
@@ -569,13 +604,30 @@ func (r *Runner) startStream(
 
 		// After a cancel nobody may be reading Chunks any more; drop
 		// the tail instead of blocking the goroutine forever.
-		send := func(s string) {
+		emit := func(s string) {
+			if validateExecution(ctx, prov) != nil {
+				return
+			}
 			select {
 			case chunks <- s:
 			case <-ctx.Done():
 			}
 		}
-		fullOut, authOut, stderr := r.readAgentOutput(ctx, handle, ss, send, progress)
+		var filter groupChunkFilter
+		send := func(s string) {
+			if group {
+				s = filter.Push(s)
+			}
+			if s != "" {
+				emit(s)
+			}
+		}
+		fullOut, authOut, stderr := r.readAgentOutput(ctx, handle, ss, send, progress, group)
+		if group {
+			if tail := filter.Flush(); tail != "" {
+				emit(tail)
+			}
+		}
 		stderr = strings.TrimSpace(stderr)
 
 		// Wait for exit.
@@ -593,14 +645,18 @@ func (r *Runner) startStream(
 		}
 
 		r.touch(chatFolder)
-		fullText := strings.TrimSpace(fullOut)
+		fullText := groupOutputText(prov, strings.TrimSpace(fullOut))
+		publicStderr := stderr
+		if group {
+			publicStderr = ""
+		}
 
 		// A cancelled turn ends here: no reply, no memory ingestion,
 		// no turn count. The partial text belongs to the caller.
 		if ctx.Err() != nil {
 			result <- RunResult{
-				Err:    fmt.Errorf("runner: agent run cancelled: %w", ctx.Err()),
-				Stderr: stderr,
+				Err:    outwardProviderError(prov, fmt.Errorf("runner: agent run cancelled: %w", ctx.Err())),
+				Stderr: publicStderr,
 			}
 			return
 		}
@@ -617,18 +673,26 @@ func (r *Runner) startStream(
 					return
 				}
 				result <- RunResult{
-					Err:    fmt.Errorf("runner: agent exited %d (stderr=%q)", ee.Code, tailString(stderr, 600)),
-					Stderr: stderr,
+					Err:    outwardProviderError(prov, fmt.Errorf("runner: agent exited %d (stderr=%q)", ee.Code, tailString(stderr, 600))),
+					Stderr: publicStderr,
 				}
+				return
+			}
+			if group {
+				result <- RunResult{Err: groupPublicError(execErr)}
 				return
 			}
 		}
 
-		if err := r.markConversationProvider(ctx, chatFolder, conv.thread, prov.Name(), fullText); err != nil {
-			result <- RunResult{Err: err}
+		if err := validateExecution(ctx, prov); err != nil {
+			result <- RunResult{Err: outwardProviderError(prov, err)}
 			return
 		}
-		result <- RunResult{FullText: fullText, Stderr: stderr}
+		if err := r.markConversationProvider(ctx, chatFolder, conv.thread, prov.Name(), fullText); err != nil {
+			result <- RunResult{Err: outwardProviderError(prov, err)}
+			return
+		}
+		result <- RunResult{FullText: fullText, Stderr: publicStderr}
 
 		// Post-run: extraction, auto-compact (same as Run).
 		if r.memory != nil && r.extractFn != nil && fullText != "" {
@@ -665,12 +729,16 @@ func (r *Runner) structuredStreamer(prov AgentProvider) StructuredStreamer {
 // stderr. For structured runs that text is the reply only (result or
 // final agent text), never tool results or the raw transcript: a file
 // the agent read may well say "not logged in".
-func (r *Runner) readAgentOutput(ctx context.Context, handle *StreamHandle, ss StructuredStreamer, send func(string), progress chan<- ProgressEvent) (reply, authText, stderr string) {
+func (r *Runner) readAgentOutput(ctx context.Context, handle *StreamHandle, ss StructuredStreamer, send func(string), progress chan<- ProgressEvent, group bool) (reply, authText, stderr string) {
 	if ss == nil {
 		out, errOut := readExecStream(handle.Stdout, handle.Stderr, send)
 		return out, out, errOut
 	}
 	onTool := func(ev ProgressEvent) {
+		if group {
+			ev.Tool = redactGroupCapabilities(ev.Tool)
+			ev.Detail = redactGroupCapabilities(ev.Detail)
+		}
 		select {
 		case progress <- ev:
 		case <-ctx.Done():
@@ -734,22 +802,33 @@ func (r *Runner) RunFresh(
 	tier Tier,
 	allowlist *mountsec.Allowlist,
 	prompt string,
-) (string, error) {
+) (reply string, retErr error) {
+	_, group := r.groupRegistration(ctx, chatFolder)
+	defer func() {
+		if group {
+			reply = redactGroupCapabilities(reply)
+			retErr = groupPublicError(retErr)
+		}
+	}()
 	if err := r.authorizeProfile(ctx, chatFolder); err != nil {
 		return "", err
 	}
 	ctx, cancel := context.WithTimeout(ctx, freshRunTimeout)
 	defer cancel()
+	if err := r.checkGroupInput(ctx, chatFolder, prompt); err != nil {
+		return "", err
+	}
 	releaseSlot, err := r.acquireBackgroundSlot(ctx, chatFolder, cancel)
 	if err != nil {
 		return "", err
 	}
 	defer releaseSlot()
-	id, err := r.ensure(ctx, chatFolder, tier, allowlist)
+	id, prov, releaseRuntime, err := r.turnRuntime(ctx, chatFolder, 0, tier, allowlist)
 	if err != nil {
 		return "", fmt.Errorf("runner: ensure %q: %w", chatFolder, err)
 	}
-	prov := r.ProviderForChat(chatFolder)
+	group = group || restrictedGroupProvider(prov)
+	defer releaseRuntime()
 	releaseGate, err := r.admit(ctx, chatFolder, ClassBackground)
 	if err != nil {
 		return "", err
@@ -757,6 +836,9 @@ func (r *Runner) RunFresh(
 	res, err := r.execAgentWithCancel(ctx, id, chatFolder, 0, prov, prov.RunFreshCmd(prompt))
 	releaseGate()
 	if err != nil {
+		return "", err
+	}
+	if err := validateExecution(ctx, prov); err != nil {
 		return "", err
 	}
 	return strings.TrimSpace(res.Stdout), nil
@@ -778,7 +860,7 @@ func (r *Runner) execAgent(ctx context.Context, containerID, chatFolder string, 
 	defer release()
 	res, err := r.ex.Exec(ctx, containerID, cmd, env)
 	if err != nil {
-		return nil, fmt.Errorf("runner: exec: %w", err)
+		return nil, outwardProviderError(prov, fmt.Errorf("runner: exec: %w", err))
 	}
 	if res.ExitCode != 0 {
 		stderr := strings.TrimSpace(res.Stderr)
@@ -788,7 +870,7 @@ func (r *Runner) execAgent(ctx context.Context, containerID, chatFolder string, 
 		if prov.IsNotLoggedInError(stderr, res.Stdout) {
 			return res, r.classifyAuthError(ctx, containerID, prov)
 		}
-		return res, fmt.Errorf("runner: agent exited %d (stderr=%q)", res.ExitCode, stderr)
+		return res, outwardProviderError(prov, fmt.Errorf("runner: agent exited %d (stderr=%q)", res.ExitCode, stderr))
 	}
 	return res, nil
 }
@@ -1011,6 +1093,9 @@ func (r *Runner) ClearSession(ctx context.Context, chatFolder string, thread int
 func (r *Runner) CompactSession(ctx context.Context, chatFolder string, thread int, tier Tier, allowlist *mountsec.Allowlist) (string, error) {
 	if err := r.authorizeProfile(ctx, chatFolder); err != nil {
 		return "", err
+	}
+	if _, group := r.groupRegistration(ctx, chatFolder); group {
+		return "", ErrGroupMaintenanceUnavailable
 	}
 	if r.compactFn == nil {
 		return "", r.ClearSession(ctx, chatFolder, thread, tier, allowlist)
