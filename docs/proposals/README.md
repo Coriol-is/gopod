@@ -85,7 +85,7 @@ not enabling the feature merely by merging that document.
 | CP | Title | Status | Size |
 |---|---|---|---|
 | [CP-001](CP-001-memory-api-capability-token.md) | Capability token for the memory API | done | S |
-| [CP-002](CP-002-telegram-outbox.md) | Telegram outbox with retry and `uncertain` state | proposed | M |
+| [CP-002](CP-002-telegram-outbox.md) | Telegram outbox with retry and `uncertain` state (PR 1 of 8 in progress) | in-progress | M |
 | [CP-003](CP-003-typed-replies-via-ipc.md) | Typed IPC replies with immutable file/voice snapshots | proposed | M |
 | [CP-004](CP-004-isolated-task-sessions.md) | Scheduled tasks run in their own session | proposed | S–M |
 | [CP-005](CP-005-tools-base-image.md) | Lightweight bases and optional tool runtimes | proposed | L |

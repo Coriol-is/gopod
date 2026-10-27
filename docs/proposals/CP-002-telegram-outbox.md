@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | proposed |
+| Status | in-progress |
 | Date | 2026-10-05 |
 | Origin | feature survey of `rzaytsev/codex-agent` (2026-10-05) and the 2026-10-03 public-release audit |
 | Size | M |
@@ -49,3 +49,11 @@ Canonical design refined against Go source at `33e026a291fbe577efabf43e9d0b6e760
 defines schema, failure recovery, test criteria and staged release gates. Status remains
 **proposed**; no runtime code or feature enablement is included. The canonical spec supersedes
 earlier retry shorthand: generic 5xx/timeouts are uncertain, never presumed safe to resend.
+
+## 2026-10-27 implementation start
+
+Owner accepted implementation on 2026-10-27. Work is split into the eight PRs of the
+[delivery plan](../superpowers/plans/2026-10-26-reliability-delivery.md). PR 1 (store identity,
+result and delivery foundations) is in progress: additive tables and Store APIs only, no dispatcher,
+no Telegram changes, no behavior change for existing paths. Features stay disabled until the plan's
+gates pass; the outbox is not enabled by merging PR 1.
