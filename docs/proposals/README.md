@@ -103,7 +103,7 @@ not enabling the feature merely by merging that document.
 | [CP-017](CP-017-telegram-capability-diagnostics.md) | Telegram capability diagnostics (initial private-DM slice) | done | M |
 | [CP-018](CP-018-per-thread-providers.md) | Provider selection per conversation (design only) | accepted | M |
 | [CP-019](CP-019-telegram-ephemeral-commands.md) | Private command/service/error replies in groups (design only) | accepted | M |
-| [CP-020](CP-020-personal-group-isolation.md) | Personal/group isolation (full source implementation; Pi qualification pending) | in-progress | L |
+| [CP-020](CP-020-personal-group-isolation.md) | Personal/group isolation (merged main PRs #66/#67; final Pi qualification/rollout blocked) | implemented | L |
 | [CP-021](CP-021-task-outcomes-checkpoints.md) | Task outcomes, evidence and checkpoints | proposed | M |
 | [CP-022](CP-022-schedule-execution-policies.md) | Schedule overlap, misfire and model-free reminders | proposed | M |
 | [CP-023](CP-023-research-dossiers.md) | Source-backed research dossiers and reviewed reports | proposed | L |

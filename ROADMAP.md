@@ -281,15 +281,20 @@ previously silent Cyrillic task-list replies.
 [Audit](docs/research/2026-10-25-personal-group-isolation-audit.md),
 [contract](docs/superpowers/specs/2026-10-25-personal-group-container-isolation.md)
 and [implementation/acceptance plan](docs/superpowers/plans/2026-10-25-personal-group-container-isolation.md)
-track the work. **In progress:** P0 is deployed; the full architecture is present
-on the working branch, with local full tests/races/vet and real Docker tool checks
-passed. Final review/CI, exact-Pi native/network qualification, migration and
-activation are not completed by that source status.
+track the work. **Implementation complete; rollout blocked:** full architecture merged to main in PRs #66/#67
+(`a3a9c53a24456cce40678231ef048e6baba51956`), with green CI/Sonar and independent
+review. Local tests/races/vet and real Docker tools passed; Pi offline tools
+passed (6.22 s), and earlier-candidate Claude actual new/resume two-turn file/context/session checks
+passed. Production remains P0 `c82399b`. Latest-v2 both-provider inference, native TCP preflight,
+migration and activation remain blocked on SSH signing; see [draft rollout evidence](docs/deployments/2026-10-27-group-isolation.md).
 
 Implemented: immutable namespace epochs and retired keys, protected separate
 roots, two personal/group provider image sets, read-only native-subscription auth,
 credential-free offline commands, exact inference-only HTTPS egress, scoped local
 memory/IPC, owner controls and evidence-preserving drain/orphan recovery.
+Native policy v2 passed 69 local cases over all 11 public catalog models; ARM64
+release images were built locally from exact merged main. No production catalog
+write or group migration occurred.
 No personal service or paid API fallback is granted to groups. Group speech and
 automatic maintenance remain unavailable; private behavior stays the baseline.
 

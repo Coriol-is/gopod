@@ -11,12 +11,14 @@ Core Telegram assistant, Docker runtime, Claude/Codex native sessions,
 conversation-scoped history, memory, voice, scheduler and filesystem IPC are
 implemented. No other runtime, channel, guest agent or bot-to-bot peer is enabled.
 
-Reference Pi runs application **c82399b**, deployed 2026-10-26 21:03 UTC.
+Last verified reference Pi application is **c82399b**, deployed 2026-10-26 21:03 UTC.
 [CP-020 P0 rollout](deployments/2026-10-26-isolation-p0.md) blocks unqualified
 non-owner runtimes and pending IPC; only the personal owner runtime is active.
-The full CP-020 implementation is now present on the working branch; exact-Pi
-qualification and activation remain pending. Do not treat that branch status as
-an upgrade of the recorded deployed P0 baseline.
+The full CP-020 implementation merged to `main` as
+`a3a9c53a24456cce40678231ef048e6baba51956` (PRs #66/#67), with green CI/Sonar
+and independent review. Latest-v2 exact-Pi qualification for both providers and native TCP, rollout and
+activation remain pending; the production P0 baseline is unchanged. See the
+[draft rollout evidence](deployments/2026-10-27-group-isolation.md).
 [Private-login rollout](deployments/2026-10-25-01c18fe.md): group auth now requires
 private owner confirmation, preserving the group target/tier. Actual client login
 visibility remains A20; no account login was performed by rollout.
@@ -83,15 +85,22 @@ command replies and errors private, including every callback/page/failure path;
 there is no implementation or privacy-flag activation yet.
 
 ## What's in progress
-CP-020 full source implementation is in the active worktree: namespace/epoch/CAS,
+CP-020 implementation is complete and merged to main (PRs #66/#67): namespace/epoch/CAS,
 protected roots, split personal/group images, read-only native-auth references,
 isolated offline tools, exact-route HTTPS relay, local group memory/IPC and
 confirmed owner controls. Local full tests/races/vet and real Docker tool checks
-passed. Final code review/CI, exact-Pi provider/network qualification and deployment
+passed; CI/Sonar and independent review are green. The Pi offline-tool test passed
+(6.22 s), and earlier-candidate real Claude new/resume two-turn qualification preserved file, context
+and session identity. Latest-v2 inference for both providers, native TCP preflight and rollout
 remain open; use [the plan](superpowers/plans/2026-10-25-personal-group-container-isolation.md)
 and [current policy/config](ISOLATION.md) for gates. Group speech and automatic
 maintenance/extraction/compaction are unavailable; personal behavior is unchanged.
 No T9 memory-cgroup change/reboot, account refresh or paid API fallback is included.
+Native policy v2 passed 69 local cases across all 11 public catalog models, new/
+resume and hostile scenarios. Sanitized public catalog default is `gpt-6.1-sol`;
+ARM64 controller/Claude/Codex v2 images were built locally from exact merged main.
+No production catalog write or group migration occurred. Both latest-v2 provider
+canaries and native TCP preflight await SSH signing access.
 
 Doctor output follow-up is merged and deployed: protect technical identifiers from
 Markdown emphasis, label refresh eligibility as manual-only, and expose a scoped
@@ -184,7 +193,9 @@ Only P0 is currently recorded as deployed. The new native CLI sees a fresh
 inference directory, group-only state and an explicit read-only auth-only inode;
 actual files execute in a separate no-network sandbox. Missing/expired auth fails
 closed until private management refreshes the source. It is not a separate
-account/quota. Exact-Pi image/network/real account and client checks remain gates.
+account/quota. Final latest-v2 inference for both providers, native TCP preflight and client checks remain
+gates. The final merged binary has not been installed on the Pi; SSH signing is
+currently blocked by the locked 1Password agent (owner unlock requested).
 Old scope data is preserved under retired keys, old group schedules are paused,
 and an interrupted preparation stays disabled. Timed-out host callbacks remain
 tracked until drain proof; orphan cleanup cannot authorize replay or delete native
