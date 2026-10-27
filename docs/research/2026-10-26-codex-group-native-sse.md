@@ -167,3 +167,41 @@ with tool-search metadata require separate qualification of a strictly scoped
 search implementation, or remain unavailable. `model_catalog_json` is a real
 configuration option, but rewriting actual model metadata to pretend that the
 model uses another format is not the chosen compatibility mechanism.
+
+### Qualified client tool-search behavior (offline)
+
+A synthetic explicit catalog with `supports_search_tool=true` reproduces the
+next native envelope: `additional_tools.tools` initially contains safe builtin
+functions and the descriptor below, **without** deferred MCP declarations:
+
+```json
+{"type":"tool_search","execution":"client","description":"<native-generated description>","parameters":{"type":"object","properties":{"limit":{"type":"number","description":"Maximum number of tools to return. Defaults to 8."},"query":{"type":"string","description":"Search query for deferred tools."}},"required":["query"],"additionalProperties":false}}
+```
+
+`core/src/tools/handlers/tool_search_spec.rs` builds this fixed client descriptor;
+`tools/src/tool_spec.rs` serializes it. `ToolSearchHandlerCache::get_or_build` in
+`core/src/tools/handlers/tool_search.rs` collects **only existing deferred registry
+entries**. Search uses local BM25 (`bm25::Embedder`/Scorer), not an external
+embedding/model endpoint. `ToolSearchHandler::search` returns catalog entries as
+loadable definitions. `core/src/tools/router.rs:275` executes a search call only
+when `execution == "client"`; it does not execute provider-hosted search.
+Unregistered function calls fail in the registry dispatch path instead of
+creating new runtime bindings (`core/src/tools/registry.rs`).
+
+The persisted native fixture now covers search → scoped MCP execution on both
+new and resumed sessions, validates every returned search declaration belongs
+to `mcp__group.group_exec` or `mcp__group.group_request`, and proves a malicious
+provider-requested `exec_command` cannot execute with search enabled. All eight
+normal/RLite/search/hostile scenarios passed with pinned local CLIs, synthetic
+catalogs and local mock endpoints; no account or live model was used.
+
+A compatibility policy must distinguish declaration availability from registry
+authority: before initial discovery the scoped pair is established by the
+immutable strict MCP server configuration and its exact `enabled_tools`, not by
+a visible request declaration. An explicit client-search mode can allow only the
+pinned descriptor and audited builtin functions, with recursive identity checks
+on `tool_search_output.tools` and rejection of server execution, foreign
+namespaces and unknown declarations. Merely treating a `tool_search` descriptor
+as if it declared both scoped functions would misrepresent the wire evidence.
+These source/fixture results do not authorize a generic hosted-search grant or
+prove live transport/account acceptance.

@@ -6,12 +6,12 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
-const groupSpeechUnavailable = "Voice and audio processing is unavailable in shared chats. Send a text message instead."
+const groupSpeechUnavailable = "Voice and audio processing is unavailable in this chat. Send a text message instead."
 
 // Speech requires the trusted Telegram private context. A positive actor ID or
 // an owner flag cannot turn a group/channel message into a personal service use.
-func sharedSpeechInput(m *models.Message) bool {
-	return m != nil && (m.Voice != nil || m.Audio != nil || m.VideoNote != nil) && !privateLoginMessage(m)
+func sharedSpeechInput(m *models.Message, ownerChatID int64) bool {
+	return m != nil && (m.Voice != nil || m.Audio != nil || m.VideoNote != nil) && !(ownerChatID > 0 && privateLoginMessage(m) && m.Chat.ID == ownerChatID)
 }
 
 // sharedSensitiveInput covers Telegram-provided message metadata before either

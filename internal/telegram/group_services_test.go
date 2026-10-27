@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -42,7 +43,7 @@ func TestSharedSpeechNeverDownloadsOrCallsPersonalWhisper(t *testing.T) {
 				t.Fatal("group audio downloaded before service admission")
 			}
 			messages := f.fake.callsTo("sendMessage")
-			if len(messages) != 1 || !strings.Contains(messages[0].Form["text"], "unavailable in shared chats") {
+			if len(messages) != 1 || !strings.Contains(messages[0].Form["text"], "unavailable in this chat") {
 				t.Fatal("missing neutral service hint")
 			}
 			select {
@@ -54,12 +55,12 @@ func TestSharedSpeechNeverDownloadsOrCallsPersonalWhisper(t *testing.T) {
 	}
 }
 func TestSharedSpeechRequiresTrustedPrivateContext(t *testing.T) {
-	for _, chat := range []models.Chat{{ID: -1, Type: models.ChatTypeSupergroup}, {ID: streamChat, Type: models.ChatTypeGroup}, {ID: streamChat}, {ID: 0, Type: models.ChatTypePrivate}} {
-		if !sharedSpeechInput(&models.Message{Chat: chat, Voice: &models.Voice{FileID: "v"}}) {
+	for _, chat := range []models.Chat{{ID: -1, Type: models.ChatTypeSupergroup}, {ID: -2, Type: models.ChatTypeChannel}, {ID: streamChat, Type: models.ChatTypeChannel}, {ID: streamChat, Type: models.ChatTypeGroup}, {ID: streamChat}, {ID: 0, Type: models.ChatTypePrivate}} {
+		if !sharedSpeechInput(&models.Message{Chat: chat, Voice: &models.Voice{FileID: "v"}}, streamChat) {
 			t.Error("untrusted context inherited personal speech")
 		}
 	}
-	if sharedSpeechInput(&models.Message{Chat: models.Chat{ID: streamChat, Type: models.ChatTypePrivate}, Voice: &models.Voice{FileID: "v"}}) {
+	if sharedSpeechInput(&models.Message{Chat: models.Chat{ID: streamChat, Type: models.ChatTypePrivate}, Voice: &models.Voice{FileID: "v"}}, streamChat) {
 		t.Fatal("private speech behavior changed")
 	}
 }
@@ -70,6 +71,7 @@ func (f speechServiceRoundTrip) RoundTrip(r *http.Request) (*http.Response, erro
 func TestSharedReplyVoicePreferenceCannotInvokePersonalTTS(t *testing.T) {
 	fake := &fakeTelegram{respond: func(string, map[string]string) (int, string) { return sentMessage("555") }}
 	b, _ := newStreamFixture(t, fake)
+	b.ownerChatID = streamChat
 	old := http.DefaultClient
 	t.Cleanup(func() { http.DefaultClient = old })
 	calls := 0
@@ -81,7 +83,7 @@ func TestSharedReplyVoicePreferenceCannotInvokePersonalTTS(t *testing.T) {
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("synthetic opus")), Header: make(http.Header)}, nil
 	})}
 	t.Setenv("OPENAI_API_KEY", "synthetic-personal-key")
-	for _, id := range []int64{-2002, 0} {
+	for _, id := range []int64{-2002, 0, streamChat + 1} {
 		SetReplyMode(id, "voice")
 		t.Cleanup(func() { SetReplyMode(id, "auto") })
 		if b.getReplyMode(id, true) != "text" {
@@ -213,5 +215,53 @@ func TestSharedAuthMetadataRejectedBeforeHistory(t *testing.T) {
 	public.Entities = []models.MessageEntity{{Type: models.MessageEntityTypeTextLink, URL: "https://example.com/public"}}
 	if sharedSensitiveInput(public) {
 		t.Fatal("ordinary public metadata rejected")
+	}
+}
+
+func TestNonOwnerPrivateSpeechDeniedBeforeDownload(t *testing.T) {
+	for _, kind := range []string{"voice", "audio", "video_note", "album_audio"} {
+		t.Run(kind, func(t *testing.T) {
+			f := newInboundFixture(t, nil)
+			whisper := newFakeWhisper(t, f.b, "must not transcribe")
+			const other = streamChat + 99
+			if err := f.b.store.RegisterChat(context.Background(), store.RegisteredChat{JID: fmt.Sprintf("tg:%d", other), Folder: "other", IsOwner: true, AddedAt: time.Now().UnixMilli()}); err != nil {
+				t.Fatal(err)
+			}
+			m := threadedMsg(7, "")
+			m.Chat = models.Chat{ID: other, Type: models.ChatTypePrivate}
+			switch kind {
+			case "voice":
+				m.Voice = &models.Voice{FileID: "v"}
+			case "audio", "album_audio":
+				m.Audio = &models.Audio{FileID: "a"}
+			case "video_note":
+				m.VideoNote = &models.VideoNote{FileID: "n"}
+			}
+			if kind == "album_audio" {
+				m.MediaGroupID = "album"
+			}
+			f.handle(m)
+			if len(f.fake.callsTo("getFile")) != 0 || len(whisper.uploaded()) != 0 {
+				t.Fatal("nonowner used personal speech")
+			}
+			messages := f.fake.callsTo("sendMessage")
+			if len(messages) != 1 || !strings.Contains(messages[0].Form["text"], "unavailable in this chat") {
+				t.Fatal("missing neutral denial")
+			}
+			select {
+			case <-f.items:
+				t.Fatal("denied speech queued")
+			default:
+			}
+		})
+	}
+}
+
+func TestSpeechRequiresConfiguredOwnerEvenInPrivate(t *testing.T) {
+	m := &models.Message{Chat: models.Chat{ID: streamChat, Type: models.ChatTypePrivate}, Voice: &models.Voice{FileID: "v"}}
+	for _, owner := range []int64{0, streamChat + 1, -streamChat} {
+		if !sharedSpeechInput(m, owner) {
+			t.Fatal("unconfigured/foreign owner allowed")
+		}
 	}
 }

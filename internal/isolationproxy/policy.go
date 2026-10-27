@@ -133,6 +133,18 @@ func (p *Proxy) validateBody(r *http.Request, grant Route) ([]byte, error) {
 		}
 		return data, nil
 	}
+	// The closed native SDK adds optional account prompt-comparison diagnostics.
+	// Validate their exact schema and remove them before any upstream request.
+	strippedDiagnostics, err := discardDiagnostics(value, grant.Body)
+	if err != nil {
+		return nil, err
+	}
+	if strippedDiagnostics {
+		data, err = json.Marshal(value)
+		if err != nil || int64(len(data)) > p.maxRequestBytes {
+			return nil, errors.New("request limit")
+		}
+	}
 	// Provider-hosted tools/connectors can bypass local tool controls. Reject
 	// their request selectors even if the native CLI would normally omit them.
 	for _, field := range []string{"mcp_servers", "connectors", "connector_ids", "apps", "plugins", "include_tools", "computer", "agent", "background", "previous_response_id", "conversation"} {
@@ -169,6 +181,7 @@ func (p *Proxy) validateBody(r *http.Request, grant Route) ([]byte, error) {
 		return nil, errors.New("unapproved remote context")
 	}
 	seenTools := map[string]bool{}
+	clientSearch := false
 	tools, ok := value["tools"]
 	if grant.Body == Responses {
 		additional, present, err := responsesLiteTools(value["input"])
@@ -193,10 +206,23 @@ func (p *Proxy) validateBody(r *http.Request, grant Route) ([]byte, error) {
 			p.event("tools_nonempty")
 		}
 		for _, tool := range array {
+			if descriptor, ok := tool.(map[string]any); ok && descriptor["type"] == "tool_search" {
+				if clientSearch || grant.Body != Responses || !p.allowClientToolSearch || !validClientSearch(descriptor) {
+					return nil, errors.New("unapproved tool search")
+				}
+				clientSearch = true
+				continue
+			}
 			if !p.toolAllowed(tool, "", grant.Body, seenTools) {
 				return nil, errors.New("unapproved tool")
 			}
 		}
+	}
+	if err := p.auditSearchOutputs(value["input"], clientSearch); err != nil {
+		return nil, err
+	}
+	if clientSearch {
+		p.event("inventory_client_catalog")
 	}
 	if len(p.requiredTools) > 0 {
 		// Observe only fixed host-defined identities, never submitted tool names.
@@ -223,7 +249,7 @@ func (p *Proxy) validateBody(r *http.Request, grant Route) ([]byte, error) {
 		}
 	}
 	for name := range p.requiredTools {
-		if !seenTools[name] {
+		if !seenTools[name] && !clientSearch {
 			return nil, errors.New("required external tool unavailable")
 		}
 	}

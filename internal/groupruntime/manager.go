@@ -236,7 +236,7 @@ func (m *Manager) Start(ctx context.Context, c store.RegisteredChat, base runner
 	relayCfg := struct {
 		Proxy  isolationproxy.Config
 		MCPURL string
-	}{Proxy: isolationproxy.Config{RequireSubscriptionBearer: true, Token: token, Routes: cfg.Routes, RequiredTools: []string{"mcp__group__group_exec", "mcp__group__group_request"}, AllowedTools: []string{"mcp__group__group_exec", "mcp__group__group_request", "mcp__group.group_exec", "mcp__group.group_request", "group_exec", "group_request", "update_plan", "request_user_input", "list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"}, CACertificatePEM: cert, CAPrivateKeyPEM: key}, MCPURL: "http://host.docker.internal:9877/mcp/" + token}
+	}{Proxy: isolationproxy.Config{AllowClientToolSearch: base.Name() == "codex", RequireSubscriptionBearer: true, Token: token, Routes: cfg.Routes, RequiredTools: []string{"mcp__group__group_exec", "mcp__group__group_request"}, AllowedTools: []string{"mcp__group__group_exec", "mcp__group__group_request", "mcp__group.group_exec", "mcp__group.group_request", "group_exec", "group_request", "update_plan", "request_user_input", "list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"}, CACertificatePEM: cert, CAPrivateKeyPEM: key}, MCPURL: "http://host.docker.internal:9877/mcp/" + token}
 	raw, err := json.Marshal(relayCfg)
 	if err != nil {
 		return "", nil, release, ErrUnavailable

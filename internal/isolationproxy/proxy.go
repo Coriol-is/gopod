@@ -26,6 +26,8 @@ type Config struct {
 	AllowedTools []string
 	// RequiredTools prevents inference if required external MCP tools are absent.
 	RequiredTools []string
+	// AllowClientToolSearch is host-owned and requires the exact immutable MCP pair.
+	AllowClientToolSearch bool
 	// Shared readonly native auth can never fall back to API-key billing.
 	RequireSubscriptionBearer bool
 	CACertificatePEM          []byte
@@ -42,6 +44,7 @@ type Proxy struct {
 	routes                            []Route
 	allowedTools                      map[string]bool
 	requiredTools                     map[string]bool
+	allowClientToolSearch             bool
 	requireSubscriptionBearer         bool
 	ca                                []byte
 	certificates                      map[string]tls.Certificate
@@ -133,7 +136,10 @@ func New(c Config) (*Proxy, error) {
 		}
 		required[key] = true
 	}
-	return &Proxy{observe: c.Observe, token: c.Token, routes: routes, allowedTools: tools, requiredTools: required, requireSubscriptionBearer: c.RequireSubscriptionBearer, ca: bytes.Clone(cert), certificates: certificates, transport: publicTransport(), maxRequestBytes: c.MaxRequestBytes, maxResponseBytes: c.MaxResponseBytes, maxDuration: c.MaxDuration, slots: make(chan struct{}, c.MaxConnections), connections: map[net.Conn]struct{}{}}, nil
+	if c.AllowClientToolSearch && (len(required) != 2 || !required[canonicalToolName("mcp__group__group_exec")] || !required[canonicalToolName("mcp__group__group_request")]) {
+		return nil, errors.New("client search requires exact managed MCP catalog")
+	}
+	return &Proxy{allowClientToolSearch: c.AllowClientToolSearch, observe: c.Observe, token: c.Token, routes: routes, allowedTools: tools, requiredTools: required, requireSubscriptionBearer: c.RequireSubscriptionBearer, ca: bytes.Clone(cert), certificates: certificates, transport: publicTransport(), maxRequestBytes: c.MaxRequestBytes, maxResponseBytes: c.MaxResponseBytes, maxDuration: c.MaxDuration, slots: make(chan struct{}, c.MaxConnections), connections: map[net.Conn]struct{}{}}, nil
 }
 
 func (p *Proxy) CertificatePEM() []byte { return bytes.Clone(p.ca) }

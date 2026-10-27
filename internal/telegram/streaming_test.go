@@ -29,6 +29,7 @@ func newStreamFixture(t *testing.T, fake *fakeTelegram) (*Bot, queue.Item) {
 	t.Helper()
 	ctx := context.Background()
 	b := newFakeBot(t, fake)
+	b.ownerChatID = streamChat
 	b.streamTick = 10 * time.Millisecond
 	st, err := store.Open(ctx, filepath.Join(t.TempDir(), "store.sqlite"),
 		slog.New(slog.NewTextHandler(io.Discard, nil)))

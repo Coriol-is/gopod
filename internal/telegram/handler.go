@@ -81,7 +81,7 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 
 	// Host-wide speech credentials are personal services, not implicit group
 	// grants. Refuse before album collection, downloads or Whisper requests.
-	if sharedSpeechInput(m) {
+	if sharedSpeechInput(m, b.ownerChatID) {
 		if _, ok := b.resolveRegistered(ctx, m); ok {
 			b.replyTo(ctx, m.Chat.ID, thread, m.ID, groupSpeechUnavailable)
 		}
@@ -392,7 +392,7 @@ var (
 func (b *Bot) getReplyMode(chatID int64, isVoice bool) string {
 	// Groups/channels and silent task destinations cannot inherit personal TTS,
 	// including a previously persisted/requested voice-only preference.
-	if chatID <= 0 {
+	if b.ownerChatID <= 0 || chatID != b.ownerChatID {
 		return "text"
 	}
 	replyModesMu.RLock()
