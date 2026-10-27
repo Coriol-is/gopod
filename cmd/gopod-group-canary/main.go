@@ -157,6 +157,11 @@ func run() error {
 		}
 		return json.NewEncoder(os.Stdout).Encode(map[string]any{"status": "ok", "auth_only": true, "provider": *provider, "inference_qualified": false})
 	}
+	boundaryErr := nativeBoundaryPreflight(ctx, manager, docker, c, base)
+	fmt.Fprintf(os.Stderr, "boundary_verified=%t\n", boundaryErr == nil)
+	if boundaryErr != nil {
+		return boundaryErr
+	}
 	if *provider == "claude" {
 		r.SetChatModel(c.Folder, "claude-haiku-4-5")
 	}
@@ -202,5 +207,5 @@ func run() error {
 	if manager.Authorize(ctx, c) != nil {
 		return errors.New("final scope unavailable")
 	}
-	return json.NewEncoder(os.Stdout).Encode(map[string]any{"status": "ok", "provider": *provider, "new": true, "resume": true, "inference_qualified": true, "personal_service_grants": 0})
+	return json.NewEncoder(os.Stdout).Encode(map[string]any{"status": "ok", "provider": *provider, "new": true, "resume": true, "inference_qualified": true, "boundary_verified": true, "personal_service_grants": 0})
 }
