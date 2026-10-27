@@ -2,7 +2,8 @@
 
 Date: 2026-10-25. Baseline: `ea38581e95ae214ff2a4c0dd5fc8f7f40b1f7d86`.
 Implementation update: 2026-10-27. Status: **P0 deployed; full implementation
-present on the working branch, final review/CI and exact-Pi qualification pending**. This document
+merged main PRs #66/#67 (`a3a9c53`), CI/Sonar and independent review green; final
+exact-Pi qualification and rollout blocked on SSH signing**. This document
 neither changes production nor authorizes billing, account settings or data deletion.
 
 Contract: [isolation specification](../specs/2026-10-25-personal-group-container-isolation.md).

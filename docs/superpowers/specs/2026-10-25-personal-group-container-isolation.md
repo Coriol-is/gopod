@@ -1,9 +1,9 @@
 # Personal and shared-container isolation contract
 
-Date: 2026-10-25. Implementation update: 2026-10-27. CP-020 remains **in-progress**.
-The full boundary is implemented on the working branch. Final review/CI and exact
-RPi Docker/native-subscription qualification remain release gates; this document
-does not claim that the full runtime is deployed. The recorded production baseline
+Date: 2026-10-25. Implementation update: 2026-10-27. CP-020 implementation is **complete; rollout blocked**.
+The full boundary merged to main in PRs #66/#67 (`a3a9c53`), with green CI/Sonar
+and independent review. Final exact-RPi native/network qualification and rollout
+remain release gates; this document does not claim that the full runtime is deployed. The recorded production baseline
 is still the separate [P0 rollout](../../deployments/2026-10-26-isolation-p0.md).
 
 [Audit](../../research/2026-10-25-personal-group-isolation-audit.md) and

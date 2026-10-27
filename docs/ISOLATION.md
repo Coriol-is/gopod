@@ -1,9 +1,12 @@
 # gopod — Container isolation policy
 
-Updated: 2026-10-27. This document describes the source boundary. Runtime
-qualification and activation are separate; consult [HANDOFF](HANDOFF.md) for the
-recorded deployment. The latest recorded production baseline remains
-[P0](deployments/2026-10-26-isolation-p0.md) until rollout evidence supersedes it.
+Updated: 2026-10-27. CP-020 implementation merged to main in PRs #66/#67
+(`a3a9c53a24456cce40678231ef048e6baba51956`) with green CI/Sonar and independent
+review. Native policy v2 and the catalog architecture below are implemented;
+final exact-Pi both-provider/native-TCP qualification and rollout remain blocked
+on SSH signing. The recorded production baseline remains
+[P0](deployments/2026-10-26-isolation-p0.md). Local ARM64 builds do not imply a
+deployment or activation; see [draft release evidence](deployments/2026-10-27-group-isolation.md).
 
 [Contract](superpowers/specs/2026-10-25-personal-group-container-isolation.md) ·
 [Implementation and acceptance](superpowers/plans/2026-10-25-personal-group-container-isolation.md) ·
