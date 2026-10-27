@@ -29,7 +29,7 @@ func newDeliveryFixture(t *testing.T) *deliveryFixture {
 
 func (f *deliveryFixture) turn(source, sourceID string, thread, attempts int) int64 {
 	f.t.Helper()
-	id, dup, err := f.st.InsertTurn(f.t.Context(), Turn{Source: source, SourceID: sourceID, ChatFolder: f.conv.Scope.Folder, ThreadID: thread, Text: "q", Attempts: attempts})
+	id, dup, err := f.st.InsertTurn(f.t.Context(), Turn{Source: source, SourceID: sourceID, ChatFolder: f.conv.Scope.Folder, ThreadID: thread, Text: "q"})
 	if err != nil || dup {
 		f.t.Fatalf("InsertTurn: %v dup=%v", err, dup)
 	}

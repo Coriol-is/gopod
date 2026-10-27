@@ -1140,7 +1140,11 @@ does revalidate the full `ScopeRef` inside its transaction. Store-internal helpe
 `taskSQL` handle; public entry points use `withTx`, which opens a transaction or enlists in the
 caller's under a SAVEPOINT, so a failed publication leaves no partial group in either case.
 Dispatcher wake-up runs only after a standalone commit; enlisted callers notify after their own
-commit.
+commit. Parts are size-bounded at publication (64 KiB payload, 8 KiB markup, 512 B artifact
+reference). Rejection tombstones are never dropped or rewritten; beyond a per-namespace (5000) and
+global (50000) cap a new rejection is not stored and a per-namespace counter in `router_state`
+is incremented instead (`DroppedRejections`), so a flood cannot grow the table. A part payload
+can be cleared only after its delivery group is resolved.
 
 **Consequences.** CP-004/020/021/022 reuse the same identifiers and interface. The freeze
 boundary and the publication boundary authorize at different times by design. Payloads of

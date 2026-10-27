@@ -125,6 +125,9 @@ func TestFreezeValidationAndScope(t *testing.T) {
 	cases := map[string]func(*ExecutionRef){
 		"no members":     func(r *ExecutionRef) { r.Members = nil },
 		"zero attempt":   func(r *ExecutionRef) { r.Members = []ResultMember{{TurnID: turn}} },
+		"attempt 99":     func(r *ExecutionRef) { r.Members = []ResultMember{{TurnID: turn, Attempt: 99}} },
+		"attempt beyond": func(r *ExecutionRef) { r.Members = []ResultMember{{TurnID: turn, Attempt: 2}} },
+		"negative":       func(r *ExecutionRef) { r.Members = []ResultMember{{TurnID: turn, Attempt: -1}} },
 		"duplicate":      func(r *ExecutionRef) { r.Members = append(r.Members, r.Members[0]) },
 		"no provider":    func(r *ExecutionRef) { r.Provider = "" },
 		"unknown kind":   func(r *ExecutionRef) { r.Kind = "batch" },

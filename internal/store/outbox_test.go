@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -61,16 +63,16 @@ func TestIPCRequestIdentity(t *testing.T) {
 	}
 
 	rejHash := sha256Hex([]byte("bad"))
-	if err = f.st.RecordRequestRejection(t.Context(), f.conv.Scope, RequestIdentity{Key: "bad.json", PayloadHash: rejHash}, "unauthorized_recipient"); err != nil {
-		t.Fatal(err)
+	if ok, err := f.st.RecordRequestRejection(t.Context(), f.conv.Scope, RequestIdentity{Key: "bad.json", PayloadHash: rejHash}, "unauthorized_recipient"); err != nil || !ok {
+		t.Fatal(ok, err)
 	}
-	if err = f.st.RecordRequestRejection(t.Context(), f.conv.Scope, RequestIdentity{Key: "bad.json", PayloadHash: rejHash}, "unauthorized_recipient"); err != nil {
+	if ok, err := f.st.RecordRequestRejection(t.Context(), f.conv.Scope, RequestIdentity{Key: "bad.json", PayloadHash: rejHash}, "unauthorized_recipient"); err != nil || !ok {
 		t.Fatalf("idempotent rejection: %v", err)
 	}
 	if _, err = f.st.PublishDelivery(t.Context(), mk("bad.json", rejHash, "x")); !errors.Is(err, ErrRequestRejected) {
 		t.Fatalf("rejected request published: %v", err)
 	}
-	if err = f.st.RecordRequestRejection(t.Context(), f.conv.Scope, RequestIdentity{Key: "bad.json", PayloadHash: hash}, "x"); !errors.Is(err, ErrRequestConflict) {
+	if _, err = f.st.RecordRequestRejection(t.Context(), f.conv.Scope, RequestIdentity{Key: "bad.json", PayloadHash: hash}, "x"); !errors.Is(err, ErrRequestConflict) {
 		t.Fatalf("rejection reuse: %v", err)
 	}
 	if _, err = f.st.db.ExecContext(t.Context(), `UPDATE ipc_message_requests SET payload_hash='0'`); err == nil {
@@ -117,47 +119,83 @@ func TestSequencePerConversation(t *testing.T) {
 	}
 }
 
-func TestStaleScopeRejectedConcurrently(t *testing.T) {
+func TestStaleScopeAlwaysRejectedAfterRegistrationChange(t *testing.T) {
 	f := newDeliveryFixture(t)
+	if err := f.st.RegisterChat(t.Context(), RegisteredChat{JID: "tg:1", Folder: "owner", IsOwner: true, AddedAt: 1, Name: "renamed"}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 20; i++ {
+		r := f.publishReq("", fmt.Sprintf("m%d", i))
+		r.Owner = OwnerLegacyAgentIPC
+		if _, err := f.st.PublishDelivery(t.Context(), r); !errors.Is(err, ErrStaleScope) {
+			t.Fatalf("publish %d with the old ScopeRef: %v", i, err)
+		}
+	}
+	if countRows(t, f.st, `SELECT count(*) FROM delivery_groups`) != 0 || countRows(t, f.st, `SELECT count(*) FROM conversation_sequences`) != 0 {
+		t.Fatal("stale publication left rows")
+	}
+}
+
+// Validation must happen inside the publishing transaction. A trigger records,
+// at insert time and in the same transaction, the revision being stored next to
+// the live registration revision; any gap means validation raced a registration
+// change.
+func TestPublishRevisionMatchesRegistrationAtCommit(t *testing.T) {
+	f := newDeliveryFixture(t)
+	ctx := context.Background()
+	for _, stmt := range []string{
+		`CREATE TABLE audit (stored INTEGER, live INTEGER)`,
+		`CREATE TRIGGER audit_publish BEFORE INSERT ON delivery_groups BEGIN
+ INSERT INTO audit SELECT NEW.registration_revision, registration_revision FROM registered_chats WHERE jid=NEW.chat_jid; END`,
+	} {
+		if _, err := f.st.db.ExecContext(ctx, stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var accepted, stale atomic.Int64
 	var wg sync.WaitGroup
-	results := make([]error, 8)
-	for i := range results {
+	for w := 0; w < 4; w++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			r := f.publishReq("", fmt.Sprintf("m%d", i))
-			r.Owner = OwnerLegacyAgentIPC
-			_, results[i] = f.st.PublishDelivery(context.Background(), r)
+			for i := 0; i < 40; i++ {
+				conv, err := f.st.SnapshotConversation(ctx, "tg:1", 0, VisibilityConversation)
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				r := PublishRequest{Conversation: conv, Owner: OwnerLegacyAgentIPC, Parts: textParts("x")}
+				switch _, err = f.st.PublishDelivery(ctx, r); {
+				case err == nil:
+					accepted.Add(1)
+				case errors.Is(err, ErrStaleScope):
+					stale.Add(1)
+				default:
+					t.Error(err)
+				}
+			}
 		}()
 	}
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := f.st.RegisterChat(context.Background(), RegisteredChat{JID: "tg:1", Folder: "owner", IsOwner: true, AddedAt: 1, Name: "renamed"}); err != nil {
-			t.Error(err)
+		for i := 0; i < 60; i++ {
+			if err := f.st.RegisterChat(ctx, RegisteredChat{JID: "tg:1", Folder: "owner", IsOwner: true, AddedAt: 1, Name: fmt.Sprintf("n%d", i)}); err != nil {
+				t.Error(err)
+			}
 		}
 	}()
 	wg.Wait()
-	for _, err := range results {
-		if err != nil && !errors.Is(err, ErrStaleScope) {
-			t.Fatalf("unexpected error %v", err)
-		}
+	if accepted.Load() == 0 {
+		t.Fatal("no publication was accepted; the check proves nothing")
 	}
-	// Whatever raced, the old snapshot is dead now and nothing may publish with it.
-	r := f.publishReq("", "late")
-	r.Owner = OwnerLegacyAgentIPC
-	if _, err := f.st.PublishDelivery(t.Context(), r); !errors.Is(err, ErrStaleScope) {
-		t.Fatalf("stale ScopeRef accepted after registration change: %v", err)
+	if n := countRows(t, f.st, `SELECT count(*) FROM audit`); int64(n) != accepted.Load() {
+		t.Fatalf("audit rows %d, accepted %d", n, accepted.Load())
 	}
-	// Every stored delivery was published at the revision current when it committed.
-	if countRows(t, f.st, `SELECT count(*) FROM delivery_groups WHERE registration_revision<>1`) != 0 {
-		t.Fatal("delivery recorded under a revision that never existed")
+	if n := countRows(t, f.st, `SELECT count(*) FROM audit WHERE stored<>live`); n != 0 {
+		t.Fatalf("%d deliveries stored under a revision that was not current at commit", n)
 	}
-	fresh, _ := f.st.SnapshotConversation(t.Context(), "tg:1", 0, VisibilityConversation)
-	r.Conversation = fresh
-	if _, err := f.st.PublishDelivery(t.Context(), r); err != nil {
-		t.Fatalf("fresh snapshot rejected: %v", err)
-	}
+	t.Logf("accepted=%d stale=%d", accepted.Load(), stale.Load())
 }
 
 func TestRetiredNamespaceRejectsPublication(t *testing.T) {
@@ -605,4 +643,113 @@ func recomputeGroupStateForTest(st *Store, id string) error {
 		return recomputeGroupState(context.Background(), q, id, time.Now().UnixMilli())
 	})
 	return err
+}
+
+func TestPublishBoundsPayloadSizes(t *testing.T) {
+	f := newDeliveryFixture(t)
+	big := func(n int) []byte { return []byte(strings.Repeat("a", n)) }
+	cases := map[string]DeliveryPart{
+		"payload":      {Kind: PartText, Payload: big(MaxPartPayloadBytes + 1)},
+		"edit payload": {Kind: PartEdit, Payload: big(MaxPartPayloadBytes + 1), TargetMessageID: 1},
+		"markup":       {Kind: PartText, Payload: []byte("x"), ReplyMarkup: strings.Repeat("m", MaxReplyMarkupBytes+1)},
+		"artifact":     {Kind: PartUpload, ArtifactRef: strings.Repeat("r", MaxArtifactRefBytes+1)},
+		"parse mode":   {Kind: PartText, Payload: []byte("x"), ParseMode: strings.Repeat("p", MaxParseModeBytes+1)},
+	}
+	for name, part := range cases {
+		r := f.publishReq("", "x")
+		r.Owner, r.Parts = OwnerLegacyAgentIPC, []DeliveryPart{part}
+		if _, err := f.st.PublishDelivery(t.Context(), r); !errors.Is(err, ErrInvalidDelivery) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	r := f.publishReq("", "x")
+	r.Owner = OwnerLegacyAgentIPC
+	r.Request = &RequestIdentity{Key: strings.Repeat("k", MaxRequestKeyBytes+1), PayloadHash: sha256Hex(nil)}
+	if _, err := f.st.PublishDelivery(t.Context(), r); !errors.Is(err, ErrInvalidDelivery) {
+		t.Errorf("long request key: %v", err)
+	}
+	r.Request = nil
+	r.Parts = []DeliveryPart{{Kind: PartText, Payload: big(MaxPartPayloadBytes), ReplyMarkup: strings.Repeat("m", MaxReplyMarkupBytes), ParseMode: "HTML"}}
+	if _, err := f.st.PublishDelivery(t.Context(), r); err != nil {
+		t.Errorf("limits are inclusive: %v", err)
+	}
+}
+
+func TestRejectionTombstoneCaps(t *testing.T) {
+	f := newDeliveryFixture(t)
+	ctx := t.Context()
+	if err := f.st.SetOutboxLimits(OutboxLimits{MaxRejectionsPerNamespace: 2, MaxRejectionsGlobal: 3}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.st.RegisterChat(ctx, RegisteredChat{JID: "tg:-2", Folder: "group-a", AddedAt: 2}); err != nil {
+		t.Fatal(err)
+	}
+	other, _ := f.st.SnapshotConversation(ctx, "tg:-2", 0, VisibilityConversation)
+	rec := func(sc ScopeRef, key string) bool {
+		ok, err := f.st.RecordRequestRejection(ctx, sc, RequestIdentity{Key: key, PayloadHash: sha256Hex([]byte(key))}, "denied")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ok
+	}
+	if !rec(f.conv.Scope, "1") || !rec(f.conv.Scope, "2") {
+		t.Fatal("rejections under the cap were not stored")
+	}
+	if rec(f.conv.Scope, "3") || rec(f.conv.Scope, "4") {
+		t.Fatal("per-namespace cap exceeded")
+	}
+	if n, _ := f.st.DroppedRejections(ctx, f.conv.Scope.NamespaceID); n != 2 {
+		t.Fatalf("dropped counter %d", n)
+	}
+	if !rec(other.Scope, "5") {
+		t.Fatal("a flooding namespace blocked its neighbour (global cap not reached yet)")
+	}
+	if rec(other.Scope, "6") {
+		t.Fatal("global cap exceeded")
+	}
+	if n, _ := f.st.DroppedRejections(ctx, other.Scope.NamespaceID); n != 1 {
+		t.Fatalf("other dropped counter %d", n)
+	}
+	if !rec(f.conv.Scope, "1") {
+		t.Fatal("replay of a stored rejection must keep succeeding at the cap")
+	}
+	if n := countRows(t, f.st, `SELECT count(*) FROM ipc_message_requests WHERE outcome='rejected'`); n != 3 {
+		t.Fatalf("stored tombstones %d", n)
+	}
+	if n, err := f.st.DroppedRejections(ctx, "none"); err != nil || n != 0 {
+		t.Fatal(n, err)
+	}
+}
+
+func TestPayloadClearedOnlyForResolvedDeliveries(t *testing.T) {
+	f := newDeliveryFixture(t)
+	ctx := t.Context()
+	r := f.publishReq("", "keep")
+	r.Owner = OwnerLegacyAgentIPC
+	d, err := f.st.PublishDelivery(ctx, r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.st.db.ExecContext(ctx, `UPDATE outbox_parts SET payload=NULL WHERE delivery_id=?`, d.ID); err == nil {
+		t.Fatal("payload cleared on a pending part")
+	}
+	if _, err = f.st.db.ExecContext(ctx, `UPDATE outbox_parts SET state='uncertain' WHERE delivery_id=?`, d.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err = recomputeGroupStateForTest(f.st, d.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.st.db.ExecContext(ctx, `UPDATE outbox_parts SET payload=NULL WHERE delivery_id=?`, d.ID); err == nil {
+		t.Fatal("payload cleared on an uncertain part")
+	}
+	if _, err = f.st.db.ExecContext(ctx, `UPDATE outbox_parts SET state='sent' WHERE delivery_id=?`, d.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err = recomputeGroupStateForTest(f.st, d.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.st.db.ExecContext(ctx, `UPDATE outbox_parts SET payload=NULL WHERE delivery_id=?`, d.ID); err != nil {
+		t.Fatalf("payload not clearable once resolved: %v", err)
+	}
+	// Compaction itself is covered by TestCompactTerminalDeliveries.
 }

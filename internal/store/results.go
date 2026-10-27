@@ -126,8 +126,8 @@ func freezeTurnResultQ(ctx context.Context, q taskSQL, ref ExecutionRef, text st
 	}
 	for _, m := range ref.Members {
 		var folder, source string
-		var thread int
-		err := q.QueryRowContext(ctx, `SELECT chat_folder,thread_id,source FROM turns WHERE id=?`, m.TurnID).Scan(&folder, &thread, &source)
+		var thread, attempts int
+		err := q.QueryRowContext(ctx, `SELECT chat_folder,thread_id,source,attempts FROM turns WHERE id=?`, m.TurnID).Scan(&folder, &thread, &source, &attempts)
 		if errors.Is(err, sql.ErrNoRows) {
 			return TurnResult{}, fmt.Errorf("%w: turn %d: %w", ErrInvalidResult, m.TurnID, ErrTurnNotFound)
 		}
@@ -136,6 +136,9 @@ func freezeTurnResultQ(ctx context.Context, q taskSQL, ref ExecutionRef, text st
 		}
 		if folder != scope.Folder || thread != ref.Conversation.ThreadID {
 			return TurnResult{}, fmt.Errorf("%w: turn %d belongs to another conversation", ErrInvalidResult, m.TurnID)
+		}
+		if m.Attempt > attempts {
+			return TurnResult{}, fmt.Errorf("%w: turn %d has no attempt %d", ErrInvalidResult, m.TurnID, m.Attempt)
 		}
 		if (ref.Kind == ExecIsolatedTask) != (source == "task") {
 			return TurnResult{}, fmt.Errorf("%w: turn %d source %q does not match %s execution", ErrInvalidResult, m.TurnID, source, ref.Kind)

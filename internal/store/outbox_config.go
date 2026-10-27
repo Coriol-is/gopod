@@ -9,6 +9,8 @@ import (
 const (
 	DefaultMaxUnresolvedGlobal       = 10000
 	DefaultMaxUnresolvedPerNamespace = 1000
+	DefaultMaxRejectionsGlobal       = 50000
+	DefaultMaxRejectionsPerNamespace = 5000
 )
 
 // ErrOutboxQuotaExceeded rejects a new publication. Quota pressure never evicts
@@ -20,6 +22,9 @@ var ErrOutboxQuotaExceeded = errors.New("store: outbox admission quota exceeded"
 type OutboxLimits struct {
 	MaxUnresolvedGlobal       int
 	MaxUnresolvedPerNamespace int
+	// Rejection tombstones that may be stored; see RecordRequestRejection.
+	MaxRejectionsGlobal       int
+	MaxRejectionsPerNamespace int
 }
 
 type outboxConfig struct {
@@ -30,7 +35,7 @@ type outboxConfig struct {
 
 // SetOutboxLimits replaces the admission quotas. Negative values are rejected.
 func (s *Store) SetOutboxLimits(l OutboxLimits) error {
-	if l.MaxUnresolvedGlobal < 0 || l.MaxUnresolvedPerNamespace < 0 {
+	if l.MaxUnresolvedGlobal < 0 || l.MaxUnresolvedPerNamespace < 0 || l.MaxRejectionsGlobal < 0 || l.MaxRejectionsPerNamespace < 0 {
 		return errors.New("store: negative outbox limit")
 	}
 	s.outbox.mu.Lock()
@@ -48,6 +53,12 @@ func (s *Store) outboxLimits() OutboxLimits {
 	}
 	if l.MaxUnresolvedPerNamespace == 0 {
 		l.MaxUnresolvedPerNamespace = DefaultMaxUnresolvedPerNamespace
+	}
+	if l.MaxRejectionsGlobal == 0 {
+		l.MaxRejectionsGlobal = DefaultMaxRejectionsGlobal
+	}
+	if l.MaxRejectionsPerNamespace == 0 {
+		l.MaxRejectionsPerNamespace = DefaultMaxRejectionsPerNamespace
 	}
 	return l
 }

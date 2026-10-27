@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 )
 
@@ -51,6 +52,11 @@ const (
 // Plan and retention bounds from the CP-002 spec.
 const (
 	MaxDeliveryParts      = 32
+	MaxPartPayloadBytes   = 64 << 10 // text/edit body; Telegram text is far smaller
+	MaxReplyMarkupBytes   = 8 << 10
+	MaxArtifactRefBytes   = 512
+	MaxParseModeBytes     = 32
+	MaxRequestKeyBytes    = 255
 	DefaultDeliveryExpiry = 24 * time.Hour
 )
 
@@ -143,10 +149,14 @@ func validatePublish(req PublishRequest, now int64) error {
 	if req.ExpiresAt != 0 && req.ExpiresAt <= now {
 		return fmt.Errorf("%w: already expired", ErrInvalidDelivery)
 	}
-	if r := req.Request; r != nil && (r.Key == "" || len(r.PayloadHash) != 64) {
+	if r := req.Request; r != nil && (r.Key == "" || len(r.Key) > MaxRequestKeyBytes || len(r.PayloadHash) != 64) {
 		return fmt.Errorf("%w: request identity", ErrInvalidDelivery)
 	}
 	for i, p := range req.Parts {
+		if len(p.Payload) > MaxPartPayloadBytes || len(p.ReplyMarkup) > MaxReplyMarkupBytes ||
+			len(p.ArtifactRef) > MaxArtifactRefBytes || len(p.ParseMode) > MaxParseModeBytes {
+			return fmt.Errorf("%w: part %d exceeds a size bound", ErrInvalidDelivery, i)
+		}
 		ok := false
 		switch p.Kind {
 		case PartText:
@@ -324,11 +334,18 @@ func publishDeliveryQ(ctx context.Context, q taskSQL, limits OutboxLimits, req P
 // RecordRequestRejection durably remembers a rejected IPC request so a retry
 // of the same bytes stays rejected and different bytes under the key conflict.
 // reason must be a sanitized code, never a raw error or path.
-func (s *Store) RecordRequestRejection(ctx context.Context, sc ScopeRef, req RequestIdentity, reason string) error {
-	if req.Key == "" || len(req.PayloadHash) != 64 || reason == "" {
-		return fmt.Errorf("%w: request identity", ErrInvalidDelivery)
+//
+// Tombstones are never dropped. Beyond the per-namespace or global cap
+// (OutboxLimits) a new rejection is not stored: the call commits a counter
+// (see DroppedRejections) and returns recorded=false, so an attacker flooding
+// bad requests cannot grow the table without bound. Such a request is simply
+// rejected again if retried.
+func (s *Store) RecordRequestRejection(ctx context.Context, sc ScopeRef, req RequestIdentity, reason string) (recorded bool, err error) {
+	if req.Key == "" || len(req.Key) > MaxRequestKeyBytes || len(req.PayloadHash) != 64 || reason == "" {
+		return false, fmt.Errorf("%w: request identity", ErrInvalidDelivery)
 	}
-	_, err := s.withTx(ctx, func(q taskSQL) error {
+	limits := s.outboxLimits()
+	_, err = s.withTx(ctx, func(q taskSQL) error {
 		if err := validateScopeQ(ctx, q, sc); err != nil {
 			return err
 		}
@@ -339,16 +356,38 @@ func (s *Store) RecordRequestRejection(ctx context.Context, sc ScopeRef, req Req
 			if hash != req.PayloadHash {
 				return ErrRequestConflict
 			}
+			recorded = true
 			return nil
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
+		var global, local int
+		if err = q.QueryRowContext(ctx, `SELECT count(*), coalesce(sum(namespace_id=?),0) FROM ipc_message_requests WHERE outcome='rejected'`, sc.NamespaceID).Scan(&global, &local); err != nil {
+			return err
+		}
+		if global >= limits.MaxRejectionsGlobal || local >= limits.MaxRejectionsPerNamespace {
+			_, err = q.ExecContext(ctx, `INSERT INTO router_state(key,value) VALUES(?,'1') ON CONFLICT(key) DO UPDATE SET value=CAST(value AS INTEGER)+1`, droppedRejectionsKey(sc.NamespaceID))
+			return err
+		}
 		_, err = q.ExecContext(ctx, `INSERT INTO ipc_message_requests(namespace_id,namespace_epoch,request_key,payload_hash,outcome,reason_code,created_at) VALUES(?,?,?,?,'rejected',?,?)`,
 			sc.NamespaceID, sc.NamespaceEpoch, req.Key, req.PayloadHash, reason, time.Now().UnixMilli())
+		recorded = err == nil
 		return err
 	})
-	return err
+	return recorded && err == nil, err
+}
+
+func droppedRejectionsKey(namespaceID string) string { return "ipc_rejections_dropped:" + namespaceID }
+
+// DroppedRejections reports how many rejections were not stored because a cap was reached.
+func (s *Store) DroppedRejections(ctx context.Context, namespaceID string) (int64, error) {
+	v, err := s.GetState(ctx, droppedRejectionsKey(namespaceID))
+	if err != nil || v == "" {
+		return 0, err
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	return n, err
 }
 
 // GetDelivery returns a delivery group with its parts.

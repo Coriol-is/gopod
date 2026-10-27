@@ -94,10 +94,12 @@ var deliverySchemaStatements = []string{
 	`CREATE TRIGGER IF NOT EXISTS outbox_parts_immutable BEFORE UPDATE OF
  part_id, delivery_id, ordinal, kind, part_hash, artifact_ref, parse_mode, reply_markup, target_message_id ON outbox_parts
  BEGIN SELECT RAISE(ABORT, 'outbox part plan is immutable'); END`,
-	// The payload may only be cleared (terminal compaction), never rewritten.
-	`CREATE TRIGGER IF NOT EXISTS outbox_parts_payload_immutable BEFORE UPDATE OF payload ON outbox_parts
- WHEN NEW.payload IS NOT NULL
- BEGIN SELECT RAISE(ABORT, 'outbox part payload is immutable'); END`,
+	// The payload may only be cleared (terminal compaction), and only once the
+	// owning group is resolved; unresolved evidence keeps its exact bytes.
+	`DROP TRIGGER IF EXISTS outbox_parts_payload_immutable`,
+	`CREATE TRIGGER outbox_parts_payload_immutable BEFORE UPDATE OF payload ON outbox_parts
+ WHEN NEW.payload IS NOT NULL OR coalesce((SELECT unresolved FROM delivery_groups WHERE delivery_id=NEW.delivery_id),1) = 1
+ BEGIN SELECT RAISE(ABORT, 'outbox part payload is immutable until the delivery is resolved'); END`,
 
 	`CREATE TABLE IF NOT EXISTS outbox_attempts (
  attempt_id INTEGER PRIMARY KEY AUTOINCREMENT,
