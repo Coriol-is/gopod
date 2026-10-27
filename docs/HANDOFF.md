@@ -1,10 +1,28 @@
 # gopod — current handoff
 
-**Last updated:** 2026-10-27
+**Last updated:** 2026-10-27 (evening)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
 [ACCEPTANCE](ACCEPTANCE.md) for pending real-client verification.
+
+## Resume here (2026-10-27 evening)
+- **Repo is clean:** `main` has no open PRs, no stale local/remote branches and no
+  extra worktrees (all 67 merged remote branches and 40 worktrees were removed after
+  verifying their PRs merged). CI on `main` is green; PR #70 moved actions to
+  Node 24 majors (`checkout`/`setup-go`/`setup-node` v7) and pinned `ubuntu-24.04`.
+- **No CD workflow:** deploys are manual per [deployments/](deployments/). `main` has no
+  branch protection, so green CI is a convention, not a gate (owner decision pending).
+- **Either harness can continue:** Claude Code reads `CLAUDE.md`, Codex reads `AGENTS.md`
+  (points at `CLAUDE.md`); both start here. No work is in flight, nothing is unpushed.
+- **First action next session:** owner runs live Telegram acceptance A08–A11, A18, A20,
+  A02 (see [ACCEPTANCE](ACCEPTANCE.md)); in parallel unblock CP-020 gates (refresh Claude
+  auth via private management, fix Codex tree-budget admission, rerun two-turn canaries,
+  enable one controlled test group). Then start CP-002 outbox from the
+  [reliability wave](superpowers/plans/2026-10-26-reliability-wave.md), each CP in its
+  own worktree/PR. Order after that: CP-004, CP-007, CP-006, CP-016, CP-018, CP-019.
+- **Not authorized without the owner:** account logins, quota/paid fallbacks, T9 reboot,
+  production group activation, schedule changes (freefeed digest stays as is).
 
 ## Current state
 Core Telegram assistant, Docker runtime, Claude/Codex native sessions,

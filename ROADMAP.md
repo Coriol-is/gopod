@@ -36,6 +36,17 @@ Done implementation must not remain "in progress" just because a live check is
 pending. Host memory-cgroup changes/reboot (T9) and parallel execution (T5/T5b)
 remain paused operational/research items, not implicit deployment steps.
 
+## Next iteration — planned 2026-10-27
+
+| Step | Work | Gate |
+|---|---|---|
+| 1 | Owner live acceptance A08–A11, A18, A20, A02 | Owner in Telegram; failures become fix PRs |
+| 2 | CP-020 final gates: refresh Claude auth, fix Codex tree-budget admission, two-turn canaries, one controlled group | Private management only; no paid fallback |
+| 3 | CP-002 bounded outbox, then CP-004 task sessions, CP-007 backups | Specs in the [reliability wave](docs/superpowers/plans/2026-10-26-reliability-wave.md); one PR each |
+| Deferred | CP-014 media, CP-018 per-thread providers, T9 cgroup reboot, observability | Owner re-prioritises |
+
+Open owner decisions: branch protection requiring `test` + `isolation-spike`; whether to add a CD workflow.
+
 ## Planning candidates — 2026-10-26
 
 The [codex-agent adoption map](docs/proposals/2026-10-26-codex-agent-adoption.md)
