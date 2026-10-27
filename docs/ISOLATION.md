@@ -250,8 +250,9 @@ images, config examples, reports and model-accessible tools.
 Full local tests/races/vet and the real Docker tool checks passed during development.
 Synthetic native inventory/HTTP-SSE, scoped local memory, root/symlink, metadata
 oracle, interrupted migration and retained-drain tests cover the new boundaries.
-Final CI, both exact Pi native-auth new/resume runs, network denial, cleanup and
-real-client behavior are still pending; no new full-runtime deployment is claimed.
+CI/Sonar passed and the controller is deployed with groups disabled. Both exact-Pi
+native TCP preflights passed. Full provider/tool/new/resume qualification and
+real-client acceptance remain pending; this is not an activated group rollout.
 
 The owner currently uses controlled group sandboxes without third-party members.
 Check each slice there and fix failures incrementally. A passed prototype or local

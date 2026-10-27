@@ -295,8 +295,8 @@ roots, two personal/group provider image sets, read-only native-subscription aut
 credential-free offline commands, exact inference-only HTTPS egress, scoped local
 memory/IPC, owner controls and evidence-preserving drain/orphan recovery.
 Native policy v2 passed 69 local cases over all 11 public catalog models; ARM64
-release images were built locally from exact merged main. No production catalog
-write or group migration occurred.
+release images were built locally from exact merged main. The production catalog
+was installed; no production group migration occurred.
 No personal service or paid API fallback is granted to groups. Group speech and
 automatic maintenance remain unavailable; private behavior stays the baseline.
 
