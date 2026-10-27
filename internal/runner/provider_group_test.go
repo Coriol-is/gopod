@@ -215,3 +215,15 @@ func TestGroupImageMatrixPreservesPersonalAndExcludesPersonalTools(t *testing.T)
 		t.Error("unknown provider accepted")
 	}
 }
+
+// Incremental declarations require a different inference envelope. This boundary
+// requires explicit declarations rather than silently accepting hidden tools.
+func TestGroupCodexDisablesIncrementalDeclarations(t *testing.T) {
+	p, err := NewGroupProvider(NewCodexProvider(""), GroupProviderConfig{Image: "qualified-group-image", MCPURL: "http://gopod-relay:8787/mcp/abcdefghijklmnopqrstuvwxyz012345"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(p.PolicyFiles()[groupCodexConfig]), "incremental_tools = false") {
+		t.Fatal("incremental declarations enabled")
+	}
+}

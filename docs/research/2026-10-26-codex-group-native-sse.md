@@ -112,3 +112,58 @@ history or command dispatch and again by local memory admission. This is a
 bounded known-secret guard, not a universal secret/PII classifier or attachment
 content scanner. Publicly submitted attachment contents retain their existing
 shared-workspace semantics.
+
+## Responses Lite model metadata and explicit tool declarations
+
+Pinned source qualification on 2026-10-27 found a separate wire-format boundary:
+actual model-catalog metadata can set `ModelInfo.use_responses_lite = true`
+(`codex-rs/protocol/src/openai_models.rs`). A synthetic `gpt-5` fallback without
+catalog metadata does not exercise this branch. CLI version/auth compatibility
+alone therefore does not qualify every selected model's request envelope.
+
+At the same pinned commit `6aaac694803004a63c6f393d153c96d22521a6b9`:
+
+- `core/src/client.rs:1015-1041` always omits top-level `tools` for Responses
+  Lite. It places full tool declarations in the **first** input item, before
+  base instructions and conversation history.
+- `protocol/src/models.rs:1053` defines that item as
+  `{"type":"additional_tools","id":"at_<UUID>","role":"developer","tools":[...]}`;
+  `id` is optional in the protocol, but native client code generates it.
+- `tools/src/tool_spec.rs:95` preserves MCP namespaces and places ordinary
+  builtin functions under a `functions` namespace. This grouping is a wire
+  format, not a new permission or a grant for arbitrary function names.
+- `core/src/session/step_context.rs:52` enables incremental declarations when
+  both Responses Lite and stable `features.incremental_tools` are enabled.
+  `session/turn.rs:1681` then empties the prompt tool list and
+  `session/world_state.rs:168` carries incremental declarations in world state.
+  The group profile explicitly sets `incremental_tools = false`. This makes
+  the ordinary client prefix contain the full current tool inventory on every
+  request, including resumed turns; it **does not disable Responses Lite**.
+- `session/startup_prewarm.rs:243` returns after auth-only prewarm when WebSockets
+  are disabled. A missing-tool Responses Lite request should not be presumed
+  to be a harmless auxiliary/prewarm request.
+
+A temporary offline Go overlay with a synthetic explicit catalog model
+(`use_responses_lite=true`, `supports_search_tool=false`) confirmed native
+new/resume tool use and hostile native-tool denial. Every model request omitted
+its top-level tools and contained exactly one full `additional_tools` item.
+No real account/model was used. The prior synthetic-schema overlay also passed
+both native CLIs with the exact production `group_request` generic-object schema;
+that schema does not explain an absent inventory.
+
+The proxy must independently validate any supported `additional_tools` wrapper,
+its placement and keys, and every declaration against the same exact allowed
+and required identities. It must not interpret arbitrary nested data as a grant
+or accept incremental world-state declarations through this compatibility path.
+
+No supported per-MCP eager-loading switch was found in the pinned
+`config/src/mcp_types.rs`: tool settings contain approval mode/output budget,
+while server settings contain enabled/disabled tool lists and exposure omission,
+not a direct/deferred override. `features/src/lib.rs:273-276` explicitly marks
+`tool_search` and `tool_search_always_defer_mcp_tools` removed compatibility
+flags. `core/src/mcp_tool_exposure.rs:158` defers MCP tools whenever model tool
+search is available. Do not invent a flag or weaken required-tool checks. Models
+with tool-search metadata require separate qualification of a strictly scoped
+search implementation, or remain unavailable. `model_catalog_json` is a real
+configuration option, but rewriting actual model metadata to pretend that the
+model uses another format is not the chosen compatibility mechanism.

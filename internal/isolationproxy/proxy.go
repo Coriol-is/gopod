@@ -19,6 +19,8 @@ import (
 // Config must be generated from trusted namespace/policy state, never an agent
 // file. Routes are explicit qualified grants, with no provider default/fallback.
 type Config struct {
+	// Observe receives fixed diagnostic classes only, never request data.
+	Observe      func(string) `json:"-"`
 	Token        string
 	Routes       []Route
 	AllowedTools []string
@@ -35,6 +37,7 @@ type Config struct {
 }
 
 type Proxy struct {
+	observe                           func(string)
 	token                             string
 	routes                            []Route
 	allowedTools                      map[string]bool
@@ -130,7 +133,7 @@ func New(c Config) (*Proxy, error) {
 		}
 		required[key] = true
 	}
-	return &Proxy{token: c.Token, routes: routes, allowedTools: tools, requiredTools: required, requireSubscriptionBearer: c.RequireSubscriptionBearer, ca: bytes.Clone(cert), certificates: certificates, transport: publicTransport(), maxRequestBytes: c.MaxRequestBytes, maxResponseBytes: c.MaxResponseBytes, maxDuration: c.MaxDuration, slots: make(chan struct{}, c.MaxConnections), connections: map[net.Conn]struct{}{}}, nil
+	return &Proxy{observe: c.Observe, token: c.Token, routes: routes, allowedTools: tools, requiredTools: required, requireSubscriptionBearer: c.RequireSubscriptionBearer, ca: bytes.Clone(cert), certificates: certificates, transport: publicTransport(), maxRequestBytes: c.MaxRequestBytes, maxResponseBytes: c.MaxResponseBytes, maxDuration: c.MaxDuration, slots: make(chan struct{}, c.MaxConnections), connections: map[net.Conn]struct{}{}}, nil
 }
 
 func (p *Proxy) CertificatePEM() []byte { return bytes.Clone(p.ca) }
@@ -153,16 +156,19 @@ func (p *Proxy) Close() error {
 // terminates TLS and parses requests; it never offers an opaque TCP tunnel.
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodConnect || !p.authenticated(r.Header.Get("Proxy-Authorization")) {
+		p.event("connect_auth_denied")
 		deny(w, http.StatusForbidden)
 		return
 	}
 	host, port, err := net.SplitHostPort(r.Host)
 	if err != nil || port != "443" || !validHost(host) || r.URL.Host != r.Host || r.URL.Path != "" || r.URL.RawQuery != "" || r.URL.User != nil {
+		p.event("connect_authority_denied")
 		deny(w, http.StatusForbidden)
 		return
 	}
 	cert, ok := p.certificates[host]
 	if !ok {
+		p.event("connect_host_denied")
 		deny(w, http.StatusForbidden)
 		return
 	}
@@ -259,11 +265,13 @@ func (p *Proxy) forward(ctx context.Context, conn net.Conn, r *http.Request, hos
 	}
 	route, allowed := p.route(r, host)
 	if !allowed || r.ProtoMajor != 1 || r.Header.Get("Expect") != "" || r.Header.Get("Proxy-Authorization") != "" || len(r.Trailer) != 0 {
+		p.event("route_denied")
 		writeFailure(conn, http.StatusForbidden)
 		return false
 	}
 	body, err := p.validateBody(r, route)
 	if err != nil {
+		p.event(bodyEvent(err))
 		writeFailure(conn, http.StatusForbidden)
 		return false
 	}
@@ -284,11 +292,14 @@ func (p *Proxy) forward(ctx context.Context, conn net.Conn, r *http.Request, hos
 	outgoing.Close = false
 	stripHopHeaders(outgoing.Header)
 	outgoing.Header.Del("Accept-Encoding")
+	p.event("forwarded")
 	response, err := p.transport.RoundTrip(outgoing)
 	if err != nil {
+		p.event("upstream_network_error")
 		writeFailure(conn, http.StatusBadGateway)
 		return false
 	}
+	p.event(upstreamEvent(response.StatusCode))
 	defer response.Body.Close()
 	if response.StatusCode >= 300 && response.StatusCode < 400 || response.StatusCode == http.StatusSwitchingProtocols || response.ContentLength > p.maxResponseBytes || response.Header.Get("Content-Encoding") != "" {
 		writeFailure(conn, http.StatusBadGateway)
@@ -369,4 +380,57 @@ func (r *headerGuardReader) Read(p []byte) (int, error) {
 		}
 	}
 	return n, err
+}
+
+// These classes deliberately discard all untrusted validation details.
+func bodyEvent(err error) string {
+	switch err.Error() {
+	case "subscription authentication required":
+		return "body_auth_denied"
+	case "required external tools disabled", "required external tool unavailable":
+		return "body_required_tools_denied"
+	case "unapproved tool", "invalid tools":
+		return "body_unapproved_tool"
+	case "unapproved JSON field", "unapproved inference field":
+		return "body_field_denied"
+	case "unapproved server capability", "unapproved remote context":
+		return "body_capability_denied"
+	case "request limit":
+		return "body_limit"
+	case "unsupported envelope", "unexpected body", "JSON required":
+		return "body_envelope_denied"
+	default:
+		return "body_denied"
+	}
+}
+func upstreamEvent(status int) string {
+	switch status {
+	case 200:
+		return "upstream_http_200"
+	case 400:
+		return "upstream_http_400"
+	case 401:
+		return "upstream_http_401"
+	case 403:
+		return "upstream_http_403"
+	case 404:
+		return "upstream_http_404"
+	case 429:
+		return "upstream_http_429"
+	case 500:
+		return "upstream_http_500"
+	case 502:
+		return "upstream_http_502"
+	case 503:
+		return "upstream_http_503"
+	case 504:
+		return "upstream_http_504"
+	default:
+		return "upstream_http_other"
+	}
+}
+func (p *Proxy) event(event string) {
+	if p.observe != nil {
+		p.observe(event)
+	}
 }

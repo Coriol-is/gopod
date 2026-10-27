@@ -101,3 +101,24 @@ func TestFixedControllerMCPRouteRejectsRedirectableIdentity(t *testing.T) {
 		}
 	}
 }
+
+func TestGateObserverNeverLeaksAuthenticationOrLeasePayload(t *testing.T) {
+	token := strings.Repeat("a", 64)
+	controller := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Error(w, "secret-upstream-body", 403) }))
+	defer controller.Close()
+	target, _ := url.Parse(controller.URL)
+	var events []string
+	gate := gateCONNECT(token, target, newPingClient(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { t.Fatal("denial forwarded") }), func(event string) { events = append(events, event) })
+	for _, cap := range []string{"secret-malicious-key", token} {
+		r := httptest.NewRequest("CONNECT", "malicious-host.example:443", nil)
+		r.Header.Set("Proxy-Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("group:"+cap)))
+		w := httptest.NewRecorder()
+		gate.ServeHTTP(w, r)
+		if w.Code != 403 {
+			t.Fatal(w.Code)
+		}
+	}
+	if strings.Join(events, ",") != "connect_auth_denied,connect_lease_denied" {
+		t.Fatal(events)
+	}
+}

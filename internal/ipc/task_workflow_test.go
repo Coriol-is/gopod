@@ -339,7 +339,7 @@ func TestGroupTaskManagementDoesNotRevealForeignIDs(t *testing.T) {
 	}
 	for _, id := range []string{"private-task-id", "missing-task-id"} {
 		result := f.submit(t, "group", map[string]any{"op": "schedule", "taskId": id, "prompt": "group request", "scheduleType": "interval", "scheduleValue": "1h"})
-		if result.Status != "error" || !strings.Contains(result.Error, "omit taskId") {
+		if result.Status != "error" || result.Error != "operation_unavailable" {
 			t.Fatal("global custom task ID probe accepted")
 		}
 	}

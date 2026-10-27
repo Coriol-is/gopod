@@ -38,7 +38,7 @@ def main():
   jwt=b64({'alg':'none'})+'.'+b64({'exp':4102444800,'email':'synthetic@example.invalid','https://api.openai.com/auth':{'chatgpt_plan_type':'pro','chatgpt_account_id':'synthetic-account','chatgpt_user_id':'synthetic-user'}})+'.synthetic'
   (p/'auth.json').write_text(json.dumps({'auth_mode':'chatgpt','OPENAI_API_KEY':None,'tokens':{'id_token':jwt,'access_token':jwt,'refresh_token':'synthetic-refresh-not-real','account_id':'synthetic-account'},'last_refresh':datetime.datetime.now(datetime.timezone.utc).isoformat()}))
   cfg=['model="gpt-5"','approval_policy="never"','sandbox_mode="read-only"','web_search="disabled"','check_for_update_on_startup=false','model_provider="gopod_group_native"',f'chatgpt_base_url="http://{model}:8080"','[features]']
-  cfg += [key+'=false' for key in ['goals','shell_tool','shell_snapshot','unified_exec','apps','plugins','remote_plugin','plugin_sharing','hooks','multi_agent','multi_agent_v2','skill_mcp_dependency_install','skill_search','browser_use','browser_use_external','computer_use','image_generation','view_image']]
+  cfg += [key+'=false' for key in ['incremental_tools','goals','shell_tool','shell_snapshot','unified_exec','apps','plugins','remote_plugin','plugin_sharing','hooks','multi_agent','multi_agent_v2','skill_mcp_dependency_install','skill_search','browser_use','browser_use_external','computer_use','image_generation','view_image']]
   cfg += ['[model_providers.gopod_group_native]','name="Group native ChatGPT"',f'base_url="http://{model}:8080/backend-api/codex"','requires_openai_auth=true','wire_api="responses"','supports_websockets=false']
   (p/'config.toml').write_text('\n'.join(cfg)+'\n')
   for f in p.iterdir():f.chmod(0o644)

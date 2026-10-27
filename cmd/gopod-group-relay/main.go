@@ -49,6 +49,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	cfg.Proxy.Observe = observeEvent
 	proxy, err := isolationproxy.New(cfg.Proxy)
 	if err != nil {
 		return errors.New("policy unavailable")
@@ -79,7 +80,7 @@ func run() error {
 			return
 		}
 		proxy.ServeHTTP(w, r)
-	}))
+	}), observeEvent)
 	srv := &http.Server{Addr: ":8787", Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16384, ErrorLog: log.New(io.Discard, "", 0)}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
@@ -119,11 +120,24 @@ func proxyCapability(header, token string) bool {
 
 // Authenticate locally before touching controller state. A stopped, expired,
 // retired or revision-mismatched lease can never authorize another CONNECT.
-func gateCONNECT(token string, target *url.URL, client *http.Client, next http.Handler) http.Handler {
+func gateCONNECT(token string, target *url.URL, client *http.Client, next http.Handler, observers ...func(string)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodConnect && (!proxyCapability(r.Header.Get("Proxy-Authorization"), token) || !leaseActive(r.Context(), target, client)) {
-			http.Error(w, "egress unavailable", http.StatusForbidden)
-			return
+		if r.Method == http.MethodConnect {
+			event := ""
+			if !proxyCapability(r.Header.Get("Proxy-Authorization"), token) {
+				event = "connect_auth_denied"
+			} else if !leaseActive(r.Context(), target, client) {
+				event = "connect_lease_denied"
+			}
+			if event != "" {
+				for _, observe := range observers {
+					if observe != nil {
+						observe(event)
+					}
+				}
+				http.Error(w, "egress unavailable", http.StatusForbidden)
+				return
+			}
 		}
 		next.ServeHTTP(w, r)
 	})
@@ -161,3 +175,6 @@ func leaseActive(ctx context.Context, target *url.URL, client *http.Client) bool
 func newPingClient() *http.Client {
 	return &http.Client{Transport: &http.Transport{Proxy: nil, DisableKeepAlives: true, ResponseHeaderTimeout: 2 * time.Second}, Timeout: 2 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 }
+
+// Called only with package-owned fixed event constants; request values are never logged.
+func observeEvent(event string) { _, _ = os.Stderr.WriteString("group_relay_event=" + event + "\n") }

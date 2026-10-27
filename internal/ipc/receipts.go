@@ -24,7 +24,7 @@ func (w *Watcher) writeTaskReceipt(folder, path, op string, result *TaskResult, 
 	receipt := taskReceipt{Status: "ok", RequestFile: filepath.Base(path), Op: op, Result: result, Help: "Read /workspace/chat/SCHEDULING.md; use op and camelCase fields, then inspect this result before claiming success."}
 	if cause != nil {
 		receipt.Status = "error"
-		receipt.Error = cause.Error()
+		receipt.Error = w.receiptError(folder, cause)
 	}
 	return w.writeReceipt(folder, path, "results", receipt)
 }
@@ -74,7 +74,33 @@ func (w *Watcher) writeMessageReceipt(folder, path, status string, cause error) 
 		Help        string `json:"help"`
 	}{Status: status, RequestFile: filepath.Base(path), Help: "Read /workspace/chat/SCHEDULING.md. Message receipts are under results/messages; use canonical chatJid tg:<id>. Do not blindly resend after an ambiguous delivery error."}
 	if cause != nil {
-		receipt.Error = cause.Error()
+		receipt.Error = w.receiptError(folder, cause)
 	}
 	return w.writeReceipt(folder, path, "results/messages", receipt)
+}
+
+// Group-visible receipts are a disclosure boundary, not an owner diagnostic
+// channel. Unknown sink/storage errors may contain sensitive URLs or paths.
+func (w *Watcher) receiptError(folder string, cause error) string {
+	if cause == nil {
+		return ""
+	}
+	if w.resolve != nil {
+		jid, ok := w.resolve(folder)
+		if ok {
+			id, err := strconv.ParseInt(strings.TrimPrefix(jid, "tg:"), 10, 64)
+			if err == nil && id < 0 {
+				return "operation_unavailable"
+			}
+			if err == nil && id > 0 {
+				return cause.Error()
+			}
+		}
+	}
+	// A failed late lookup cannot turn a shared/unknown source into a private
+	// diagnostic channel. Only the already host-selected owner alias is retained.
+	if folder != "" && folder == w.cfg.OwnerFolder {
+		return cause.Error()
+	}
+	return "operation_unavailable"
 }

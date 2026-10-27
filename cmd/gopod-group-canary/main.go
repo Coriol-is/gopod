@@ -45,8 +45,12 @@ func run() error {
 	configPath := flag.String("config", "", "host-only explicit group configuration")
 	provider := flag.String("provider", "claude", "pinned native provider")
 	parent := flag.String("parent", "", "protected host directory for disposable data")
+	probeOnly := flag.Bool("inference-probe", false, "one synthetic native request; print only fixed diagnostic booleans")
 	authOnly := flag.Bool("auth-only", false, "do not make any model request")
 	flag.Parse()
+	if *authOnly && *probeOnly {
+		return errors.New("conflicting probe modes")
+	}
 	if !filepath.IsAbs(*parent) || (*provider != "claude" && *provider != "codex") {
 		return errors.New("parameters unavailable")
 	}
@@ -102,7 +106,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	server := &http.Server{Handler: mcp, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, MaxHeaderBytes: 16384, ErrorLog: log.New(io.Discard, "", 0)}
+	server := &http.Server{Handler: observeMCP(mcp), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, MaxHeaderBytes: 16384, ErrorLog: log.New(io.Discard, "", 0)}
 	go func() { _ = server.Serve(l) }()
 	defer server.Close()
 	fmt.Fprintln(os.Stderr, "phase=prepare")
@@ -138,12 +142,19 @@ func run() error {
 		}
 	}()
 	fmt.Fprintln(os.Stderr, "phase=runtime")
-	if *authOnly {
-		_, _, release, err := manager.Start(ctx, c, base, 0)
+	if *authOnly || *probeOnly {
+		runtimeID, native, release, err := manager.Start(ctx, c, base, 0)
 		if err != nil {
 			return err
 		}
-		release()
+		defer release()
+		if *probeOnly {
+			res, e := docker.Exec(ctx, runtimeID, native.RunFreshCmd("Reply exactly GROUP_CANARY_OK; do not call tools."), nil)
+			if e != nil || res == nil {
+				return errors.New("native probe unavailable")
+			}
+			return json.NewEncoder(os.Stdout).Encode(probeReport(*provider, res))
+		}
 		return json.NewEncoder(os.Stdout).Encode(map[string]any{"status": "ok", "auth_only": true, "provider": *provider, "inference_qualified": false})
 	}
 	if *provider == "claude" {
@@ -159,6 +170,7 @@ func run() error {
 	first := "Remember this synthetic shared-dialog phrase for the next turn only: " + nonce + ". Never write that phrase to the tool workspace. This is a synthetic isolation canary. Use only group_exec once to run: test ! -e /var/run/docker.sock && test ! -d /workspace/vault && test -z \"$OPENAI_API_KEY\" && test -z \"$FREEFEED_PASSWORD\" && printf GROUP_CANARY_OK > proof.txt && cat proof.txt. Then reply only GROUP_CANARY_OK. Do not call group_request or any network/service tool."
 	fmt.Fprintln(os.Stderr, "phase=new")
 	answer, err := r.Run(ctx, c.Folder, 0, runner.TierRegistered, nil, first)
+	fmt.Fprintf(os.Stderr, "new_error=%t marker_present=%t\n", err != nil, strings.Contains(answer, "GROUP_CANARY_OK"))
 	if err != nil || !strings.Contains(answer, "GROUP_CANARY_OK") {
 		return errors.New("new turn unqualified")
 	}

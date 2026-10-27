@@ -96,13 +96,17 @@ func (m *MCP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unavailable", 403)
 		return
 	}
+	// Do not hold the registry lock while waiting: revocation must be able
+	// to remove and cancel this lease even when another RPC is still active.
+	m.mu.RUnlock()
 	select {
 	case l.busy <- struct{}{}:
-		m.mu.RUnlock()
 		defer func() { <-l.busy }()
-	default:
-		m.mu.RUnlock()
-		http.Error(w, "busy", 429)
+	case <-r.Context().Done():
+		http.Error(w, "unavailable", 403)
+		return
+	case <-l.ctx.Done():
+		http.Error(w, "unavailable", 403)
 		return
 	}
 	requestCtx, requestCancel := context.WithCancel(r.Context())
