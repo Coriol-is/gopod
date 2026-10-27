@@ -314,3 +314,22 @@ the sanitized native runtime retains only the qualified scoped inventory.
 
 The regenerated sanitized public artifact SHA256 is
 `7718d30f843b20ae77c5209208ac77eff668bee5afefc02d9ae65b3934ee0091`.
+
+### All-public-model native qualification
+
+The sanitized public artifact's entire 11-model set was also exercised through
+actual Codex 0.164.0 against local mocks: 55 cases passed in the initial read-only
+qualification, including hidden daybreak aliases and `codex-auto-review`.
+No retained model-specific metadata enabled an unexpected native tool or changed
+the admitted outbound model. Every model covered scoped MCP execution and
+hostile exec/patch-delete/patch-write/read-file attempts on both new and resumed
+sessions. The synthetic auth canary remained unchanged and absent from provider
+context; native bypass files were not created. Responses Lite and ordinary
+Responses both audit client-search discoveries against the same scoped pair.
+
+This qualification is now permanent and opt-in as
+`TestGroupNativeInventoryPublicCatalog`, reusing the original fixture helper.
+The CI native-inventory name filter includes its 55 cases plus the 14 hostile
+synthetic-metadata cases. No account credential, Telegram or live model request
+is part of the qualification. Passing metadata/CLI checks does not prove backend
+entitlement, quota or live inference availability for any model.

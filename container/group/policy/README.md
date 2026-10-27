@@ -35,3 +35,22 @@ cache, credentials or account services are automatically imported.
 The public source default follows ascending priority and first picker-visible
 model. Availability in this snapshot does not prove account entitlement or
 quota. Native inventory, transport and isolation acceptance are separate checks.
+
+## Offline native regression
+
+`TestGroupNativeInventoryPublicCatalog` runs all 11 exact catalog slugs through
+Codex 0.164.0 with local mock provider/MCP endpoints and a fresh synthetic HOME.
+Each model has five cases, each covering new and resumed sessions: scoped MCP
+execution, hostile native exec, patch deletion of a synthetic auth canary, patch
+creation of a native file, and hostile native file reading. The 55 cases assert
+exact admitted model selection, scoped/audited inventory, unchanged canary and
+absence of native file writes. Hidden catalog slugs receive the same checks.
+
+```sh
+GOPOD_GROUP_NATIVE_TEST=1 go test ./internal/runner -run '^TestGroupNativeInventory' -count=1
+```
+
+The same command includes the existing 14 synthetic hostile-metadata cases.
+These are pinned CLI/catalog protocol and authority regressions; no account,
+Telegram or real backend/model is used. They do not establish entitlement,
+remaining quota or live inference availability for any listed slug.
