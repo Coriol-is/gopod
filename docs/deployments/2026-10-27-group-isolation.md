@@ -6,13 +6,41 @@ Status: implementation complete and merged; rollout blocked on SSH signing.
 
 ## Recorded baseline
 
-Production remains application `c82399bb22eb3d0bc4ff74fdf48215fbf6f9f3ae`
+The last verified production application is `c82399bb22eb3d0bc4ff74fdf48215fbf6f9f3ae`
 ([P0 release evidence](2026-10-26-isolation-p0.md)). ARM64 release images were
-built locally from a git archive of that exact merged main: controller, group Claude and group Codex policy v2. They have not been
+built locally from a clean git archive of merged main `a3a9c53`: controller,
+group Claude and group Codex policy v2. They have not been
 deployed; the final merged controller binary has not been installed on the Pi.
 Groups remain blocked until successful
 qualification and explicit scoped activation. This draft records no deployment,
 activation, native TCP preflight success, or completed Telegram UAT.
+
+## Prepared local ARM64 artifacts
+
+These images were built from the merged source without a working-tree `.env`,
+SSH forwarding or credential mounts. Native version probes ran with network none.
+The controller help and metadata-only catalog preparer ran successfully. No
+personal image was rebuilt.
+
+| Image | Immutable image ID |
+| --- | --- |
+| `gopod-controller:cp020-a3a9c53` | `sha256:2b6e6b7f05774ebfd868cb6002a0edce4d7cabd5480f27811e47945fe1bc40db` |
+| `gopod-agent-group:cp020-v2` | `sha256:b206c99c873e553571cef9587e42bb89cc94b3a30622d944e88acec27d2f780a` |
+| `gopod-agent-group-codex:cp020-v2` | `sha256:efc8c0d1b15e844b95a9619986e630fc9f312a163873d2c28dc58b9e477c1899` |
+
+Prepared files on the operator Mac:
+
+- `/tmp/gopod-cp020-a3a9c53-arm64-images.tar.gz` — 456131321 bytes;
+  SHA256 `b8d3119c2ffb63fdf2510700e61320edc8ec913f32ead2ff738d58a727b16ecf`.
+- `/tmp/gopod-cp020-a3a9c53-release-manifest.json` — image/platform provenance.
+- `/tmp/gopod-cp020-release-a3a9c53.bundle` — source transfer from the known Pi base.
+- `/tmp/gopod-cp020-release-policy/group-codex-catalog.json` — prepared `0600`
+  sanitized catalog; same artifact hash recorded below.
+
+The earlier-qualified Pi tool image remains separate: verify its actual ID and
+`group-tools`/`group-boundary-v1` labels before reuse. The prepared archive does
+not contain personal images or credentials. Temporary files can be regenerated
+from the recorded main revision if unavailable after a restart.
 
 ## Reviewed payload
 

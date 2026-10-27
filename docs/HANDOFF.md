@@ -11,7 +11,7 @@ Core Telegram assistant, Docker runtime, Claude/Codex native sessions,
 conversation-scoped history, memory, voice, scheduler and filesystem IPC are
 implemented. No other runtime, channel, guest agent or bot-to-bot peer is enabled.
 
-Reference Pi runs application **c82399b**, deployed 2026-10-26 21:03 UTC.
+Last verified reference Pi application is **c82399b**, deployed 2026-10-26 21:03 UTC.
 [CP-020 P0 rollout](deployments/2026-10-26-isolation-p0.md) blocks unqualified
 non-owner runtimes and pending IPC; only the personal owner runtime is active.
 The full CP-020 implementation merged to `main` as
