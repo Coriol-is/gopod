@@ -42,7 +42,7 @@ func TestUploadSymlinkCannotWriteOutsideWorkspace(t *testing.T) {
 type uploadGroupRuntime struct{}
 
 func (uploadGroupRuntime) Authorize(context.Context, store.RegisteredChat) error { return nil }
-func (uploadGroupRuntime) Start(context.Context, store.RegisteredChat, runner.AgentProvider, int) (string, runner.AgentProvider, func(), error) {
+func (uploadGroupRuntime) Start(context.Context, store.RegisteredChat, runner.AgentProvider, int, string) (string, runner.AgentProvider, func(), error) {
 	panic("upload must not start inference")
 }
 

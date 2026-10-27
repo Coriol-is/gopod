@@ -77,6 +77,10 @@ func run() error {
 			_ = os.RemoveAll(dir)
 		}
 	}()
+	cfg, err = groupruntime.StageCatalogsForCanary(cfg, filepath.Dir(*configPath), dir, os.Geteuid())
+	if err != nil {
+		return err
+	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	st, err := store.Open(ctx, filepath.Join(dir, "store.sqlite"), logger)
 	if err != nil {
@@ -143,7 +147,7 @@ func run() error {
 	}()
 	fmt.Fprintln(os.Stderr, "phase=runtime")
 	if *authOnly || *probeOnly {
-		runtimeID, native, release, err := manager.Start(ctx, c, base, 0)
+		runtimeID, native, release, err := manager.Start(ctx, c, base, 0, "")
 		if err != nil {
 			return err
 		}

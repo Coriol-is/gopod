@@ -205,3 +205,112 @@ namespaces and unknown declarations. Merely treating a `tool_search` descriptor
 as if it declared both scoped functions would misrepresent the wire evidence.
 These source/fixture results do not authorize a generic hosted-search grant or
 prove live transport/account acceptance.
+
+## Group native policy v2: mandatory sanitized static catalog
+
+A source audit found that `features.shell_tool=false` does **not** prevent native
+`apply_patch` registration. Pinned `core/src/tools/spec_plan.rs:1409` registers
+`ApplyPatchHandler` whenever `model_info.apply_patch_tool_type` is present,
+independently of shell features. Its default exposure is direct. Code Mode Only
+can hide this declaration while advertising native `exec`/`wait` wrappers;
+those wrappers remain forbidden by the proxy. The old minimal synthetic model
+catalog had omitted these authority-bearing fields and missed the registration.
+An offline unsafe-catalog regression reproduced the unexpected declaration.
+A synthetic deletion attempt did not demonstrate auth-content disclosure; no
+real account file was accessed. Read-only execution alone is not a proof that
+no native filesystem reads can occur.
+
+Policy v2 therefore requires controller-sanitized catalog bytes and an exact
+admitted model for every Codex runtime. The provider rejects missing, uncapped
+or model-mismatched catalogs, emits a fixed read-only
+`/etc/gopod-group/models.json`, and references it through the supported
+`model_catalog_json` setting. Each new, resumed and fresh command explicitly pins
+`--model`; later runner model arguments cannot replace that admission decision.
+The host rejects unknown slugs before invoking the native CLI. It does not use
+native prefix matching or unknown-model fallback to widen the selection.
+
+The sanitizer reduces metadata capabilities while retaining model identity,
+context limits, reasoning, Responses Lite and qualified client-search metadata:
+
+- `apply_patch_tool_type=null`, `tool_mode="direct"`, `shell_type="disabled"`;
+- `experimental_supported_tools=[]`, `multi_agent_version="disabled"`;
+- `node_repl_disabled=true`, `auto_review_model_override=null`;
+- source skills/plugins/apps instruction toggles disabled;
+- fixed neutral shared-group `base_instructions`, with `model_messages=null`.
+
+The pinned legacy-base adapter (`protocol/src/openai_models.rs:917`) promotes the
+fixed base into a fresh instruction template when `model_messages` is null.
+Source/private instruction overrides are not inherited. Native configuration
+also sets `[agents] enabled=false` and explicitly disables `sleep_tool`,
+`code_mode` and `code_mode_only`: false multi-agent feature flags alone do not
+prevent model metadata from selecting agent V2. Unknown source fields are
+removed; the already-sanitized format is validated strictly.
+
+Fourteen pinned offline native scenarios pass after sanitizing a deliberately
+unsafe source model (freeform patch, Code Mode Only, agent V2 and experimental
+clock/test/async tools). They cover ordinary/Responses Lite/client-search
+inventories, new and resumed sessions, provider-requested exec/read calls and
+custom patch attempts to delete a synthetic auth canary or create a native file.
+The canary remains unchanged and absent from provider request context. Only the
+scoped MCP pair and audited local control tools are advertised; no native
+filesystem authority is added to the proxy allowlist.
+
+### Public deployment catalog source and default selection
+
+The versioned primary source is the Codex repository's
+[`models-manager/models.json` at commit 6aaac694](https://github.com/openai/codex/blob/6aaac694803004a63c6f393d153c96d22521a6b9/codex-rs/models-manager/models.json).
+It requires no account or credential export. Its source SHA256 is
+`943ca7fe1d19ed019054158303f0dbbd80b3bef43b3aa425a71aa7cb3fb52c2b`.
+The catalog preparer successfully sanitizes all 11 models. The actual pinned
+Codex CLI loads the sanitized public catalog successfully in a fresh auth-less
+HOME (`login status` reaches the expected not-logged-in result, not a catalog
+parse error); no inference/network request is made by this check.
+
+| Slug | Priority | Picker visibility |
+| --- | ---: | --- |
+| gpt-6.1-sol | 1 | list |
+| gpt-6-astra | 2 | list |
+| gpt-6-sol | 3 | list |
+| gpt-6-luna | 4 | list |
+| gpt-5.6-sol | 5 | list |
+| gpt-5.6-terra | 8 | list |
+| gpt-5.6-luna | 9 | list |
+| gpt-daybreak-blue-latest | 11 | hide |
+| gpt-daybreak-red-latest | 12 | hide |
+| gpt-5.5 | 13 | list |
+| codex-auto-review | 43 | hide |
+
+Pinned `ModelsManager::build_available_models` sorts by ascending priority;
+`ModelPreset::mark_default_by_picker_visibility` chooses the first visible model,
+falling back to the first only if none are visible. Thus the **public pinned
+snapshot's** default candidate is `gpt-6.1-sol`. This is not proof of the current
+owner account's remote catalog, entitlement or selected/default model. The
+catalog preparer and group manager require an explicit default; importing this
+snapshot does not authorize silently changing an existing selection.
+
+### Guardian and model-driven registry audit
+
+`ModelInfo.guardian` is approval/classification coverage, not a tool registration
+selector. Nevertheless pinned `config/src/guardian.rs` explicitly lets a non-null
+catalog policy bypass the legacy `guardianv2=false` scoring gate. An adaptive
+policy can prepare classifier state. Current default user review prevents its
+network prewarm/scoring, but policy v2 does not depend on that default: sanitized
+`guardian=null`, fixed `approvals_reviewer="user"`, and supported
+`features.guardian_approval=false`/`features.guardianv2=false` close this path.
+The Guardian extension's thread-start handler exits when GuardianApproval is off.
+`guardian_source` is not a ModelInfo field in this pin and is dropped as unknown.
+
+The complete model-driven registry branches in `core/src/tools/spec_plan.rs`
+are covered by the following controls: shell type plus ShellTool feature;
+apply-patch metadata removed; tool mode forced direct; multi-agent metadata
+disabled plus agents.enabled=false; experimental clock/test/async tool names
+removed; image modalities cannot enable image tools while their features are
+off; search and Responses Lite retain their separately audited scoped behavior.
+`node_repl_disabled=true` reduces extension availability;
+`node_repl_auto_review_required` is review metadata, not a registry constructor.
+The hostile source fixture sets adaptive Guardian coverage, node review flags
+and a private reviewer-model override as well as native patch/code/agent tools;
+the sanitized native runtime retains only the qualified scoped inventory.
+
+The regenerated sanitized public artifact SHA256 is
+`7718d30f843b20ae77c5209208ac77eff668bee5afefc02d9ae65b3934ee0091`.

@@ -1,9 +1,9 @@
 # gopod — Container isolation policy
 
-Updated: 2026-10-27. The full CP-020 architecture is implemented on the working
-branch. Final review/CI, exact-Pi qualification and activation remain separate.
-The recorded production baseline is [P0](deployments/2026-10-26-isolation-p0.md);
-this document is not evidence that the new group runtime is deployed.
+Updated: 2026-10-27. This document describes the source boundary. Runtime
+qualification and activation are separate; consult [HANDOFF](HANDOFF.md) for the
+recorded deployment. The latest recorded production baseline remains
+[P0](deployments/2026-10-26-isolation-p0.md) until rollout evidence supersedes it.
 
 [Contract](superpowers/specs/2026-10-25-personal-group-container-isolation.md) ·
 [Implementation and acceptance](superpowers/plans/2026-10-25-personal-group-container-isolation.md) ·
@@ -185,7 +185,7 @@ Never put secret values, login URLs or refresh tokens in this JSON or Git.
   "EnabledGroups": [],
   "Qualification": "",
   "RelayImage": "gopod-gopod:qualified",
-  "ToolImage": "gopod-agent-group-tools:qualified",
+  "ToolImage": "gopod-group-tools:qualified",
   "Providers": {
     "claude": {
       "Image": "gopod-agent-group:qualified",
@@ -197,14 +197,45 @@ Never put secret values, login URLs or refresh tokens in this JSON or Git.
     "codex": {
       "Image": "gopod-agent-group-codex:qualified",
       "AuthFile": "/absolute/host/auth-only/codex.auth.json",
+      "CatalogFile": "/opt/gopod/data/group-codex-catalog.json",
+      "DefaultModel": "gpt-6.1-sol",
       "Routes": [
-        {"Host":"chatgpt.com","Method":"POST","Path":"/backend-api/codex/responses","Query":"","Body":"responses"},
-        {"Host":"chatgpt.com","Method":"GET","Path":"/backend-api/codex/models","Query":"client_version=0.164.0","Body":"none"}
+        {"Host":"chatgpt.com","Method":"POST","Path":"/backend-api/codex/responses","Query":"","Body":"responses"}
       ]
     }
   }
 }
 ```
+
+Codex additionally requires a host-owned model catalog directly in the data
+root, never in a chat/workspace/native cache. The controller reads it without
+following symlinks, reduces model capabilities and mounts a fresh immutable
+snapshot read-only. It validates default and requested model membership before
+starting native execution and forces that model on new, resumed and fresh runs.
+A native cache, dynamic refresh or unknown-model fallback cannot replace it.
+
+Model metadata is authority in Codex 0.164.0: it can enable patch, code wrappers,
+experimental utilities and agents independently of some feature flags. Group
+policy v2 removes those capabilities and replaces source prompt templates with
+fixed shared-space instructions. Personal native providers and selections do not
+use this catalog. The [public metadata artifact](../container/group/policy/README.md)
+and [preparer](../cmd/gopod-group-catalog/main.go) contain no owner HOME/cache data.
+For the example data root, prepare it explicitly with the trusted host CLI:
+
+```sh
+gopod-group-catalog \
+  --source container/group/policy/codex-models-0.164.0.json \
+  --output /opt/gopod/data/group-codex-catalog.json \
+  --default-model gpt-6.1-sol
+```
+
+The fresh-group default above is an explicit profile choice, not a change to the
+owner's model. The preparer writes `0600` and changes neither its source nor the
+owner's account state. This model snapshot does not prove entitlement or quota;
+both native-auth inference and direct network denial still need exact-Pi canaries.
+Canary configuration and its source catalog must be direct siblings: the canary
+stages only sanitized metadata into its disposable data root, preserving explicit
+auth-only references without importing any personal state.
 
 The empty qualification is intentionally rejected. Account/refresh/general-service
 routes are not supported exceptions. Build instructions and pinned versions are

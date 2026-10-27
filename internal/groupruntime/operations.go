@@ -27,6 +27,12 @@ func (m *Manager) Status(ctx context.Context, jid string) (string, error) {
 		state := "unavailable"
 		if m.Authorize(ctx, c) == nil {
 			state = "enabled"
+			for name, cfg := range m.Config.Providers {
+				if _, _, _, e := m.qualifiedCatalog(name, cfg, ""); e != nil {
+					state = "configuration unavailable"
+					break
+				}
+			}
 		}
 		out = append(out, fmt.Sprintf("%s: %s; epoch=%d ready=%t", c.JID, state, c.NamespaceEpoch, c.GroupEpochReady))
 	}
@@ -95,6 +101,12 @@ func (m *Manager) Enable(ctx context.Context, jid string) (string, error) {
 	defer unlock()
 	if m.Store.ValidateScope(ctx, c.Scope()) != nil || c.IsOwner || !strings.HasPrefix(c.JID, "tg:-") {
 		return "", ErrUnavailable
+	}
+	// Validate catalog/default before any epoch completion or admission reset.
+	for name, cfg := range m.Config.Providers {
+		if _, _, _, e := m.qualifiedCatalog(name, cfg, ""); e != nil {
+			return "", ErrUnavailable
+		}
 	}
 	// Explicit enable may repair only qualified native/tool orphans. Legacy
 	// permissive containers are never removed to make the guard pass.

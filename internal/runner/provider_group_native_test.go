@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -24,6 +25,7 @@ type nativeGroupFixture struct {
 	rlite           bool
 	search          bool
 	inventoryErrors []string
+	canaryPath      string
 	requests        []map[string]any
 	tools           []string
 	calls           int
@@ -156,7 +158,7 @@ func (f *nativeGroupFixture) model(w http.ResponseWriter, r *http.Request) {
 			input = `{"cmd":"printf bypass > native-bypass"}`
 		}
 		item := map[string]any{"type": "function_call", "id": "fc_fixture", "call_id": "call_fixture", "name": name, "arguments": input, "status": "completed"}
-		if hasNamespace && f.mode != "native_attack" {
+		if hasNamespace && f.mode == "mcp" {
 			item["namespace"] = "mcp__group"
 		}
 		if f.search && f.mode == "mcp" {
@@ -167,6 +169,7 @@ func (f *nativeGroupFixture) model(w http.ResponseWriter, r *http.Request) {
 				item["namespace"] = "mcp__group"
 			}
 		}
+		item = f.nativeAttackItem(item)
 		output = append(output, item)
 	}
 	response := map[string]any{"id": "resp_fixture", "object": "response", "status": "completed", "model": "gpt-5", "output": output, "usage": map[string]any{"input_tokens": 1, "output_tokens": 0, "total_tokens": 1}}
@@ -185,7 +188,7 @@ func TestGroupNativeInventoryAndHostileToolDenial(t *testing.T) {
 		t.Skip("set GOPOD_GROUP_NATIVE_TEST=1 for pinned local synthetic CLI qualification")
 	}
 	for _, provider := range []string{"claude", "codex"} {
-		for _, fixtureMode := range []string{"mcp", "native_attack", "rlite_mcp", "rlite_native_attack", "search_mcp", "search_native_attack"} {
+		for _, fixtureMode := range []string{"mcp", "native_attack", "rlite_mcp", "rlite_native_attack", "search_mcp", "search_native_attack", "rlite_patch_read_attack", "search_patch_read_attack", "rlite_patch_write_attack", "search_patch_write_attack", "rlite_file_read_attack", "search_file_read_attack"} {
 			if provider == "claude" && (strings.HasPrefix(fixtureMode, "rlite_") || strings.HasPrefix(fixtureMode, "search_")) {
 				continue
 			}
@@ -216,6 +219,12 @@ func TestGroupNativeInventoryAndHostileToolDenial(t *testing.T) {
 				model := httptest.NewServer(http.HandlerFunc(f.model))
 				defer model.Close()
 				p := groupFixture(t, provider)
+				if provider == "codex" {
+					p, err = GroupAgentProvider(NewCodexProvider(""), GroupProviderConfig{Image: "qualified-codex-group", MCPURL: testGroupURL, ModelCatalogJSON: testGroupCatalog(t, rlite, search), EffectiveModel: "gpt-5"})
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
 				cfg := p.(interface{ PolicyFiles() map[string][]byte }).PolicyFiles()
 				env := []string{"PATH=" + os.Getenv("PATH"), "HOME=" + home, "TMPDIR=" + root, "CI=1"}
 				args := p.RunCmd("Perform only the synthetic isolated group operation.", "", SessionRef{ID: testGroupSession})
@@ -233,14 +242,17 @@ func TestGroupNativeInventoryAndHostileToolDenial(t *testing.T) {
 					if err = os.Mkdir(codexHome, 0700); err != nil {
 						t.Fatal(err)
 					}
-					data := []byte("model = \"gpt-5\"\n" + strings.Replace(string(bytesReplaceEndpoint(cfg[groupCodexConfig], mcp.URL)), "model_provider = \"gopod_group_native\"", "model_provider = \"offline_group\"", 1) + "\n[model_providers.offline_group]\nname = \"Synthetic group test\"\nbase_url = " + strconvQuote(model.URL+"/v1") + "\nwire_api = \"responses\"\nrequires_openai_auth = false\nsupports_websockets = false\n")
-					if rlite {
-						catalog := filepath.Join(root, "synthetic-models.json")
-						if err = os.WriteFile(catalog, []byte(strings.Replace(nativeRliteCatalog, `"supports_search_tool":false`, fmt.Sprintf(`"supports_search_tool":%t`, search), 1)), 0600); err != nil {
-							t.Fatal(err)
-						}
-						data = append([]byte("model_catalog_json = "+strconvQuote(catalog)+"\n"), data...)
+					catalog := filepath.Join(root, "synthetic-models.json")
+					if err = os.WriteFile(catalog, cfg[groupCodexCatalog], 0400); err != nil {
+						t.Fatal(err)
 					}
+					f.canaryPath = filepath.Join(codexHome, "synthetic-auth-canary")
+					if err = os.WriteFile(f.canaryPath, []byte(nativeAuthCanary), 0600); err != nil {
+						t.Fatal(err)
+					}
+					managedConfig := strings.Replace(string(bytesReplaceEndpoint(cfg[groupCodexConfig], mcp.URL)), strconv.Quote(groupCodexCatalog), strconvQuote(catalog), 1)
+					data := []byte(strings.Replace(managedConfig, "model_provider = \"gopod_group_native\"", "model_provider = \"offline_group\"", 1) + "\n[model_providers.offline_group]\nname = \"Synthetic group test\"\nbase_url = " + strconvQuote(model.URL+"/v1") + "\nwire_api = \"responses\"\nrequires_openai_auth = false\nsupports_websockets = false\n")
+
 					if err = os.WriteFile(filepath.Join(codexHome, "config.toml"), data, 0400); err != nil {
 						t.Fatal(err)
 					}
@@ -266,7 +278,7 @@ func TestGroupNativeInventoryAndHostileToolDenial(t *testing.T) {
 				if ctx.Err() != nil {
 					t.Fatal("synthetic CLI timed out")
 				}
-				if mode == "mcp" {
+				if mode == "mcp" || provider == "codex" {
 					session := testGroupSession
 					if provider == "codex" {
 						session = ""
@@ -296,6 +308,20 @@ func TestGroupNativeInventoryAndHostileToolDenial(t *testing.T) {
 				}
 				f.mu.Lock()
 				defer f.mu.Unlock()
+				if provider == "codex" {
+					if data, e := os.ReadFile(f.canaryPath); e != nil || string(data) != nativeAuthCanary {
+						t.Fatal("native auth canary changed")
+					}
+					for _, request := range f.requests {
+						if request["model"] != "gpt-5" {
+							t.Fatal("native request replaced admitted model")
+						}
+						data, _ := json.Marshal(request)
+						if strings.Contains(string(data), nativeAuthCanary) {
+							t.Fatal("native auth canary read into provider context")
+						}
+					}
+				}
 				if len(f.inventoryErrors) > 0 {
 					t.Fatal("native request inventory changed", f.inventoryErrors)
 				}
@@ -319,7 +345,7 @@ func TestGroupNativeInventoryAndHostileToolDenial(t *testing.T) {
 				if mode == "mcp" && f.calls != 2 {
 					t.Fatal("approved isolated MCP tool did not run")
 				}
-				if mode == "native_attack" && f.calls != 0 {
+				if mode != "mcp" && f.calls != 0 {
 					t.Fatal("native attack unexpectedly invoked MCP")
 				}
 			})
@@ -334,7 +360,7 @@ func strconvQuote(s string) string { b, _ := json.Marshal(s); return string(b) }
 // A real catalog model can select Responses Lite while fallback metadata does
 // not. The catalog is synthetic; neither account files nor model endpoints are
 // used. Every native request must carry a complete current tool declaration.
-const nativeRliteCatalog = `{"models":[{"base_instructions":"Synthetic local model only.","slug":"gpt-5","display_name":"Synthetic RLite Model","description":null,"supported_reasoning_levels":[],"shell_type":"unified_exec","visibility":"list","supported_in_api":true,"priority":1,"availability_nux":null,"upgrade":null,"support_verbosity":false,"default_verbosity":null,"apply_patch_tool_type":null,"truncation_policy":{"mode":"bytes","limit":10000},"experimental_supported_tools":[],"supports_search_tool":false,"use_responses_lite":true}]}`
+const nativeRliteCatalog = `{"models":[{"base_instructions":"Synthetic local model only.","slug":"gpt-5","display_name":"Synthetic RLite Model","description":null,"supported_reasoning_levels":[],"shell_type":"unified_exec","visibility":"list","supported_in_api":true,"priority":1,"availability_nux":null,"upgrade":null,"support_verbosity":false,"default_verbosity":null,"guardian":{"mcp":"adaptive","computer_use":"adaptive","other_tools":"adaptive"},"node_repl_auto_review_required":true,"node_repl_disabled":false,"auto_review_model_override":"private-reviewer-model","apply_patch_tool_type":"freeform","tool_mode":"code_mode_only","multi_agent_version":"v2","truncation_policy":{"mode":"bytes","limit":10000},"experimental_supported_tools":["clock","test_sync_tool","send_message_to_user_async","request_user_input_async"],"supports_search_tool":false,"use_responses_lite":true}]}`
 
 func nativeFixtureRequestTools(req map[string]any, rlite, search bool) ([]any, error) {
 	tools, _ := req["tools"].([]any)
@@ -441,4 +467,21 @@ func nativeFixtureSearchResultsScoped(declared []any) bool {
 		}
 	}
 	return true
+}
+
+const nativeAuthCanary = "SYNTHETIC_AUTH_FILE_CANARY_NOT_A_REAL_SECRET"
+
+func (f *nativeGroupFixture) nativeAttackItem(item map[string]any) map[string]any {
+	switch f.mode {
+	case "patch_read_attack", "patch_write_attack":
+		patch := "*** Begin Patch\n*** Delete File: " + f.canaryPath + "\n*** End Patch"
+		if f.mode == "patch_write_attack" {
+			patch = "*** Begin Patch\n*** Add File: native-bypass\n+unsafe\n*** End Patch"
+		}
+		return map[string]any{"type": "custom_tool_call", "id": "ctc_fixture", "call_id": "call_fixture", "namespace": "functions", "name": "apply_patch", "input": patch, "status": "completed"}
+	case "file_read_attack":
+		args, _ := json.Marshal(map[string]string{"path": f.canaryPath})
+		return map[string]any{"type": "function_call", "id": "fc_fixture", "call_id": "call_fixture", "namespace": "functions", "name": "read_file", "arguments": string(args), "status": "completed"}
+	}
+	return item
 }

@@ -15,7 +15,7 @@ RUN npm install -g --ignore-scripts "@anthropic-ai/claude-code@${CLAUDE_CODE_VER
  && npm cache clean --force
 RUN mkdir -p /workspace/inference /etc/gopod-group /home/node/.claude /home/node/.codex \
  && chown -R node:node /home/node/.claude /home/node/.codex
-LABEL org.gopod.profile="group" org.gopod.provider="claude" org.gopod.native-policy="group-native-v1"
+LABEL org.gopod.profile="group" org.gopod.provider="claude" org.gopod.native-policy="group-native-v2"
 ENV ENABLE_CLAUDEAI_MCP_SERVERS=false \
  ENABLE_TOOL_SEARCH=false \
  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \

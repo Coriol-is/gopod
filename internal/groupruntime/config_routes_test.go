@@ -15,7 +15,7 @@ func TestReadonlySubscriptionConfigOnlyPermitsPinnedInferenceRoutes(t *testing.T
 	codex := isolationproxy.Route{Host: "chatgpt.com", Method: "POST", Path: "/backend-api/codex/responses", Body: isolationproxy.Responses}
 	models := isolationproxy.Route{Host: "chatgpt.com", Method: "GET", Path: "/backend-api/codex/models", Query: "client_version=0.164.0", Body: isolationproxy.NoBody}
 	load := func(provider string, routes []isolationproxy.Route) error {
-		cfg := Config{EnabledGroups: []string{"tg:-2"}, RelayImage: "relay:pinned", ToolImage: "tools:pinned", Qualification: "synthetic-qualified", Providers: map[string]ProviderConfig{provider: {Image: "group:pinned", AuthFile: "/explicit/readonly-auth.json", Routes: routes}}}
+		cfg := Config{EnabledGroups: []string{"tg:-2"}, RelayImage: "relay:pinned", ToolImage: "tools:pinned", Qualification: "synthetic-qualified", Providers: map[string]ProviderConfig{provider: {Image: "group:pinned", AuthFile: "/explicit/readonly-auth.json", CatalogFile: "/explicit/models.json", DefaultModel: "qualified-model", Routes: routes}}}
 		data, err := json.Marshal(cfg)
 		if err != nil {
 			t.Fatal(err)

@@ -3,6 +3,8 @@ package runner
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"github.com/Coriol-is/gopod/internal/nativecatalog"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -20,7 +22,12 @@ func groupFixture(t *testing.T, name string) AgentProvider {
 	if name == "codex" {
 		base = NewCodexProvider("")
 	}
-	p, err := GroupAgentProvider(base, GroupProviderConfig{Image: "group-" + name + ":qualified", MCPURL: testGroupURL})
+	cfg := GroupProviderConfig{Image: "group-" + name + ":qualified", MCPURL: testGroupURL}
+	if name == "codex" {
+		cfg.ModelCatalogJSON = testGroupCatalog(t, false, false)
+		cfg.EffectiveModel = "gpt-5"
+	}
+	p, err := GroupAgentProvider(base, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +116,7 @@ func TestGroupNativePolicyFilesAreFixedAndProviderScoped(t *testing.T) {
 			t.Fatal("unversioned policy")
 		}
 		files := native.PolicyFiles()
-		if len(files) != 1 {
+		if len(files) != map[string]int{"claude": 1, "codex": 2}[name] {
 			t.Fatal("unexpected config inventory")
 		}
 		if name == "claude" {
@@ -123,6 +130,11 @@ func TestGroupNativePolicyFilesAreFixedAndProviderScoped(t *testing.T) {
 			}
 		} else {
 			s := string(files[groupCodexConfig])
+			for _, setting := range []string{`approvals_reviewer = "user"`, `guardian_approval = false`, `guardianv2 = false`, `[agents]`, `model_catalog_json = "/etc/gopod-group/models.json"`} {
+				if !strings.Contains(s, setting) {
+					t.Errorf("missing managed authority setting %s", setting)
+				}
+			}
 			for _, forbidden := range []string{"base_url", "env_key", "experimental_bearer_token", "auth.command", "[model_providers.openai]"} {
 				if strings.Contains(s, forbidden) {
 					t.Errorf("group native auth bypass: %s", forbidden)
@@ -219,11 +231,53 @@ func TestGroupImageMatrixPreservesPersonalAndExcludesPersonalTools(t *testing.T)
 // Incremental declarations require a different inference envelope. This boundary
 // requires explicit declarations rather than silently accepting hidden tools.
 func TestGroupCodexDisablesIncrementalDeclarations(t *testing.T) {
-	p, err := NewGroupProvider(NewCodexProvider(""), GroupProviderConfig{Image: "qualified-group-image", MCPURL: "http://gopod-relay:8787/mcp/abcdefghijklmnopqrstuvwxyz012345"})
+	p, err := NewGroupProvider(NewCodexProvider(""), GroupProviderConfig{Image: "qualified-group-image", MCPURL: testGroupURL, ModelCatalogJSON: testGroupCatalog(t, false, false), EffectiveModel: "gpt-5"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(p.PolicyFiles()[groupCodexConfig]), "incremental_tools = false") {
 		t.Fatal("incremental declarations enabled")
+	}
+}
+
+func testGroupCatalog(t *testing.T, rlite, search bool) []byte {
+	t.Helper()
+	source := strings.Replace(nativeRliteCatalog, `"use_responses_lite":true`, fmt.Sprintf(`"use_responses_lite":%t`, rlite), 1)
+	source = strings.Replace(source, `"supports_search_tool":false`, fmt.Sprintf(`"supports_search_tool":%t`, search), 1)
+	catalog, err := nativecatalog.Sanitize([]byte(source))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return catalog.JSON
+}
+
+func TestGroupCodexRequiresSanitizedCatalogAndPinsModel(t *testing.T) {
+	base := NewCodexProvider("")
+	cfg := GroupProviderConfig{Image: "qualified-group", MCPURL: testGroupURL, ModelCatalogJSON: testGroupCatalog(t, true, true), EffectiveModel: "gpt-5"}
+	p, err := NewGroupProvider(base, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.ModelCatalogJSON[0] = '!'
+	if p.PolicyFiles()[groupCodexCatalog][0] == '!' {
+		t.Fatal("caller mutated protected catalog")
+	}
+	for _, ref := range []SessionRef{{}, {ID: testGroupSession}, {ID: testGroupSession, Resume: true}} {
+		cmd := withModel(p.RunCmd("synthetic", "", ref), p, "unqualified-other-model")
+		if slices.Contains(cmd, "unqualified-other-model") || slices.Index(cmd, "--model") < 0 || cmd[slices.Index(cmd, "--model")+1] != "gpt-5" {
+			t.Fatal("admitted model replaced")
+		}
+	}
+	if args := p.ModelArgs("other"); args != nil {
+		t.Fatal("mutable model override")
+	}
+	for _, bad := range []GroupProviderConfig{
+		{Image: cfg.Image, MCPURL: testGroupURL, EffectiveModel: "gpt-5"},
+		{Image: cfg.Image, MCPURL: testGroupURL, ModelCatalogJSON: []byte(nativeRliteCatalog), EffectiveModel: "gpt-5"},
+		{Image: cfg.Image, MCPURL: testGroupURL, ModelCatalogJSON: testGroupCatalog(t, false, false), EffectiveModel: "unknown"},
+	} {
+		if _, err := NewGroupProvider(base, bad); err == nil {
+			t.Fatal("unqualified model catalog accepted")
+		}
 	}
 }

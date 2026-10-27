@@ -167,7 +167,7 @@ func TestGroupSafeErrorRetainsTypedQuotaAndAuthentication(t *testing.T) {
 type allowedGroupRuntime struct{}
 
 func (allowedGroupRuntime) Authorize(context.Context, store.RegisteredChat) error { return nil }
-func (allowedGroupRuntime) Start(context.Context, store.RegisteredChat, AgentProvider, int) (string, AgentProvider, func(), error) {
+func (allowedGroupRuntime) Start(context.Context, store.RegisteredChat, AgentProvider, int, string) (string, AgentProvider, func(), error) {
 	panic("group maintenance reached runtime")
 }
 func TestGroupCompactPreservesContextWithoutInvokingCallback(t *testing.T) {
@@ -184,7 +184,7 @@ func TestGroupCompactPreservesContextWithoutInvokingCallback(t *testing.T) {
 
 type failedGroupRuntime struct{ allowedGroupRuntime }
 
-func (failedGroupRuntime) Start(context.Context, store.RegisteredChat, AgentProvider, int) (string, AgentProvider, func(), error) {
+func (failedGroupRuntime) Start(context.Context, store.RegisteredChat, AgentProvider, int, string) (string, AgentProvider, func(), error) {
 	return "", nil, func() {}, errors.New("Docker private authfile http://group:" + strings.Repeat("secretcap", 8) + "@gopod-relay:8787")
 }
 func TestGroupRuntimeStartupErrorsAreGenericAcrossAllRunModes(t *testing.T) {

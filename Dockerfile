@@ -21,6 +21,7 @@ RUN CGO_ENABLED=0 go build \
 RUN CGO_ENABLED=0 go build -o /gopod-group-relay ./cmd/gopod-group-relay
 RUN CGO_ENABLED=0 go build -o /gopod-group-canary ./cmd/gopod-group-canary
 RUN CGO_ENABLED=0 go build -o /gopod-group-admin ./cmd/gopod-group-admin
+RUN CGO_ENABLED=0 go build -o /gopod-group-catalog ./cmd/gopod-group-catalog
 
 # --- Runtime stage ---
 FROM alpine:3.21
@@ -35,6 +36,7 @@ COPY --from=build /gopod /usr/local/bin/gopod
 COPY --from=build /gopod-group-relay /usr/local/bin/gopod-group-relay
 COPY --from=build /gopod-group-canary /usr/local/bin/gopod-group-canary
 COPY --from=build /gopod-group-admin /usr/local/bin/gopod-group-admin
+COPY --from=build /gopod-group-catalog /usr/local/bin/gopod-group-catalog
 
 # gopod reads .env from the working directory.
 WORKDIR /app

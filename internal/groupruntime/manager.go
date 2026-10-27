@@ -107,7 +107,7 @@ func (m *Manager) Authorize(ctx context.Context, c store.RegisteredChat) error {
 	}
 	return nil
 }
-func (m *Manager) Start(ctx context.Context, c store.RegisteredChat, base runner.AgentProvider, thread int) (id string, prov runner.AgentProvider, release func(), retErr error) {
+func (m *Manager) Start(ctx context.Context, c store.RegisteredChat, base runner.AgentProvider, thread int, selectedModel string) (id string, prov runner.AgentProvider, release func(), retErr error) {
 	stage := "admission"
 	defer func() {
 		if retErr != nil {
@@ -156,6 +156,10 @@ func (m *Manager) Start(ctx context.Context, c store.RegisteredChat, base runner
 	stage = "configuration"
 	cfg, ok := m.Config.Providers[base.Name()]
 	if !ok || validateProviderRoutes(base.Name(), cfg.Routes) != nil {
+		return "", nil, release, ErrUnavailable
+	}
+	catalogJSON, effectiveModel, catalogHash, err := m.qualifiedCatalog(base.Name(), cfg, selectedModel)
+	if err != nil {
 		return "", nil, release, ErrUnavailable
 	}
 	paths, err := runner.ValidateNamespacePaths(m.DataDir, c.Scope(), m.UID)
@@ -220,7 +224,7 @@ func (m *Manager) Start(ctx context.Context, c store.RegisteredChat, base runner
 		return "", nil, release, ErrUnavailable
 	}
 	leaseToken = token
-	prov, err = runner.GroupAgentProvider(base, runner.GroupProviderConfig{Image: nativeImage.ID, MCPURL: "http://gopod-relay:8787/mcp/" + token})
+	prov, err = runner.GroupAgentProvider(base, runner.GroupProviderConfig{ModelCatalogJSON: catalogJSON, EffectiveModel: effectiveModel, Image: nativeImage.ID, MCPURL: "http://gopod-relay:8787/mcp/" + token})
 	if err != nil {
 		return "", nil, release, ErrUnavailable
 	}
@@ -273,8 +277,9 @@ func (m *Manager) Start(ctx context.Context, c store.RegisteredChat, base runner
 		Revision, Qualification, Namespace string
 		Epoch, Registration                int64
 		Native, Relay, Tools, Provider     string
+		CatalogHash, EffectiveModel        string
 		Routes                             []isolationproxy.Route
-	}{revision + runner.GroupNativePolicyVersion, m.Config.Qualification, c.NamespaceID, c.NamespaceEpoch, c.RegistrationRevision, nativeImage.ID, relayImage.ID, toolImage.ID, base.Name(), cfg.Routes})
+	}{revision + runner.GroupNativePolicyVersion, m.Config.Qualification, c.NamespaceID, c.NamespaceEpoch, c.RegistrationRevision, nativeImage.ID, relayImage.ID, toolImage.ID, base.Name(), catalogHash, effectiveModel, cfg.Routes})
 	fingerprint := fmt.Sprintf("%x", sha256.Sum256(fingerprintBytes))
 	labels := map[string]string{"gopod.group-native": c.NamespaceID, "gopod.group-lease": leaseID, "gopod.group-policy": fingerprint, "gopod.version": m.Version}
 	stage = "network"
