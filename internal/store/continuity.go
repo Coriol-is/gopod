@@ -73,13 +73,21 @@ func (s *Store) CompleteConversation(ctx context.Context, folder string, thread 
 		return err
 	}
 	defer tx.Rollback()
-	if _, err = tx.ExecContext(ctx, `INSERT INTO conversation_history(chat_folder,thread_id,role,content) VALUES(?,?,'assistant',?)`, folder, thread, reply); err != nil {
-		return err
-	}
-	if _, err = tx.ExecContext(ctx, `INSERT INTO router_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, continuityKey(folder, thread, "provider"), provider); err != nil {
+	if err = completeConversationQ(ctx, tx, folder, thread, provider, reply); err != nil {
 		return err
 	}
 	return tx.Commit()
+}
+
+// completeConversationQ is the transaction-aware body of CompleteConversation.
+// It is shared with FreezeTurnResult, which must append continuity inside the
+// result transaction and cannot call the public API (single connection).
+func completeConversationQ(ctx context.Context, q taskSQL, folder string, thread int, provider, reply string) error {
+	if _, err := q.ExecContext(ctx, `INSERT INTO conversation_history(chat_folder,thread_id,role,content) VALUES(?,?,'assistant',?)`, folder, thread, reply); err != nil {
+		return err
+	}
+	_, err := q.ExecContext(ctx, `INSERT INTO router_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, continuityKey(folder, thread, "provider"), provider)
+	return err
 }
 
 func (s *Store) RecordConversationRequest(ctx context.Context, folder string, thread int, prompt string) error {

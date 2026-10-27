@@ -32,6 +32,8 @@ type Store struct {
 	db   *sql.DB
 	path string
 	log  *slog.Logger
+
+	outbox outboxConfig // quotas and post-commit publication notifier
 }
 
 // Open opens (and creates if necessary) the SQLite database at path,

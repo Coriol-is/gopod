@@ -24,6 +24,13 @@ approved queue, [proposal registry](proposals/README.md) for CP status and
 - **Not authorized without the owner:** account logins, quota/paid fallbacks, T9 reboot,
   production group activation, schedule changes (freefeed digest stays as is).
 
+## CP-002 PR 1 in progress (2026-10-27)
+- Branch `feat/cp002-store-foundations` (worktree `gopod-cp002-pr1`): additive store foundations
+  only (`internal/store/{scope,results,outbox,outbox_config,outbox_retention,schema_delivery}.go`).
+  No dispatcher, no Telegram changes, nothing wired into runtime paths, flags unchanged.
+- Next: PR 2 single-attempt dispatcher on top of `PublishDelivery`/`recomputeGroupState`
+  ([delivery plan](superpowers/plans/2026-10-26-reliability-delivery.md)). Design choices: D036.
+
 ## Current state
 Core Telegram assistant, Docker runtime, Claude/Codex native sessions,
 conversation-scoped history, memory, voice, scheduler and filesystem IPC are

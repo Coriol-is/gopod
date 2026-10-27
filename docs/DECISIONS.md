@@ -1120,6 +1120,38 @@ See [startup contract](STARTUP.md) and its linked official-interface research.
 
 ---
 
+## D036 — Extend the existing namespace identity for delivery; freeze results independent of revision drift
+
+**Date:** 2026-10-27
+**Status:** Accepted
+
+**Context.** CP-002 needs one host scope identity for results and deliveries. CP-020 already
+owns `ScopeRef`, `namespace_ownership` and epochs, and compares `ScopeRef` by value. The
+plan was written before that landed and also asks for thread and visibility in the scope.
+The Store has a single SQLite connection, so helpers that open their own transaction deadlock
+when called from inside another one.
+
+**Decision.** Keep `ScopeRef` unchanged. Add `ConversationScope` (ScopeRef plus thread and
+visibility) and a `ScopeAuthority` interface in `internal/store`; results and deliveries copy
+the snapshot columns and never add a second identity registry. `FreezeTurnResult` requires the
+namespace identity to be recorded but does not re-check registration revision or retirement,
+because an existing model result must not be lost to a rename during the run; `PublishDelivery`
+does revalidate the full `ScopeRef` inside its transaction. Store-internal helpers take the
+`taskSQL` handle; public entry points use `withTx`, which opens a transaction or enlists in the
+caller's under a SAVEPOINT, so a failed publication leaves no partial group in either case.
+Dispatcher wake-up runs only after a standalone commit; enlisted callers notify after their own
+commit. Parts are size-bounded at publication (64 KiB payload, 8 KiB markup, 512 B artifact
+reference). Rejection tombstones are never dropped or rewritten; beyond a per-namespace (5000) and
+global (50000) cap a new rejection is not stored and a per-namespace counter in `router_state`
+is incremented instead (`DroppedRejections`), so a flood cannot grow the table. A part payload
+can be cleared only after its delivery group is resolved.
+
+**Consequences.** CP-004/020/021/022 reuse the same identifiers and interface. The freeze
+boundary and the publication boundary authorize at different times by design. Payloads of
+terminal deliveries are cleared by compaction while dedupe tombstones are kept.
+
+---
+
 ## Template for new ADRs
 
 ```
