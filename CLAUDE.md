@@ -6,6 +6,8 @@ source of truth for *how* to work in this repo. The *what* lives in `docs/`.
 
 ## Read first, every session
 
+> Codex and other harnesses enter through [AGENTS.md](AGENTS.md), which points back here.
+
 1. **[docs/HANDOFF.md](docs/HANDOFF.md)** — current state, what's in flight,
    what's blocked, what to pick up next. **Always read this before doing
    anything else.** Update it before you stop working — run `/handoff`
