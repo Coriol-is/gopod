@@ -3,10 +3,10 @@
 Updated: 2026-10-27. CP-020 implementation merged to main in PRs #66/#67
 (`a3a9c53a24456cce40678231ef048e6baba51956`) with green CI/Sonar and independent
 review. Native policy v2 and the catalog architecture below are implemented;
-final exact-Pi both-provider/native-TCP qualification and rollout remain blocked
-on SSH signing. The recorded production baseline remains
-[P0](deployments/2026-10-26-isolation-p0.md). Local ARM64 builds do not imply a
-deployment or activation; see [draft release evidence](deployments/2026-10-27-group-isolation.md).
+the controller is deployed with zero enabled groups. Both exact-Pi native TCP
+preflights passed; full qualification failed (expired Claude auth; Codex tree-budget
+admission after preflight). Controlled-group activation remains blocked. See
+[release evidence](deployments/2026-10-27-group-isolation.md).
 
 [Contract](superpowers/specs/2026-10-25-personal-group-container-isolation.md) ·
 [Implementation and acceptance](superpowers/plans/2026-10-25-personal-group-container-isolation.md) ·
@@ -250,8 +250,9 @@ images, config examples, reports and model-accessible tools.
 Full local tests/races/vet and the real Docker tool checks passed during development.
 Synthetic native inventory/HTTP-SSE, scoped local memory, root/symlink, metadata
 oracle, interrupted migration and retained-drain tests cover the new boundaries.
-Final CI, both exact Pi native-auth new/resume runs, network denial, cleanup and
-real-client behavior are still pending; no new full-runtime deployment is claimed.
+CI/Sonar passed and the controller is deployed with groups disabled. Both exact-Pi
+native TCP preflights passed. Full provider/tool/new/resume qualification and
+real-client acceptance remain pending; this is not an activated group rollout.
 
 The owner currently uses controlled group sandboxes without third-party members.
 Check each slice there and fix failures incrementally. A passed prototype or local

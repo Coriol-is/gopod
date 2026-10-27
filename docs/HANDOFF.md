@@ -11,14 +11,13 @@ Core Telegram assistant, Docker runtime, Claude/Codex native sessions,
 conversation-scoped history, memory, voice, scheduler and filesystem IPC are
 implemented. No other runtime, channel, guest agent or bot-to-bot peer is enabled.
 
-Last verified reference Pi application is **c82399b**, deployed 2026-10-26 21:03 UTC.
-[CP-020 P0 rollout](deployments/2026-10-26-isolation-p0.md) blocks unqualified
-non-owner runtimes and pending IPC; only the personal owner runtime is active.
-The full CP-020 implementation merged to `main` as
-`a3a9c53a24456cce40678231ef048e6baba51956` (PRs #66/#67), with green CI/Sonar
-and independent review. Latest-v2 exact-Pi qualification for both providers and native TCP, rollout and
-activation remain pending; the production P0 baseline is unchanged. See the
-[draft rollout evidence](deployments/2026-10-27-group-isolation.md).
+The reference Pi controller now runs **a3a9c53**, deployed 2026-10-27 08:58 UTC.
+CP-020 implementation is merged (PRs #66/#67; green CI/Sonar and independent review).
+Groups remain disabled in production configuration. Both final native images
+passed TCP isolation preflight; full activation is blocked by expired Claude auth
+and Codex post-preflight tree-budget admission failure. Codex simple no-tool
+inference succeeded. Personal sessions/memory/schedules were preserved.
+See [deployment evidence and remaining gates](deployments/2026-10-27-group-isolation.md).
 [Private-login rollout](deployments/2026-10-25-01c18fe.md): group auth now requires
 private owner confirmation, preserving the group target/tier. Actual client login
 visibility remains A20; no account login was performed by rollout.
@@ -91,16 +90,17 @@ isolated offline tools, exact-route HTTPS relay, local group memory/IPC and
 confirmed owner controls. Local full tests/races/vet and real Docker tool checks
 passed; CI/Sonar and independent review are green. The Pi offline-tool test passed
 (6.22 s), and earlier-candidate real Claude new/resume two-turn qualification preserved file, context
-and session identity. Latest-v2 inference for both providers, native TCP preflight and rollout
-remain open; use [the plan](superpowers/plans/2026-10-25-personal-group-container-isolation.md)
+and session identity. Controller deployment and both native TCP preflights passed; full two-turn
+provider qualification and controlled-group activation remain open; use [the plan](superpowers/plans/2026-10-25-personal-group-container-isolation.md)
 and [current policy/config](ISOLATION.md) for gates. Group speech and automatic
 maintenance/extraction/compaction are unavailable; personal behavior is unchanged.
 No T9 memory-cgroup change/reboot, account refresh or paid API fallback is included.
 Native policy v2 passed 69 local cases across all 11 public catalog models, new/
 resume and hostile scenarios. Sanitized public catalog default is `gpt-6.1-sol`;
 ARM64 controller/Claude/Codex v2 images were built locally from exact merged main.
-No production catalog write or group migration occurred. Both latest-v2 provider
-canaries and native TCP preflight await SSH signing access.
+Production catalog/policy were installed with zero enabled groups. No production
+group migration occurred. Fix Codex tree-budget admission and refresh Claude auth
+through private management before rerunning full canaries.
 
 Doctor output follow-up is merged and deployed: protect technical identifiers from
 Markdown emphasis, label refresh eligibility as manual-only, and expose a scoped
@@ -189,15 +189,16 @@ visibility remains A20. Full container/service isolation remains separate.
 
 CP-020 source implementation follows the [contract](superpowers/specs/2026-10-25-personal-group-container-isolation.md)
 and [acceptance plan](superpowers/plans/2026-10-25-personal-group-container-isolation.md).
-Only P0 is currently recorded as deployed. The new native CLI sees a fresh
+The full controller is deployed with all groups disabled. The new native CLI sees a fresh
 inference directory, group-only state and an explicit read-only auth-only inode;
 actual files execute in a separate no-network sandbox. Missing/expired auth fails
 closed until private management refreshes the source. It is not a separate
-account/quota. Final latest-v2 inference for both providers, native TCP preflight and client checks remain
-gates. The final merged binary has not been installed on the Pi; SSH signing is
-currently blocked by the locked 1Password agent (owner unlock requested).
-Old scope data is preserved under retired keys, old group schedules are paused,
-and an interrupted preparation stays disabled. Timed-out host callbacks remain
+account/quota. Final two-turn inference/tool/resume checks and Telegram acceptance remain gates.
+SSH recovered; both native TCP preflights passed. See the deployment evidence
+for the expired Claude token and Codex admission failure.
+A future clean-epoch preparation preserves old scope data under retired keys,
+pauses old group schedules and stays disabled if interrupted. No production
+preparation was performed in this release. Timed-out host callbacks remain
 tracked until drain proof; orphan cleanup cannot authorize replay or delete native
 history. Controlled sandboxes permit incremental checks, not an unqualified real
 group rollout. Personal services, channel/Guest transport, T9 reboot and automatic
