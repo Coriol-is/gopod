@@ -8,7 +8,7 @@ RUN npm install -g --ignore-scripts "@openai/codex@${CODEX_VERSION}" \
  && npm cache clean --force
 RUN mkdir -p /workspace/inference /etc/gopod-group /home/node/.claude /home/node/.codex \
  && chown -R node:node /home/node/.claude /home/node/.codex
-LABEL org.gopod.profile="group" org.gopod.provider="codex" org.gopod.native-policy="group-native-v1"
+LABEL org.gopod.profile="group" org.gopod.provider="codex" org.gopod.native-policy="group-native-v2"
 ENV CODEX_HOME=/home/node/.codex \
  NODE_EXTRA_CA_CERTS=/etc/gopod-group/ca.crt \
  SSL_CERT_FILE=/etc/gopod-group/ca.crt

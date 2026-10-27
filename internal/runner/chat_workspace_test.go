@@ -13,7 +13,7 @@ import (
 type workspaceOnlyGroup struct{}
 
 func (workspaceOnlyGroup) Authorize(context.Context, store.RegisteredChat) error { return nil }
-func (workspaceOnlyGroup) Start(context.Context, store.RegisteredChat, AgentProvider, int) (string, AgentProvider, func(), error) {
+func (workspaceOnlyGroup) Start(context.Context, store.RegisteredChat, AgentProvider, int, string) (string, AgentProvider, func(), error) {
 	panic("workspace resolution must not start runtime")
 }
 

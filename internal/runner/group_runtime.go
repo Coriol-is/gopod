@@ -13,7 +13,7 @@ import (
 // tools boundary. No default group implementation or personal fallback exists.
 type GroupRuntime interface {
 	Authorize(context.Context, store.RegisteredChat) error
-	Start(context.Context, store.RegisteredChat, AgentProvider, int) (string, AgentProvider, func(), error)
+	Start(context.Context, store.RegisteredChat, AgentProvider, int, string) (string, AgentProvider, func(), error)
 }
 
 func (r *Runner) SetGroupRuntime(g GroupRuntime) { r.groups = g }
@@ -47,7 +47,7 @@ func (r *Runner) turnRuntime(ctx context.Context, folder string, thread int, tie
 		if r.groups == nil {
 			return "", nil, func() {}, ErrProfileUnavailable
 		}
-		return r.groups.Start(ctx, c, r.ProviderForChat(folder), thread)
+		return r.groups.Start(ctx, c, r.ProviderForChat(folder), thread, r.ModelForChat(folder))
 	}
 	id, err := r.ensure(ctx, folder, tier, al)
 	return id, r.ProviderForChat(folder), func() {}, err

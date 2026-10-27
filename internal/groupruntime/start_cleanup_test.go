@@ -100,7 +100,7 @@ func TestStartNetworkRemovalFailureBlocksFurtherAdmission(t *testing.T) {
 			if err = m.Authorize(t.Context(), c); err != nil {
 				t.Fatalf("positive admission: %v", err)
 			}
-			_, _, release, err := m.Start(t.Context(), c, runner.NewClaudeProvider(""), 0)
+			_, _, release, err := m.Start(t.Context(), c, runner.NewClaudeProvider(""), 0, "")
 			release()
 			var admission *AdmissionError
 			if !errors.As(err, &admission) || admission.Stage != "network" || !errors.Is(err, ErrUnavailable) {

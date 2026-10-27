@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/Coriol-is/gopod/internal/isolationproxy"
@@ -20,8 +21,10 @@ type ProviderConfig struct {
 	Image string
 	// AuthFile is an explicit auth-only subscription reference. No personal CLI
 	// home, settings or integration configuration is ever copied or mounted.
-	AuthFile string
-	Routes   []isolationproxy.Route
+	AuthFile     string
+	CatalogFile  string
+	DefaultModel string
+	Routes       []isolationproxy.Route
 }
 type Config struct {
 	EnabledGroups []string
@@ -62,7 +65,7 @@ func Load(path string) (Config, error) {
 		}
 	}
 	for name, p := range cfg.Providers {
-		if name != "claude" && name != "codex" || p.Image == "" || p.AuthFile == "" || validateProviderRoutes(name, p.Routes) != nil {
+		if name != "claude" && name != "codex" || p.Image == "" || p.AuthFile == "" || validateProviderRoutes(name, p.Routes) != nil || name == "codex" && (!filepath.IsAbs(p.CatalogFile) || filepath.Clean(p.CatalogFile) != p.CatalogFile || p.DefaultModel == "") {
 			return cfg, ErrUnavailable
 		}
 	}

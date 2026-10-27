@@ -171,3 +171,13 @@ an executable placeholder in the wrapper package, so the reviewed Docker build
 links `claude` directly to the installed pinned Linux optional-package binary,
 checks the supported architecture and verifies its version. No upstream installer
 script is run manually. Missing native packages or version mismatches fail build.
+
+### Codex catalog policy (group-native-v2)
+
+Rebuild both group native images when the shared policy label changes; personal
+images do not need rebuilding for a group-only policy update. Codex requires the
+controller's readonly sanitized model catalog and an admitted model on every run.
+Feature flags alone do not disable metadata-driven `apply_patch`/code/agent tools.
+See [catalog provenance and preparation](group/policy/README.md) and
+[host configuration](../docs/ISOLATION.md#9-configuration). The public snapshot is
+not baked into a native HOME and does not inherit owner instructions or caches.

@@ -20,7 +20,7 @@ var errBoundaryUnavailable = errors.New("native boundary unverified")
 func nativeBoundaryPreflight(ctx context.Context, m *groupruntime.Manager, d *runner.Docker, c store.RegisteredChat, base runner.AgentProvider) error {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	id, _, release, err := m.Start(ctx, c, base, 0)
+	id, _, release, err := m.Start(ctx, c, base, 0, "")
 	if release != nil {
 		defer release()
 	}
