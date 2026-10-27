@@ -150,7 +150,25 @@ func (s *Store) SnapshotScopeTx(ctx context.Context, tx *sql.Tx, folder string) 
 	if tx == nil {
 		return ScopeRef{}, ErrStaleScope
 	}
-	c, err := readRegistered(ctx, tx, "folder = ?", folder)
+	return snapshotScopeQ(ctx, tx, "folder = ?", folder)
+}
+
+func (s *Store) ValidateScopeTx(ctx context.Context, tx *sql.Tx, expected ScopeRef) error {
+	got, err := s.SnapshotScopeTx(ctx, tx, expected.Folder)
+	if err != nil {
+		return err
+	}
+	if got != expected {
+		return ErrStaleScope
+	}
+	return nil
+}
+
+// snapshotScopeQ reads the registration selected by predicate and verifies its
+// ownership row on the same handle, so callers inside a transaction never open
+// a second connection.
+func snapshotScopeQ(ctx context.Context, q taskSQL, predicate string, value any) (ScopeRef, error) {
+	c, err := readRegistered(ctx, q, predicate, value)
 	if errors.Is(err, ErrChatNotRegistered) {
 		return ScopeRef{}, ErrStaleScope
 	}
@@ -158,13 +176,15 @@ func (s *Store) SnapshotScopeTx(ctx context.Context, tx *sql.Tx, folder string) 
 		return ScopeRef{}, err
 	}
 	ref := c.Scope()
-	if err = validateOwnership(ctx, tx, ref); err != nil {
+	if err = validateOwnership(ctx, q, ref); err != nil {
 		return ScopeRef{}, err
 	}
 	return ref, nil
 }
-func (s *Store) ValidateScopeTx(ctx context.Context, tx *sql.Tx, expected ScopeRef) error {
-	got, err := s.SnapshotScopeTx(ctx, tx, expected.Folder)
+
+// validateScopeQ compares expected with the current registration on q.
+func validateScopeQ(ctx context.Context, q taskSQL, expected ScopeRef) error {
+	got, err := snapshotScopeQ(ctx, q, "folder = ?", expected.Folder)
 	if err != nil {
 		return err
 	}
