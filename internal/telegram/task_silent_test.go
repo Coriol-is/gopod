@@ -51,3 +51,25 @@ func TestTaskTurnRunsSilentlyAndNeverSendsStdout(t *testing.T) {
 		})
 	}
 }
+
+// Shutdown during a scheduled run is reported as an interruption, not as done,
+// and still makes no Telegram call.
+func TestTaskTurnCancellationIsInterruptedWithoutTelegramCalls(t *testing.T) {
+	fake := &fakeTelegram{respond: func(string, map[string]string) (int, string) {
+		return http.StatusOK, `{"ok":true,"result":true}`
+	}}
+	b, item := newStreamFixture(t, fake)
+	item.ChatID, item.Source = 0, "task"
+	ctx, cancel := context.WithCancel(context.Background())
+	b.taskRun = func(ctx context.Context, _ string, _ int, _ runner.Tier, _ string) (string, error) {
+		cancel()
+		return "partial stdout", ctx.Err()
+	}
+	err := b.NewAgentHandler()(ctx, []queue.Item{item})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if n := len(fake.calls); n != 0 {
+		t.Fatalf("%d Telegram API calls", n)
+	}
+}

@@ -449,3 +449,60 @@ func TestLegacyDeliveryFailureStaysInIPCAndTouchesNoTasks(t *testing.T) {
 		t.Fatal("failed request not archived")
 	}
 }
+
+func TestDurable_LingeringCommittedFileConvergesInsteadOfExpiring(t *testing.T) {
+	f := newDurableFixture(t)
+	f.send("owner", "0001-a.json", "tg:1", "hello")
+	path := filepath.Join(f.dir("owner", "messages"), "0001-a.json")
+	raw, _ := os.ReadFile(path)
+	conv, _ := f.st.SnapshotConversation(t.Context(), "tg:1", 0, store.VisibilityConversation)
+	id := requestIdentity(path, raw)
+	if _, err := f.st.PublishDelivery(t.Context(), store.PublishRequest{Conversation: conv, Owner: store.OwnerLegacyAgentIPC,
+		ActorRef: "ipc:" + conv.Scope.NamespaceID, Parts: splitText("hello"), Request: &id}); err != nil {
+		t.Fatal(err)
+	}
+	// Crash before the receipt; the file then lingers past the delivery lifetime.
+	f.clk.now = time.Now()
+	old := f.clk.now.Add(-2 * store.DefaultDeliveryExpiry)
+	if err := os.Chtimes(path, old, old); err != nil {
+		t.Fatal(err)
+	}
+	f.tick(f.watcher())
+	if f.deliveries() != 1 || f.count(`SELECT count(*) FROM ipc_message_requests WHERE outcome='rejected'`) != 0 {
+		t.Fatal("committed request was rejected or republished")
+	}
+	if rc := f.receipt("owner", "0001-a.result.json"); rc["status"] != "queued" || rc["error"] != nil {
+		t.Fatalf("receipt: %v", rc)
+	}
+	if len(dirEntries(t, f.dir("owner", ".processed"))) != 1 {
+		t.Fatal("not archived as processed")
+	}
+}
+
+func TestDurable_TerminalWriteFailuresAreThrottledWithoutTombstone(t *testing.T) {
+	f := newDurableFixture(t)
+	f.send("owner", "0001-a.json", "tg:1", "hello")
+	blocker := f.dir("owner", "results")
+	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	w := f.watcher()
+	for i := 0; i < 8; i++ { // far past the retry budget
+		f.tick(w)
+		f.clk.advance(6 * time.Second)
+	}
+	// Unblock; a poll inside the cooldown must not retry.
+	os.Remove(blocker)
+	f.tick(w)
+	if len(dirEntries(t, f.dir("owner", ".processed"))) != 0 {
+		t.Fatal("retried inside the cooldown")
+	}
+	f.clk.advance(time.Minute)
+	f.tick(w)
+	if f.deliveries() != 1 || len(dirEntries(t, f.dir("owner", ".processed"))) != 1 {
+		t.Fatalf("deliveries=%d", f.deliveries())
+	}
+	if f.count(`SELECT count(*) FROM ipc_message_requests WHERE outcome='rejected'`) != 0 {
+		t.Fatal("a rejection tombstone was written")
+	}
+}

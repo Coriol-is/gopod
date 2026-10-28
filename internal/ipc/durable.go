@@ -37,6 +37,7 @@ type DurableStore interface {
 	PublishDelivery(ctx context.Context, req store.PublishRequest) (store.Delivery, error)
 	RecordRequestRejection(ctx context.Context, sc store.ScopeRef, req store.RequestIdentity, reason string) (bool, error)
 	RecentIPCRequests(ctx context.Context, sc store.ScopeRef, limit int) ([]store.IPCRequestStatus, error)
+	LookupIPCRequest(ctx context.Context, sc store.ScopeRef, key string) (store.IPCRequestStatus, bool, error)
 	DeliveryDiagnostic(ctx context.Context, id string) (store.DeliveryDiagnostic, error)
 }
 
@@ -138,7 +139,7 @@ func (w *Watcher) processDurable(ctx context.Context, folder, path string, raw [
 	if strings.TrimSpace(p.Text) == "" {
 		return w.rejectDurable(ctx, src, folder, path, id, codeEmptyText)
 	}
-	if w.requestExpired(folder, path) {
+	if w.requestExpired(folder, path) && !w.alreadyAccepted(ctx, src, id.Key) {
 		return w.rejectDurable(ctx, src, folder, path, id, codeRequestExpired)
 	}
 
@@ -222,7 +223,7 @@ func sanitizeCode(s string) string {
 
 func (w *Watcher) finishRejected(folder, path, code string) bool {
 	if !w.writeDurableReceipt(folder, path, durableReceipt{Status: "error", Error: code}) {
-		return false
+		return w.terminalBackoff(path)
 	}
 	return w.archiveTerminal(folder, path, ".failed")
 }
@@ -233,7 +234,7 @@ func (w *Watcher) finishRejected(folder, path, code string) bool {
 func (w *Watcher) finishConflict(folder, path string) bool {
 	if !w.writeDurableReceiptAs(folder, conflictReceiptName(path), durableReceipt{RequestFile: filepath.Base(path), Status: "error", Error: codeRequestConflict,
 		Help: "This filename was already used for different bytes and was not sent. Use a new unique filename."}) {
-		return false
+		return w.terminalBackoff(path)
 	}
 	return w.archiveTerminal(folder, path, ".failed")
 }
@@ -245,7 +246,7 @@ func (w *Watcher) finishQueued(ctx context.Context, folder, path string, deliver
 		rc.Detail = diag.Summary()
 	}
 	if !w.writeDurableReceipt(folder, path, rc) {
-		return false
+		return w.terminalBackoff(path)
 	}
 	w.rememberReceipt(folder, filepath.Base(path), delivery.State)
 	return w.archiveTerminal(folder, path, ".processed")
@@ -254,10 +255,29 @@ func (w *Watcher) finishQueued(ctx context.Context, folder, path string, deliver
 func (w *Watcher) archiveTerminal(folder, path, destination string) bool {
 	if err := w.archiveFile(folder, path, destination); err != nil {
 		w.log.Error("ipc: archive durable request; it will converge on the same delivery", "folder", folder, "file", filepath.Base(path), "err", err)
-		return false
+		return w.terminalBackoff(path)
 	}
 	delete(w.retries, path)
 	return true
+}
+
+// terminalBackoff throttles a request whose receipt or archive could not be
+// written. The store state is already final, so nothing is tombstoned or
+// failed: the file is retried on the normal backoff, then at the slowest
+// cadence instead of every poll. It always returns false (not completed).
+func (w *Watcher) terminalBackoff(path string) bool {
+	if w.bumpRetry(path) {
+		last := w.cfg.RetryBackoff[len(w.cfg.RetryBackoff)-1]
+		w.retries[path] = retryEntry{attempts: w.cfg.MaxRetries, nextRetryAt: w.cfg.NowFn().Add(last)}
+	}
+	return false
+}
+
+// alreadyAccepted reports a committed delivery for this request key, so a file
+// that lingered past expiry converges on its delivery instead of being rejected.
+func (w *Watcher) alreadyAccepted(ctx context.Context, src store.ScopeRef, key string) bool {
+	_, ok, err := w.cfg.Durable.Store.LookupIPCRequest(ctx, src, key)
+	return err == nil && ok
 }
 
 // requestExpired rejects a request that waited in the channel longer than the

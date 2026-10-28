@@ -45,6 +45,13 @@ func TestRecentIPCRequestsReportsDeliveryState(t *testing.T) {
 		t.Fatalf("limit must keep the newest: %+v", got)
 	}
 
+	if r, ok, err := f.st.LookupIPCRequest(t.Context(), f.conv.Scope, "a.json"); err != nil || !ok || r.DeliveryID != a.ID || r.DeliveryState != DeliverySent {
+		t.Fatalf("lookup a: %+v %v %v", r, ok, err)
+	}
+	if _, ok, err := f.st.LookupIPCRequest(t.Context(), f.conv.Scope, "c.json"); err != nil || ok {
+		t.Fatalf("rejected or unknown key must not be found: %v %v", ok, err)
+	}
+
 	stale := f.conv.Scope
 	stale.RegistrationRevision++
 	if _, err = f.st.RecentIPCRequests(t.Context(), stale, 10); !errors.Is(err, ErrStaleScope) {

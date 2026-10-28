@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 )
 
@@ -48,4 +50,28 @@ func (s *Store) RecentIPCRequests(ctx context.Context, sc ScopeRef, limit int) (
 		return rows.Err()
 	})
 	return out, err
+}
+
+// LookupIPCRequest returns the accepted request with this key, if one exists
+// in the scope's namespace and epoch.
+func (s *Store) LookupIPCRequest(ctx context.Context, sc ScopeRef, key string) (IPCRequestStatus, bool, error) {
+	var r IPCRequestStatus
+	var unresolved int
+	found := false
+	_, err := s.withTx(ctx, func(q taskSQL) error {
+		if err := validateScopeQ(ctx, q, sc); err != nil {
+			return err
+		}
+		err := q.QueryRowContext(ctx, `SELECT r.request_key, d.delivery_id, d.state, d.unresolved
+ FROM ipc_message_requests r JOIN delivery_groups d ON d.delivery_id = r.delivery_id
+ WHERE r.namespace_id=? AND r.namespace_epoch=? AND r.request_key=? AND r.outcome='accepted'`,
+			sc.NamespaceID, sc.NamespaceEpoch, key).Scan(&r.Key, &r.DeliveryID, &r.DeliveryState, &unresolved)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		found = err == nil
+		return err
+	})
+	r.Unresolved = unresolved != 0
+	return r, found && err == nil, err
 }

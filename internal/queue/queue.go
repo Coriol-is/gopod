@@ -472,7 +472,7 @@ func (q *Queue) Position(folder string, turnID int64) int {
 	}
 	batch := 0
 	for i, it := range cs.pending {
-		if i == 0 || it.ThreadID != cs.pending[i-1].ThreadID {
+		if i == 0 || !sameBatch(it, cs.pending[i-1]) {
 			batch++
 		}
 		if it.ID == turnID {
@@ -480,6 +480,14 @@ func (q *Queue) Position(folder string, turnID int64) int {
 		}
 	}
 	return 0
+}
+
+// sameBatch reports whether two pending items may share a batch: one
+// conversation and one source. A batch runs only its last item, so a
+// scheduled task must never be coalesced with a user message (either
+// would be marked done without running).
+func sameBatch(a, b Item) bool {
+	return a.ThreadID == b.ThreadID && (a.Source == "task") == (b.Source == "task")
 }
 
 // drainPending atomically takes the leading same-thread run of pending
@@ -497,7 +505,7 @@ func (q *Queue) drainPending(folder string) []Item {
 	// conversation. The rest stays pending and the worker drains it next,
 	// so per-chat order is kept. Thread-0-only traffic batches as before.
 	n := 1
-	for n < len(cs.pending) && cs.pending[n].ThreadID == cs.pending[0].ThreadID {
+	for n < len(cs.pending) && sameBatch(cs.pending[n], cs.pending[0]) {
 		n++
 	}
 	items := append([]Item(nil), cs.pending[:n]...)
