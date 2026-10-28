@@ -658,23 +658,26 @@ func run() error {
 		// publishes deliveries yet and the legacy send paths stay authoritative.
 		if cfg.OutboxDispatcherEnabled {
 			outboxLog := logger.With(slog.String("subsys", "outbox"))
-			owner, err := st.AcquireOutboxOwner(ctx)
-			if err != nil {
-				return fmt.Errorf("outbox owner: %w", err)
-			}
-			dispatcher := telegram.NewOutboxDispatcher(owner, tgBot.NewOutboxTransport(nil), telegram.OutboxConfig{}, outboxLog)
-			if err := dispatcher.Start(ctx); err != nil {
-				owner.Release()
-				return fmt.Errorf("outbox dispatcher: %w", err)
-			}
-			st.SetPublishNotifier(dispatcher.Notify)
-			onShutdown(func() {
-				if err := dispatcher.Stop(10 * time.Second); err != nil {
-					outboxLog.Error("outbox dispatcher stop", slog.Any("err", err))
+			// A failure here must not take the whole bot down: the legacy send
+			// paths stay authoritative, so run with the dispatcher disabled.
+			if owner, err := acquireOutboxOwner(ctx, st, 10*time.Second, 500*time.Millisecond); err != nil {
+				outboxLog.Error("outbox dispatcher DISABLED: could not take the exclusive outbox lock", slog.Any("err", err))
+			} else {
+				dispatcher := telegram.NewOutboxDispatcher(owner, tgBot.NewOutboxTransport(nil), telegram.OutboxConfig{}, outboxLog)
+				if err := dispatcher.Start(ctx); err != nil {
+					owner.Release()
+					outboxLog.Error("outbox dispatcher DISABLED: start failed", slog.Any("err", err))
+				} else {
+					st.SetPublishNotifier(dispatcher.Notify)
+					onShutdown(func() {
+						if err := dispatcher.Stop(10 * time.Second); err != nil {
+							outboxLog.Error("outbox dispatcher stop", slog.Any("err", err))
+						}
+						owner.Release()
+					})
+					outboxLog.Info("outbox dispatcher running")
 				}
-				owner.Release()
-			})
-			outboxLog.Info("outbox dispatcher running")
+			}
 		}
 
 		subsystems.Add(1)

@@ -143,6 +143,8 @@ func fastCfg() OutboxConfig {
 		Backoff:        []time.Duration{5 * time.Millisecond, 5 * time.Millisecond, 5 * time.Millisecond, 5 * time.Millisecond},
 		MaxIdle:        20 * time.Millisecond,
 		AttemptTimeout: 5 * time.Second,
+		RetryMargin:    time.Millisecond,
+		PersistBackoff: []time.Duration{2 * time.Millisecond, 2 * time.Millisecond},
 		Jitter:         func(time.Duration) time.Duration { return 0 },
 	}
 }
@@ -585,5 +587,127 @@ func TestSupersededControllerInstanceStopsWithoutSending(t *testing.T) {
 	quiet(t, tr, 0)
 	if f.diag(d.ID).State != store.DeliveryPending {
 		t.Fatal("superseded owner changed state")
+	}
+}
+
+// flakyBackend fails terminal writes while down is set, like a database that is
+// temporarily unavailable. stall makes AckPart hang until its context ends.
+type flakyBackend struct {
+	*store.OutboxOwner
+	down  atomic.Bool
+	stall atomic.Bool
+}
+
+func (b *flakyBackend) AckPart(ctx context.Context, c store.OutboxClaim, id int64) error {
+	if b.stall.Load() {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	if b.down.Load() {
+		return errCrashed
+	}
+	return b.OutboxOwner.AckPart(ctx, c, id)
+}
+
+func (b *flakyBackend) MarkUncertain(ctx context.Context, c store.OutboxClaim, r, d string) error {
+	if b.down.Load() {
+		return errCrashed
+	}
+	return b.OutboxOwner.MarkUncertain(ctx, c, r, d)
+}
+
+func (b *flakyBackend) SweepOrphanedSending(ctx context.Context, live []string, g time.Duration) (int, error) {
+	if b.down.Load() {
+		return 0, errCrashed
+	}
+	return b.OutboxOwner.SweepOrphanedSending(ctx, live, g)
+}
+
+func reconcileCfg() OutboxConfig {
+	cfg := fastCfg()
+	cfg.ReconcileEvery = 20 * time.Millisecond
+	cfg.OrphanGrace = time.Millisecond
+	return cfg
+}
+
+func TestTransientStoreFailureDuringAckEndsUncertainWithoutRestartOrResend(t *testing.T) {
+	f := newOutboxFixture(t)
+	tr := &fakeTransport{}
+	b := &flakyBackend{OutboxOwner: f.owner}
+	b.down.Store(true)
+	f.start(b, tr, reconcileCfg())
+	d := f.publish(f.conv, "a", "b")
+	eventually(t, "attempt", func() bool { return tr.callCount() == 1 })
+	time.Sleep(100 * time.Millisecond)
+	if p := f.diag(d.ID).Parts[0]; p.State != store.PartSending {
+		t.Fatalf("expected the part stuck in sending while the store is down: %+v", p)
+	}
+	b.down.Store(false) // the database recovers; no restart
+	diag := f.waitState(d.ID, store.DeliveryUncertain)
+	if diag.Parts[0].ReasonCode != "orphaned_while_sending" || diag.Parts[1].State != store.PartPending {
+		t.Fatalf("diag %+v", diag)
+	}
+	quiet(t, tr, 1)
+}
+
+func TestAckFallbackUsesAFreshContext(t *testing.T) {
+	f := newOutboxFixture(t)
+	tr := &fakeTransport{}
+	b := &flakyBackend{OutboxOwner: f.owner}
+	b.stall.Store(true) // every ack burns its whole context
+	cfg := fastCfg()
+	cfg.PersistTimeout = 30 * time.Millisecond
+	f.start(b, tr, cfg)
+	d := f.publish(f.conv, "a")
+	diag := f.waitState(d.ID, store.DeliveryUncertain)
+	if diag.Parts[0].ReasonCode != "ack_not_persisted" {
+		t.Fatalf("diag %+v", diag)
+	}
+	quiet(t, tr, 1)
+}
+
+func TestReconcileNeverSweepsAPartHeldByALiveWorker(t *testing.T) {
+	f := newOutboxFixture(t)
+	tr := &fakeTransport{hold: func(context.Context, SendRequest) { time.Sleep(300 * time.Millisecond) }}
+	f.start(f.owner, tr, reconcileCfg())
+	d := f.publish(f.conv, "a")
+	eventually(t, "in flight", func() bool { return tr.callCount() == 1 })
+	for i := 0; i < 10; i++ {
+		time.Sleep(20 * time.Millisecond)
+		if p := f.diag(d.ID).Parts[0]; p.State != store.PartSending && p.State != store.PartSent {
+			t.Fatalf("live part swept: %+v", p)
+		}
+	}
+	f.waitState(d.ID, store.DeliverySent)
+}
+
+func TestAnAvailableResultBeatsTheDeadline(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	res := make(chan Outcome, 1)
+	for i := 0; i < 50; i++ { // select order is random; the result must always win
+		res <- ack(1)
+		if out := awaitOutcome(ctx, res); out.Kind != OutcomeAck {
+			t.Fatalf("outcome %+v", out)
+		}
+	}
+	if out := awaitOutcome(ctx, make(chan Outcome)); out.Kind != OutcomeAmbiguous || out.Code != "timeout" {
+		t.Fatalf("outcome %+v", out)
+	}
+}
+
+func TestRetryAfterGetsAMargin(t *testing.T) {
+	d := NewOutboxDispatcher(nil, nil, OutboxConfig{
+		Backoff: []time.Duration{time.Second}, RetryMargin: 250 * time.Millisecond,
+		Jitter: func(time.Duration) time.Duration { return 0 },
+	}, nil)
+	if got := d.retryDelay(1, 3*time.Second); got != 3250*time.Millisecond {
+		t.Fatalf("retry_after delay %v", got)
+	}
+	if got := d.retryDelay(1, 0); got != time.Second {
+		t.Fatalf("plain backoff %v", got)
+	}
+	if got := d.retryDelay(1, 500*time.Millisecond); got != 750*time.Millisecond && got != time.Second {
+		t.Fatalf("small retry_after %v", got)
 	}
 }

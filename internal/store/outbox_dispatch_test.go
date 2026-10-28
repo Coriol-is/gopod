@@ -385,3 +385,71 @@ func TestStoredReasonsAndDiagnosticsAreSanitized(t *testing.T) {
 		t.Fatal("secret word kept")
 	}
 }
+
+func TestSweepOrphanedSendingSparesLiveAndRecentParts(t *testing.T) {
+	f := newDeliveryFixture(t)
+	o := f.owner()
+	other := f.otherConversation("tg:2", "other")
+	live := f.publish("live")
+	if _, err := f.st.PublishDelivery(t.Context(), PublishRequest{Conversation: other, Owner: OwnerControllerResult, Parts: textParts("orphan")}); err != nil {
+		t.Fatal(err)
+	}
+	a := mustClaim(t, o, time.Now())
+	b := mustClaim(t, o, time.Now())
+	liveClaim, orphan := a, b
+	if string(a.Part.Payload) != "live" {
+		liveClaim, orphan = b, a
+	}
+	time.Sleep(20 * time.Millisecond)
+	if n, err := o.SweepOrphanedSending(t.Context(), []string{liveClaim.PartID}, time.Hour); err != nil || n != 0 {
+		t.Fatalf("recent parts must be spared: %d %v", n, err)
+	}
+	n, err := o.SweepOrphanedSending(t.Context(), []string{liveClaim.PartID}, 0)
+	if err != nil || n != 1 {
+		t.Fatalf("swept %d %v", n, err)
+	}
+	if d := mustDiag(t, f, live.ID); d.Parts[0].State != PartSending {
+		t.Fatalf("live part touched: %+v", d)
+	}
+	var state, reason string
+	if err := f.st.db.QueryRowContext(t.Context(), `SELECT state,reason_code FROM outbox_parts WHERE part_id=?`, orphan.PartID).Scan(&state, &reason); err != nil {
+		t.Fatal(err)
+	}
+	if state != PartUncertain || reason != "orphaned_while_sending" {
+		t.Fatalf("orphan %s %s", state, reason)
+	}
+	if err := o.AckPart(t.Context(), liveClaim, 3); err != nil {
+		t.Fatalf("live part could not be acknowledged: %v", err)
+	}
+}
+
+func mustDiag(t *testing.T, f *deliveryFixture, id string) DeliveryDiagnostic {
+	t.Helper()
+	d, err := f.st.DeliveryDiagnostic(t.Context(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
+func TestClaimKeepsGoingWhenStaleCancelCapIsHit(t *testing.T) {
+	f := newDeliveryFixture(t)
+	o := f.owner()
+	for i := 0; i < maxStaleSkips+6; i++ {
+		f.publish("stale")
+	}
+	other := f.otherConversation("tg:2", "other")
+	if _, err := f.st.PublishDelivery(t.Context(), PublishRequest{Conversation: other, Owner: OwnerControllerResult, Parts: textParts("fresh")}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.st.RegisterChat(t.Context(), RegisteredChat{JID: "tg:1", Folder: "owner", IsOwner: true, AddedAt: 1, Name: "renamed"}); err != nil {
+		t.Fatal(err)
+	}
+	c := mustClaim(t, o, time.Now())
+	if string(c.Part.Payload) != "fresh" {
+		t.Fatalf("claimed %q", c.Part.Payload)
+	}
+	if n := countRows(t, f.st, `SELECT count(*) FROM outbox_parts WHERE reason_code='scope_stale'`); n != maxStaleSkips+6 {
+		t.Fatalf("cancelled %d", n)
+	}
+}

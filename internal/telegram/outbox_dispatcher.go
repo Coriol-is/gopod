@@ -35,6 +35,7 @@ type outboxBackend interface {
 	FailPart(ctx context.Context, c store.OutboxClaim, reason, diagnostic string) error
 	MarkUncertain(ctx context.Context, c store.OutboxClaim, reason, diagnostic string) error
 	SweepSending(ctx context.Context) (int, error)
+	SweepOrphanedSending(ctx context.Context, live []string, grace time.Duration) (int, error)
 	NextDue(ctx context.Context, now time.Time) (time.Time, bool, error)
 }
 
@@ -53,6 +54,18 @@ type OutboxConfig struct {
 	AttemptTimeout time.Duration
 	// Backoff is the known-unsent retry delay by attempt (default 1s, 5s, 15s, 60s).
 	Backoff []time.Duration
+	// RetryMargin is added to an authoritative retry_after (default 1s) so the
+	// retry does not land exactly on the boundary.
+	RetryMargin time.Duration
+	// PersistTimeout bounds each terminal write (default 10s); PersistBackoff
+	// is the wait between its retries (default 100ms, 500ms, 2s).
+	PersistTimeout time.Duration
+	PersistBackoff []time.Duration
+	// ReconcileEvery is how often orphaned sending parts (no live worker) are
+	// marked uncertain in-process (default 30s). OrphanGrace is the minimum
+	// age of such a part (default AttemptTimeout + 30s).
+	ReconcileEvery time.Duration
+	OrphanGrace    time.Duration
 	// MaxIdle caps how long an idle worker sleeps between polls (default 30s).
 	MaxIdle time.Duration
 	// Now and Jitter are test seams. Jitter returns the extra delay added to d.
@@ -67,6 +80,21 @@ func (c OutboxConfig) withDefaults() OutboxConfig {
 	}
 	if len(c.Backoff) == 0 {
 		c.Backoff = []time.Duration{time.Second, 5 * time.Second, 15 * time.Second, 60 * time.Second}
+	}
+	if c.RetryMargin <= 0 {
+		c.RetryMargin = time.Second
+	}
+	if c.PersistTimeout <= 0 {
+		c.PersistTimeout = 10 * time.Second
+	}
+	if c.PersistBackoff == nil {
+		c.PersistBackoff = []time.Duration{100 * time.Millisecond, 500 * time.Millisecond, 2 * time.Second}
+	}
+	if c.ReconcileEvery <= 0 {
+		c.ReconcileEvery = 30 * time.Second
+	}
+	if c.OrphanGrace <= 0 {
+		c.OrphanGrace = c.AttemptTimeout + 30*time.Second
 	}
 	if c.MaxIdle <= 0 {
 		c.MaxIdle = 30 * time.Second
@@ -92,6 +120,9 @@ type OutboxDispatcher struct {
 	log       *slog.Logger
 	cfg       OutboxConfig
 
+	liveMu sync.Mutex
+	live   map[string]struct{} // parts held by a running worker
+
 	mu            sync.Mutex
 	wake          chan struct{}
 	started       bool
@@ -105,7 +136,7 @@ func NewOutboxDispatcher(backend outboxBackend, transport OutboxTransport, cfg O
 	if log == nil {
 		log = slog.Default()
 	}
-	return &OutboxDispatcher{backend: backend, transport: transport, log: log, cfg: cfg.withDefaults(), wake: make(chan struct{})}
+	return &OutboxDispatcher{backend: backend, transport: transport, log: log, cfg: cfg.withDefaults(), wake: make(chan struct{}), live: map[string]struct{}{}}
 }
 
 // Notify wakes idle workers. Safe to register as the store publish notifier
@@ -161,6 +192,11 @@ func (d *OutboxDispatcher) Start(ctx context.Context) error {
 			d.work(loopCtx, attemptCtx)
 		}()
 	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		d.reconcile(loopCtx)
+	}()
 	go func() {
 		wg.Wait()
 		attemptCancel()
@@ -247,6 +283,8 @@ func (d *OutboxDispatcher) step(loopCtx, attemptCtx context.Context) (bool, erro
 }
 
 func (d *OutboxDispatcher) execute(attemptCtx context.Context, c store.OutboxClaim) {
+	d.setLive(c.PartID, true)
+	defer d.setLive(c.PartID, false)
 	chatID, err := chatIDFromJID(c.Conversation.Scope.JID)
 	if err != nil {
 		d.persist(c, Outcome{Kind: OutcomeRefused, Code: "bad_destination"})
@@ -279,19 +317,30 @@ func (d *OutboxDispatcher) attempt(ctx context.Context, req SendRequest) Outcome
 		}()
 		res <- d.transport.Attempt(ctx, req)
 	}()
+	return awaitOutcome(ctx, res)
+}
+
+// awaitOutcome waits for the single result or the deadline. An answer that is
+// already available beats the deadline: an ack must not be downgraded to
+// uncertain by a race with the timer.
+func awaitOutcome(ctx context.Context, res <-chan Outcome) Outcome {
 	select {
 	case out := <-res:
 		return out
 	case <-ctx.Done():
+		select {
+		case out := <-res:
+			return out
+		default:
+		}
 		return Outcome{Kind: OutcomeAmbiguous, Code: "timeout"}
 	}
 }
 
 // persist commits the outcome of the attempt. It never calls the transport.
+// Every terminal write is retried with backoff, each try on a fresh context
+// detached from shutdown (the attempt already happened and must be recorded).
 func (d *OutboxDispatcher) persist(c store.OutboxClaim, out Outcome) {
-	// Detached from shutdown: the attempt already happened and must be recorded.
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
 	if out.Kind == OutcomeAck && out.RemoteMessageID <= 0 {
 		out = Outcome{Kind: OutcomeAmbiguous, Code: "malformed_reply"}
 	}
@@ -299,47 +348,103 @@ func (d *OutboxDispatcher) persist(c store.OutboxClaim, out Outcome) {
 	var err error
 	switch out.Kind {
 	case OutcomeAck:
-		err = retryPersist(func() error { return d.backend.AckPart(ctx, c, out.RemoteMessageID) })
+		err = d.write(func(ctx context.Context) error { return d.backend.AckPart(ctx, c, out.RemoteMessageID) })
 		if err != nil {
-			// Accepted remotely but not recorded: record the truth we can.
+			// Accepted remotely but not recorded: record the truth we can,
+			// with its own retries and fresh contexts.
 			d.log.Error("outbox ack not persisted", slog.String("part", c.PartID), slog.Any("err", err))
-			if e := d.backend.MarkUncertain(ctx, c, "ack_not_persisted", diag); e != nil {
-				d.log.Error("outbox part left sending; restart sweep will mark it uncertain", slog.String("part", c.PartID), slog.Any("err", e))
-			}
-			return
+			err = d.write(func(ctx context.Context) error { return d.backend.MarkUncertain(ctx, c, "ack_not_persisted", diag) })
 		}
 	case OutcomeRateLimited:
-		_, err = d.backend.ReleaseUnsent(ctx, c, d.cfg.Now().Add(d.retryDelay(c.Attempt, out.RetryAfter)), out.Code, diag, false)
+		next := d.cfg.Now().Add(d.retryDelay(c.Attempt, out.RetryAfter))
+		err = d.write(func(ctx context.Context) error {
+			_, e := d.backend.ReleaseUnsent(ctx, c, next, out.Code, diag, false)
+			return e
+		})
 	case OutcomeNotSent:
 		refund := out.Code == "canceled_before_dispatch"
-		_, err = d.backend.ReleaseUnsent(ctx, c, d.cfg.Now().Add(d.retryDelay(c.Attempt, 0)), out.Code, diag, refund)
+		next := d.cfg.Now().Add(d.retryDelay(c.Attempt, 0))
+		err = d.write(func(ctx context.Context) error {
+			_, e := d.backend.ReleaseUnsent(ctx, c, next, out.Code, diag, refund)
+			return e
+		})
 	case OutcomeRefused:
-		err = d.backend.FailPart(ctx, c, out.Code, diag)
+		err = d.write(func(ctx context.Context) error { return d.backend.FailPart(ctx, c, out.Code, diag) })
 	default:
-		err = d.backend.MarkUncertain(ctx, c, out.Code, diag)
+		err = d.write(func(ctx context.Context) error { return d.backend.MarkUncertain(ctx, c, out.Code, diag) })
 	}
 	if err != nil {
-		d.log.Error("outbox outcome not persisted; restart sweep will mark the part uncertain",
+		d.log.Error("outbox outcome not persisted; the reconcile sweep will mark the part uncertain",
 			slog.String("part", c.PartID), slog.String("outcome", out.Kind.String()), slog.Any("err", err))
 	}
 }
 
-func retryPersist(fn func() error) error {
-	var err error
-	for i := 0; i < 3; i++ {
-		if err = fn(); err == nil || errors.Is(err, store.ErrClaimLost) || errors.Is(err, store.ErrOutboxFenced) {
+// write runs one terminal write with bounded retries. A lost claim or a
+// superseded fence is final and not retried.
+func (d *OutboxDispatcher) write(fn func(ctx context.Context) error) error {
+	for i := 0; ; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), d.cfg.PersistTimeout)
+		err := fn(ctx)
+		cancel()
+		if err == nil || errors.Is(err, store.ErrClaimLost) || errors.Is(err, store.ErrOutboxFenced) || i >= len(d.cfg.PersistBackoff) {
 			return err
 		}
-		time.Sleep(time.Duration(i+1) * 50 * time.Millisecond)
+		time.Sleep(d.cfg.PersistBackoff[i])
 	}
-	return err
+}
+
+func (d *OutboxDispatcher) setLive(part string, on bool) {
+	d.liveMu.Lock()
+	defer d.liveMu.Unlock()
+	if on {
+		d.live[part] = struct{}{}
+	} else {
+		delete(d.live, part)
+	}
+}
+
+func (d *OutboxDispatcher) liveParts() []string {
+	d.liveMu.Lock()
+	defer d.liveMu.Unlock()
+	out := make([]string, 0, len(d.live))
+	for id := range d.live {
+		out = append(out, id)
+	}
+	return out
+}
+
+// reconcile marks uncertain any sending part that no live worker holds (a
+// terminal write failed for good), so a transient database failure does not
+// block a conversation until the next restart. A part in a running worker is
+// never swept, and nothing is resent.
+func (d *OutboxDispatcher) reconcile(ctx context.Context) {
+	t := time.NewTicker(d.cfg.ReconcileEvery)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		n, err := d.backend.SweepOrphanedSending(ctx, d.liveParts(), d.cfg.OrphanGrace)
+		switch {
+		case err != nil && ctx.Err() == nil:
+			d.log.Error("outbox reconcile failed", slog.Any("err", err))
+		case n > 0:
+			d.log.Warn("outbox reconcile marked orphaned parts uncertain", slog.Int("parts", n))
+		}
+	}
 }
 
 // retryDelay is the known-unsent delay after attempt n: the backoff step with
-// bounded jitter, or the larger authoritative retry_after.
+// bounded jitter, or the larger authoritative retry_after plus a margin.
 func (d *OutboxDispatcher) retryDelay(attempt int, retryAfter time.Duration) time.Duration {
 	step := d.cfg.Backoff[min(max(attempt, 1), len(d.cfg.Backoff))-1]
-	return max(step+d.cfg.Jitter(step), retryAfter)
+	delay := step + d.cfg.Jitter(step)
+	if retryAfter > 0 {
+		delay = max(delay, retryAfter+d.cfg.RetryMargin)
+	}
+	return delay
 }
 
 // chatIDFromJID parses the "tg:<id>" destination of a stored conversation.

@@ -118,10 +118,22 @@ const maxStaleSkips = 64
 // transaction; a stale scope cancels the remaining pending parts and never
 // falls back to another conversation.
 func (o *OutboxOwner) ClaimNext(ctx context.Context, now time.Time) (OutboxClaim, bool, error) {
-	var out OutboxClaim
-	found := false
+	for {
+		c, found, capped, err := o.claimOnce(ctx, now)
+		if err != nil || found || !capped {
+			return c, found, err
+		}
+		// The stale-cancel cap was hit, so dispatchable parts may remain behind
+		// it. Each pass cancels up to maxStaleSkips groups, so this terminates.
+		if ctx.Err() != nil {
+			return OutboxClaim{}, false, ctx.Err()
+		}
+	}
+}
+
+func (o *OutboxOwner) claimOnce(ctx context.Context, now time.Time) (out OutboxClaim, found, capped bool, err error) {
 	nowMs := now.UnixMilli()
-	_, err := o.st.withTx(ctx, func(q taskSQL) error {
+	_, err = o.st.withTx(ctx, func(q taskSQL) error {
 		if err := o.checkFenceQ(ctx, q); err != nil {
 			return err
 		}
@@ -161,12 +173,13 @@ func (o *OutboxOwner) ClaimNext(ctx context.Context, now time.Time) (OutboxClaim
 			out, found = c, true
 			return nil
 		}
+		capped = true
 		return nil
 	})
 	if err != nil {
-		return OutboxClaim{}, false, fmt.Errorf("store: claim outbox part: %w", err)
+		return OutboxClaim{}, false, false, fmt.Errorf("store: claim outbox part: %w", err)
 	}
-	return out, found, nil
+	return out, found, capped, nil
 }
 
 func nextCandidateQ(ctx context.Context, q taskSQL, nowMs int64) (OutboxClaim, bool, error) {
@@ -428,13 +441,30 @@ func (o *OutboxOwner) MarkUncertain(ctx context.Context, c OutboxClaim, reason, 
 // uncertain and is never resent. It must run after AcquireOutboxOwner and
 // before the first ClaimNext. It returns the number of parts swept.
 func (o *OutboxOwner) SweepSending(ctx context.Context) (int, error) {
+	return o.sweep(ctx, nil, 0, "restart_while_sending", "process restarted before acknowledgement")
+}
+
+// SweepOrphanedSending is the in-process counterpart: it marks uncertain the
+// sending parts of this owner that no live worker holds any more (a terminal
+// write failed). Parts in live are never touched, and neither is any part
+// claimed within grace, which covers the window between the claim commit and a
+// worker registering itself. Nothing is ever resent.
+func (o *OutboxOwner) SweepOrphanedSending(ctx context.Context, live []string, grace time.Duration) (int, error) {
+	return o.sweep(ctx, live, grace, "orphaned_while_sending", "no live worker holds this part")
+}
+
+func (o *OutboxOwner) sweep(ctx context.Context, live []string, grace time.Duration, reason, diagnostic string) (int, error) {
+	skip := make(map[string]bool, len(live))
+	for _, id := range live {
+		skip[id] = true
+	}
 	n := 0
 	_, err := o.st.withTx(ctx, func(q taskSQL) error {
 		if err := o.checkFenceQ(ctx, q); err != nil {
 			return err
 		}
 		nowMs := time.Now().UnixMilli()
-		rows, err := q.QueryContext(ctx, `SELECT part_id,delivery_id FROM outbox_parts WHERE state=?`, PartSending)
+		rows, err := q.QueryContext(ctx, `SELECT part_id,delivery_id FROM outbox_parts WHERE state=? AND updated_at<=?`, PartSending, nowMs-grace.Milliseconds())
 		if err != nil {
 			return err
 		}
@@ -446,7 +476,9 @@ func (o *OutboxOwner) SweepSending(ctx context.Context) (int, error) {
 				rows.Close()
 				return err
 			}
-			swept = append(swept, x)
+			if !skip[x.part] {
+				swept = append(swept, x)
+			}
 		}
 		err = rows.Err()
 		rows.Close()
@@ -455,10 +487,10 @@ func (o *OutboxOwner) SweepSending(ctx context.Context) (int, error) {
 		}
 		groups := map[string]bool{}
 		for _, x := range swept {
-			if _, err = q.ExecContext(ctx, `UPDATE outbox_parts SET state=?,reason_code='restart_while_sending',updated_at=? WHERE part_id=?`, PartUncertain, nowMs, x.part); err != nil {
+			if _, err = q.ExecContext(ctx, `UPDATE outbox_parts SET state=?,reason_code=?,updated_at=? WHERE part_id=?`, PartUncertain, reason, nowMs, x.part); err != nil {
 				return err
 			}
-			if _, err = q.ExecContext(ctx, `UPDATE outbox_attempts SET ended_at=?,outcome='uncertain',diagnostic='process restarted before acknowledgement' WHERE part_id=? AND ended_at IS NULL`, nowMs, x.part); err != nil {
+			if _, err = q.ExecContext(ctx, `UPDATE outbox_attempts SET ended_at=?,outcome='uncertain',diagnostic=? WHERE part_id=? AND ended_at IS NULL`, nowMs, diagnostic, x.part); err != nil {
 				return err
 			}
 			groups[x.delivery] = true

@@ -30,6 +30,7 @@ approved queue, [proposal registry](proposals/README.md) for CP status and
   transport and dispatcher (`internal/telegram/outbox_{transport,dispatcher}.go`), ADR D037.
 - Dispatcher is wired in `cmd/gopod` only when `GOPOD_OUTBOX_DISPATCHER=1` (default off). Nothing
   publishes deliveries yet and no existing send path was changed. CP-002 stays `in-progress`.
+- Review fixes: terminal-write retries, in-process orphan reconcile, retry_after margin, stale-cancel loop, startup lock wait (dispatcher disabled on failure), artifact reader close.
 - Next: PR 3 personal text IPC durable admission. Deferred: visibility value set, operator resend of
   uncertain deliveries via a superseding delivery, artifact opener (PR 4).
 

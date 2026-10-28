@@ -138,6 +138,9 @@ func (t *botTransport) Attempt(ctx context.Context, req SendRequest) Outcome {
 			return refused("upload_unavailable")
 		}
 		name, data, err := t.artifacts.OpenArtifact(ctx, req.ArtifactRef)
+		if c, ok := data.(io.Closer); ok && c != nil {
+			defer c.Close()
+		}
 		if err != nil {
 			return refused("artifact_unavailable")
 		}

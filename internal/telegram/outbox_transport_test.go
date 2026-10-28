@@ -160,10 +160,38 @@ func TestBotTransportRefusesBeforeDispatch(t *testing.T) {
 	}
 }
 
-type fakeOpener struct{ err error }
+type fakeOpener struct {
+	err    error
+	closed *int
+}
+
+type closeCounter struct {
+	io.Reader
+	n *int
+}
+
+func (c closeCounter) Close() error { *c.n++; return nil }
 
 func (o fakeOpener) OpenArtifact(context.Context, string) (string, io.Reader, error) {
-	return "f.txt", strings.NewReader("x"), o.err
+	r := io.Reader(strings.NewReader("x"))
+	if o.closed != nil {
+		r = closeCounter{Reader: r, n: o.closed}
+	}
+	return "f.txt", r, o.err
+}
+
+func TestBotTransportClosesTheArtifactReaderOnEveryPath(t *testing.T) {
+	up := SendRequest{Kind: store.PartUpload, ChatID: 42, ArtifactRef: "a"}
+	for name, c := range map[string]struct {
+		openErr, apiErr error
+	}{"success": {}, "api error": {apiErr: context.DeadlineExceeded}, "open error": {openErr: errors.New("gone")}} {
+		closed := 0
+		api := &fakeAPI{msg: &models.Message{ID: 8}, err: c.apiErr}
+		(&botTransport{api: api, artifacts: fakeOpener{err: c.openErr, closed: &closed}}).Attempt(t.Context(), up)
+		if closed != 1 {
+			t.Errorf("%s: reader closed %d times", name, closed)
+		}
+	}
 }
 
 func TestBotTransportUploadUsesOpenedArtifact(t *testing.T) {
