@@ -231,7 +231,7 @@ func TestReleaseUnsentSchedulesRetryWithinBudgetAndExpiry(t *testing.T) {
 		t.Fatalf("state %s err %v", st, err)
 	}
 	noClaim(t, o, now.Add(30*time.Second))
-	if due, ok, _ := f.st.NextDue(t.Context(), now); !ok || due.Before(now.Add(59*time.Second)) {
+	if due, ok, _ := o.NextDue(t.Context(), now); !ok || due.Before(now.Add(59*time.Second)) {
 		t.Fatalf("next due %v %v", due, ok)
 	}
 	c = mustClaim(t, o, now.Add(time.Minute+time.Second))

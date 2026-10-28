@@ -479,9 +479,9 @@ func (o *OutboxOwner) SweepSending(ctx context.Context) (int, error) {
 
 // NextDue reports the earliest future next_attempt_at of a pending part, so an
 // idle dispatcher can sleep until a retry is due.
-func (s *Store) NextDue(ctx context.Context, now time.Time) (time.Time, bool, error) {
+func (o *OutboxOwner) NextDue(ctx context.Context, now time.Time) (time.Time, bool, error) {
 	var ms sql.NullInt64
-	if err := s.taskDB(ctx).QueryRowContext(ctx, `SELECT min(next_attempt_at) FROM outbox_parts WHERE state=? AND next_attempt_at>?`, PartPending, now.UnixMilli()).Scan(&ms); err != nil {
+	if err := o.st.taskDB(ctx).QueryRowContext(ctx, `SELECT min(next_attempt_at) FROM outbox_parts WHERE state=? AND next_attempt_at>?`, PartPending, now.UnixMilli()).Scan(&ms); err != nil {
 		return time.Time{}, false, err
 	}
 	if !ms.Valid {
