@@ -131,6 +131,12 @@ type Config struct {
 	// for plain `claude -p` text mode.
 	ProgressEnabled bool
 
+	// OutboxDispatcherEnabled starts the durable-outbox dispatcher
+	// (CP-002 PR 2). Default false: nothing publishes deliveries yet, and
+	// the legacy send paths stay authoritative. GOPOD_OUTBOX_DISPATCHER=1
+	// enables it; it never changes where existing messages are sent.
+	OutboxDispatcherEnabled bool
+
 	// --- Agent admission control (D026) ---
 
 	// MaxAgents caps agent processes running at once across all chats.
@@ -165,21 +171,22 @@ func Load(loadDotenv bool) (Config, error) {
 	}
 
 	cfg := Config{
-		DataDir:                getenvDefault("GOPOD_DATA_DIR", "./data"),
-		LogLevel:               parseLevel(getenvDefault("GOPOD_LOG_LEVEL", "info")),
-		LogFormat:              strings.ToLower(getenvDefault("GOPOD_LOG_FORMAT", "text")),
-		TelegramBotToken:       os.Getenv("TELEGRAM_BOT_TOKEN"),
-		ContainerEnabled:       !envFlag("GOPOD_NO_CONTAINER"),
-		RepoRoot:               os.Getenv("GOPOD_REPO_ROOT"),
-		ContainerImage:         getenvDefault("GOPOD_CONTAINER_IMAGE", "gopod-agent:latest"),
-		LeftoverCleanupEnabled: !envFlag("GOPOD_LEFTOVER_CLEANUP_DISABLED"),
-		StreamEnabled:          !envFlag("GOPOD_STREAM_DISABLED"),
-		NotifyLifecycle:        !envOff("GOPOD_NOTIFY_LIFECYCLE"),
-		ProgressEnabled:        !envOff("GOPOD_PROGRESS"),
-		CompactAfter:           compactAfter,
-		CompactInterval:        os.Getenv("GOPOD_COMPACT_INTERVAL"),
-		CompactTime:            os.Getenv("GOPOD_COMPACT_TIME"),
-		ObsidianVault:          os.Getenv("GOPOD_OBSIDIAN_VAULT"),
+		DataDir:                 getenvDefault("GOPOD_DATA_DIR", "./data"),
+		LogLevel:                parseLevel(getenvDefault("GOPOD_LOG_LEVEL", "info")),
+		LogFormat:               strings.ToLower(getenvDefault("GOPOD_LOG_FORMAT", "text")),
+		TelegramBotToken:        os.Getenv("TELEGRAM_BOT_TOKEN"),
+		ContainerEnabled:        !envFlag("GOPOD_NO_CONTAINER"),
+		RepoRoot:                os.Getenv("GOPOD_REPO_ROOT"),
+		ContainerImage:          getenvDefault("GOPOD_CONTAINER_IMAGE", "gopod-agent:latest"),
+		LeftoverCleanupEnabled:  !envFlag("GOPOD_LEFTOVER_CLEANUP_DISABLED"),
+		StreamEnabled:           !envFlag("GOPOD_STREAM_DISABLED"),
+		NotifyLifecycle:         !envOff("GOPOD_NOTIFY_LIFECYCLE"),
+		ProgressEnabled:         !envOff("GOPOD_PROGRESS"),
+		OutboxDispatcherEnabled: envFlag("GOPOD_OUTBOX_DISPATCHER"),
+		CompactAfter:            compactAfter,
+		CompactInterval:         os.Getenv("GOPOD_COMPACT_INTERVAL"),
+		CompactTime:             os.Getenv("GOPOD_COMPACT_TIME"),
+		ObsidianVault:           os.Getenv("GOPOD_OBSIDIAN_VAULT"),
 	}
 
 	if err := loadAgentAdmission(&cfg); err != nil {
