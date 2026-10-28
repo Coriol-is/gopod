@@ -30,6 +30,12 @@ func (w *Watcher) writeTaskReceipt(folder, path, op string, result *TaskResult, 
 }
 
 func (w *Watcher) writeReceipt(folder, path, directory string, receipt any) bool {
+	name := strings.TrimSuffix(filepath.Base(path), ".json") + ".result.json"
+	return w.writeReceiptNamed(folder, name, directory, receipt)
+}
+
+// writeReceiptNamed atomically publishes a receipt under an explicit file name.
+func (w *Watcher) writeReceiptNamed(folder, name, directory string, receipt any) bool {
 	data, err := json.MarshalIndent(receipt, "", "  ")
 	if err != nil {
 		return false
@@ -44,7 +50,6 @@ func (w *Watcher) writeReceipt(folder, path, directory string, receipt any) bool
 		w.log.Error("ipc: create result directory", "folder", folder, "err", err)
 		return false
 	}
-	name := strings.TrimSuffix(filepath.Base(path), ".json") + ".result.json"
 	tmp := filepath.Join(directory, ".tmp-"+name+"-"+strconv.FormatInt(w.cfg.NowFn().UnixNano(), 10))
 	f, err := root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err == nil {
@@ -58,7 +63,7 @@ func (w *Watcher) writeReceipt(folder, path, directory string, receipt any) bool
 	}
 	if err != nil {
 		root.Remove(tmp)
-		w.log.Error("ipc: write receipt", "folder", folder, "file", filepath.Base(path), "err", fmt.Errorf("receipt: %w", err))
+		w.log.Error("ipc: write receipt", "folder", folder, "file", name, "err", fmt.Errorf("receipt: %w", err))
 		return false
 	}
 	return true

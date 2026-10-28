@@ -188,3 +188,16 @@ func TestLoadOutboxDispatcherFlagIsOffByDefault(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadOutboxIPCFlagIsOffByDefault(t *testing.T) {
+	for val, want := range map[string]bool{"": false, "0": false, "junk": false, "1": true, "true": true} {
+		t.Setenv("GOPOD_OUTBOX_IPC", val)
+		cfg, err := Load(false)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if cfg.OutboxIPCEnabled != want {
+			t.Errorf("GOPOD_OUTBOX_IPC=%q: OutboxIPCEnabled = %v, want %v", val, cfg.OutboxIPCEnabled, want)
+		}
+	}
+}

@@ -24,6 +24,15 @@ approved queue, [proposal registry](proposals/README.md) for CP status and
 - **Not authorized without the owner:** account logins, quota/paid fallbacks, T9 reboot,
   production group activation, schedule changes (freefeed digest stays as is).
 
+## CP-002 PR 3 in progress (2026-10-28)
+- Branch `feat/cp002-ipc-durable` (worktree `gopod-cp002-pr3`), based on PR 2 (`e7eaeee`): personal text IPC
+  durable admission (`internal/ipc/durable*.go`, `store.RecentIPCRequests`), silent scheduled turns
+  (`telegram.runTaskSilently`), ADR D038. Not pushed yet.
+- Off by default: needs `GOPOD_OUTBOX_DISPATCHER=1` and `GOPOD_OUTBOX_IPC=1`; only the owner's personal chat,
+  thread 0. Everything else (groups, shared chats, cross-chat owner sends) is the unchanged legacy path.
+- Not done: bounded live smoke on the real bot; operator handling of uncertain rows (diagnostics only, no
+  resend); PR 4 artifacts. CP-002 stays `in-progress`.
+
 ## CP-002 PR 2 in progress (2026-10-28)
 - Branch `feat/cp002-dispatcher` (worktree `gopod-cp002-pr2`), based on PR 1 (`d3c3d69`): store
   claim/ack/release/fail/uncertain/sweep (`internal/store/outbox_dispatch.go`), single-attempt

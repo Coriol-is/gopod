@@ -137,6 +137,12 @@ type Config struct {
 	// enables it; it never changes where existing messages are sent.
 	OutboxDispatcherEnabled bool
 
+	// OutboxIPCEnabled routes text IPC requests from the owner's personal chat
+	// through the durable outbox (CP-002 PR 3) instead of the legacy direct
+	// send. Default false. GOPOD_OUTBOX_IPC=1 takes effect only while the
+	// dispatcher is running; group and shared chats always stay on the legacy path.
+	OutboxIPCEnabled bool
+
 	// --- Agent admission control (D026) ---
 
 	// MaxAgents caps agent processes running at once across all chats.
@@ -183,6 +189,7 @@ func Load(loadDotenv bool) (Config, error) {
 		NotifyLifecycle:         !envOff("GOPOD_NOTIFY_LIFECYCLE"),
 		ProgressEnabled:         !envOff("GOPOD_PROGRESS"),
 		OutboxDispatcherEnabled: envFlag("GOPOD_OUTBOX_DISPATCHER"),
+		OutboxIPCEnabled:        envFlag("GOPOD_OUTBOX_IPC"),
 		CompactAfter:            compactAfter,
 		CompactInterval:         os.Getenv("GOPOD_COMPACT_INTERVAL"),
 		CompactTime:             os.Getenv("GOPOD_COMPACT_TIME"),

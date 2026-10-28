@@ -52,6 +52,9 @@ type Config struct {
 	Retention        int             // default 200 per .processed / .failed
 	RetryBackoff     []time.Duration // default [5s, 15s, 45s]
 	NowFn            func() time.Time
+	// Durable routes compatible text requests from the owner's personal chat
+	// through the outbox. Zero value keeps the legacy direct-send path.
+	Durable DurableConfig
 }
 
 // New constructs a Watcher. The returned value is ready to Run.
@@ -100,6 +103,7 @@ type Watcher struct {
 	resolve          FolderResolver
 	retries          map[string]retryEntry
 	terminalMessages map[string]messageOutcome
+	receiptStates    map[string]string // folder+key -> delivery state last written
 
 	// handleFolderHook overrides handleFolder when non-nil. Tests use
 	// it to assert traversal without exercising the dispatch pipeline.

@@ -898,6 +898,32 @@ func TestQueueBatchesLeadingSameThreadRun(t *testing.T) {
 	}
 }
 
+func TestQueueNeverBatchesTaskWithUserMessage(t *testing.T) {
+	for name, tc := range map[string]struct {
+		order []string
+		want  string
+	}{
+		"task then user": {[]string{"task", "telegram"}, "x|0|1"},
+		"user then task": {[]string{"telegram", "task"}, "x|0|1"},
+		"same source":    {[]string{"task", "task", "telegram", "telegram"}, "x|0,1|2,3"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := newBatchRecorder(1+len(tc.order), true)
+			q := New(context.Background(), r.handle, 4, nil, silentLog())
+			q.Enqueue(context.Background(), Item{Folder: "alice", Text: "x"})
+			<-r.first
+			for i, src := range tc.order {
+				q.Enqueue(context.Background(), Item{Folder: "alice", Source: src, Text: strconv.Itoa(i)})
+			}
+			close(r.release)
+			r.wait(t)
+			if got := r.shape(t); got != tc.want {
+				t.Errorf("batches = %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestRecoverSplitsThreadsIntoSeparateBatches(t *testing.T) {
 	fs := newFakeStore()
 	fs.unfinished = []Item{

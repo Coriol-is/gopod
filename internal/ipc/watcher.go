@@ -60,6 +60,7 @@ func (w *Watcher) handleFolder(ctx context.Context, folder string) {
 	}
 	w.processChannel(ctx, folder, "messages", w.processMessageFile)
 	w.processChannel(ctx, folder, "tasks", w.processTaskFile)
+	w.reconcileDurableReceipts(ctx, folder)
 	w.pruneNamespace(folder)
 }
 
