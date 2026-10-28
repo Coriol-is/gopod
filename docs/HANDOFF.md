@@ -24,12 +24,15 @@ approved queue, [proposal registry](proposals/README.md) for CP status and
 - **Not authorized without the owner:** account logins, quota/paid fallbacks, T9 reboot,
   production group activation, schedule changes (freefeed digest stays as is).
 
-## CP-002 PR 1 in progress (2026-10-27)
-- Branch `feat/cp002-store-foundations` (worktree `gopod-cp002-pr1`): additive store foundations
-  only (`internal/store/{scope,results,outbox,outbox_config,outbox_retention,schema_delivery}.go`).
-  No dispatcher, no Telegram changes, nothing wired into runtime paths, flags unchanged.
-- Next: PR 2 single-attempt dispatcher on top of `PublishDelivery`/`recomputeGroupState`
-  ([delivery plan](superpowers/plans/2026-10-26-reliability-delivery.md)). Design choices: D036.
+## CP-002 PR 2 in progress (2026-10-28)
+- Branch `feat/cp002-dispatcher` (worktree `gopod-cp002-pr2`), based on PR 1 (`d3c3d69`): store
+  claim/ack/release/fail/uncertain/sweep (`internal/store/outbox_dispatch.go`), single-attempt
+  transport and dispatcher (`internal/telegram/outbox_{transport,dispatcher}.go`), ADR D037.
+- Dispatcher is wired in `cmd/gopod` only when `GOPOD_OUTBOX_DISPATCHER=1` (default off). Nothing
+  publishes deliveries yet and no existing send path was changed. CP-002 stays `in-progress`.
+- Review fixes: terminal-write retries, in-process orphan reconcile, retry_after margin, stale-cancel loop, startup lock wait (dispatcher disabled on failure), artifact reader close.
+- Next: PR 3 personal text IPC durable admission. Deferred: visibility value set, operator resend of
+  uncertain deliveries via a superseding delivery, artifact opener (PR 4).
 
 ## Current state
 Core Telegram assistant, Docker runtime, Claude/Codex native sessions,

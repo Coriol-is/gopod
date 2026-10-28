@@ -1152,6 +1152,38 @@ terminal deliveries are cleared by compaction while dedupe tombstones are kept.
 
 ---
 
+## D037 — Single-attempt outbox dispatch: claim, call, complete
+
+**Date:** 2026-10-28
+**Status:** Accepted
+
+**Context.** CP-002 PR 2 sends durable parts to Telegram. The Store has one SQL connection, so no
+transaction may span an API call, and existing send helpers retry, fall back to plain text and
+redirect a gone topic to the main chat, all of which can duplicate or misplace a message.
+
+**Decision.** Dispatch is three separate commits: `ClaimNext` (part sending, attempt row and
+fence, with scope revalidated in the same transaction), one transport call with no transaction
+open, then exactly one of ack / release-unsent / fail / mark-uncertain. The transport interface is
+declared at the dispatcher (consumer) and makes one API attempt with no fallback; an unknown outcome
+is ambiguous and the zero `OutcomeKind` is ambiguous. Exclusivity is an OS file lock beside the
+database plus a fresh fence in `router_state`; a superseded instance fails every commit with
+`ErrOutboxFenced`. The restart sweep turns every `sending` part into `uncertain` and never resends.
+Only an explicit 429 or a proven pre-dispatch failure is retried (5 attempts, expiry-bounded,
+`retry_after` wins); a stale scope cancels instead of sending. Reasons are fixed machine codes and
+diagnostics are allowlisted lowercase fields, so a raw credential-bearing error is never stored.
+Every terminal write is retried with backoff on a fresh context; if an ack still cannot be
+recorded the part is marked uncertain (`ack_not_persisted`), and an in-process reconcile sweep
+marks parts that no live worker holds (and older than a grace period) uncertain
+(`orphaned_while_sending`), so a transient database failure does not block a conversation until
+restart. A part held by a running worker is never swept. A retry_after gets a 1s margin. If the
+lock is still held at startup the bot retries for about 10s, then runs with the dispatcher
+disabled instead of failing. The dispatcher is behind `GOPOD_OUTBOX_DISPATCHER` (off by default).
+
+**Consequences.** Uncertain parts need an operator decision (superseding delivery, deferred). A
+lock file is Unix-only, which matches the supported hosts.
+
+---
+
 ## Template for new ADRs
 
 ```

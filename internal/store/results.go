@@ -290,10 +290,15 @@ func readTurnResult(ctx context.Context, q taskSQL, id string) (TurnResult, erro
 // resumed turn cannot overwrite an earlier acknowledgement. It reports whether
 // this call set the memo. Task turns never receive a foreground memo.
 func (s *Store) CompareAndSetReplyMemo(ctx context.Context, turnID int64, msgID int) (bool, error) {
+	return compareAndSetReplyMemoQ(ctx, s.taskDB(ctx), turnID, msgID)
+}
+
+// compareAndSetReplyMemoQ is the handle-explicit form, so a dispatcher
+// acknowledgement can set the memo in the same transaction as the part ack.
+func compareAndSetReplyMemoQ(ctx context.Context, db taskSQL, turnID int64, msgID int) (bool, error) {
 	if msgID <= 0 {
 		return false, fmt.Errorf("store: CompareAndSetReplyMemo: invalid message id %d", msgID)
 	}
-	db := s.taskDB(ctx)
 	var source string
 	err := db.QueryRowContext(ctx, `SELECT source FROM turns WHERE id=?`, turnID).Scan(&source)
 	if errors.Is(err, sql.ErrNoRows) {

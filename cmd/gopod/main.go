@@ -654,6 +654,32 @@ func run() error {
 			slog.String("data_dir", cfg.DataDir),
 			slog.String("owner_folder", ownerFolder))
 
+		// Durable outbox dispatcher (CP-002 PR 2). Off by default: nothing
+		// publishes deliveries yet and the legacy send paths stay authoritative.
+		if cfg.OutboxDispatcherEnabled {
+			outboxLog := logger.With(slog.String("subsys", "outbox"))
+			// A failure here must not take the whole bot down: the legacy send
+			// paths stay authoritative, so run with the dispatcher disabled.
+			if owner, err := acquireOutboxOwner(ctx, st, 10*time.Second, 500*time.Millisecond); err != nil {
+				outboxLog.Error("outbox dispatcher DISABLED: could not take the exclusive outbox lock", slog.Any("err", err))
+			} else {
+				dispatcher := telegram.NewOutboxDispatcher(owner, tgBot.NewOutboxTransport(nil), telegram.OutboxConfig{}, outboxLog)
+				if err := dispatcher.Start(ctx); err != nil {
+					owner.Release()
+					outboxLog.Error("outbox dispatcher DISABLED: start failed", slog.Any("err", err))
+				} else {
+					st.SetPublishNotifier(dispatcher.Notify)
+					onShutdown(func() {
+						if err := dispatcher.Stop(10 * time.Second); err != nil {
+							outboxLog.Error("outbox dispatcher stop", slog.Any("err", err))
+						}
+						owner.Release()
+					})
+					outboxLog.Info("outbox dispatcher running")
+				}
+			}
+		}
+
 		subsystems.Add(1)
 		go func() {
 			defer subsystems.Done()

@@ -175,3 +175,16 @@ func TestLoadAgentAdmissionInvalid(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadOutboxDispatcherFlagIsOffByDefault(t *testing.T) {
+	for val, want := range map[string]bool{"": false, "0": false, "junk": false, "1": true, "true": true, "ON": true} {
+		t.Setenv("GOPOD_OUTBOX_DISPATCHER", val)
+		cfg, err := Load(false)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if cfg.OutboxDispatcherEnabled != want {
+			t.Errorf("GOPOD_OUTBOX_DISPATCHER=%q: OutboxDispatcherEnabled = %v, want %v", val, cfg.OutboxDispatcherEnabled, want)
+		}
+	}
+}
