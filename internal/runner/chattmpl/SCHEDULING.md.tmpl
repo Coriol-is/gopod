@@ -107,6 +107,14 @@ and reports the number of accepted parts. Do not blindly resubmit a failed reque
 A missing receipt is not proof of delivery failure; inspect its archive/host logs.
 Requests must be regular JSON files of at most 64 KiB.
 
+When the host has the durable outbox route on for your personal chat, a receipt
+may instead carry `status:"queued"`: the message is committed to the host outbox,
+not yet delivered. The same receipt later becomes `sent`, `uncertain` (the message
+may or may not have arrived: do not resend) or `failed`. Resubmitting identical
+bytes under the same filename never sends a second copy; different bytes under a
+used filename are rejected with `<name>.conflict.result.json` and not sent. Use a
+new unique filename for every distinct message.
+
 ## Database and source access
 
 The owner may see `/workspace/store/store.sqlite` as a read-write file bind,

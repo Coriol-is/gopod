@@ -1184,6 +1184,39 @@ lock file is Unix-only, which matches the supported hosts.
 
 ---
 
+## D038 — Durable text IPC: actor grant and destination scope are separate, one delivery owner per run
+
+**Date:** 2026-10-28
+**Status:** Accepted
+
+**Context.** CP-002 PR 3 moves agent text IPC into the outbox. The legacy path let the owner
+folder address any JID, kept terminal outcomes in memory, and scheduled turns (chat id 0) still
+tried to stream stdout to Telegram, where a failed final send is reported as an undelivered reply
+and makes the queue rerun a finished model execution.
+
+**Decision.** The route has two independent gates. The actor grant is the host-selected owner
+folder still bound to the personal chat; the destination scope is the owner's personal chat at
+thread 0, visibility `conversation`, snapshotted from the live registration in the same pass.
+Every other request, including groups and shared chats, keeps the legacy direct path unchanged
+(CP-020 isolation is not relabelled), so the route is never a fallback for a denial. Identity is
+namespace + epoch + request filename + SHA-256 of the exact bytes; the delivery owner is
+`legacy_agent_ipc`. Order of effects is store commit (delivery or rejection tombstone), then
+receipt, then archive; any failure leaves the request file, and the next pass converges on the
+same delivery (`Created=false`), so a restart never publishes twice. A same-name different-bytes
+request is rejected with its own `.conflict.result.json` receipt so it cannot overwrite the
+original delivery's receipt. Receipts are advanced from durable state (`RecentIPCRequests`) as
+queued, sent, uncertain or failed; accepted means queued. Uncertain rows are diagnostics only; no
+resend command exists. Scheduled turns run through `runTaskSilently`: stdout is discarded, nothing
+is sent to Telegram and the queue never sees an undelivered-reply error. The route needs
+`GOPOD_OUTBOX_IPC=1` and a running dispatcher (`GOPOD_OUTBOX_DISPATCHER=1`), and is off by default.
+
+**Consequences.** Agents see `queued` instead of `ok` on the personal chat when the flag is on.
+A request file older than 24 hours is rejected as expired. A rejection whose tombstone cannot be
+stored (cap, repeated store errors) is failed without one and is simply rejected again if retried.
+A live smoke on the real bot is still required before enabling the flag in production.
+
+---
+
 ## Template for new ADRs
 
 ```
