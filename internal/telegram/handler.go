@@ -469,6 +469,36 @@ func (b *Bot) deliverSyncReply(ctx context.Context, item queue.Item, reply strin
 	}
 }
 
+// runTaskSilently runs a scheduled turn without any Telegram traffic. A
+// scheduled run has exactly one delivery owner, its agent IPC messages (D038):
+// stdout is discarded, never sent to chat 0 or anywhere else, and a failure of
+// the run is logged but never reported as an undelivered reply, because the
+// queue would then rerun a finished model execution. Only shutdown is
+// returned, so the turn is marked interrupted rather than done.
+func (b *Bot) runTaskSilently(ctx context.Context, item queue.Item) error {
+	prompt := item.Text
+	if item.Resumed {
+		prompt = resumePrompt(item.Text)
+	}
+	run := b.taskRun
+	if run == nil {
+		run = func(ctx context.Context, folder string, thread int, tier runner.Tier, prompt string) (string, error) {
+			return b.runner.Run(ctx, folder, thread, tier, b.allowlist, prompt)
+		}
+	}
+	out, err := run(ctx, item.Folder, item.ThreadID, runner.TierRegistered, prompt)
+	if cerr := ctx.Err(); cerr != nil {
+		return cerr
+	}
+	if err != nil {
+		b.log.Error("scheduled turn failed", slog.Int64("turn", item.ID), slog.String("folder", item.Folder), slog.Any("err", err))
+		return nil
+	}
+	b.log.Info("scheduled turn finished; stdout discarded, delivery is by agent IPC only",
+		slog.Int64("turn", item.ID), slog.String("folder", item.Folder), slog.Int("stdout_bytes", len(out)))
+	return nil
+}
+
 // NewAgentHandler returns a queue.Handler callback that the queue
 // worker invokes for each coalesced batch of items. It runs the agent
 // for the LAST item in the batch (the most recent user message) since
@@ -493,6 +523,9 @@ func (b *Bot) NewAgentHandler() queue.Handler {
 				slog.Int64("turn", item.ID),
 				slog.Int("reply_msg_id", item.ReplyMsgID))
 			return nil
+		}
+		if item.Source == "task" {
+			return b.runTaskSilently(ctx, item)
 		}
 		var runErr error
 		if b.streamEnabled {

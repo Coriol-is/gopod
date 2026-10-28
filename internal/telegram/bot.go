@@ -96,6 +96,9 @@ type Bot struct {
 	logins        *loginSessions
 	streamEnabled bool
 
+	// taskRun overrides how silent scheduled turns run the agent. Tests only.
+	taskRun func(ctx context.Context, folder string, thread int, tier runner.Tier, prompt string) (string, error)
+
 	// draftsOff marks chats where sendMessageDraft was refused; sticky
 	// until restart. draftSeq hands out draft ids.
 	draftsMu  sync.Mutex
