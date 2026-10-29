@@ -90,7 +90,7 @@ not enabling the feature merely by merging that document.
 | [CP-004](CP-004-isolated-task-sessions.md) | Scheduled tasks run in their own session (task-reliability PR 1-2 of 5: storage and managed dispatch/recovery, in progress) | in-progress | S–M |
 | [CP-005](CP-005-tools-base-image.md) | Lightweight bases and optional tool runtimes | proposed | L |
 | [CP-006](CP-006-yielding-maintenance-and-quiet-hours.md) | Maintenance yields to the user; quiet hours | proposed | S–M |
-| [CP-007](CP-007-store-backups.md) | Matched scheduled backups and restore qualification | proposed | M |
+| [CP-007](CP-007-store-backups.md) | Matched scheduled backups and restore qualification (slices 4-6 foundation in PR 1; timer and artifact leases pending) | in-progress | M |
 | [CP-008](CP-008-model-per-chat.md) | `/model` per chat | done | S |
 | [CP-009](CP-009-provider-continuity.md) | Continue conversations across providers | done | M |
 | [CP-010](CP-010-quota-switch-confirmation.md) | Confirm switching after quota exhaustion | done | M |
