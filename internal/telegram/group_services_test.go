@@ -22,6 +22,9 @@ func TestSharedSpeechNeverDownloadsOrCallsPersonalWhisper(t *testing.T) {
 			if err := f.b.store.RegisterChat(context.Background(), store.RegisteredChat{JID: "tg:-2002", Folder: "group", AddedAt: time.Now().UnixMilli()}); err != nil {
 				t.Fatal(err)
 			}
+			if err := f.b.store.SetGroupTrigger(context.Background(), "tg:-2002", store.TriggerAll, 1); err != nil {
+				t.Fatal(err)
+			}
 			m := threadedMsg(7, "")
 			m.Chat = models.Chat{ID: -2002, Type: models.ChatTypeSupergroup}
 			switch kind {

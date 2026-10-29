@@ -96,6 +96,7 @@ type Bot struct {
 	router        *control.Router
 	allowlist     *mountsec.Allowlist
 	ownerChatID   int64
+	botID         int64 // from the token; identifies replies to and mentions of this bot
 	groupReason   func(ctx context.Context, jid string) string
 	log           *slog.Logger
 	logins        *loginSessions
@@ -252,6 +253,7 @@ func New(token string, deps Deps) (*Bot, error) {
 		router:        deps.Router,
 		allowlist:     deps.Allowlist,
 		ownerChatID:   deps.OwnerChatID,
+		botID:         id,
 		groupReason:   deps.GroupReason,
 		log:           deps.Log,
 		logins:        newLoginSessions(),

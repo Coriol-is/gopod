@@ -41,6 +41,9 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 	// Reject known auth material before persistence or command dispatch. Private
 	// login/device-flow handling remains on its existing protected path.
 	if sharedSensitiveInput(m) {
+		if b.groupTriggerSkips(ctx, m) {
+			return // not addressed to the bot: dropped unstored, no notice
+		}
 		b.replyTo(ctx, m.Chat.ID, inboundThreadID(m), m.ID, "Authentication material cannot be processed in shared chats. Use the private chat instead.")
 		return
 	}
@@ -75,6 +78,11 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 	}
 
 	text := strings.TrimSpace(messageText(m))
+	// The group trigger gate (D048): a message the group's mode does not
+	// answer stays stored context and starts nothing.
+	if b.groupTriggerSkips(ctx, m) {
+		return
+	}
 	// thread is the private-chat topic the message came from; every
 	// answer to it below goes back into that topic.
 	thread := inboundThreadID(m)
@@ -340,6 +348,8 @@ func (b *Bot) dispatchSlash(ctx context.Context, m *models.Message, text string)
 			Username:  senderDisplayName(m.From),
 			Source:    control.SourceTelegram,
 			IsOwner:   b.ownerChatID != 0 && m.Chat.ID == b.ownerChatID,
+			// Group-scoped identity only (D048).
+			IsGroupOwner: b.isGroupOwner(m),
 		},
 	}
 

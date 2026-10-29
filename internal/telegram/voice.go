@@ -160,9 +160,9 @@ func textToSpeech(ctx context.Context, apiKey, text string) ([]byte, error) {
 	text = legacySpeechInput(text)
 
 	reqBody, _ := json.Marshal(map[string]any{
-		"model": "tts-1",
-		"input": text,
-		"voice": "alloy",
+		"model":           "tts-1",
+		"input":           text,
+		"voice":           "alloy",
 		"response_format": "opus",
 	})
 
