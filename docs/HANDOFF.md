@@ -8,6 +8,7 @@ approved queue, [proposal registry](proposals/README.md) for CP status and
 
 ## Latest design request (2026-10-29)
 - CP-032 [reaction-reading specification](superpowers/specs/2026-10-29-telegram-reaction-reading.md): group emoji/custom-ID events, durable admission, exact message/topic mapping and no-admin/unavailable diagnostics. Private native reactions are transport-blocked; no account-reader workaround is authorized. Design only; no source or runtime flags changed.
+- Task-role credential adapter [design spec](superpowers/specs/2026-10-29-task-role-credential-adapter.md): why `GOPOD_MANAGED_TASKS=1` denies every task, options A-D, recommendation (access-token-only task auth copy), live gates and 5 owner questions. Design only; no source or flags changed.
 - Owner reports live `/restart` checked successfully on 2026-10-29; this establishes the reported baseline, not every negative/topic/provider scenario.
 
 ## Default group admission (branch `feat/group-default-admission`, not merged, 2026-10-29)
