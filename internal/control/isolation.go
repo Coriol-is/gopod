@@ -23,7 +23,7 @@ type IsolationActions struct {
 }
 
 func RegisterIsolationCommands(r *Router, actions IsolationActions) {
-	r.Register("isolation", "isolation", "(owner) inspect and manage group isolation", PermOwnerOnly, func(ctx context.Context, cmd Command) (Response, error) {
+	r.Register("isolation", "isolation", "(owner) group isolation: status, repair, per-group disable", PermOwnerOnly, func(ctx context.Context, cmd Command) (Response, error) {
 		usage := func() (Response, error) {
 			return Response{Code: 1, Text: "Usage: /isolation [status|prepare|enable|disable] [group_chat_id]"}, nil
 		}

@@ -1678,3 +1678,54 @@ without handing arbitrary host control to the model. Host binaries, unsupported
 supervisors, unqualified group recovery and a wedged drain require host operation.
 The command restarts the installed image, not a new version. Real Docker/Telegram
 acceptance is tracked separately from unit/CI success.
+
+## D047 — Registered groups are admitted by default
+
+**Date:** 2026-10-29
+**Status:** Accepted (owner decision 2026-10-29)
+
+**Context.** CP-020 admitted a group only when its JID was in `EnabledGroups` of
+`group-runtime.json` (read at startup), it had a ready clean epoch from a manual
+`/isolation prepare`, and the owner ran `/isolation enable`. The owner owns every
+registered group and asked that groups work without that separate server-settings
+permission: the owner-only `/register` is the permission.
+
+**Decision.** `AdmissionMode` selects the gate. `registered` (default) admits a
+group that is registered, observed, owned by a ready clean epoch, with a valid
+scope, no `group_disabled`, no `group_cleanup_unknown`, a configured qualification
+string and passing provider qualification. `allowlist` keeps the previous strict
+rule (JID must also be in `EnabledGroups`). In registered mode `EnabledGroups` is
+ignored (documented, not a second deny list). `MaxGroups` (default 50, ceiling 500)
+replaces the old ten-entry bound: groups that own a clean epoch are ranked by
+registration time and only the first `MaxGroups` are admitted, and a new epoch is
+not prepared beyond the cap. Preparation is automatic: `/register` of a group, a
+startup pass, and the first denied admission of an unready group run the same
+resumable Prepare and Enable steps under the runner chat slot, single-flight per
+group with a one-minute failure backoff. They never delete data, never stop
+foreground work, and a failure leaves the group denied with a private owner notice
+(rate limited). `/isolation disable <id>` is the per-group kill switch: it sets an
+owner marker next to the SQL CAS flag, so automatic preparation never re-enables
+it; `/isolation enable` clears it. `/isolation status` reports the mode, the cap
+and a short reason per group. A refused group turn (not admitted, provider login
+missing or expired, usage limit) shows the group one neutral line, rate limited,
+without buttons or provider detail; the owner receives the state privately.
+
+**Threat-model delta.** Before: only groups named in server settings could cause
+agent runs. Now: any member of a group the owner registered can cause runs. They can
+prompt the model and spend the inference-only subscription allowance. They still
+cannot reach personal data, personal credentials or the host: the native account
+reference stays inference-only, tools run offline and credential-free, memory and
+IPC are scoped to the group namespace, images are immutable, and epoch, namespace and
+CAS invariants plus drain and cleanup rules are unchanged. Abuse controls: usage-limit
+handling, per-group disable, `MaxGroups`, and refusal-notice rate limiting.
+
+**Remains gated.** Provider qualification is unchanged: the expired Claude auth must be
+refreshed by the owner, the Codex tree-budget fix is separate work, and live two-turn
+canaries on the Pi are still required. This change does not enable any group in
+production by itself.
+
+**Consequences.** The explicit enable step is no longer required for new groups; the
+owner's remaining controls are `/register` (grant), `/isolation disable` (revoke) and
+the provider qualification. A production `group-runtime.json` needs no new keys
+(absent `AdmissionMode` means registered); stale `EnabledGroups` entries are harmless.
+
