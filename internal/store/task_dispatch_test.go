@@ -338,3 +338,54 @@ func TestConcurrentReserveYieldsOneNewReservation(t *testing.T) {
 		t.Fatalf("%d new reservations: %v", n, kinds)
 	}
 }
+
+func TestResumeAndSpawnMarkerRecheckAfterDowntime(t *testing.T) {
+	t.Run("resume of an expired reservation settles not started", func(t *testing.T) {
+		f := newDeliveryFixture(t)
+		spec := f.agentSpec()
+		spec.ExpiresAt = baseTime + 5000
+		task := f.create(spec)
+		a := f.mustAdmit(admit(task, baseTime, baseTime+1000))
+		if r, err := f.st.ReserveTaskAttempt(t.Context(), a.AttemptID, testSnap, baseTime); err != nil || r.Kind != ReserveNew {
+			t.Fatal(r, err)
+		}
+		res, err := f.st.ReserveTaskAttempt(t.Context(), a.AttemptID, testSnap, baseTime+6000)
+		if err != nil || res.Kind != ReserveRejected || res.Reason != "expired" || res.Attempt.State != ExecFailed {
+			t.Fatalf("resume: %+v %v", res, err)
+		}
+		att, _ := f.st.GetTaskAttempt(t.Context(), a.AttemptID)
+		run, _ := f.st.GetTaskRunRecord(t.Context(), a.RunID)
+		if att.State != ExecFailed || att.Reservation != "released" || run.State != ExecFailed || run.FailureCode != "expired" {
+			t.Fatalf("attempt=%+v run=%+v", att, run)
+		}
+	})
+	t.Run("scope change between reservation and spawn blocks the marker", func(t *testing.T) {
+		f := newDeliveryFixture(t)
+		_, a := admitted(t, f)
+		if _, err := f.st.ReserveTaskAttempt(t.Context(), a.AttemptID, testSnap, baseTime); err != nil {
+			t.Fatal(err)
+		}
+		mustExec(t, f.st, `UPDATE registered_chats SET registration_revision=registration_revision+1`)
+		wantErr(t, f.st.BeginTaskSpawn(t.Context(), a.AttemptID), ErrTransitionConflict)
+		if att, _ := f.st.GetTaskAttempt(t.Context(), a.AttemptID); att.State != ExecReserved {
+			t.Fatalf("attempt = %s", att.State)
+		}
+		if got, err := f.st.SettleTaskAttempt(t.Context(), a.AttemptID, Settlement{Kind: SettleNotStarted, Evidence: "not_started:spawn_marker_refused"}); err != nil || got != ExecFailed {
+			t.Fatalf("settle = %s %v", got, err)
+		}
+	})
+}
+
+func TestRecoverFrozenResultOnNeverReservedAttemptDoesNotError(t *testing.T) {
+	f := newDeliveryFixture(t)
+	_, a := admitted(t, f)
+	f.st.MarkTurnRunning(t.Context(), a.TurnID)
+	f.freeze(ExecIsolatedTask, "stray", ResultMember{TurnID: a.TurnID, Attempt: 1})
+	plan, err := f.st.RecoverTaskAttempt(t.Context(), a.TurnID)
+	if err != nil || plan.Action != RecoverFrozen || plan.Attempt.State != ExecExecutionUnknown {
+		t.Fatalf("plan: %+v %v", plan, err)
+	}
+	if again, err := f.st.RecoverTaskAttempt(t.Context(), a.TurnID); err != nil || again.Action != RecoverFrozen {
+		t.Fatalf("second boot: %+v %v", again, err)
+	}
+}

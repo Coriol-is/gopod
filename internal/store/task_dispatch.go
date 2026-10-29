@@ -98,6 +98,19 @@ func (s *Store) ReserveTaskAttempt(ctx context.Context, attemptID string, snap D
 		}
 		switch a.State {
 		case ExecReserved:
+			// Downtime may have expired the definition or changed the scope since
+			// the reservation: recheck, and settle a failed recheck as not started.
+			if reason, e := dispatchRecheckQ(ctx, q, r, now); e != nil {
+				return e
+			} else if reason != "" {
+				st := Settlement{Kind: SettleNotStarted, Evidence: "not_started:" + reason, FailureCode: reason}
+				if _, e = settleQ(ctx, q, a.ID, st, now); e != nil {
+					return e
+				}
+				out.Reason = reason
+				out.Attempt.State, out.Run.State = ExecFailed, ExecFailed
+				return nil
+			}
 			out.Kind, out.Reason = ReserveResume, ""
 			return nil
 		case ExecQueued:
@@ -165,6 +178,13 @@ func (s *Store) BeginTaskSpawn(ctx context.Context, attemptID string) error {
 		a, e := attemptQ(ctx, q, attemptID)
 		if e != nil {
 			return e
+		}
+		if r, e := readRunQ(ctx, q, a.RunID); e != nil {
+			return e
+		} else if reason, e := dispatchRecheckQ(ctx, q, r, now); e != nil {
+			return e
+		} else if reason != "" && a.State == ExecReserved {
+			return fmt.Errorf("%w: dispatch recheck failed (%s)", ErrTransitionConflict, reason)
 		}
 		if e = transitionAttemptQ(ctx, q, attemptID, ExecReserved, ExecRunning, TransitionOptions{}, now); e != nil {
 			return e

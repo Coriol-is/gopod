@@ -56,6 +56,7 @@ func (m managedLedger) Reserve(ctx context.Context, attemptID string, snap queue
 	return queue.ReserveOutcome{
 		Kind:   queue.ReserveKind(res.Kind),
 		Reason: res.Reason,
+		State:  string(res.Attempt.State),
 		Snapshot: queue.Snapshot{
 			Provider: res.Attempt.Provider, Model: res.Attempt.Model, ProfileFingerprint: res.Attempt.ProfileFingerprint,
 		},

@@ -47,7 +47,7 @@ var runEdges = map[ExecState][]ExecState{
 }
 
 var attemptEdges = map[ExecState][]ExecState{
-	ExecQueued:           {ExecReserved, ExecCancelled, ExecFailed, ExecCancelRequested},
+	ExecQueued:           {ExecReserved, ExecCancelled, ExecFailed, ExecCancelRequested, ExecExecutionUnknown}, // unknown: recovery found contradictory evidence (a frozen result) for a never-reserved attempt
 	ExecReserved:         {ExecRunning, ExecFailed, ExecCancelled, ExecCancelRequested, ExecExecutionUnknown},
 	ExecRunning:          runEdges[ExecRunning],
 	ExecCancelRequested:  runEdges[ExecCancelRequested],

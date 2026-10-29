@@ -99,14 +99,14 @@ func (l *fakeLedger) Reserve(_ context.Context, aid string, snap Snapshot, _ tim
 	a := l.att[aid]
 	switch {
 	case a.frozen != "":
-		return ReserveOutcome{Kind: ReserveRejected, Reason: "result_frozen"}, nil
+		return ReserveOutcome{Kind: ReserveRejected, Reason: "result_frozen", State: a.state}, nil
 	case a.state == "queued":
 		a.state, a.reservation, a.snap = "reserved", "held", snap
 		return ReserveOutcome{Kind: ReserveNew, Snapshot: snap}, nil
 	case a.state == "reserved":
 		return ReserveOutcome{Kind: ReserveResume, Snapshot: a.snap}, nil
 	}
-	return ReserveOutcome{Kind: ReserveRejected, Reason: "not_dispatchable"}, nil
+	return ReserveOutcome{Kind: ReserveRejected, Reason: "not_dispatchable", State: a.state}, nil
 }
 
 func (l *fakeLedger) BeginSpawn(_ context.Context, aid string) error {
@@ -137,6 +137,9 @@ func (l *fakeLedger) Settle(_ context.Context, aid string, s Settlement) (string
 	if to, ok := terminal[s.Kind]; ok {
 		if s.Evidence == "" {
 			return "", errors.New("evidence required")
+		}
+		if s.Kind == SettleNotStarted && a.state == "cancel_requested" {
+			to = StateCancelled
 		}
 		a.state, a.reservation = to, "released"
 		return to, nil
@@ -883,5 +886,109 @@ func TestConcurrentDispatchAndEnqueueRace(t *testing.T) {
 	h.waitFor("managed", func() bool { return len(h.outcomeStates()) == 12 })
 	if h.nativeCalls() != 12 {
 		t.Fatalf("native = %d", h.nativeCalls())
+	}
+}
+
+func TestRejectedReservationSettlesStopDuringNotStartedBackoff(t *testing.T) {
+	h := newHarness(t, 2, nil)
+	it := h.ledger.admit(1, "alice", 0)
+	h.run = func(context.Context, *harness, Item) error { return ErrNotStarted }
+	h.q.BackoffFunc = func(int) time.Duration {
+		// A stop request lands while the reserved attempt waits to retry.
+		h.ledger.set(it.AttemptID, "cancel_requested", "held")
+		return 0
+	}
+	h.q.Dispatch(context.Background(), it.ID)
+	h.waitFor("outcome", func() bool { return len(h.outcomeStates()) == 1 })
+	if state, res := h.ledger.state(it.AttemptID); state != StateCancelled || res != "released" {
+		t.Fatalf("ledger = %s/%s: closed turn left a live run", state, res)
+	}
+	if h.nativeCalls() != 0 || h.q.Holds() != 0 || h.store.statusOf(1) != StatusStopped {
+		t.Fatalf("native=%d holds=%d turn=%s", h.nativeCalls(), h.q.Holds(), h.store.statusOf(1))
+	}
+}
+
+// failingLoadStore wraps harnessStore with a failing LoadUnfinished.
+type failingLoadStore struct{ *harnessStore }
+
+func (failingLoadStore) LoadUnfinished(context.Context) ([]Item, error) {
+	return nil, errors.New("disk I/O error")
+}
+
+func TestRecoverLoadFailureStillRebuildsHolds(t *testing.T) {
+	ledger := newFakeLedger()
+	it := ledger.admit(1, "alice", 0)
+	ledger.set(it.AttemptID, StateUnknown, "held")
+	mk := func(withManaged bool) *Queue {
+		q := New(context.Background(), func(context.Context, []Item) error { return nil }, 2, failingLoadStore{newHarnessStore()}, silentLog())
+		if withManaged {
+			q.SetManaged(ManagedRuntime{Store: ledger})
+		}
+		t.Cleanup(q.Close)
+		return q
+	}
+	q := mk(true)
+	if _, err := q.Recover(context.Background()); err == nil || errors.Is(err, ErrHoldsUnknown) || q.Holds() != 1 {
+		t.Fatalf("err=%v holds=%d: holds must be rebuilt despite the load failure", err, q.Holds())
+	}
+	ledger.heldErr = errors.New("db down")
+	if _, err := mk(true).Recover(context.Background()); !errors.Is(err, ErrHoldsUnknown) {
+		t.Fatalf("both loads failing must abort startup, got %v", err)
+	}
+	// Legacy-only: no runtime, plain error, the ledger is never consulted.
+	ledger.heldErr = nil
+	before := len(ledger.callList())
+	lq := mk(false)
+	if _, err := lq.Recover(context.Background()); err == nil || errors.Is(err, ErrHoldsUnknown) || lq.Holds() != 0 {
+		t.Fatalf("legacy err=%v holds=%d", err, lq.Holds())
+	}
+	if len(ledger.callList()) != before {
+		t.Fatal("legacy recovery touched the managed ledger")
+	}
+}
+
+func TestAmbiguousSpawnMarkerNeverBecomesPermissionOnRetry(t *testing.T) {
+	h := newHarness(t, 2, nil)
+	it := h.ledger.admit(1, "alice", 0)
+	var first, second error
+	h.run = func(ctx context.Context, h *harness, _ Item) error {
+		e, _ := ExecutionFrom(ctx)
+		h.ledger.mu.Lock()
+		h.ledger.beginErr = errors.New("commit status unknown")
+		h.ledger.mu.Unlock()
+		first = e.BeginSpawn(ctx)
+		h.ledger.mu.Lock()
+		h.ledger.beginErr = nil // the store looks healthy again
+		h.ledger.mu.Unlock()
+		second = e.BeginSpawn(ctx)
+		return second
+	}
+	h.q.Dispatch(context.Background(), it.ID)
+	h.waitFor("hold", func() bool { return h.q.Holds() == 1 })
+	if first == nil || second == nil {
+		t.Fatalf("first=%v second=%v: an ambiguous marker allowed a spawn", first, second)
+	}
+	if h.nativeCalls() != 0 {
+		t.Fatal("native exec after an ambiguous marker")
+	}
+}
+
+func TestCleanReturnWithProvenExitDuringShutdownIsExited(t *testing.T) {
+	h := newHarness(t, 2, nil)
+	in := make(chan struct{})
+	h.run = func(ctx context.Context, h *harness, _ Item) error {
+		e, _ := ExecutionFrom(ctx)
+		_ = e.BeginSpawn(ctx)
+		e.Exited("container_exec_exit:0")
+		close(in)
+		<-ctx.Done() // shutdown races the clean return
+		return nil
+	}
+	it := h.ledger.admit(1, "alice", 0)
+	h.q.Dispatch(context.Background(), it.ID)
+	<-in
+	h.q.Close()
+	if state, res := h.ledger.state(it.AttemptID); state != StateCompleted || res != "released" {
+		t.Fatalf("ledger = %s/%s, want completed", state, res)
 	}
 }

@@ -56,6 +56,7 @@ const (
 type ReserveOutcome struct {
 	Kind     ReserveKind
 	Reason   string // fixed code when rejected
+	State    string // attempt state as committed (lets the queue settle a stale reservation)
 	Snapshot Snapshot
 }
 
@@ -172,10 +173,12 @@ type Execution struct {
 	item Item
 	snap Snapshot
 
-	mu       sync.Mutex
-	started  bool // spawn marker committed or possibly committed
-	refused  bool // ledger proved the marker was not committed
-	exitInfo string
+	mu        sync.Mutex
+	started   bool  // spawn marker committed or possibly committed
+	confirmed bool  // spawn marker known committed
+	ambiguous error // marker commit status unknown: never allow a spawn
+	refused   bool  // ledger proved the marker was not committed
+	exitInfo  string
 }
 
 // ExecutionFrom returns the Execution of a managed handler call.
@@ -192,17 +195,21 @@ func (e *Execution) Snapshot() Snapshot { return e.snap }
 func (e *Execution) BeginSpawn(ctx context.Context) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.started {
+	if e.confirmed {
 		return nil
+	}
+	if e.ambiguous != nil {
+		return e.ambiguous // never turn an unknown commit into permission to spawn
 	}
 	err := e.q.managedStore().BeginSpawn(context.WithoutCancel(ctx), e.item.AttemptID)
 	switch {
 	case err == nil:
-		e.started = true
+		e.started, e.confirmed = true, true
 	case errors.Is(err, ErrSpawnRefused):
 		e.refused = true
 	default:
 		e.started = true // ambiguous commit: assume it may have happened
+		e.ambiguous = err
 	}
 	return err
 }
@@ -573,7 +580,7 @@ func (q *Queue) runManaged(ctx context.Context, folder string, it Item) workerSt
 		if out.Kind == ReserveRejected {
 			q.log.Info("queue: managed attempt not dispatched", slog.String("attempt", it.AttemptID), slog.String("reason", out.Reason))
 			q.resetRetries(folder)
-			q.closeManaged(it, StatusStopped, "dispatch_rejected:"+out.Reason, ManagedOutcome{State: StateCancelled})
+			q.settleRejected(it, out)
 			return stepNext
 		}
 
@@ -581,10 +588,12 @@ func (q *Queue) runManaged(ctx context.Context, folder string, it Item) workerSt
 		exec := &Execution{q: q, item: it, snap: out.Snapshot}
 		herr := rt.Handler(context.WithValue(ctx, execKey{}, exec), []Item{it})
 		started, refused, exit := exec.snapshot()
-		shutdown := ctx.Err() != nil
+		// Shutdown counts only when the handler reported being cut off. A clean
+		// return with proven exit is recorded as Exited even if shutdown raced it.
+		shutdown := ctx.Err() != nil && herr != nil
 
 		switch {
-		case !started && shutdown:
+		case !started && ctx.Err() != nil:
 			// Never spawned: leave the attempt reserved and the turn interrupted so
 			// Recover redispatches it with its original snapshot.
 			q.closeInterrupted(it, herr)
@@ -615,6 +624,29 @@ func (q *Queue) runManaged(ctx context.Context, folder string, it Item) workerSt
 		q.log.Error("queue: managed attempt exit not proven, capacity held until reconciliation",
 			slog.String("attempt", it.AttemptID), slog.String("folder", folder), slog.Any("err", herr))
 		return stepHold
+	}
+}
+
+// settleRejected finishes an attempt the pre-spawn gate refused. A terminal
+// attempt (the store already cancelled it) just closes the turn. A queued,
+// reserved or cancel_requested attempt that never reached the spawn marker is
+// settled as not started, so the run and its reservation cannot linger live
+// after the turn is closed. A frozen result is left for Recover (publication).
+func (q *Queue) settleRejected(it Item, out ReserveOutcome) {
+	switch out.State {
+	case StateCompleted, StateFailed, StateCancelled, StateInterrupted:
+		q.closeManaged(it, statusForState(out.State), "dispatch_rejected:"+out.Reason, ManagedOutcome{State: out.State})
+	case "queued", "reserved", "cancel_requested":
+		if out.Reason == "result_frozen" {
+			q.forget(it.ID)
+			return
+		}
+		s := Settlement{Kind: SettleNotStarted, Evidence: "not_started:dispatch_rejected_" + out.Reason, FailureCode: "dispatch_rejected"}
+		if q.settleManaged(it, s, fmt.Errorf("dispatch rejected: %s", out.Reason)) == "" {
+			q.forget(it.ID) // ledger untouched: the turn stays pending for Recover
+		}
+	default:
+		q.forget(it.ID) // running/unknown: never touched here, Recover decides
 	}
 }
 

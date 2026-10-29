@@ -295,6 +295,13 @@ func (q *Queue) Recover(ctx context.Context) (int, error) {
 	}
 	items, err := q.store.LoadUnfinished(ctx)
 	if err != nil {
+		// A failed turn load must not skip the hold rebuild: with managed dispatch
+		// configured, still block namespaces with possibly running attempts.
+		if q.runtime() != nil {
+			if herr := q.reconstructHolds(ctx); herr != nil {
+				return 0, fmt.Errorf("%w: %v (turn load: %v)", ErrHoldsUnknown, herr, err)
+			}
+		}
 		return 0, fmt.Errorf("queue: load unfinished turns: %w", err)
 	}
 	// Managed attempts are classified by the ledger and held capacity is rebuilt

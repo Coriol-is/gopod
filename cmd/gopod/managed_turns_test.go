@@ -290,3 +290,29 @@ func TestInspectOnlyWiringLeavesManagedWorkPendingAndLegacyUntouched(t *testing.
 	}
 	_ = legacyID
 }
+
+func TestStopDuringNotStartedBackoffLeavesNoLiveRunWithRealStore(t *testing.T) {
+	f := newManagedFixture(t)
+	a := f.admit(baseMs)
+	task, _ := f.st.GetTaskRunRecord(t.Context(), a.RunID)
+	q, _ := f.newQueue(func(context.Context, []queue.Item) error { return queue.ErrNotStarted })
+	q.BackoffFunc = func(int) time.Duration {
+		// The operator stops the run while the reserved attempt waits to retry.
+		if _, err := f.st.RequestRunStop(context.Background(), "owner", task.TaskID, a.RunID, "operator_stop"); err != nil {
+			t.Error(err)
+		}
+		return 0
+	}
+	if ok, err := q.Dispatch(t.Context(), a.TurnID); err != nil || !ok {
+		t.Fatal(ok, err)
+	}
+	att := waitState(t, f.st, a.AttemptID, store.ExecCancelled)
+	run, _ := f.st.GetTaskRunRecord(t.Context(), a.RunID)
+	held, _ := f.st.HeldTaskReservations(t.Context())
+	if att.Reservation != "released" || run.State != store.ExecCancelled || len(held) != 0 {
+		t.Fatalf("attempt=%+v run=%s held=%v", att, run.State, held)
+	}
+	if turn, _ := f.st.GetTurn(t.Context(), a.TurnID); turn.Status != store.TurnStopped {
+		t.Fatalf("turn = %s", turn.Status)
+	}
+}
