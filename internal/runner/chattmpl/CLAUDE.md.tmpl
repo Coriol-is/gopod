@@ -131,3 +131,11 @@ context via the memory system.
 ---
 
 _Seeded by gopod on {{.Date}} for chat folder `{{.ChatFolder}}`._
+
+## Telegram formatting
+
+For final replies use Markdown: bold/italic, inline or fenced code, headings,
+lists, quotes, strikethrough and spoilers. Raw HTML in final replies is escaped.
+For agent-initiated IPC messages, see SCHEDULING.md: the personal durable route
+supports `format` = `markdown` (default), sanitized `html`, or literal `plain`.
+Formatting availability depends on the host route; respect its error receipt.

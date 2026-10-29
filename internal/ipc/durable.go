@@ -22,6 +22,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"path/filepath"
 	"strings"
@@ -44,7 +45,8 @@ type DurableStore interface {
 
 // DurableConfig enables the durable route. A nil Store disables it.
 type DurableConfig struct {
-	Store DurableStore
+	Store       DurableStore
+	PrepareText func(text, format string) ([]store.DeliveryPart, error)
 	// PersonalJID is the only eligible destination: the owner's personal chat
 	// in canonical tg:<id> form.
 	PersonalJID string
@@ -144,11 +146,15 @@ func (w *Watcher) processDurable(ctx context.Context, folder, path string, raw [
 		return w.rejectDurable(ctx, src, folder, path, id, codeRequestExpired)
 	}
 
+	parts, prepareErr := w.prepareMessage(p)
+	if prepareErr != nil {
+		return w.rejectDurable(ctx, src, folder, path, id, prepareErr.Error())
+	}
 	delivery, err := d.PublishDelivery(ctx, store.PublishRequest{
 		Conversation: conv,
 		Owner:        store.OwnerLegacyAgentIPC,
 		ActorRef:     "ipc:" + src.NamespaceID,
-		Parts:        splitText(p.Text),
+		Parts:        parts,
 		Request:      &id,
 	})
 	switch {
@@ -300,4 +306,23 @@ func (w *Watcher) requestModTime(folder, path string) (time.Time, bool) {
 func (w *Watcher) requestExpired(folder, path string) bool {
 	mt, ok := w.requestModTime(folder, path)
 	return ok && w.cfg.NowFn().Sub(mt) > store.DefaultDeliveryExpiry
+}
+
+func (w *Watcher) prepareMessage(p messagePayload) ([]store.DeliveryPart, error) {
+	if p.Buttons != nil || p.Sticker != nil {
+		return nil, errors.New("rich_fields_unsupported")
+	}
+	format := ""
+	if p.Format != nil {
+		if string(p.Format) == "null" || json.Unmarshal(p.Format, &format) != nil || (format != "markdown" && format != "html" && format != "plain") {
+			return nil, errors.New("invalid_format")
+		}
+	}
+	if w.cfg.Durable.PrepareText != nil {
+		return w.cfg.Durable.PrepareText(p.Text, format)
+	}
+	if p.Format != nil {
+		return nil, errors.New("rich_format_unavailable")
+	}
+	return splitText(p.Text), nil
 }

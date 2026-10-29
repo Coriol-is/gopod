@@ -125,3 +125,20 @@ may contain stale RW/source-checkout claims; this IPC guide reflects the actual
 supported path. `/workspace/project` is deployment-specific and may not contain
 source code. The server validates schedules and scope independently of this
 agent-writable guide. No credentials belong in requests, receipts or logs.
+
+### Optional formatting (personal durable delivery only)
+
+When the host has enabled durable IPC for the owner's personal chat, text
+messages default to Markdown. Choose per message with `"format":"markdown"`,
+`"format":"html"`, or `"format":"plain"` (literal text). Supported Markdown:
+bold, italic, inline/fenced code, headings, lists, quotes, ~~strikethrough~~ and
+||spoilers||. Tables are not supported. HTML is sanitized to Telegram's text
+formatting tags; unsafe links and attributes cannot pass through. Invalid markup
+falls back to literal text; an explicit Telegram parse refusal permits one
+recorded plain-text attempt. An uncertain delivery is never automatically resent.
+
+Example: `{"chatJid":"tg:123","text":"**Daily report**","format":"markdown"}`.
+The legacy route remains plain text; explicit formatting there returns
+`rich_format_unavailable`. Do not repeatedly resubmit a queued or uncertain
+request. `invalid_format` means fix the format value; `rich_fields_unsupported`
+means buttons/stickers are not available through this contract yet.

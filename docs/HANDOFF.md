@@ -6,27 +6,28 @@ Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
 [ACCEPTANCE](ACCEPTANCE.md) for pending real-client verification.
 
-## Resume here (2026-10-27 evening)
-- **Deployed 2026-10-29:** Pi runs `07d9edd` (CP-002 PR1–3, flags off); see [evidence](deployments/2026-10-29-07d9edd.md). Pi LAN address is 192.168.1.128 when the Tailscale name is offline. In-flight: CP-003 PR4 (artifacts) in worktree `gopod-cp003-pr4`.
-- **Repo is clean:** `main` has no open PRs, no stale local/remote branches and no
-  extra worktrees (all 67 merged remote branches and 40 worktrees were removed after
-  verifying their PRs merged). CI on `main` is green; PR #70 moved actions to
-  Node 24 majors (`checkout`/`setup-go`/`setup-node` v7) and pinned `ubuntu-24.04`.
-- **No CD workflow:** deploys are manual per [deployments/](deployments/). `main` has no
-  branch protection, so green CI is a convention, not a gate (owner decision pending).
-- **Either harness can continue:** Claude Code reads `CLAUDE.md`, Codex reads `AGENTS.md`
-  (points at `CLAUDE.md`); both start here. No work is in flight, nothing is unpushed.
-- **First action next session:** owner runs live Telegram acceptance A08–A11, A18, A20,
-  A02 (see [ACCEPTANCE](ACCEPTANCE.md)); in parallel unblock CP-020 gates (refresh Claude
-  auth via private management, fix Codex tree-budget admission, rerun two-turn canaries,
-  enable one controlled test group). Then start CP-002 outbox from the
-  [reliability wave](superpowers/plans/2026-10-26-reliability-wave.md), each CP in its
-  own worktree/PR. Order after that: CP-004, CP-007, CP-006, CP-016, CP-018, CP-019.
-- **Not authorized without the owner:** account logins, quota/paid fallbacks, T9 reboot,
-  production group activation, schedule changes (freefeed digest stays as is).
+## Resume here (2026-10-29, Codex continuation)
+- Latest Claude session `17a9d2c0-7ae3-4ea8-bdf2-a4af91a2ebe5` stopped on a usage limit.
+  Its P1 formatting child stopped after read-only exploration; the clean worktree was resumed in Codex.
+- CP-004 PR2/PR3 (#79/#81), CP-007 foundation (#80), and rich-message requirements (#82) are merged.
+  Base for this continuation: `19ae2e2`. Old branch-status notes below are historical implementation notes.
+- Current work: rich-message P1 on `feat/rich-messages-formatting` in `gopod-rich-p1`;
+  the independently requested owner `/restart` command is being implemented in `gopod-telegram-restart`.
+  Owner authorized PRs and automatic squash merge after green CI. Preserve both worktrees.
+- P1 implements Markdown-default / sanitized HTML / plain text for personal durable IPC, shared canonical
+  HTML validation, explicit rich-field rejection on unsupported routes, and one recorded plain fallback
+  after an explicit Telegram entity-parse refusal. The original plan stays immutable; ambiguous sends
+  remain uncertain and are never replayed. ADR D045. Legacy messages without rich fields stay literal.
+- Production: last recorded deploy is `07d9edd` (see [evidence](deployments/2026-10-29-07d9edd.md));
+  runtime was not re-inspected during this implementation. P0 bounded owner-chat durable IPC smoke is
+  approved, but this P1 change does not deploy or enable flags. Buttons, stickers, and thread awareness
+  remain separate slices; groups stay disabled.
+- Next: finish review/CI and merge P1; integrate the independent restart PR after its own checks.
+  Real Telegram formatting acceptance and live restart/recovery acceptance remain separate gates.
+- Not authorized here: account logins, paid fallbacks, T9 reboot, group activation or schedule changes.
 
-## CP-004 PR 3 in progress (2026-10-29)
-- Branch `feat/cp004-task-exec` (worktree `gopod-cp004-pr3`), based on PR 2 (`5680a85`), not pushed. ADR D044.
+## CP-004 PR 3 merged (#81, 2026-10-29)
+- Branch `feat/cp004-task-exec` (worktree `gopod-cp004-pr3`), merged as `39d4d5e`. ADR D044.
   `internal/runner/{exec_policy,exec_guard,task_managed,task_run,provider_task,docker_policy}.go`, `internal/taskreport`,
   `internal/taskexec`, `internal/store/task_report.go`, `queue.ErrDenied`/`FolderHeld`, flag `GOPOD_MANAGED_TASKS` (off).
 - With the flag on, **no task can run yet**: no credential adapter is qualified for the task role (shared native state dir also holds
@@ -46,7 +47,7 @@ approved queue, [proposal registry](proposals/README.md) for CP status and
   persisting report revisions beyond latest. CP-004 stays `in-progress`.
 
 ## CP-007 PR 1 merged (#80, 2026-10-29)
-- Branch `feat/cp007-backups` (worktree `gopod-cp007-pr1`), based on `5680a85`, not pushed: backup foundation
+- Branch `feat/cp007-backups` (worktree `gopod-cp007-pr1`), merged as `e671c0f`: backup foundation
   (reliability-operations plan slices 4-6, ADR D043). `gopod backup create|verify|list|idle|quarantine`
   (`internal/{backup,maintenance}`, `internal/store/backup*.go`, `internal/control/backup_cmds.go`,
   `cmd/gopod/{backup_cli,quarantine}.go`), runbook [BACKUP-RESTORE](deployments/BACKUP-RESTORE.md).
@@ -56,9 +57,9 @@ approved queue, [proposal registry](proposals/README.md) for CP status and
 - Not done: timer/retention (slice 7), session/auth/ChatsDir/IPC capture, restore + activation command, Pi drill. The
   Pi image predates `gopod backup`; the next deploy still needs the manual cold copy. CP-007 is `in-progress`.
 
-## CP-004 PR 2 in progress (2026-10-29)
+## CP-004 PR 2 merged (#79, 2026-10-29)
 - Branch `feat/cp004-dispatch` (worktree `gopod-cp004-pr2`), based on PR 1 (`c7ff9d2`): managed dispatch and conservative
-  recovery (`internal/queue/managed.go`, `internal/store/task_dispatch.go`, `cmd/gopod/managed_turns.go`, ADR D042). Not pushed.
+  recovery (`internal/queue/managed.go`, `internal/store/task_dispatch.go`, `cmd/gopod/managed_turns.go`, ADR D042). Merged as `5680a85`.
 - Production wiring is inspect-only (`queue.ManagedRuntime` without a handler): no managed task can exist or run yet, legacy
   queue behavior is unchanged. Possibly started attempts become `execution_unknown`, are never replayed, and their holds are
   rebuilt before any work is scheduled. Needs PR 3 for the real handler, snapshot resolver and exit evidence.
@@ -322,3 +323,8 @@ historical, not a second task queue. DECISIONS.md retains ADR authority. Current
 source/tests/deployment reports outrank old flags, versions and branch-status
 claims. Update this short handoff when facts change; keep acceptance evidence in
 its register and delivery priorities in ROADMAP.
+
+## Nearby work noted but out of scope (2026-10-29)
+- `store.Open` builds a SQLite file URI by concatenating the raw path. A `#` in a path
+  can be interpreted as a URI fragment; repeated test names exposed cross-fixture DB
+  aliasing. Formatting tests use distinct descriptive names. URI escaping is a separate fix.

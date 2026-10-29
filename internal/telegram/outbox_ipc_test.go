@@ -39,13 +39,13 @@ func TestOutboxIPC_ReceiptFollowsDispatcherOutcome(t *testing.T) {
 			if err := os.MkdirAll(dir, 0o700); err != nil {
 				t.Fatal(err)
 			}
-			req, _ := json.Marshal(map[string]string{"chatJid": "tg:1", "text": "hello"})
+			req, _ := json.Marshal(map[string]string{"chatJid": "tg:1", "text": "**hello**"})
 			if err := os.WriteFile(filepath.Join(dir, "0001.json"), req, 0o600); err != nil {
 				t.Fatal(err)
 			}
 			legacy := &noopMessages{}
 			w := ipc.New(ipc.Config{DataDir: root, OwnerFolder: "owner", Tick: 10 * time.Millisecond,
-				Durable: ipc.DurableConfig{Store: f.st, PersonalJID: "tg:1"}},
+				Durable: ipc.DurableConfig{PrepareText: PrepareIPCText, Store: f.st, PersonalJID: "tg:1"}},
 				legacy, nil, slog.New(slog.NewTextHandler(io.Discard, nil)),
 				func(folder string) (string, bool) { return "tg:1", folder == "owner" })
 			ctx, cancel := context.WithCancel(context.Background())
@@ -65,7 +65,7 @@ func TestOutboxIPC_ReceiptFollowsDispatcherOutcome(t *testing.T) {
 			if legacy.calls != 0 {
 				t.Fatalf("legacy sink used %d times", legacy.calls)
 			}
-			if got := tr.texts(); len(got) != 1 || got[0] != "hello" {
+			if got := tr.texts(); len(got) != 1 || got[0] != "<b>hello</b>" {
 				t.Fatalf("transport calls: %v", got)
 			}
 		})

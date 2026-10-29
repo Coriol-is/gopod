@@ -127,7 +127,7 @@ var deliverySchemaStatements = []string{
 }
 
 func (s *Store) applyDeliverySchema(ctx context.Context) error {
-	for i, stmt := range deliverySchemaStatements {
+	for i, stmt := range append(deliverySchemaStatements, plainFallbackSchema) {
 		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
 			return fmt.Errorf("delivery statement %d: %w\n--- sql ---\n%s", i, err, stmt)
 		}

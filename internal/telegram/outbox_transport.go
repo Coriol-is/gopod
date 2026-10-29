@@ -216,6 +216,9 @@ func classifySend(msg *models.Message, err error, wantID int64) Outcome {
 		if isThreadGone(err) {
 			return Outcome{Kind: OutcomeRefused, Code: "thread_gone", HTTPStatus: 400}
 		}
+		if strings.Contains(strings.ToLower(err.Error()), "can't parse entities") {
+			return Outcome{Kind: OutcomeRefused, Code: "parse_entities", HTTPStatus: 400}
+		}
 		return Outcome{Kind: OutcomeRefused, Code: "bad_request", HTTPStatus: 400}
 	case errors.Is(err, bot.ErrorUnauthorized):
 		return Outcome{Kind: OutcomeRefused, Code: "denied_credentials", HTTPStatus: 401}

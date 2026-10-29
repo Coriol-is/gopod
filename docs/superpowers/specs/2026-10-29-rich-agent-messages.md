@@ -84,7 +84,7 @@ What the code actually does today (verified 2026-10-29):
 Polls, agent reactions, locations, native rich tables, edit-in-place updates of an agent message.
 
 ## Non-goals and anti-goals
-- Non-goals: groups and shared chats; inline mode; web apps; payments; creating sticker sets; HTML from the agent.
+- Non-goals: groups and shared chats; inline mode; web apps; payments; creating sticker sets; unsanitized HTML from the agent.
 - Anti-goals (would be failure even if it "works"): agent-controlled markup reaching Telegram unsanitized;
   buttons that act without a turn or outside the chat they sit in; formatting errors that drop a message;
   silently changing how existing scheduled digests look; a second delivery path that bypasses the outbox.

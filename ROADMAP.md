@@ -315,3 +315,11 @@ Current groups are owner-controlled sandboxes; targeted checks run incrementally
 Full cross-boundary acceptance precedes real-group admission. T9 host cgroup/reboot,
 CP-006 group maintenance, arbitrary integrations and one-way private-to-group data
 grants remain separate work. See [current policy/configuration](docs/ISOLATION.md).
+
+### Rich agent messages P1 (2026-10-29)
+Personal durable IPC formatting implemented on `feat/rich-messages-formatting`: Markdown
+by default, sanitized HTML, literal plain text, admission validation and a recorded one-shot
+plain fallback on explicit parse refusal. Existing outbox flags gate activation; legacy
+messages remain literal. PR/CI integration in progress; live Telegram acceptance pending.
+See [requirements](docs/superpowers/specs/2026-10-29-rich-agent-messages.md) and D045.
+Buttons/hooks, inbound/outbound stickers and thread awareness remain separate work.

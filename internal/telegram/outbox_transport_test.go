@@ -103,7 +103,7 @@ func TestClassifySend(t *testing.T) {
 		{"429", nil, &bot.TooManyRequestsError{Message: "x", RetryAfter: 4}, OutcomeRateLimited, "rate_limited"},
 		{"429 zero retry_after", nil, &bot.TooManyRequestsError{Message: "x"}, OutcomeRateLimited, "rate_limited"},
 		{"forbidden", nil, fmt.Errorf("%w, bot was blocked", bot.ErrorForbidden), OutcomeRefused, "forbidden"},
-		{"bad request", nil, fmt.Errorf("%w, can't parse entities", bot.ErrorBadRequest), OutcomeRefused, "bad_request"},
+		{"bad request", nil, fmt.Errorf("%w, can't parse entities", bot.ErrorBadRequest), OutcomeRefused, "parse_entities"},
 		{"thread gone", nil, fmt.Errorf("%w, Bad Request: message thread not found", bot.ErrorBadRequest), OutcomeRefused, "thread_gone"},
 		{"credentials", nil, fmt.Errorf("%w, Unauthorized", bot.ErrorUnauthorized), OutcomeRefused, "denied_credentials"},
 		{"migrated", nil, &bot.MigrateError{Message: "m", MigrateToChatID: 5}, OutcomeRefused, "chat_migrated"},
