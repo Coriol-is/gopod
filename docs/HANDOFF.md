@@ -21,6 +21,47 @@ approved queue, [proposal registry](proposals/README.md) for CP status and
 - Touched near the group `/login` private-confirmation path only by adding a regression test
   (`internal/telegram/group_refusal_test.go`); `login_handoff.go`, `login.go`, `confirm.go` are unchanged.
 
+## Codex tree-budget admission fix (2026-10-29, branch `fix/codex-group-tree-budget`, unmerged)
+- **Root cause:** pinned Codex creates `CODEX_HOME/tmp/arg0/codex-arg0<id>/` containing the
+  symlinks `apply_patch`, `applypatch` (Linux also `codex-linux-sandbox`, `codex-execve-wrapper`)
+  and a `.lock` on every start and leaves them behind after exit (also when killed); its janitor only
+  removes them at the next start, after gopod's walk. The single-turn run left them, so the next
+  `Start` hit the **symlink rule** in `privateTreeBudget` on the native tree, before any inference.
+  The number rules are not implicated: a fresh group tree (plugins/apps/skill search disabled) is
+  well under 64 MiB / 2048 files; the owner's personal `.codex` is 160 MiB / 5960 files only because of
+  plugin clones and remote catalogs that group config disables. No FIFO/socket/non-symlink found.
+- **Evidence:** local, not Pi. Codex 0.165.0 (pinned is 0.164.0, same mechanism) run offline with
+  a temp `CODEX_HOME`: `--version` alone leaves `tmp/arg0*/codex-arg0*/{.lock,apply_patch,applypatch}`;
+  an interrupted `exec` also created SQLite `-wal`/`-shm` files, `sessions/`, `skills/.system`,
+  `thread-writer-locks/`. Read-only Pi inspection (`find`/`du` metadata only) of the owner's
+  `.codex`: no symlinks, FIFOs or sockets, max depth 15, WAL files present. No Pi group namespace
+  existed to inspect (qualification data already cleaned), so the failing tree itself was not observed;
+  the attribution is inferred from the local reproduction and the stage evidence. Linux alias names
+  come from Codex's arg0 code (not re-verified on the Pi).
+- **Also fixed:** the depth test used `filepath.SplitList` (splits on `:`), so it never fired; it now
+  counts `/` components (limit 64 unchanged). Walk is entry-capped so growth or loops terminate.
+- **Diagnosable:** `TreeBudgetError{Tree, Reason, Class}` -> host `slog` warning -> `AdmissionError.Detail`
+  -> canary `admission_detail=`. Group chats still see only the generic unavailable text.
+- **Owner-directed relaxation (same branch):** limits raised to native 512 MiB / 20000 files and
+  workspace 256 MiB / 5000 (runaway-growth guards, not security limits; depth cap 64 kept). A planted
+  symlink/FIFO/socket in the native or workspace tree is now unlinked via `unlinkat` on the verified
+  parent fd (no follow, no recursion), warned and counted, then admitted; only a failed removal
+  (`heal`) or a bytes/files/depth/walk violation refuses. Policy tree never heals; owner-private
+  note not implemented (log only). `/login`, control confirm and login handoff untouched.
+- **Review fixes (independent review of 24958a8):** healing moved out of `Authorize` (check-only,
+  admits healable entries untouched) into `Start` under the namespace lock after reconcile; ENOENT
+  counts as healed; classification/unlink use the verified parent fd (`fstatat`/`openat O_NOFOLLOW`)
+  and the root is opened `O_NOFOLLOW`; arg0 aliases must point at a `codex` binary under the
+  image's npm prefix (exact path unverified on the Pi). Workspace symlink healing kept because
+  `telegram/media.go` writes into the host workspace by path; see ISOLATION.md for the audit.
+- **Boundary (strict part):** no-follow rooted walk (Lstat + same-inode check on every directory
+  open); the only symlinks tolerated are the four exact alias names at exactly depth 5 under
+  `codex/tmp/arg0/codex-arg0<id>/`, native tree only, never followed. Claude native state may leave
+  its own entries; not observed here.
+- **Still required (owner/orchestrator):** rebuild the Codex group image and controller from the
+  merged fix and rerun the full two-turn (new + resume) Codex canary on the Pi; confirm with
+  `admission_detail=` if it still fails. Claude qualification still needs a refreshed subscription.
+
 ## Resume here (2026-10-29, Codex continuation)
 - Latest Claude session `17a9d2c0-7ae3-4ea8-bdf2-a4af91a2ebe5` stopped on a usage limit.
   Its P1 formatting child stopped after read-only exploration; the clean worktree was resumed in Codex.

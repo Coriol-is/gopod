@@ -32,7 +32,7 @@ import (
 const revision = "group-boundary-v1"
 
 // AdmissionError exposes only a fixed structural stage, never upstream output.
-type AdmissionError struct{ Stage string }
+type AdmissionError struct{ Stage, Detail string }
 
 func (e *AdmissionError) Error() string { return "group admission unavailable: " + e.Stage }
 func (e *AdmissionError) Unwrap() error { return ErrUnavailable }
@@ -103,21 +103,18 @@ func (m *Manager) Authorize(ctx context.Context, c store.RegisteredChat) error {
 		return ErrUnavailable
 	}
 
-	if privateTreeBudget(paths.Workspace, 32<<20, 256) != nil {
-		return ErrUnavailable
-	}
-	return nil
+	return m.checkTree(ctx, paths.Workspace, workspaceCheckPolicy)
 }
 func (m *Manager) Start(ctx context.Context, c store.RegisteredChat, base runner.AgentProvider, thread int, selectedModel string) (id string, prov runner.AgentProvider, release func(), retErr error) {
 	stage := "admission"
 	defer func() {
 		if retErr != nil {
-			retErr = &AdmissionError{Stage: stage}
+			retErr = newAdmissionError(stage, retErr)
 		}
 	}()
 
-	if m.Authorize(ctx, c) != nil {
-		return "", nil, func() {}, ErrUnavailable
+	if err := m.Authorize(ctx, c); err != nil {
+		return "", nil, func() {}, err
 	}
 	unlock, err := m.lock(ctx, c.NamespaceID)
 	if err != nil {
@@ -151,8 +148,8 @@ func (m *Manager) Start(ctx context.Context, c store.RegisteredChat, base runner
 			release()
 		}
 	}()
-	if m.Authorize(ctx, c) != nil {
-		return "", nil, release, ErrUnavailable
+	if err = m.Authorize(ctx, c); err != nil {
+		return "", nil, release, err
 	}
 	stage = "configuration"
 	cfg, ok := m.Config.Providers[base.Name()]
@@ -171,8 +168,8 @@ func (m *Manager) Start(ctx context.Context, c store.RegisteredChat, base runner
 	if err = m.reconcile(ctx, c.NamespaceID); err != nil {
 		return "", nil, release, ErrUnavailable
 	}
-	if privateTreeBudget(paths.Native, 64<<20, 2048) != nil || privateTreeBudget(paths.Workspace, 32<<20, 256) != nil || privateTreeBudget(paths.Policy, 8<<20, 128) != nil {
-		return "", nil, release, ErrUnavailable
+	if err = m.checkTrees(ctx, paths); err != nil {
+		return "", nil, release, err
 	}
 	stage = "images"
 	nativeImage, _, err := m.Docker.ImageInspectWithRaw(ctx, cfg.Image)

@@ -131,8 +131,48 @@ ceiling applies to each command process. The kernel PID controller must report
 a ceiling of eight before commands run. Background/leftover processes prevent
 successful export; arbitrary background services are unsupported.
 
-Native/policy/workspace state has bounded admission budgets and native files have
-a hard file-size limit. Requested Docker memory settings do not prove target-host
+Native/policy/workspace state has admission budgets (native 512 MiB / 20000
+files, workspace 256 MiB / 5000, policy 8 MiB / 128; depth 64 path components). The byte
+and file limits are runaway-growth guards for owner-run groups, not security limits and
+native files have a hard file-size limit. The walk is rooted and no-follow and
+rejects symlinks, FIFOs/sockets/devices, depth, bytes and file count, returning a
+typed error with a fixed reason code (`symlink`, `special_file`, `depth`, `bytes`,
+`files`, `walk`) and a sanitized two-component path class. It is logged on the
+host and carried as `AdmissionError.Detail` for owner-private diagnostics (the
+canary prints `admission_detail=`); group chats never see it. One narrow
+exemption exists: pinned Codex leaves per-process alias symlinks at exactly
+`codex/tmp/arg0/codex-arg0<id>/{apply_patch,applypatch,codex-linux-sandbox,codex-execve-wrapper}`
+after every run (even `--version`, and when killed), so only those entries in the
+native tree may be symlinks; they are never followed and Codex's own janitor
+removes stale ones. Any other symlink, including a different name or depth under
+`tmp/arg0`, still fails closed. Review hardening: the walk uses directory file descriptors only (root opened
+`O_NOFOLLOW|O_DIRECTORY`, children via `fstatat(AT_SYMLINK_NOFOLLOW)` and
+`openat(O_NOFOLLOW)` on the verified parent), so a swapped root or subdirectory
+fails closed. An arg0 alias is tolerated only if its target is a cleaned absolute
+path to a `codex` binary under `/usr/local/lib/node_modules/@openai/` (the
+Dockerfile's global install prefix; the exact vendor path is not verified on the
+Pi, and a mismatch only means the alias is removed and Codex recreates it).
+Healing is performed only by `Start`, under the namespace lock after reconcile; `Authorize`
+(called per message, without the lock, possibly while a container is live) is
+check-only: healable entries are admitted untouched. ENOENT during a heal counts as
+already healed, so concurrent walkers never refuse each other.
+Workspace symlinks: host consumers of the workspace were audited. Uploads are
+imported with `O_NOFOLLOW`, tool state is exported/hydrated as canonical tar
+inside the tool container (links, hardlinks and special files are rejected), and
+backups do not follow links. But `internal/telegram/media.go` writes downloaded media into
+the host chat workspace by path, so a planted `uploads` symlink would redirect a
+host write. Choice: keep healing workspace symlinks (the group's own tool links such
+as `node_modules/.bin` never reach the host workspace, since canonical archives
+refuse them anyway); a Warn log is emitted for every removal.
+Self-healing: in the native and workspace trees (writable by untrusted or
+semi-trusted code) a planted symlink or special file outside those aliases is not a
+reason to refuse the group. The host `Lstat`s it, unlinks exactly that entry with
+`unlinkat` on the already verified parent directory handle (never following,
+never recursing; a directory swapped in meanwhile makes the unlink fail), logs a
+warning with the sanitized reason and path class and increments an in-process counter, then
+admits. Failure to remove (`heal`), or any bytes/files/depth/walk violation, still
+refuses. The policy tree never heals. No owner-private note is sent (log only).
+Raising the limits is a tuning change to guards, not a contract change (no D048). Requested Docker memory settings do not prove target-host
 memory-cgroup enforcement. T9 remains a separate paused host task: this change
 does not edit boot flags, enable the memory cgroup or reboot the Pi.
 
