@@ -17,6 +17,7 @@ var rowCountSQL = map[string]string{
 	"logs":                 "SELECT count(*) FROM logs",
 	"conversation_history": "SELECT count(*) FROM conversation_history",
 	"namespace_ownership":  "SELECT count(*) FROM namespace_ownership",
+	"group_triggers":       "SELECT count(*) FROM group_triggers",
 	// turns and tasks
 	"turns":              "SELECT count(*) FROM turns",
 	"scheduled_tasks":    "SELECT count(*) FROM scheduled_tasks",

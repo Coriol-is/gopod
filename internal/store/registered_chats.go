@@ -89,6 +89,9 @@ func (s *Store) RegisterChat(ctx context.Context, c RegisteredChat) error {
 		if err == nil {
 			_, err = tx.ExecContext(ctx, `INSERT INTO namespace_ownership(folder,namespace_id,chat_jid,namespace_epoch,created_at) VALUES(?,?,?,1,?)`, c.Folder, id, c.JID, c.AddedAt)
 		}
+		if err == nil {
+			err = seedNewGroupTrigger(ctx, tx, c.JID, id, c.AddedAt) // D048
+		}
 	}
 	if err != nil {
 		return fmt.Errorf("store: RegisterChat: %w", err)
