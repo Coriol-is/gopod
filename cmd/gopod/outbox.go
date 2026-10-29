@@ -23,7 +23,7 @@ func durableIPC(routeFlag, dispatcherRunning bool, st *store.Store, ownerFolder 
 	if !routeFlag || !dispatcherRunning || st == nil || ownerFolder == "" || ownerChatID <= 0 {
 		return ipc.DurableConfig{}
 	}
-	return ipc.DurableConfig{Store: st, PersonalJID: fmt.Sprintf("tg:%d", ownerChatID)}
+	return ipc.DurableConfig{PrepareText: telegram.PrepareIPCText, Store: st, PersonalJID: fmt.Sprintf("tg:%d", ownerChatID)}
 }
 
 // acquireOutboxOwner takes the exclusive outbox lock, retrying for up to wait

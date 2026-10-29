@@ -296,7 +296,12 @@ func (d *OutboxDispatcher) execute(attemptCtx context.Context, c store.OutboxCla
 		TargetMessageID: c.Part.TargetMessageID, ArtifactRef: c.Part.ArtifactRef,
 		NamespaceID: c.Conversation.Scope.NamespaceID, NamespaceEpoch: c.Conversation.Scope.NamespaceEpoch,
 	}
-	d.persist(c, d.attempt(attemptCtx, req))
+	out := d.attempt(attemptCtx, req)
+	if out.Kind == OutcomeRefused && out.Code == "parse_entities" && out.HTTPStatus == 400 && req.ParseMode == "HTML" && (req.Kind == store.PartText || req.Kind == store.PartEdit) {
+		d.plainFallback(attemptCtx, c, req, out)
+		return
+	}
+	d.persist(c, out)
 }
 
 // attempt makes the single transport call. A transport that ignores its
@@ -344,6 +349,10 @@ func awaitOutcome(ctx context.Context, res <-chan Outcome) Outcome {
 func (d *OutboxDispatcher) persist(c store.OutboxClaim, out Outcome) {
 	if out.Kind == OutcomeAck && out.RemoteMessageID <= 0 {
 		out = Outcome{Kind: OutcomeAmbiguous, Code: "malformed_reply"}
+	}
+	// The plain fallback is one-shot even after a known-unsent refusal.
+	if c.PlainFallback && (out.Kind == OutcomeRateLimited || out.Kind == OutcomeNotSent) {
+		out.Kind = OutcomeRefused
 	}
 	diag := out.diagnostic()
 	var err error
@@ -455,4 +464,27 @@ func chatIDFromJID(jid string) (int64, error) {
 		return 0, errors.New("not a telegram jid")
 	}
 	return strconv.ParseInt(rest, 10, 64)
+}
+
+// A separate capability keeps older/test backends conservative.
+func (d *OutboxDispatcher) plainFallback(ctx context.Context, c store.OutboxClaim, req SendRequest, refusal Outcome) {
+	backend, ok := d.backend.(interface {
+		BeginPlainFallback(context.Context, store.OutboxClaim) (store.OutboxClaim, error)
+	})
+	if !ok {
+		d.persist(c, refusal)
+		return
+	}
+	persistCtx, cancel := context.WithTimeout(context.Background(), d.cfg.PersistTimeout)
+	next, err := backend.BeginPlainFallback(persistCtx, c)
+	cancel()
+	if err != nil {
+		// A lost commit acknowledgement may have installed the next attempt. Never
+		// issue an API call or retry the transition on an unknown commit result.
+		d.persist(c, refusal)
+		return
+	}
+	req.Text = htmlToPlain(req.Text)
+	req.ParseMode = ""
+	d.persist(next, d.attempt(ctx, req))
 }

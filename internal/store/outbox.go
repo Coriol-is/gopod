@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/Coriol-is/gopod/internal/telegramhtml"
 	"strconv"
 	"time"
 )
@@ -165,9 +166,9 @@ func validatePublish(req PublishRequest, now int64) error {
 		ok := false
 		switch p.Kind {
 		case PartText:
-			ok = len(p.Payload) > 0 && p.ArtifactRef == "" && p.TargetMessageID == 0
+			ok = validTextPresentation(p) && len(p.Payload) > 0 && p.ArtifactRef == "" && p.TargetMessageID == 0
 		case PartEdit:
-			ok = len(p.Payload) > 0 && p.ArtifactRef == "" && p.TargetMessageID > 0
+			ok = validTextPresentation(p) && len(p.Payload) > 0 && p.ArtifactRef == "" && p.TargetMessageID > 0
 		case PartUpload:
 			// An upload has no parse mode; the only value is the host-only voice marker.
 			presentationOK := p.ParseMode == "" || (p.ParseMode == UploadPresentationVoice && req.voicePresentation)
@@ -531,4 +532,8 @@ func aggregateState(c map[string]int, total int) (string, bool) {
 	default:
 		return DeliveryCancelled, false
 	}
+}
+
+func validTextPresentation(p DeliveryPart) bool {
+	return p.ParseMode == "" || (p.ParseMode == "HTML" && telegramhtml.Valid(string(p.Payload)))
 }

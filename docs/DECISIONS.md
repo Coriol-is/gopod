@@ -1613,3 +1613,36 @@ through the guard, and unlabeled leftovers are replaced at startup. Open: a qual
 adapter for the task role, real-Docker inspection normalisation (fixture-verified only), native
 smoke, per-role IPC enforcement in the watcher (grants are declarative; authority is still the
 host namespace), report poll interval of 10 s plus a final sweep.
+
+
+## D045 — Personal IPC formatting and a recorded plain-text fallback
+
+**Date:** 2026-10-29
+**Status:** Accepted (owner's rich-message requirements, PR #82)
+
+**Decision.** The enabled owner-personal durable IPC route defaults to Markdown; explicit
+`format` accepts `markdown`, `html`, or `plain`. Legacy requests without rich fields remain
+literal. Explicit format/buttons/sticker fields are refused on unsupported routes; buttons
+and stickers are deferred and rejected on the formatting route too. Invalid format values
+produce persisted rejection receipts. HTML is sanitized, balanced and bounded before chunking
+and freezing. Unprovable markup becomes the original literal text. The internal pure-Go
+`telegramhtml` package shares canonical HTML validation between Telegram preparation and store
+admission, avoiding a dependency from the store to the Telegram bot. No external parser dependency.
+The conservative parser accepts well-formed XML-shaped HTML plus boolean `blockquote expandable`;
+unsupported tags become visible text, unsafe links lose their target, unknown entities or malformed
+nesting downgrade the whole message to plain. Markdown headings/lists/quotes/strike/spoilers and
+safe links extend foreground rendering while existing supported syntax keeps its output.
+
+**Supersedes the D037 no-second-call rule only in this case:** after an explicit 400 entity-parse
+refusal of an HTML text/edit part, the dispatcher may atomically close the refused attempt and
+create one plain-fallback attempt. `outbox_plain_fallbacks` binds that attempt to the part;
+its uniqueness prevents a second fallback. The store checks the fence, open claim, scope,
+expiry and total attempt budget. The original payload/parse mode/plan hash never change; the
+plain text is deterministically derived at dispatch. A failed/unknown commit never authorizes a
+send. A crash while the fallback is sending becomes uncertain on recovery, including acceptance
+without a persisted ack. No timeout/5xx/ambiguous result triggers fallback. The plain fallback is
+one-shot even on an explicit 429; it fails rather than creating a retry loop. Acknowledged fallback
+parts are identified as sent as plain text in diagnostics (until normal history compaction).
+
+**Limits.** Existing dispatcher/IPC flags only; no production activation or live acceptance is
+claimed. Buttons, sticker registry, thread targeting, and per-task format defaults are outside P1.

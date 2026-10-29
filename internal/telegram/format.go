@@ -8,18 +8,20 @@ import (
 
 // markdownToTelegramHTML converts Claude's markdown output to
 // Telegram-compatible HTML. Telegram's HTML mode supports:
-//   <b>bold</b>, <i>italic</i>, <code>inline code</code>,
-//   <pre>code block</pre>, <a href="url">text</a>
+//
+//	<b>bold</b>, <i>italic</i>, <code>inline code</code>,
+//	<pre>code block</pre>, <a href="url">text</a>
 //
 // This is simpler and more robust than MarkdownV2 which requires
 // escaping 18 special characters outside of entities.
 //
 // Handles:
-//   **bold** or __bold__  → <b>bold</b>
-//   *italic* or _italic_  → <i>italic</i>
-//   `inline code`         → <code>inline code</code>
-//   ```lang\ncode\n```    → <pre>code</pre>
-//   [text](url)           → <a href="url">text</a>
+//
+//	**bold** or __bold__  → <b>bold</b>
+//	*italic* or _italic_  → <i>italic</i>
+//	`inline code`         → <code>inline code</code>
+//	```lang\ncode\n```    → <pre>code</pre>
+//	[text](url)           → <a href="url">text</a>
 //
 // Everything else is HTML-escaped so <, >, & don't break rendering.
 func markdownToTelegramHTML(md string) string {
@@ -55,49 +57,80 @@ func finalReplyHTML(md string) string {
 // than collapseOver lines is wrapped in <blockquote expandable>;
 // collapseOver 0 never collapses.
 func renderMarkdown(md string, collapseOver int) string {
-	var result strings.Builder
 	lines := strings.Split(md, "\n")
-	last := len(lines) - 1
-
+	var result strings.Builder
 	for i := 0; i < len(lines); i++ {
-		line := lines[i]
-		if isFence(line) {
-			// The language identifier after ``` is dropped. A fence that is
-			// never closed runs to the end of the text.
-			end := i + 1
-			for end < len(lines) && !isFence(lines[end]) {
-				end++
-			}
-			body := lines[i+1 : end]
-			collapse := collapseOver > 0 && len(body) > collapseOver
-			if collapse {
-				result.WriteString("<blockquote expandable>")
-			}
-			result.WriteString("<pre>")
-			for k, l := range body {
-				result.WriteString(html.EscapeString(l))
-				if i+1+k < last {
-					result.WriteString("\n")
-				}
-			}
-			result.WriteString("</pre>")
-			if collapse {
-				result.WriteString("</blockquote>")
-			}
-			if end < last {
-				result.WriteString("\n")
-			}
-			i = end
-			continue
+		var rendered string
+		switch {
+		case isFence(lines[i]):
+			rendered, i = renderFence(lines, i, collapseOver)
+		case strings.HasPrefix(lines[i], "> "):
+			rendered, i = renderQuote(lines, i)
+		default:
+			rendered = renderMarkdownLine(lines[i])
 		}
-
-		// Process inline markdown on this line.
-		result.WriteString(processInlineMarkdown(html.EscapeString(line)))
-		if i < last {
-			result.WriteString("\n")
+		result.WriteString(rendered)
+		if i < len(lines)-1 {
+			result.WriteByte('\n')
 		}
 	}
 	return result.String()
+}
+
+func renderFence(lines []string, start, collapseOver int) (string, int) {
+	end := start + 1
+	for end < len(lines) && !isFence(lines[end]) {
+		end++
+	}
+	body := lines[start+1 : end]
+	var result strings.Builder
+	collapse := collapseOver > 0 && len(body) > collapseOver
+	if collapse {
+		result.WriteString("<blockquote expandable>")
+	}
+	result.WriteString("<pre>")
+	for k, line := range body {
+		result.WriteString(html.EscapeString(line))
+		if start+1+k < len(lines)-1 {
+			result.WriteByte('\n')
+		}
+	}
+	result.WriteString("</pre>")
+	if collapse {
+		result.WriteString("</blockquote>")
+	}
+	return result.String(), end
+}
+
+func renderQuote(lines []string, start int) (string, int) {
+	end := start
+	for end+1 < len(lines) && strings.HasPrefix(lines[end+1], "> ") {
+		end++
+	}
+	var result strings.Builder
+	if end-start+1 > collapseOverLines {
+		result.WriteString("<blockquote expandable>")
+	} else {
+		result.WriteString("<blockquote>")
+	}
+	for i := start; i <= end; i++ {
+		if i > start {
+			result.WriteByte('\n')
+		}
+		result.WriteString(processInlineMarkdown(html.EscapeString(lines[i][2:])))
+	}
+	result.WriteString("</blockquote>")
+	return result.String(), end
+}
+
+func renderMarkdownLine(line string) string {
+	if body, ok := markdownHeading(line); ok {
+		return "<b>" + processInlineMarkdown(html.EscapeString(body)) + "</b>"
+	}
+	if strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ") || strings.HasPrefix(line, "+ ") {
+		line = "• " + line[2:]
+	}
+	return processInlineMarkdown(html.EscapeString(line))
 }
 
 // isFence reports whether line opens or closes a fenced code block.
@@ -121,19 +154,21 @@ func processInlineMarkdown(line string) string {
 			break
 		}
 		end += start + 1
-		result.WriteString(applyEmphasis(line[:start]))
+		result.WriteString(applyInlineLinks(line[:start]))
 		result.WriteString("<code>")
 		result.WriteString(line[start+1 : end])
 		result.WriteString("</code>")
 		line = line[end+1:]
 	}
-	result.WriteString(applyEmphasis(line))
+	result.WriteString(applyInlineLinks(line))
 	return result.String()
 }
 
 // applyEmphasis converts bold/italic markers on a segment that is
 // guaranteed to contain no inline code spans.
 func applyEmphasis(s string) string {
+	s = replaceDelimited(s, "~~", "<s>", "</s>")
+	s = replaceDelimited(s, "||", "<tg-spoiler>", "</tg-spoiler>")
 	// Bold: **text** → <b>text</b>
 	s = replaceDelimited(s, "**", "<b>", "</b>")
 
@@ -184,4 +219,36 @@ var htmlTagRe = regexp.MustCompile(`<[^>]*>`)
 // Telegram rejected.
 func htmlToPlain(s string) string {
 	return html.UnescapeString(htmlTagRe.ReplaceAllString(s, ""))
+}
+
+func markdownHeading(line string) (string, bool) {
+	n := 0
+	for n < len(line) && line[n] == '#' {
+		n++
+	}
+	if n < 1 || n > 6 || n >= len(line) || line[n] != ' ' {
+		return "", false
+	}
+	return strings.TrimSpace(line[n+1:]), true
+}
+
+var markdownLinkRe = regexp.MustCompile(`\[([^\]\n]+)\]\(([^)\s]+)\)`)
+
+func applyInlineLinks(text string) string {
+	var out strings.Builder
+	last := 0
+	for _, m := range markdownLinkRe.FindAllStringSubmatchIndex(text, -1) {
+		out.WriteString(applyEmphasis(text[last:m[0]]))
+		label := applyEmphasis(text[m[2]:m[3]])
+		target := html.UnescapeString(text[m[4]:m[5]])
+		clean, ok := sanitizeTelegramHTML(`<a href="` + html.EscapeString(target) + `">` + label + `</a>`)
+		if ok {
+			out.WriteString(clean)
+		} else {
+			out.WriteString(label)
+		}
+		last = m[1]
+	}
+	out.WriteString(applyEmphasis(text[last:]))
+	return out.String()
 }

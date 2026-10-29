@@ -29,8 +29,11 @@ func (w *Watcher) finishMessage(folder, path string, outcome messageOutcome) boo
 }
 
 type messagePayload struct {
-	ChatJID string `json:"chatJid"`
-	Text    string `json:"text"`
+	ChatJID string          `json:"chatJid"`
+	Text    string          `json:"text"`
+	Format  json.RawMessage `json:"format"`
+	Buttons json.RawMessage `json:"buttons"`
+	Sticker json.RawMessage `json:"sticker"`
 }
 
 // processMessageFile parses one messages/*.json and dispatches it.
@@ -84,6 +87,9 @@ func (w *Watcher) processMessageFile(ctx context.Context, folder, path string) (
 	}
 	if w.durableEligible(folder, p.ChatJID) {
 		return w.processDurable(ctx, folder, path, raw, p)
+	}
+	if p.Format != nil || p.Buttons != nil || p.Sticker != nil {
+		return w.finishRejected(folder, path, "rich_format_unavailable")
 	}
 	if err := authzMessage(folder, p.ChatJID, w.cfg.OwnerFolder, w.resolve); err != nil {
 		return fail(err)
