@@ -38,6 +38,7 @@ type ConversationSource interface {
 type UploadLedger interface {
 	ClaimGenerationUpload(ctx context.Context, id string) error
 	FinishGenerationUpload(ctx context.Context, id, outcome string) error
+	ReleaseGenerationUpload(ctx context.Context, id string) error
 }
 
 // PreparedDelivery is the host wiring of immutable preparation for the
@@ -130,8 +131,13 @@ func (b *Bot) preparedVoiceReply(ctx context.Context, item queue.Item, spoken st
 		b.log.Warn("voice not prepared: no personal scope", slog.Any("err", err))
 		return
 	}
-	b.chatAction(ctx, item.ChatID, item.ThreadID, models.ChatActionRecordVoice)
-	prepared, err := pd.Speech.Prepare(ctx, SpeechRequest{Conversation: conv, IntentKey: voiceIntentKey(item, spoken), Text: spoken})
+	// Legacy sends the same legacy-truncated text (on a rune boundary here), so
+	// a long reply is neither refused by the cost bound nor keyed differently.
+	spoken = truncateSpeech(spoken)
+	// The "recording voice" indicator shows only once a paid call really starts:
+	// after authorization, credential and ledger checks (BeforeCall).
+	prepared, err := pd.Speech.Prepare(ctx, SpeechRequest{Conversation: conv, IntentKey: voiceIntentKey(item, spoken), Text: spoken,
+		BeforeCall: func() { b.chatAction(ctx, item.ChatID, item.ThreadID, models.ChatActionRecordVoice) }})
 	switch {
 	case err == nil:
 	case errors.Is(err, ErrSpeechNoCredential):
@@ -140,8 +146,14 @@ func (b *Bot) preparedVoiceReply(ctx context.Context, item queue.Item, spoken st
 		b.log.Warn("voice not prepared", slog.String("kind", speechErrKind(err)))
 		return
 	}
-	release := func() { pd.Speech.bytesPrep().release(ctx, prepared.PreparationID, "voice_done") }
-	defer release()
+	// A claim released before the API call keeps the paid clip for a retry, so
+	// its preparation must not be abandoned then.
+	keep := false
+	defer func() {
+		if !keep {
+			pd.Speech.bytesPrep().release(ctx, prepared.PreparationID, "voice_done")
+		}
+	}()
 
 	// At most one direct upload per generation, claimed before the API call.
 	if err = pd.Uploads.ClaimGenerationUpload(ctx, prepared.GenerationID); err != nil {
@@ -154,14 +166,20 @@ func (b *Bot) preparedVoiceReply(ctx context.Context, item queue.Item, spoken st
 	}
 	audio, err := b.readClip(ctx, prepared)
 	if err != nil {
-		b.finishUpload(ctx, prepared.GenerationID, store.UploadRefused) // nothing reached Telegram
+		keep = b.releaseUpload(ctx, prepared.GenerationID) // nothing reached Telegram: a retry may still send the paid clip
 		b.log.Warn("voice clip unreadable; not sent", slog.Any("err", err))
 		return
 	}
 	if err = b.sendVoiceReply(ctx, item.ChatID, item.ThreadID, item.MessageID, audio); err != nil {
 		outcome := store.UploadRefused
-		if classifySend(nil, err, 0).Kind == OutcomeAmbiguous {
+		switch classifySend(nil, err, 0).Kind {
+		case OutcomeAmbiguous:
 			outcome = store.UploadUnknown
+		case OutcomeNotSent:
+			// The connection was never made: provably before the API call.
+			keep = b.releaseUpload(ctx, prepared.GenerationID)
+			b.log.Warn("send voice reply failed before dispatch; claim released")
+			return
 		}
 		b.finishUpload(ctx, prepared.GenerationID, outcome)
 		b.log.Warn("send voice reply failed", slog.String("upload", outcome))
@@ -177,6 +195,16 @@ func (b *Bot) readClip(ctx context.Context, p PreparedSpeech) ([]byte, error) {
 		return nil, ErrAudioUnavailable
 	}
 	return b.prepared.Blobs.ReadVerified(a.BlobKey, a.Size, a.SHA256, b.prepared.Speech.bytesPrep().maxBytes)
+}
+
+func (b *Bot) releaseUpload(ctx context.Context, id string) bool {
+	wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), terminalWriteTimeout)
+	defer cancel()
+	if err := b.prepared.Uploads.ReleaseGenerationUpload(wctx, id); err != nil {
+		b.log.Error("release voice upload claim", slog.Any("err", err))
+		return false
+	}
+	return true
 }
 
 func (b *Bot) finishUpload(ctx context.Context, id, outcome string) {

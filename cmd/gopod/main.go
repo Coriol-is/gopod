@@ -60,6 +60,7 @@ func main() {
 }
 
 func run() error {
+	processStart := time.Now()
 	dotenv := flag.Bool("dotenv", true, "load .env from the working directory if present")
 	flag.Parse()
 
@@ -664,10 +665,13 @@ func run() error {
 					}
 				}
 			}
+			// Synchronous, before tgBot.Run starts below: rows older than this
+			// process are the only ones a restart may flip to unknown.
+			sweepGenerationsAtStartup(ctx, st, processStart, ipcLog)
 			subsystems.Add(1)
 			go func() {
 				defer subsystems.Done()
-				maintainGenerations(ctx, st, 5*time.Minute, reconcile, ipcLog)
+				maintainGenerations(ctx, st, 5*time.Minute, time.Duration(cfg.GenerationRetentionDays)*24*time.Hour, reconcile, ipcLog)
 			}()
 		}
 		ipcMsgs := telegram.NewIPCSink(tgBot)

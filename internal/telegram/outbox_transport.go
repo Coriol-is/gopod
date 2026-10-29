@@ -144,6 +144,9 @@ func (t *botTransport) Attempt(ctx context.Context, req SendRequest) Outcome {
 		if t.artifacts == nil {
 			return refused("upload_unavailable")
 		}
+		if req.ParseMode != "" && req.ParseMode != store.UploadPresentationVoice {
+			return refused("invalid_presentation")
+		}
 		name, data, err := t.artifacts.OpenArtifact(ctx, req.ArtifactRef, req.NamespaceID, req.NamespaceEpoch)
 		if c, ok := data.(io.Closer); ok && c != nil {
 			defer c.Close()

@@ -98,6 +98,10 @@ type PublishRequest struct {
 	Parts        []DeliveryPart
 	ExpiresAt    int64            // unix ms; zero means DefaultDeliveryExpiry from now
 	Request      *RequestIdentity // optional
+
+	// voicePresentation is set only by PublishVoiceDeliveryWithArtifacts, so
+	// the voice upload marker cannot come from a generic or untrusted route.
+	voicePresentation bool
 }
 
 // OutboxPart is a stored part with its dispatch state.
@@ -165,7 +169,9 @@ func validatePublish(req PublishRequest, now int64) error {
 		case PartEdit:
 			ok = len(p.Payload) > 0 && p.ArtifactRef == "" && p.TargetMessageID > 0
 		case PartUpload:
-			ok = len(p.Payload) <= MaxUploadCaptionBytes && p.ArtifactRef != "" && p.TargetMessageID == 0
+			// An upload has no parse mode; the only value is the host-only voice marker.
+			presentationOK := p.ParseMode == "" || (p.ParseMode == UploadPresentationVoice && req.voicePresentation)
+			ok = presentationOK && len(p.Payload) <= MaxUploadCaptionBytes && p.ArtifactRef != "" && p.TargetMessageID == 0
 		}
 		if !ok {
 			return fmt.Errorf("%w: part %d (%q) is malformed", ErrInvalidDelivery, i, p.Kind)

@@ -257,3 +257,12 @@ func TestDescribeVoiceDeliveryNeverReadsUncertainAsDelivered(t *testing.T) {
 		}
 	}
 }
+
+func TestTransportRefusesUnknownUploadPresentation(t *testing.T) {
+	api := &fakeAPI{msg: &models.Message{ID: 1}}
+	tr := &botTransport{api: api, artifacts: &SnapshotOpener{}}
+	out := tr.Attempt(t.Context(), SendRequest{Kind: store.PartUpload, ChatID: 1, ParseMode: "HTML", ArtifactRef: "artifact:x"})
+	if out.Kind != OutcomeRefused || out.Code != "invalid_presentation" || api.docs+api.voices != 0 {
+		t.Fatalf("outcome %+v", out)
+	}
+}

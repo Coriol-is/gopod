@@ -38,7 +38,7 @@ type VoiceReplyPlan struct {
 
 // VoicePublisher is the part of the store that publishes a plan with its artifact.
 type VoicePublisher interface {
-	PublishDeliveryWithArtifacts(ctx context.Context, req store.PublishRequest, prep string) (store.Delivery, error)
+	PublishVoiceDeliveryWithArtifacts(ctx context.Context, req store.PublishRequest, prep string) (store.Delivery, error)
 }
 
 // PublishRequest builds the store request: text parts first, then one upload
@@ -86,7 +86,7 @@ func PublishVoiceReply(ctx context.Context, pub VoicePublisher, plan VoiceReplyP
 	if plan.Speech.PreparationID == "" {
 		return store.Delivery{}, errors.New("voice plan: clip has no preparation")
 	}
-	return pub.PublishDeliveryWithArtifacts(ctx, req, plan.Speech.PreparationID)
+	return pub.PublishVoiceDeliveryWithArtifacts(ctx, req, plan.Speech.PreparationID)
 }
 
 // VoiceDeliveryStatus is the truthful, user-facing state of a spoken reply.

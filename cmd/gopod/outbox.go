@@ -113,20 +113,42 @@ func preparedDelivery(cfg config.Config, st *store.Store, blobs *artifactfs.Blob
 // sweep records its outcome as unknown. It is longer than any backend timeout.
 const generationGrace = 10 * time.Minute
 
-// maintainGenerations records unknown outcomes. At startup nothing in this
-// process can still be calling a backend (the outbox lock is held), so every
-// in-progress row is swept at once; afterwards only rows older than the grace
-// period. reconcile, when non-nil, also runs artifact reconciliation on the
-// same cadence (set only when the IPC watcher does not already do it).
-func maintainGenerations(ctx context.Context, st *store.Store, every time.Duration, reconcile func(context.Context), log *slog.Logger) {
-	sweep := func(grace time.Duration) {
-		if n, err := st.SweepGenerations(ctx, grace); err != nil {
+// sweepGenerationsAtStartup records an unknown outcome for every ledger row an
+// earlier process left in progress. It must run synchronously before the bot
+// polls or the scheduler starts, with cutoff = this process's start, so it can
+// never flip a generation this process began.
+func sweepGenerationsAtStartup(ctx context.Context, st *store.Store, processStart time.Time, log *slog.Logger) {
+	n, err := st.SweepGenerationsBefore(ctx, processStart)
+	switch {
+	case err != nil:
+		log.Warn("startup sweep of the generated-artifact ledger", slog.Any("err", err))
+	case n > 0:
+		log.Warn("generated-artifact outcomes recorded as unknown", slog.Int("count", n))
+	}
+}
+
+// maintainGenerations is the periodic part: a live sweep (rows older than the
+// grace period), the retention purge of finished rows and, when non-nil,
+// artifact reconciliation (set only when the IPC watcher does not do it).
+func maintainGenerations(ctx context.Context, st *store.Store, every, retention time.Duration, reconcile func(context.Context), log *slog.Logger) {
+	if retention <= 0 {
+		retention = store.DefaultGenerationRetention
+	}
+	tick := func() {
+		if n, err := st.SweepGenerations(ctx, generationGrace); err != nil {
 			log.Warn("sweep generated-artifact ledger", slog.Any("err", err))
 		} else if n > 0 {
 			log.Warn("generated-artifact outcomes recorded as unknown", slog.Int("count", n))
 		}
+		if n, err := st.PurgeGenerations(ctx, retention, 500); err != nil {
+			log.Warn("purge generated-artifact ledger", slog.Any("err", err))
+		} else if n > 0 {
+			log.Info("generated-artifact ledger purged", slog.Int("rows", n))
+		}
+		if reconcile != nil {
+			reconcile(ctx)
+		}
 	}
-	sweep(0)
 	if reconcile != nil {
 		reconcile(ctx)
 	}
@@ -137,10 +159,7 @@ func maintainGenerations(ctx context.Context, st *store.Store, every time.Durati
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			sweep(generationGrace)
-			if reconcile != nil {
-				reconcile(ctx)
-			}
+			tick()
 		}
 	}
 }

@@ -1373,6 +1373,23 @@ clip that is never published expires with its reservation (one hour) and is neve
 Same-process crash windows between the ledger write and the artifact write are covered by the
 startup sweep, not by fault injection at every boundary.
 
+**Review amendments (2026-10-29).** (1) The restart sweep (`SweepGenerationsBefore`) runs
+synchronously before the bot polls and only flips rows created before this process started; a
+generation begun after the restart is never marked unknown. (2) Long replies are truncated to the
+legacy 4000 bytes before authorization and keying, on a rune boundary (the legacy cut,
+`text[:4000]`, can split a multi-byte character and is kept unchanged on the legacy path); a reply
+over 4000 characters is therefore spoken, not refused by the cost bound. (3) A claim is released
+(`claimed` to `none`, keeping the preparation) only for a failure provably before the Telegram API
+call (clip unreadable, connection never made); anything that may have reached the API stays
+`claimed` until it finishes as `unknown`. (4) The "recording voice" indicator is sent immediately
+before a real backend call, after authorization, credential and ledger checks. (5) The voice upload
+marker is accepted only by `Store.PublishVoiceDeliveryWithArtifacts` (an unexported request flag);
+every other publish path and the transport reject any other upload `ParseMode`. (6) Finished ledger
+rows are purged after `GOPOD_GENERATION_RETENTION_DAYS` (default 30): a failed or unknown row
+guards a key against a second paid call, and keys embed the turn id and a text digest and are never
+replayed days later, so it is kept exactly as long as a ready row; rows with an upload in flight
+are never purged.
+
 **Consequences.** A paid TTS call can happen at most once per intent, and what happened is durable.
 A failed or unknown voice leaves the text reply untouched, as today. PR 6 can switch foreground
 delivery to `PublishVoiceReply` without changing preparation.

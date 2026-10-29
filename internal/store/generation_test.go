@@ -109,6 +109,7 @@ func TestSweepGenerationsOnlyTouchesInProgress(t *testing.T) {
 	if n, err := f.st.SweepGenerations(ctx, time.Hour); err != nil || n != 0 {
 		t.Fatalf("young sweep = %d, %v", n, err)
 	}
+	time.Sleep(5 * time.Millisecond)
 	if n, err := f.st.SweepGenerations(ctx, 0); err != nil || n != 1 {
 		t.Fatalf("sweep = %d, %v", n, err)
 	}
@@ -156,11 +157,89 @@ func TestSweepTurnsAbandonedUploadClaimIntoUnknown(t *testing.T) {
 	g, _, _ := f.st.BeginGeneration(ctx, f.conv.Scope, GenerationVoice, "k", "b")
 	_ = f.st.CompleteGeneration(ctx, g.ID, "art")
 	_ = f.st.ClaimGenerationUpload(ctx, g.ID)
+	time.Sleep(5 * time.Millisecond)
 	if n, err := f.st.SweepGenerations(ctx, 0); err != nil || n != 1 {
 		t.Fatalf("sweep = %d, %v", n, err)
 	}
 	got, _ := f.st.GetGeneration(ctx, g.ID)
 	if got.UploadState != UploadUnknown {
 		t.Fatalf("upload state = %s", got.UploadState)
+	}
+}
+
+func TestVoiceMarkerIsOnlyAcceptedByTheVoicePublishPath(t *testing.T) {
+	f := newDeliveryFixture(t)
+	mk := func(mode string) (PublishRequest, Preparation) {
+		p := f.reserve(1, 100)
+		f.ready(p, 10)
+		req := PublishRequest{Conversation: f.conv, Owner: OwnerLegacyAgentIPC, Parts: []DeliveryPart{
+			{Kind: PartUpload, ArtifactRef: ArtifactRef(p.ArtifactIDs[0]), ParseMode: mode}}}
+		return req, p
+	}
+	req, p := mk(UploadPresentationVoice)
+	if _, err := f.st.PublishDeliveryWithArtifacts(t.Context(), req, p.ID); !errors.Is(err, ErrInvalidDelivery) {
+		t.Fatalf("generic path accepted the voice marker: %v", err)
+	}
+	req, p = mk("HTML")
+	if _, err := f.st.PublishVoiceDeliveryWithArtifacts(t.Context(), req, p.ID); !errors.Is(err, ErrInvalidDelivery) {
+		t.Fatalf("other upload parse mode accepted: %v", err)
+	}
+	req, p = mk(UploadPresentationVoice)
+	if _, err := f.st.PublishVoiceDeliveryWithArtifacts(t.Context(), req, p.ID); err != nil {
+		t.Fatalf("voice path: %v", err)
+	}
+}
+
+func TestPurgeGenerationsKeepsRecentAndInFlightRows(t *testing.T) {
+	f := newDeliveryFixture(t)
+	ctx := t.Context()
+	mk := func(key string) Generation {
+		g, _, _ := f.st.BeginGeneration(ctx, f.conv.Scope, GenerationVoice, key, "b")
+		return g
+	}
+	inflight := mk("inflight")
+	failed := mk("failed")
+	unknown := mk("unknown")
+	claimed := mk("claimed")
+	_ = f.st.FailGeneration(ctx, failed.ID, "refused")
+	_ = f.st.MarkGenerationUnknown(ctx, unknown.ID, "timeout")
+	_ = f.st.CompleteGeneration(ctx, claimed.ID, "art")
+	_ = f.st.ClaimGenerationUpload(ctx, claimed.ID)
+	if n, err := f.st.PurgeGenerations(ctx, time.Hour, 10); err != nil || n != 0 {
+		t.Fatalf("recent purge = %d, %v", n, err)
+	}
+	time.Sleep(20 * time.Millisecond)
+	n, err := f.st.PurgeGenerations(ctx, 10*time.Millisecond, 10)
+	if err != nil || n != 2 {
+		t.Fatalf("purge = %d, %v (want failed+unknown)", n, err)
+	}
+	for _, id := range []string{inflight.ID, claimed.ID} {
+		if _, err = f.st.GetGeneration(ctx, id); err != nil {
+			t.Fatalf("in-flight row purged: %v", err)
+		}
+	}
+	if _, err = f.st.PurgeGenerations(ctx, 0, 10); !errors.Is(err, ErrInvalidGeneration) {
+		t.Fatalf("zero age = %v", err)
+	}
+}
+
+func TestSweepGenerationsBeforeLeavesNewerRows(t *testing.T) {
+	f := newDeliveryFixture(t)
+	ctx := t.Context()
+	cutoff := time.Now().Add(-time.Hour)
+	g, _, _ := f.st.BeginGeneration(ctx, f.conv.Scope, GenerationVoice, "k", "b")
+	if n, _ := f.st.SweepGenerationsBefore(ctx, cutoff); n != 0 {
+		t.Fatalf("swept %d newer rows", n)
+	}
+	_ = f.st.CompleteGeneration(ctx, g.ID, "a")
+	_ = f.st.ClaimGenerationUpload(ctx, g.ID)
+	if err := f.st.ReleaseGenerationUpload(ctx, g.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.st.ReleaseGenerationUpload(ctx, g.ID); !errors.Is(err, ErrGenerationState) {
+		t.Fatalf("second release = %v", err)
+	}
+	if err := f.st.ClaimGenerationUpload(ctx, g.ID); err != nil {
+		t.Fatalf("reclaim after release: %v", err)
 	}
 }

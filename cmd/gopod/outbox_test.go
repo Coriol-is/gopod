@@ -115,9 +115,8 @@ func TestPreparedDeliveryNeedsAnOwnerChat(t *testing.T) {
 	}
 }
 
-func TestMaintainGenerationsSweepsAtStartupThenOnlyOldRows(t *testing.T) {
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
+func TestStartupSweepOnlyFlipsRowsOlderThanTheProcess(t *testing.T) {
+	ctx := t.Context()
 	st, err := store.Open(ctx, filepath.Join(t.TempDir(), "s.sqlite"), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
@@ -130,20 +129,56 @@ func TestMaintainGenerationsSweepsAtStartupThenOnlyOldRows(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	g, _, err := st.BeginGeneration(ctx, conv.Scope, store.GenerationVoice, "k", "b")
+	old, _, _ := st.BeginGeneration(ctx, conv.Scope, store.GenerationVoice, "old", "b")
+	time.Sleep(10 * time.Millisecond)
+	processStart := time.Now()
+	time.Sleep(10 * time.Millisecond)
+	live, _, _ := st.BeginGeneration(ctx, conv.Scope, store.GenerationVoice, "live", "b") // begun by this process
+	sweepGenerationsAtStartup(ctx, st, processStart, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if g, _ := st.GetGeneration(ctx, old.ID); g.State != store.GenerationUnknown {
+		t.Fatalf("old row = %+v", g)
+	}
+	if g, _ := st.GetGeneration(ctx, live.ID); g.State != store.GenerationGenerating {
+		t.Fatalf("a live generation was flipped: %+v", g)
+	}
+}
+
+func TestMaintainGenerationsPurgesFinishedRowsAndReconciles(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	st, err := store.Open(ctx, filepath.Join(t.TempDir(), "s.sqlite"), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	reconciled := make(chan struct{}, 4)
+	defer st.Close()
+	if err = st.RegisterChat(ctx, store.RegisteredChat{JID: "tg:1", Folder: "owner", IsOwner: true, AddedAt: 1}); err != nil {
+		t.Fatal(err)
+	}
+	conv, _ := st.SnapshotConversation(ctx, "tg:1", 0, store.VisibilityConversation)
+	g, _, _ := st.BeginGeneration(ctx, conv.Scope, store.GenerationVoice, "k", "b")
+	_ = st.FailGeneration(ctx, g.ID, "refused")
+	time.Sleep(30 * time.Millisecond)
+	reconciled := make(chan struct{}, 8)
 	done := make(chan struct{})
 	go func() {
-		maintainGenerations(ctx, st, 20*time.Millisecond, func(context.Context) { reconciled <- struct{}{} }, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		maintainGenerations(ctx, st, 20*time.Millisecond, 10*time.Millisecond, func(context.Context) { reconciled <- struct{}{} }, slog.New(slog.NewTextHandler(io.Discard, nil)))
 		close(done)
 	}()
-	<-reconciled
-	got, err := st.GetGeneration(ctx, g.ID)
-	if err != nil || got.State != store.GenerationUnknown {
-		t.Fatalf("generation after startup sweep = %+v, %v", got, err)
+	deadline := time.After(3 * time.Second)
+	for {
+		if _, err := st.GetGeneration(ctx, g.ID); errors.Is(err, store.ErrGenerationNotFound) {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("finished row was not purged")
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+	select {
+	case <-reconciled:
+	default:
+		t.Fatal("reconcile did not run")
 	}
 	cancel()
 	<-done

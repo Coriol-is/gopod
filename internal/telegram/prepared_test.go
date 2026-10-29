@@ -8,8 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/Coriol-is/gopod/internal/artifactfs"
+	"github.com/Coriol-is/gopod/internal/queue"
 	"github.com/Coriol-is/gopod/internal/store"
 )
 
@@ -272,4 +274,95 @@ func TestPreparedCodeDocumentLeavesGroupsOnTheLegacyPath(t *testing.T) {
 		t.Fatalf("a group reply reserved artifact bytes: %d/%d", ns, global)
 	}
 	_ = item
+}
+
+// ---- review follow-ups ----
+
+type failingRead struct{ SnapshotWriter }
+
+func (failingRead) ReadVerified(string, int64, string, int64) ([]byte, error) {
+	return nil, io.ErrUnexpectedEOF
+}
+
+func voiceBot(t *testing.T, key string) (*Bot, queue.Item, *fakeTelegram, *ttsRecorder, *PreparedDelivery) {
+	t.Helper()
+	t.Setenv("OPENAI_API_KEY", key)
+	SetReplyMode(streamChat, "voice")
+	t.Cleanup(func() { SetReplyMode(streamChat, "") })
+	fake := voiceFake(false)
+	b, item := newStreamFixture(t, fake)
+	rec := &ttsRecorder{audio: []byte("OggS-audio")}
+	return b, item, fake, rec, enablePrepared(t, b, recSpeech{rec})
+}
+
+func TestPreparedVoiceUnreadableClipReleasesTheClaimSoARetryCanSend(t *testing.T) {
+	b, item, fake, rec, pd := voiceBot(t, "k")
+	real := pd.Blobs
+	pd.Blobs = failingRead{real}
+	b.maybeVoiceReply(context.Background(), item, "Hello there")
+	if len(fake.callsTo("sendVoice")) != 0 || rec.calls() != 1 {
+		t.Fatalf("sendVoice=%d tts=%d", len(fake.callsTo("sendVoice")), rec.calls())
+	}
+	conv, _ := b.personalConversation(context.Background(), item.ChatID, item.ThreadID)
+	g, _, _ := b.store.BeginGeneration(context.Background(), conv.Scope, store.GenerationVoice, voiceIntentKey(item, "Hello there"), "fake-tts")
+	if g.UploadState != store.UploadNone {
+		t.Fatalf("upload state = %q, want none (released)", g.UploadState)
+	}
+	// The retry sends the already-paid clip without a second TTS call.
+	pd.Blobs = real
+	b.maybeVoiceReply(context.Background(), item, "Hello there")
+	if len(fake.callsTo("sendVoice")) != 1 || rec.calls() != 1 {
+		t.Fatalf("retry: sendVoice=%d tts=%d, want 1 and 1", len(fake.callsTo("sendVoice")), rec.calls())
+	}
+}
+
+func TestPreparedVoiceShowsTheRecordingIndicatorOnlyWhenACallStarts(t *testing.T) {
+	b, item, fake, _, pd := voiceBot(t, "")
+	b.maybeVoiceReply(context.Background(), item, "Hello there") // no credential
+	if n := len(fake.callsTo("sendChatAction")); n != 0 {
+		t.Fatalf("indicator without a credential: %d", n)
+	}
+	pd.Speech.Policy.Grants[0].MaxChars = 1 // unauthorized (cost bound)
+	t.Setenv("OPENAI_API_KEY", "k")
+	b.maybeVoiceReply(context.Background(), item, "Hello there")
+	if n := len(fake.callsTo("sendChatAction")); n != 0 {
+		t.Fatalf("indicator when unauthorized: %d", n)
+	}
+	pd.Speech.Policy.Grants[0].MaxChars = 4000
+	b.maybeVoiceReply(context.Background(), item, "Hello there")
+	if n := len(fake.callsTo("sendChatAction")); n != 1 {
+		t.Fatalf("indicator on a real call: %d", n)
+	}
+	// A repeat finds the recorded intent: no call, no indicator.
+	b.maybeVoiceReply(context.Background(), item, "Hello there")
+	if n := len(fake.callsTo("sendChatAction")); n != 1 {
+		t.Fatalf("indicator on a repeat: %d", n)
+	}
+}
+
+func TestPreparedVoiceSpeaksLongRepliesTruncatedLikeLegacy(t *testing.T) {
+	b, item, fake, rec, _ := voiceBot(t, "k")
+	long := strings.Repeat("a", 5000)
+	b.maybeVoiceReply(context.Background(), item, long)
+	if rec.calls() != 1 || len(rec.texts[0]) != 4000 || len(fake.callsTo("sendVoice")) != 1 {
+		t.Fatalf("tts=%d len=%d voice=%d", rec.calls(), len(rec.texts[0]), len(fake.callsTo("sendVoice")))
+	}
+}
+
+func TestSpeechTruncationSemantics(t *testing.T) {
+	ascii := strings.Repeat("a", 5000)
+	if got := legacySpeechInput(ascii); len(got) != 4000 || truncateSpeech(ascii) != got {
+		t.Fatal("ascii truncation differs")
+	}
+	short := "héllo"
+	if legacySpeechInput(short) != short || truncateSpeech(short) != short {
+		t.Fatal("short text changed")
+	}
+	euro := strings.Repeat("€", 2000) // 6000 bytes; byte 4000 falls inside a character
+	if l := legacySpeechInput(euro); len(l) != 4000 || utf8.ValidString(l) {
+		t.Fatalf("legacy cut changed: len=%d valid=%v", len(l), utf8.ValidString(l))
+	}
+	if p := truncateSpeech(euro); len(p) != 3999 || !utf8.ValidString(p) || !strings.HasPrefix(legacySpeechInput(euro), p) {
+		t.Fatalf("prepared cut len=%d valid=%v", len(p), utf8.ValidString(p))
+	}
 }

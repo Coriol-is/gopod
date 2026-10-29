@@ -173,6 +173,9 @@ type SpeechRequest struct {
 	Conversation store.ConversationScope
 	IntentKey    string
 	Text         string
+	// BeforeCall, when set, runs once immediately before the backend call, after
+	// authorization, the credential and the ledger have allowed it.
+	BeforeCall func()
 }
 
 // PreparedSpeech is a ready clip. Reused is true when an earlier call already
@@ -262,6 +265,9 @@ func (p *SpeechPreparer) Prepare(ctx context.Context, req SpeechRequest) (Prepar
 	}
 
 	// 4. The one backend call. No transaction is open.
+	if req.BeforeCall != nil {
+		req.BeforeCall()
+	}
 	timeout := p.CallTimeout
 	if timeout <= 0 {
 		timeout = defaultSpeechTimeout

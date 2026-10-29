@@ -235,6 +235,23 @@ func (s *Store) ClaimGenerationUpload(ctx context.Context, id string) error {
 	return nil
 }
 
+// ReleaseGenerationUpload returns a claim to none. It is only for a failure
+// that provably happened before the Telegram API call (the clip could not be
+// read, the connection was never made), so a retry may still send the clip that
+// was already paid for. Anything that may have reached the API must finish as
+// unknown instead.
+func (s *Store) ReleaseGenerationUpload(ctx context.Context, id string) error {
+	res, err := s.taskDB(ctx).ExecContext(ctx, `UPDATE generated_preparations SET upload_state='none',updated_at=? WHERE generation_id=? AND upload_state='claimed'`,
+		time.Now().UnixMilli(), id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrGenerationState
+	}
+	return nil
+}
+
 // FinishGenerationUpload records what the one claimed upload proved: sent
 // (acknowledged), refused (an explicit refusal) or unknown (anything else).
 func (s *Store) FinishGenerationUpload(ctx context.Context, id, outcome string) error {
@@ -253,22 +270,52 @@ func (s *Store) FinishGenerationUpload(ctx context.Context, id, outcome string) 
 }
 
 // SweepGenerations turns every generation still in progress, and every upload
-// claimed without an outcome, that is older than olderThan into unknown. At startup nothing can still be running in
-// this process, so olderThan is zero; a live sweep passes a grace period longer
-// than any backend timeout. It never starts a call and never deletes a row.
+// claimed without an outcome, that is older than olderThan into unknown. It
+// never starts a call and never deletes a row.
 func (s *Store) SweepGenerations(ctx context.Context, olderThan time.Duration) (int, error) {
+	return s.SweepGenerationsBefore(ctx, time.Now().Add(-olderThan))
+}
+
+// SweepGenerationsBefore is the restart sweep: with cutoff set to the start of
+// this process it records an unknown outcome for rows an earlier process left
+// in progress, and leaves every row this process created (strictly after the
+// cutoff) alone, so a live generation after a restart is never flipped.
+func (s *Store) SweepGenerationsBefore(ctx context.Context, cutoff time.Time) (int, error) {
 	now := time.Now().UnixMilli()
-	res, err := s.taskDB(ctx).ExecContext(ctx, `UPDATE generated_preparations SET state='preparation_unknown',reason_code='interrupted',updated_at=? WHERE state='generating' AND created_at<=?`,
-		now, now-olderThan.Milliseconds())
+	c := cutoff.UnixMilli()
+	res, err := s.taskDB(ctx).ExecContext(ctx, `UPDATE generated_preparations SET state='preparation_unknown',reason_code='interrupted',updated_at=? WHERE state='generating' AND created_at<?`, now, c)
 	if err != nil {
 		return 0, err
 	}
 	n, _ := res.RowsAffected()
-	res, err = s.taskDB(ctx).ExecContext(ctx, `UPDATE generated_preparations SET upload_state='unknown',updated_at=? WHERE upload_state='claimed' AND updated_at<=?`,
-		now, now-olderThan.Milliseconds())
+	res, err = s.taskDB(ctx).ExecContext(ctx, `UPDATE generated_preparations SET upload_state='unknown',updated_at=? WHERE upload_state='claimed' AND updated_at<?`, now, c)
 	if err != nil {
 		return int(n), err
 	}
 	m, _ := res.RowsAffected()
 	return int(n + m), nil
+}
+
+// DefaultGenerationRetention is how long a finished ledger row is kept. A key is
+// derived from the turn and message ids plus a digest of the text, and turns are
+// never replayed after days, so 30 days is far past any replay of an old key.
+// A failed or unknown row guards against a second paid call for its key, so it
+// is kept exactly as long as a ready one.
+const DefaultGenerationRetention = 30 * 24 * time.Hour
+
+// PurgeGenerations deletes finished rows (ready, failed or unknown, with no
+// upload in flight) last updated before now-olderThan, at most limit per call.
+func (s *Store) PurgeGenerations(ctx context.Context, olderThan time.Duration, limit int) (int, error) {
+	if olderThan <= 0 || limit <= 0 {
+		return 0, ErrInvalidGeneration
+	}
+	cut := time.Now().Add(-olderThan).UnixMilli()
+	res, err := s.taskDB(ctx).ExecContext(ctx, `DELETE FROM generated_preparations WHERE generation_id IN (
+ SELECT generation_id FROM generated_preparations WHERE state IN ('ready','failed','preparation_unknown')
+ AND upload_state <> 'claimed' AND updated_at<? ORDER BY updated_at LIMIT ?)`, cut, limit)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
 }

@@ -419,6 +419,7 @@ func TestSpeechRestartTurnsInterruptedCallIntoUnknown(t *testing.T) {
 	if _, created, err := f.st.BeginGeneration(t.Context(), f.personal.Scope, store.GenerationVoice, "k", "fake-tts"); err != nil || !created {
 		t.Fatal(err)
 	}
+	time.Sleep(5 * time.Millisecond)
 	if n, err := f.st.SweepGenerations(t.Context(), 0); err != nil || n != 1 {
 		t.Fatalf("sweep = %d, %v", n, err)
 	}
