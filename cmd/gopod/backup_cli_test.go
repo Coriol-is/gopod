@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/docker/docker/api/types/container"
+
 	"github.com/Coriol-is/gopod/internal/config"
 	"github.com/Coriol-is/gopod/internal/maintenance"
 	"github.com/Coriol-is/gopod/internal/store"
@@ -158,4 +160,21 @@ func treeDigest(t *testing.T, dir string) string {
 
 func testLogger(t *testing.T) *slog.Logger {
 	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+}
+
+func TestLiveOwnedRefusesLiveComposeControllerButNotOneOffRun(t *testing.T) {
+	agents := []container.Summary{{ID: "agent-running", State: "running"}, {ID: "agent-exited", State: "exited"}}
+	services := []container.Summary{
+		{ID: "old-controller", State: "running", Labels: map[string]string{}},
+		{ID: "this-capture", State: "running", Labels: map[string]string{composeOneOffLabel: "True"}},
+		{ID: "stopped-controller", State: "exited"},
+	}
+	got := liveOwned(agents, services)
+	want := []string{"agent-running", "old-controller"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("got %v want %v", got, want)
+	}
+	if len(liveOwned(nil, nil)) != 0 {
+		t.Fatal("empty inventory must be empty")
+	}
 }

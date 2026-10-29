@@ -26,6 +26,7 @@ type BackupDeps struct {
 	ArtifactsDir string
 	Forbidden    []string // extra trees a backup root must not overlap
 	DefaultRoot  string   // used when --root is not given; may be empty
+	ScratchDir   string   // verify scratch parent (GOPOD_BACKUP_SCRATCH_DIR); empty = <root>/.staging
 	Version      string
 	// Containers builds the live-container inventory lazily (it may open the
 	// Docker client) and returns a closer. Nil means no inventory is available.
@@ -130,6 +131,9 @@ func (d BackupDeps) create(ctx context.Context, cmd Command) (Response, error) {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "backup set %s (%s)\npath: %s\ndatabase: %d bytes, %d tables, integrity ok\nfiles: %d\n",
 		res.SetID, m.Mode, res.Path, m.Database.Size, len(m.Database.Tables), len(m.Files)+1)
+	for _, w := range m.Warnings {
+		fmt.Fprintf(&sb, "warning: %s\n", w)
+	}
 	if m.Work.Unsettled() {
 		sb.WriteString("note: durable work was unsettled at capture time; a restore must hold it as quarantined evidence, never replay it\n")
 	}
@@ -140,8 +144,9 @@ func (d BackupDeps) create(ctx context.Context, cmd Command) (Response, error) {
 func (d BackupDeps) verify(ctx context.Context, cmd Command) (Response, error) {
 	fs := newFlags("backup verify")
 	root := fs.String("root", "", "backup root directory (when the set is given by id)")
+	scratch := fs.String("scratch", "", "scratch directory for the restore check (default <root>/.staging; needs 2-3x the database size)")
 	if err := fs.Parse(cmd.Args); err != nil || fs.NArg() != 1 {
-		return usage("usage: backup verify [--root DIR] <set-id|set-directory>")
+		return usage("usage: backup verify [--root DIR] [--scratch DIR] <set-id|set-directory>")
 	}
 	target := fs.Arg(0)
 	if !strings.ContainsRune(target, filepath.Separator) {
@@ -151,7 +156,11 @@ func (d BackupDeps) verify(ctx context.Context, cmd Command) (Response, error) {
 		}
 		target = filepath.Join(rootDir, target)
 	}
-	rep, err := backup.Verify(ctx, target)
+	sc := *scratch
+	if sc == "" {
+		sc = d.ScratchDir
+	}
+	rep, err := backup.VerifyWith(ctx, target, backup.VerifyOptions{ScratchDir: sc})
 	var sb strings.Builder
 	if err != nil {
 		fmt.Fprintf(&sb, "set %s: NOT restorable\n", rep.SetID)
@@ -161,7 +170,8 @@ func (d BackupDeps) verify(ctx context.Context, cmd Command) (Response, error) {
 		if len(rep.Problems) == 0 {
 			fmt.Fprintf(&sb, "  problem: %v\n", err)
 		}
-		return Response{Text: strings.TrimRight(sb.String(), "\n"), Data: jsonData(rep), Code: 1}, nil
+		sb.WriteString(backup.IntegrityNotice)
+		return Response{Text: sb.String(), Data: jsonData(rep), Code: 1}, nil
 	}
 	fmt.Fprintf(&sb, "set %s (%s): OK\nfiles checked: %d, tables: %d, rows: %d\ncovers: %s\nnot covered: %s",
 		rep.SetID, rep.Mode, rep.Files, rep.Tables, rep.Rows, strings.Join(rep.Coverage, ", "), strings.Join(rep.NotCovered, ", "))
@@ -171,6 +181,7 @@ func (d BackupDeps) verify(ctx context.Context, cmd Command) (Response, error) {
 	if rep.Unsettled {
 		sb.WriteString("\nwarning: the set records unsettled durable work; hold it as quarantined evidence after any restore")
 	}
+	sb.WriteString("\n" + backup.IntegrityNotice)
 	sb.WriteString("\nVerification used a scratch copy; the set and the live store were not touched. It does not activate anything.")
 	return Response{Text: sb.String(), Data: jsonData(rep)}, nil
 }

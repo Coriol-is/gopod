@@ -34,6 +34,9 @@ var (
 	// ErrSchemaNewer: the database holds tables or columns this binary does not
 	// know, so it was written by a newer binary and must not be opened here.
 	ErrSchemaNewer = errors.New("store: database schema is newer than this binary")
+	// ErrForeignKeyViolation: foreign_key_check found orphan rows. It wraps
+	// ErrSnapshotIntegrity; the message names tables and counts, never rows.
+	ErrForeignKeyViolation = fmt.Errorf("%w: foreign key violations", ErrSnapshotIntegrity)
 	// ErrSnapshotExists: the destination already exists; snapshots never overwrite.
 	ErrSnapshotExists = errors.New("store: snapshot destination already exists")
 )
@@ -45,6 +48,9 @@ const DefaultSnapshotStepPages = 2048
 type SnapshotOptions struct {
 	// StepPages bounds one backup step (default DefaultSnapshotStepPages).
 	StepPages int
+	// AllowForeignKeyViolations accepts a source that already has orphan rows
+	// (the violations are returned in SnapshotInfo) instead of failing.
+	AllowForeignKeyViolations bool
 	// Fault is an optional test hook called before each durable step with a
 	// stable point name; a non-nil error aborts the snapshot there.
 	Fault func(point string) error
@@ -59,12 +65,14 @@ func (o SnapshotOptions) fault(point string) error {
 
 // SnapshotInfo describes a database file as seen by an offline inspection.
 type SnapshotInfo struct {
-	Bytes               int64            `json:"bytes"`
-	SHA256              string           `json:"sha256"`
-	SQLiteSchemaVersion int64            `json:"sqlite_schema_version"`
-	SchemaFingerprint   string           `json:"schema_fingerprint"`
-	IntegrityOK         bool             `json:"integrity_ok"`
-	Tables              map[string]int64 `json:"tables"` // row counts of ordinary tables
+	Bytes               int64  `json:"bytes"`
+	SHA256              string `json:"sha256"`
+	SQLiteSchemaVersion int64  `json:"sqlite_schema_version"`
+	SchemaFingerprint   string `json:"schema_fingerprint"`
+	IntegrityOK         bool   `json:"integrity_ok"`
+	// ForeignKeyViolations counts orphan rows per table (no row contents).
+	ForeignKeyViolations map[string]int64 `json:"foreign_key_violations,omitempty"`
+	Tables               map[string]int64 `json:"tables"` // row counts of ordinary tables
 }
 
 // fileDSN builds a SQLite file URI for an absolute path with the given query.
@@ -154,7 +162,28 @@ func SnapshotFile(ctx context.Context, srcPath, dstPath string, opts SnapshotOpt
 	if err = os.Chmod(dstPath, 0o600); err != nil {
 		return info, fmt.Errorf("store: chmod snapshot: %w", err)
 	}
-	return InspectDB(ctx, dstPath)
+	info, err = InspectDB(ctx, dstPath)
+	if err != nil {
+		return info, err
+	}
+	if len(info.ForeignKeyViolations) > 0 && !opts.AllowForeignKeyViolations {
+		return info, fmt.Errorf("%w in %s", ErrForeignKeyViolation, FormatViolations(info.ForeignKeyViolations))
+	}
+	return info, nil
+}
+
+// FormatViolations renders per-table orphan counts deterministically.
+func FormatViolations(v map[string]int64) string {
+	names := make([]string, 0, len(v))
+	for t := range v {
+		names = append(names, t)
+	}
+	sort.Strings(names)
+	parts := make([]string, len(names))
+	for i, t := range names {
+		parts[i] = fmt.Sprintf("%s=%d", t, v[t])
+	}
+	return strings.Join(parts, ", ")
 }
 
 func copyViaBackupAPI(ctx context.Context, srcPath, dstPath string, opts SnapshotOptions) error {
@@ -187,13 +216,27 @@ func copyViaBackupAPI(ctx context.Context, srcPath, dstPath string, opts Snapsho
 			return fmt.Errorf("store: backup init: %w", err)
 		}
 		defer b.Close()
+		restarts, busy, lastRemaining := 0, 0, -1
 		for {
+			if ferr := opts.fault("snapshot.step"); ferr != nil {
+				return ferr
+			}
 			if cerr := ctx.Err(); cerr != nil {
-				return fmt.Errorf("store: snapshot cancelled: %w", cerr)
+				return fmt.Errorf("store: snapshot cancelled or timed out after %d copy restarts and %d busy retries; a concurrent writer keeps invalidating or blocking the copy, so retry in a quiet period or raise the timeout: %w", restarts, busy, cerr)
 			}
 			done, serr := b.Step(opts.StepPages)
+			if serr == nil && !done {
+				// Remaining grows when SQLite restarted the copy because the
+				// source changed under it.
+				r := b.Remaining()
+				if lastRemaining >= 0 && r > lastRemaining {
+					restarts++
+				}
+				lastRemaining = r
+			}
 			if serr != nil {
 				if isBusyOrLocked(serr) {
+					busy++
 					// A writer holds the source; retry until ctx expires.
 					select {
 					case <-ctx.Done():
@@ -241,40 +284,54 @@ func finalizeSnapshot(ctx context.Context, dstPath string) error {
 	if !strings.EqualFold(mode, "delete") {
 		return fmt.Errorf("store: snapshot journal mode is %q", mode)
 	}
-	return checkIntegrity(ctx, db)
+	_, err = checkIntegrity(ctx, db)
+	return err
 }
 
-func checkIntegrity(ctx context.Context, db *sql.DB) error {
+// checkIntegrity runs integrity_check (a failure is an error) and
+// foreign_key_check (reported as per-table orphan counts, decided by callers).
+func checkIntegrity(ctx context.Context, db *sql.DB) (map[string]int64, error) {
 	rows, err := db.QueryContext(ctx, "PRAGMA integrity_check")
 	if err != nil {
-		return fmt.Errorf("store: integrity_check: %w", err)
+		return nil, fmt.Errorf("store: integrity_check: %w", err)
 	}
 	defer rows.Close()
 	var problems []string
 	for rows.Next() {
 		var line string
 		if err := rows.Scan(&line); err != nil {
-			return fmt.Errorf("store: integrity_check: %w", err)
+			return nil, fmt.Errorf("store: integrity_check: %w", err)
 		}
 		if line != "ok" {
 			problems = append(problems, line)
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return fmt.Errorf("store: integrity_check: %w", err)
+		return nil, fmt.Errorf("store: integrity_check: %w", err)
 	}
 	if len(problems) > 0 {
-		return fmt.Errorf("%w: %s", ErrSnapshotIntegrity, firstN(problems, 3))
+		return nil, fmt.Errorf("%w: %s", ErrSnapshotIntegrity, firstN(problems, 3))
 	}
 	fk, err := db.QueryContext(ctx, "PRAGMA foreign_key_check")
 	if err != nil {
-		return fmt.Errorf("store: foreign_key_check: %w", err)
+		return nil, fmt.Errorf("store: foreign_key_check: %w", err)
 	}
 	defer fk.Close()
-	if fk.Next() {
-		return fmt.Errorf("%w: foreign key violation", ErrSnapshotIntegrity)
+	var out map[string]int64
+	for fk.Next() {
+		var table string
+		var rowid sql.NullInt64
+		var parent string
+		var id int64
+		if err := fk.Scan(&table, &rowid, &parent, &id); err != nil {
+			return nil, fmt.Errorf("store: foreign_key_check: %w", err)
+		}
+		if out == nil {
+			out = map[string]int64{}
+		}
+		out[table]++
 	}
-	return fk.Err()
+	return out, fk.Err()
 }
 
 func firstN(s []string, n int) string {
@@ -314,10 +371,12 @@ func InspectDB(ctx context.Context, path string) (SnapshotInfo, error) {
 		return info, err
 	}
 	defer db.Close()
-	if err := checkIntegrity(ctx, db); err != nil {
+	fk, err := checkIntegrity(ctx, db)
+	if err != nil {
 		return info, err
 	}
 	info.IntegrityOK = true
+	info.ForeignKeyViolations = fk
 	if err := db.QueryRowContext(ctx, "PRAGMA schema_version").Scan(&info.SQLiteSchemaVersion); err != nil {
 		return info, fmt.Errorf("store: schema_version: %w", err)
 	}
@@ -421,8 +480,8 @@ func readSchema(ctx context.Context, db *sql.DB) (dbSchema, error) {
 // referenceSchema is what this binary's Open would create, computed on a
 // scratch database so no stored ledger is needed. SQLite's schema_version is a
 // change counter, not application compatibility evidence.
-func referenceSchema(ctx context.Context) (dbSchema, error) {
-	dir, err := os.MkdirTemp("", "gopod-schema-ref-")
+func referenceSchema(ctx context.Context, scratchDir string) (dbSchema, error) {
+	dir, err := os.MkdirTemp(scratchDir, "gopod-schema-ref-")
 	if err != nil {
 		return dbSchema{}, fmt.Errorf("store: schema reference dir: %w", err)
 	}
@@ -447,6 +506,13 @@ func referenceSchema(ctx context.Context) (dbSchema, error) {
 // table or column that this binary's schema does not define. An older database
 // (missing newer tables or columns) is compatible: Open migrates it forward.
 func CheckSchemaCompat(ctx context.Context, path string) error {
+	return CheckSchemaCompatIn(ctx, path, "")
+}
+
+// CheckSchemaCompatIn is CheckSchemaCompat with the scratch directory used for
+// the reference schema database ("" means the system temp directory). It needs
+// space for one empty store.
+func CheckSchemaCompatIn(ctx context.Context, path, scratchDir string) error {
 	db, err := openSnapshotDB(path, "mode=ro&_pragma=busy_timeout(5000)")
 	if err != nil {
 		return err
@@ -456,7 +522,7 @@ func CheckSchemaCompat(ctx context.Context, path string) error {
 	if err != nil {
 		return err
 	}
-	want, err := referenceSchema(ctx)
+	want, err := referenceSchema(ctx, scratchDir)
 	if err != nil {
 		return err
 	}

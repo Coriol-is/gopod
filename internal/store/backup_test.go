@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -281,5 +282,64 @@ func execOn(t *testing.T, path, stmt string) {
 	defer db.Close()
 	if _, err := db.Exec(stmt); err != nil {
 		t.Fatalf("exec %q: %v", stmt, err)
+	}
+}
+
+// orphan inserts an artifact whose reservation does not exist, with foreign
+// keys briefly off, to model a pre-existing violation.
+func orphan(t *testing.T, st *Store) {
+	t.Helper()
+	ctx := context.Background()
+	conn, err := st.DB().Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	for _, q := range []string{
+		`PRAGMA foreign_keys=OFF`,
+		`INSERT INTO artifacts(artifact_id,namespace_id,namespace_epoch,state,relative_blob_key,created_at,preparation_id) VALUES('a1','ns',1,'preparing','k1',1,'missing-prep')`,
+		`PRAGMA foreign_keys=ON`,
+	} {
+		if _, err := conn.ExecContext(ctx, q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+}
+
+func TestSnapshotForeignKeyViolationsNamedAndOptional(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	st := openStoreAt(t, filepath.Join(dir, "store.sqlite"))
+	orphan(t, st)
+	dst := filepath.Join(dir, "strict.sqlite")
+	_, err := st.Snapshot(ctx, dst, SnapshotOptions{})
+	if !errors.Is(err, ErrForeignKeyViolation) || !errors.Is(err, ErrSnapshotIntegrity) {
+		t.Fatalf("err = %v", err)
+	}
+	if msg := err.Error(); !strings.Contains(msg, "artifacts=1") || strings.Contains(msg, "missing-prep") {
+		t.Fatalf("message must name table and count only: %q", msg)
+	}
+	if _, serr := os.Stat(dst); serr == nil {
+		t.Fatal("strict snapshot left a file")
+	}
+	info, err := st.Snapshot(ctx, filepath.Join(dir, "lenient.sqlite"), SnapshotOptions{AllowForeignKeyViolations: true})
+	if err != nil || info.ForeignKeyViolations["artifacts"] != 1 || !info.IntegrityOK {
+		t.Fatalf("lenient: %v %+v", err, info.ForeignKeyViolations)
+	}
+}
+
+func TestSnapshotTimeoutMessageExplainsRestarts(t *testing.T) {
+	dir := t.TempDir()
+	st := openStoreAt(t, filepath.Join(dir, "store.sqlite"))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	_, err := st.Snapshot(ctx, filepath.Join(dir, "s.sqlite"), SnapshotOptions{Fault: func(p string) error {
+		if p == "snapshot.step" {
+			cancel()
+		}
+		return nil
+	}})
+	if !errors.Is(err, context.Canceled) || !strings.Contains(err.Error(), "concurrent writer") || !strings.Contains(err.Error(), "restarts") {
+		t.Fatalf("err = %v", err)
 	}
 }

@@ -78,10 +78,13 @@ type FileEntry struct {
 // DatabaseEntry describes the snapshot database.
 type DatabaseEntry struct {
 	FileEntry
-	SQLiteSchemaVersion int64            `json:"sqlite_schema_version"`
-	SchemaFingerprint   string           `json:"schema_fingerprint"`
-	IntegrityOK         bool             `json:"integrity_ok"`
-	Tables              map[string]int64 `json:"tables"`
+	SQLiteSchemaVersion int64  `json:"sqlite_schema_version"`
+	SchemaFingerprint   string `json:"schema_fingerprint"`
+	IntegrityOK         bool   `json:"integrity_ok"`
+	// ForeignKeyViolations are orphan-row counts per table that already existed
+	// in the source (database_only only; matched_stopped refuses them).
+	ForeignKeyViolations map[string]int64 `json:"foreign_key_violations,omitempty"`
+	Tables               map[string]int64 `json:"tables"`
 }
 
 // FenceRecord is the settlement evidence of a matched_stopped capture.
@@ -103,6 +106,7 @@ type Manifest struct {
 	Artifacts     []store.BackupArtifact `json:"artifacts"`
 	Work          store.WorkEvidence     `json:"work_evidence"`
 	Fence         *FenceRecord           `json:"fence,omitempty"`
+	Warnings      []string               `json:"warnings,omitempty"`
 	Coverage      []string               `json:"coverage"`
 	NotCovered    []string               `json:"not_covered"`
 }

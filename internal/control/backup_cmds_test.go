@@ -75,7 +75,7 @@ func TestBackupCreateVerifyListIdleThroughRouter(t *testing.T) {
 		t.Fatalf("list: %q", resp.Text)
 	}
 	resp, _ = r.Dispatch(ctx, cli("backup.verify", id))
-	if resp.Code != 0 || !strings.Contains(resp.Text, ": OK") {
+	if resp.Code != 0 || !strings.Contains(resp.Text, ": OK") || !strings.Contains(resp.Text, "not tampering or authenticity") {
 		t.Fatalf("verify: %+v", resp)
 	}
 	resp, _ = r.Dispatch(ctx, cli("backup.idle"))
@@ -87,7 +87,7 @@ func TestBackupCreateVerifyListIdleThroughRouter(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp, _ = r.Dispatch(ctx, cli("backup.verify", id))
-	if resp.Code == 0 || !strings.Contains(resp.Text, "NOT restorable") {
+	if resp.Code == 0 || !strings.Contains(resp.Text, "NOT restorable") || !strings.Contains(resp.Text, "not tampering or authenticity") {
 		t.Fatalf("tampered verify: %+v", resp)
 	}
 }

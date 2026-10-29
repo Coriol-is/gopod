@@ -21,8 +21,9 @@ container images/source, and secrets unless you declare them with `--config`.
 **A set is not a matched filesystem/auth recovery guarantee.** It protects the database (chats, messages,
 turns, memory, vectors, outbox/task ledgers) and, in `matched_stopped`, the artifact bytes the outbox may still
 send. Provider logins, group workspaces and Claude/Codex session homes are not captured; restoring only a
-database can leave sessions and workspaces ahead of or behind it. Hashes detect corruption, not an attacker who can
-rewrite a whole set. Restoring a database cannot undo anything already sent to Telegram.
+database can leave sessions and workspaces ahead of or behind it. Hashes are unkeyed: they detect corruption and
+accidental change, not tampering or authenticity (`verify` prints this every time); anyone who can rewrite a whole
+set can rewrite its hashes. Restoring a database cannot undo anything already sent to Telegram.
 
 Backup sets contain chat content (and config files you declare, which can be credentials). Keep them on the
 host, mode 0700/0600, and never print or paste them.
@@ -59,12 +60,23 @@ $GP backup verify <set-id>        # offline restore check; use the id printed by
 `create` snapshots through a private SQLite connection (the application's connection is not used), checks
 `integrity_check` and `foreign_key_check`, records row counts and a schema fingerprint, writes the set under
 `/backups/.staging/` with 0700/0600 permissions and fsyncs it, then publishes it with one atomic rename.
+If the database is under heavy write load the copy can keep restarting; the capture then ends with
+"snapshot cancelled or timed out after N copy restarts ..." (default `--timeout 5m`). Nothing is published; retry in a
+quiet period or raise `--timeout`. Leftovers of a crashed capture under `.staging/` are removed automatically by the
+next capture once they are older than 30 minutes and no live capture holds their lock; they never count toward
+`--max-bytes`.
+A database that already contains orphan rows (foreign key violations) is still backed up in `database_only` mode: the
+manifest records a warning naming tables and counts (never rows) and `verify` repeats it. `matched_stopped` refuses
+such a database; repair it first.
 Use `--max-bytes N` to cap the total size of the backup root; free space is also checked first and a shortfall
 fails the capture without writing a set. A set that is listed as `sealed` is complete; an interrupted capture
 never appears.
 
-`verify` copies the database to a private scratch directory and checks: completion marker, manifest, every
-file size and SHA-256, no unlisted files, `integrity_check`, foreign keys, fingerprint and row counts, that the
+`verify` copies the database to a private scratch directory (default `/backups/.staging`, so a small `/tmp` is not the
+limit; override with `--scratch DIR` or `GOPOD_BACKUP_SCRATCH_DIR`; it needs about 2-3 times the database size, and a
+capture needs about 2 times plus the artifacts) and checks: completion marker, manifest, every
+file size and SHA-256 (opened component by component without following symlinks, so a symlinked `config/` or
+`artifacts/` directory is rejected), no unlisted files, `integrity_check`, foreign keys, fingerprint and row counts, that the
 schema is **not newer than this binary**, and that every ready artifact the database references has its blob
 (`matched_stopped` sets) or is flagged as not covered (`database_only`). It does not touch the set or the live
 store and activates nothing.
@@ -72,6 +84,12 @@ store and activates nothing.
 ## B. Stopped-writer backup (`matched_stopped`)
 
 Use before risky changes such as a deploy, or when artifact delivery is on. It needs downtime.
+
+**Never take a `matched_stopped` capture before the old controller container has been replaced by a build that
+contains this feature.** An older controller does not hold the instance lock, so the lock cannot prove it is gone.
+As a best-effort extra check the capture also refuses while any non-one-off container of the compose service
+`gopod` is running (and fails closed when the container list cannot be read), but a controller started some other way
+is invisible to it. Stop it by hand and confirm with `docker ps` before capturing.
 
 1. **Check the system is idle** (read-only, safe while running):
    `$GP backup idle` prints pending/running turns, outbox parts in flight, unresolved deliveries, artifact

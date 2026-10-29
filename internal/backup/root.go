@@ -58,7 +58,7 @@ func ValidateRoot(root string, forbidden []string) error {
 		if err != nil {
 			return fmt.Errorf("%w: %v", ErrUnsafeRoot, err)
 		}
-		if within(rf, rr) || within(rr, rf) {
+		if within(rf, rr) || within(rr, rf) || sameTree(rr, rf) {
 			return fmt.Errorf("%w: backup root overlaps %s", ErrUnsafeRoot, filepath.Base(rf))
 		}
 	}
@@ -90,4 +90,56 @@ func syncDir(dir string) error {
 	}
 	defer d.Close()
 	return d.Sync()
+}
+
+type fileID struct{ dev, ino uint64 }
+
+// chainIDs returns the device/inode identity of p (or its deepest existing
+// ancestor) and of every ancestor up to the filesystem root. Identity, unlike a
+// path, is the same through a bind mount, a hard-linked alias or any symlink
+// spelling.
+func chainIDs(p string) []fileID {
+	var ids []fileID
+	cur := filepath.Clean(p)
+	for {
+		var st unix.Stat_t
+		if err := unix.Stat(cur, &st); err == nil {
+			ids = append(ids, fileID{uint64(st.Dev), uint64(st.Ino)})
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return ids
+		}
+		cur = parent
+	}
+}
+
+func idOf(p string) (fileID, bool) {
+	var st unix.Stat_t
+	if err := unix.Stat(p, &st); err != nil {
+		return fileID{}, false
+	}
+	return fileID{uint64(st.Dev), uint64(st.Ino)}, true
+}
+
+func inChain(chain []fileID, id fileID) bool {
+	for _, c := range chain {
+		if c == id {
+			return true
+		}
+	}
+	return false
+}
+
+// sameTree reports whether a and b are nested by file identity in either
+// direction. A path that does not exist yet can only be inside the other (via
+// its deepest existing ancestor), never contain it.
+func sameTree(a, b string) bool {
+	if id, ok := idOf(b); ok && inChain(chainIDs(a), id) {
+		return true // a is inside (or is) b
+	}
+	if id, ok := idOf(a); ok && inChain(chainIDs(b), id) {
+		return true // b is inside (or is) a
+	}
+	return false
 }

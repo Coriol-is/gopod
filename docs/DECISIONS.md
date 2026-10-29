@@ -1540,6 +1540,17 @@ stopping owner work and without letting a restored copy start polling Telegram.
 6. *Operator surface.* `gopod backup create|verify|list|idle|quarantine` go through the control Router
    (`PermOwnerOnly`, empty slash name so no chat can reach them; `LookupBySlash("")` no longer resolves).
 
+7. *Review hardening.* Root overlap is also decided by device/inode identity along the ancestor chain, so aliases
+   and bind mounts count. Each capture holds a per-capture lock file beside its staging dir; later captures remove
+   staging entries older than 30 minutes only when that lock is free, and staging never counts toward the byte
+   cap. Verify opens every file component by component with `O_NOFOLLOW`. Pre-existing foreign key violations:
+   `database_only` copies the database as found and records a manifest warning (table names and counts only,
+   re-checked by verify, and a manifest that hides them is a mismatch), because a protective backup of a damaged
+   database is better than none; `matched_stopped` stays strict and refuses, because it claims a recoverable cut.
+   The scratch directory for verify defaults to `<root>/.staging` and is configurable. `matched_stopped` also
+   refuses while a non-one-off container of the compose service `gopod` is live (best effort), closing the gap
+   left by pre-lock controllers.
+
 **Limits.** `matched_stopped` here covers the database, declared config files and artifact blobs only; ChatsDir
 workspaces, provider session/auth homes and IPC files are listed in the manifest as `not_covered`, so it is **not**
 a full matched filesystem/auth recovery guarantee. Hashes detect corruption, not an adversary who can rewrite a

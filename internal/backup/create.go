@@ -13,6 +13,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -42,6 +43,9 @@ type Options struct {
 	// one; 0 means no cap beyond free space.
 	MaxBytes         int64
 	MaxArtifactBytes int64
+	// StagingMaxAge is how old an unlocked staging entry must be before Create
+	// removes it as the leftover of a crashed capture (default 30 minutes).
+	StagingMaxAge time.Duration
 
 	Now       func() time.Time
 	Fault     func(point string) error
@@ -115,6 +119,14 @@ func Create(ctx context.Context, o Options) (res Result, err error) {
 		defer func() { _ = fence.Release() }()
 	}
 
+	if o.StagingMaxAge <= 0 {
+		o.StagingMaxAge = 30 * time.Minute
+	}
+	if n, cerr := CleanStaging(o.Root, o.StagingMaxAge, o.now()); cerr != nil {
+		log.Warn("backup: stale staging cleanup incomplete", slog.Any("err", cerr))
+	} else if n > 0 {
+		log.Info("backup: removed stale staging entries", slog.Int("count", n))
+	}
 	if err = o.reserve(ctx, 0); err != nil {
 		return res, err
 	}
@@ -131,6 +143,16 @@ func Create(ctx context.Context, o Options) (res Result, err error) {
 	if err = os.MkdirAll(stagingRoot, 0o700); err != nil {
 		return res, fmt.Errorf("backup: create staging: %w", err)
 	}
+	// A per-capture lock beside the staging dir (not inside it, so it never
+	// becomes part of the set) marks the directory live for CleanStaging.
+	captureLock, err := maintenance.TryLock(stage + stageLockSuffix)
+	if err != nil {
+		return res, fmt.Errorf("backup: capture lock: %w", err)
+	}
+	defer func() {
+		_ = os.Remove(stage + stageLockSuffix)
+		_ = captureLock.Release()
+	}()
 	if err = os.Mkdir(stage, 0o700); err != nil {
 		return res, fmt.Errorf("backup: create staging set: %w", err)
 	}
@@ -156,7 +178,10 @@ func Create(ctx context.Context, o Options) (res Result, err error) {
 		return res, err
 	}
 	dbPath := filepath.Join(stage, DBName)
-	info, err := store.SnapshotFile(ctx, o.StorePath, dbPath, store.SnapshotOptions{Fault: o.Fault})
+	info, err := store.SnapshotFile(ctx, o.StorePath, dbPath, store.SnapshotOptions{
+		Fault:                     o.Fault,
+		AllowForeignKeyViolations: o.Mode == ModeDatabaseOnly,
+	})
 	if err != nil {
 		return res, fmt.Errorf("backup: database snapshot: %w", err)
 	}
@@ -164,6 +189,10 @@ func Create(ctx context.Context, o Options) (res Result, err error) {
 		FileEntry:           FileEntry{Role: RoleDatabase, Path: DBName, Size: info.Bytes, SHA256: info.SHA256},
 		SQLiteSchemaVersion: info.SQLiteSchemaVersion, SchemaFingerprint: info.SchemaFingerprint,
 		IntegrityOK: info.IntegrityOK, Tables: info.Tables,
+	}
+	if len(info.ForeignKeyViolations) > 0 {
+		m.Database.ForeignKeyViolations = info.ForeignKeyViolations
+		m.Warnings = append(m.Warnings, "source database already had foreign key violations (orphan rows) in: "+store.FormatViolations(info.ForeignKeyViolations)+"; they were copied as found")
 	}
 	if m.Work, err = store.ReadWorkEvidence(ctx, dbPath); err != nil {
 		return res, err
@@ -270,6 +299,9 @@ func usedBytes(root string) (int64, error) {
 	err := filepath.WalkDir(root, func(_ string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
+		}
+		if d.IsDir() && d.Name() == StagingDir {
+			return filepath.SkipDir // stale or live staging is not set storage
 		}
 		if d.Type().IsRegular() {
 			fi, ierr := d.Info()
@@ -444,4 +476,60 @@ func syncTree(root string) error {
 		}
 	}
 	return nil
+}
+
+const stageLockSuffix = ".lock"
+
+// CleanStaging removes leftovers of crashed captures from <root>/.staging:
+// entries older than maxAge whose per-capture lock is free. A live capture
+// holds its lock, so its directory is never removed, however old. It returns
+// the number of removed staging directories.
+func CleanStaging(root string, maxAge time.Duration, now time.Time) (int, error) {
+	dir := filepath.Join(root, StagingDir)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	removed := 0
+	var firstErr error
+	for _, e := range entries {
+		name := e.Name()
+		if strings.HasSuffix(name, stageLockSuffix) {
+			continue // handled with its directory, or below when orphaned
+		}
+		info, ierr := e.Info()
+		if ierr != nil || now.Sub(info.ModTime()) < maxAge {
+			continue
+		}
+		lockPath := filepath.Join(dir, name+stageLockSuffix)
+		l, lerr := maintenance.TryLock(lockPath)
+		if lerr != nil {
+			continue // held: a capture is running
+		}
+		if rerr := os.RemoveAll(filepath.Join(dir, name)); rerr != nil && firstErr == nil {
+			firstErr = rerr
+		} else if rerr == nil {
+			removed++
+		}
+		_ = os.Remove(lockPath)
+		_ = l.Release()
+	}
+	// Orphaned lock files whose directory is gone.
+	for _, e := range entries {
+		name := e.Name()
+		if !strings.HasSuffix(name, stageLockSuffix) {
+			continue
+		}
+		if _, serr := os.Stat(filepath.Join(dir, strings.TrimSuffix(name, stageLockSuffix))); !errors.Is(serr, os.ErrNotExist) {
+			continue
+		}
+		if l, lerr := maintenance.TryLock(filepath.Join(dir, name)); lerr == nil {
+			_ = os.Remove(filepath.Join(dir, name))
+			_ = l.Release()
+		}
+	}
+	return removed, firstErr
 }

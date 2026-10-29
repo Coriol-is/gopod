@@ -13,6 +13,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"golang.org/x/sys/unix"
 
@@ -35,10 +36,26 @@ type Report struct {
 	// Unsettled is the work evidence recorded at capture time: rows that a
 	// restored instance must hold as quarantined evidence, never replay.
 	Unsettled bool `json:"unsettled_work_recorded"`
+	// Notice states what the check proves: the manifest hash is unkeyed.
+	Notice string `json:"notice"`
+}
+
+// IntegrityNotice is printed with every verification result.
+const IntegrityNotice = "Hashes are unkeyed: they detect corruption and accidental change, not tampering or authenticity. Anyone who can rewrite a whole set can rewrite its hashes."
+
+// VerifyOptions tune Verify.
+type VerifyOptions struct {
+	// ScratchDir holds the scratch restore of the database (about 2-3 times its
+	// size, plus one empty store for the schema reference). Empty means
+	// <backup root>/.staging, falling back to the system temp directory only
+	// when the root is not writable.
+	ScratchDir string
 }
 
 type verifier struct {
 	rep         *Report
+	scratch     string
+	setPath     string
 	schemaNewer error
 }
 
@@ -53,8 +70,13 @@ func (v *verifier) problem(format string, a ...any) {
 // with this binary) and the artifact references against the stored blobs.
 // The report lists every problem found; the returned error wraps the first.
 func Verify(ctx context.Context, setPath string) (Report, error) {
-	rep := Report{Problems: []string{}, Warnings: []string{}, Coverage: []string{}, NotCovered: []string{}}
-	v := &verifier{rep: &rep}
+	return VerifyWith(ctx, setPath, VerifyOptions{})
+}
+
+// VerifyWith is Verify with options.
+func VerifyWith(ctx context.Context, setPath string, opt VerifyOptions) (Report, error) {
+	rep := Report{Problems: []string{}, Warnings: []string{}, Coverage: []string{}, NotCovered: []string{}, Notice: IntegrityNotice}
+	v := &verifier{rep: &rep, scratch: opt.ScratchDir, setPath: setPath}
 	finish := func() (Report, error) {
 		rep.OK = len(rep.Problems) == 0
 		if rep.OK {
@@ -159,18 +181,16 @@ func readSmall(p string) ([]byte, error) {
 // checkFile verifies a listed file is a regular, non-symlink file with the
 // recorded size and hash.
 func checkFile(setPath string, f FileEntry) error {
-	full := filepath.Join(setPath, filepath.FromSlash(f.Path))
-	fd, err := unix.Open(full, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+	file, err := openNoSymlinks(setPath, f.Path)
 	if err != nil {
 		if errors.Is(err, unix.ENOENT) {
 			return errors.New("missing")
 		}
-		return errors.New("not readable as a regular file (symlink?)")
+		return errors.New("not readable as a regular file (a symlinked file or directory in the path?)")
 	}
-	file := os.NewFile(uintptr(fd), full)
 	defer file.Close()
 	var st unix.Stat_t
-	if err := unix.Fstat(fd, &st); err != nil || st.Mode&unix.S_IFMT != unix.S_IFREG {
+	if err := unix.Fstat(int(file.Fd()), &st); err != nil || st.Mode&unix.S_IFMT != unix.S_IFREG {
 		return errors.New("not a regular file")
 	}
 	if st.Size != f.Size {
@@ -184,6 +204,32 @@ func checkFile(setPath string, f FileEntry) error {
 		return errors.New("hash mismatch")
 	}
 	return nil
+}
+
+// openNoSymlinks opens rel below setPath one component at a time with
+// O_NOFOLLOW (openat), so a symlink in any parent directory, not only in the
+// final name, is refused. It works the same on Linux and macOS.
+func openNoSymlinks(setPath, rel string) (*os.File, error) {
+	fd, err := unix.Open(setPath, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, err
+	}
+	parts := strings.Split(rel, "/")
+	for i, part := range parts {
+		flags := unix.O_RDONLY | unix.O_NOFOLLOW | unix.O_CLOEXEC
+		if i < len(parts)-1 {
+			flags |= unix.O_DIRECTORY
+		} else {
+			flags |= unix.O_NONBLOCK
+		}
+		next, err := unix.Openat(fd, part, flags, 0)
+		_ = unix.Close(fd)
+		if err != nil {
+			return nil, err
+		}
+		fd = next
+	}
+	return os.NewFile(uintptr(fd), rel), nil
 }
 
 func (v *verifier) checkUnlisted(setPath string, listed map[string]FileEntry) {
@@ -209,9 +255,9 @@ func (v *verifier) checkUnlisted(setPath string, listed map[string]FileEntry) {
 // checkDatabase restores the database into a fresh private scratch directory
 // and inspects the copy read-only; Store.Open (which migrates) is never used.
 func (v *verifier) checkDatabase(ctx context.Context, setPath string, m Manifest) {
-	scratch, err := os.MkdirTemp("", "gopod-restore-check-")
+	scratch, err := v.makeScratch()
 	if err != nil {
-		v.problem("cannot create scratch directory")
+		v.problem("cannot create scratch directory: %v", err)
 		return
 	}
 	defer os.RemoveAll(scratch)
@@ -231,11 +277,20 @@ func (v *verifier) checkDatabase(ctx context.Context, setPath string, m Manifest
 	if !tablesEqual(info.Tables, m.Database.Tables) {
 		v.problem("%s: row counts differ from the manifest", DBName)
 	}
+	if !tablesEqual(info.ForeignKeyViolations, m.Database.ForeignKeyViolations) {
+		v.problem("%s: foreign key violations differ from the manifest", DBName)
+	} else if len(info.ForeignKeyViolations) > 0 {
+		if m.Mode == ModeMatchedStopped {
+			v.problem("%s: foreign key violations in a matched_stopped set (%s)", DBName, store.FormatViolations(info.ForeignKeyViolations))
+		} else {
+			v.rep.Warnings = append(v.rep.Warnings, "database has pre-existing foreign key violations (orphan rows): "+store.FormatViolations(info.ForeignKeyViolations))
+		}
+	}
 	v.rep.Tables = len(info.Tables)
 	for _, n := range info.Tables {
 		v.rep.Rows += n
 	}
-	if err := store.CheckSchemaCompat(ctx, copyPath); err != nil {
+	if err := store.CheckSchemaCompatIn(ctx, copyPath, filepath.Dir(scratch)); err != nil {
 		if errors.Is(err, store.ErrSchemaNewer) {
 			v.schemaNewer = err
 		}
@@ -324,4 +379,20 @@ func (v *verifier) checkArtifacts(m Manifest, listed map[string]FileEntry) {
 	if m.Mode == ModeDatabaseOnly && ready > 0 {
 		v.rep.Warnings = append(v.rep.Warnings, fmt.Sprintf("database references %d ready artifact(s) whose bytes are not part of this database_only set", ready))
 	}
+}
+
+// makeScratch creates a private scratch directory under the configured parent,
+// by default <backup root>/.staging, so a small /tmp (tmpfs on a Pi) is not
+// the limit. The returned directory's parent is what CheckSchemaCompatIn uses.
+func (v *verifier) makeScratch() (string, error) {
+	parent := v.scratch
+	if parent == "" {
+		parent = filepath.Join(filepath.Dir(v.setPath), StagingDir)
+		if err := os.MkdirAll(parent, 0o700); err != nil {
+			parent = "" // read-only root: fall back to the system temp dir
+		}
+	} else if err := os.MkdirAll(parent, 0o700); err != nil {
+		return "", err
+	}
+	return os.MkdirTemp(parent, "verify-")
 }

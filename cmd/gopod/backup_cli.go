@@ -9,7 +9,11 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
+
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/filters"
 
 	"github.com/Coriol-is/gopod/internal/config"
 	"github.com/Coriol-is/gopod/internal/control"
@@ -17,23 +21,58 @@ import (
 	"github.com/Coriol-is/gopod/internal/runner"
 )
 
-// dockerLister reports live agent containers through the Docker SDK. It can
+// composeServiceLabel and composeOneOffLabel are set by Docker Compose. The
+// controller itself is a container of the "gopod" service; a one-off
+// `docker compose run` capture container carries the oneoff label and is not
+// a writer.
+const (
+	composeServiceLabel = "com.docker.compose.service"
+	composeOneOffLabel  = "com.docker.compose.oneoff"
+	composeServiceName  = "gopod"
+)
+
+func isLive(state string) bool {
+	return state == "running" || state == "restarting" || state == "paused"
+}
+
+// liveOwned picks the live agent containers and the live (non one-off)
+// controller containers of the compose service. A controller left over from a
+// release that predates the instance lock does not hold it, so the lock alone
+// cannot prove it is gone; the container inventory can (best effort).
+func liveOwned(agents, services []container.Summary) []string {
+	var ids []string
+	for _, c := range agents {
+		if isLive(c.State) {
+			ids = append(ids, c.ID)
+		}
+	}
+	for _, c := range services {
+		if isLive(c.State) && !strings.EqualFold(c.Labels[composeOneOffLabel], "true") {
+			ids = append(ids, c.ID)
+		}
+	}
+	return ids
+}
+
+// dockerLister reports live owned containers through the Docker SDK. It can
 // only list: the backup fence has no way to stop or remove a container.
 type dockerLister struct{ d *runner.Docker }
 
 func (l dockerLister) LiveOwned(ctx context.Context) ([]string, error) {
-	list, err := l.d.ListGopodContainers(ctx)
+	agents, err := l.d.ListGopodContainers(ctx)
 	if err != nil {
 		return nil, err
 	}
-	var ids []string
-	for _, c := range list {
-		switch c.State {
-		case "running", "restarting", "paused":
-			ids = append(ids, c.ID)
-		}
+	services, err := l.d.Client().ContainerList(ctx, container.ListOptions{
+		All: true,
+		Filters: filters.NewArgs(
+			filters.KeyValuePair{Key: "label", Value: composeServiceLabel + "=" + composeServiceName},
+		),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("docker: list compose service containers: %w", err)
 	}
-	return ids, nil
+	return liveOwned(agents, services), nil
 }
 
 var _ maintenance.ContainerLister = dockerLister{}
@@ -46,6 +85,7 @@ func backupDeps(cfg config.Config, log *slog.Logger) control.BackupDeps {
 		ArtifactsDir: filepath.Join(cfg.DataDir, "artifacts"),
 		Forbidden:    []string{cfg.ChatsDir, cfg.RepoRoot},
 		DefaultRoot:  os.Getenv("GOPOD_BACKUP_DIR"),
+		ScratchDir:   os.Getenv("GOPOD_BACKUP_SCRATCH_DIR"),
 		Version:      buildVersion(),
 		Log:          log,
 		Containers: func(ctx context.Context) (maintenance.ContainerLister, func(), error) {
