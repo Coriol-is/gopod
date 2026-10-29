@@ -71,6 +71,9 @@ type Runner struct {
 	// AgentStream.Progress. Off: plain text, as before (GOPOD_PROGRESS=0).
 	progress bool
 
+	// managed is the CP-004 managed task runtime; nil keeps every legacy path.
+	managed *managedState
+
 	// Per-chat provider and model overrides (/provider, /model).
 	providersMu          sync.RWMutex
 	chatProviders        map[string]AgentProvider
@@ -213,6 +216,17 @@ func (r *Runner) ensureContainer(ctx context.Context, chatFolder string, tier Ti
 	}
 	if chatFolder == "" {
 		return "", errors.New("runner: empty chatFolder")
+	}
+	if r.managed != nil {
+		// Managed runtime: the foreground container goes through the same policy
+		// guard as a task, so roles cannot leak into each other.
+		prov := r.ProviderForChat(chatFolder)
+		id, err := r.ensureRole(ctx, chatFolder, RoleForegroundPersonal, prov, allowlist, reconcile, "")
+		if err != nil {
+			return "", err
+		}
+		r.logAgentVersion(ctx, id, chatFolder, prov)
+		return id, nil
 	}
 	r.lockChat(chatFolder)
 	defer r.unlockChat(chatFolder)

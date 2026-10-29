@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"sync/atomic"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
@@ -281,6 +282,25 @@ type StreamHandle struct {
 	Done   <-chan error  // closed when exec finishes (nil = success)
 	cancel context.CancelFunc
 	conn   io.Closer // the attached exec connection
+
+	exit execExit // set only when the daemon reported the exec finished
+}
+
+// execExit records an exit the daemon reported (ExecInspect Running=false).
+// A closed attachment or a cancelled context never sets it.
+type execExit struct {
+	set  atomic.Bool
+	code atomic.Int64
+}
+
+// ExitObserved reports the exec's exit code if, and only if, the daemon told us
+// the process finished. It is the evidence a managed task needs to release its
+// capacity: a closed stream, a timeout or a kill request are not.
+func (h *StreamHandle) ExitObserved() (code int, ok bool) {
+	if !h.exit.set.Load() {
+		return 0, false
+	}
+	return int(h.exit.code.Load()), true
 }
 
 // Close cancels the exec context, closes the attached connection and
@@ -342,6 +362,13 @@ func (d *Docker) ExecStream(
 	stdoutR, stdoutW := io.Pipe()
 	stderrR, stderrW := io.Pipe()
 	done := make(chan error, 1)
+	handle := &StreamHandle{
+		Stdout: stdoutR,
+		Stderr: stderrR,
+		Done:   done,
+		cancel: cancel,
+		conn:   resp.Conn,
+	}
 
 	go func() {
 		defer resp.Close()
@@ -367,6 +394,8 @@ func (d *Docker) ExecStream(
 				return
 			}
 			if !info.Running {
+				handle.exit.code.Store(int64(info.ExitCode))
+				handle.exit.set.Store(true)
 				if info.ExitCode != 0 {
 					done <- &ExecError{Code: info.ExitCode}
 				}
@@ -382,13 +411,7 @@ func (d *Docker) ExecStream(
 		}
 	}()
 
-	return &StreamHandle{
-		Stdout: stdoutR,
-		Stderr: stderrR,
-		Done:   done,
-		cancel: cancel,
-		conn:   resp.Conn,
-	}, nil
+	return handle, nil
 }
 
 // Stop gracefully stops a container. Waits up to grace for the
