@@ -34,7 +34,7 @@ approved queue, [proposal registry](proposals/README.md) for CP status and
   Compose supervision, gracefully drains and recycles exact old personal container
   IDs. Startup reports ready/degraded only after local runtime checks.
 - Local build, vet (native and Linux ARM64), full tests and restart-related race suites passed.
-  Deployed in PR #84 (`8bdff46`); gateway and owner runtime recreated successfully during rollout.
+  Merged in PR #84 and deployed as `8bdff46`; gateway and owner runtime recreated successfully during rollout.
   The command itself has not been invoked in the live owner chat. Real command-driven Compose restart, Telegram
   notice visibility/topic behavior and provider usability remain live acceptance.
 - Active non-personal profiles and unresolved managed task holds refuse restart;
