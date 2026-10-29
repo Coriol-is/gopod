@@ -149,4 +149,8 @@ smoke the HANDOFF already requires. Until then none of this reaches the owner.
 5. Buttons: separate spec; not scheduled.
 
 ## Remaining open questions
-- Sticker-only inbound: model turn (my default) or context only — confirm when P2 starts.
+- Resolved 2026-10-29: a sticker-only inbound message is **recorded as context only** (metadata, no model turn).
+  The agent must be able to **recover reactions on messages when asked** about them; that capability is specified
+  separately in [CP-032 reaction reading](2026-10-29-telegram-reaction-reading.md) and is not part of P2.
+- Resolved 2026-10-29: thread-targeted sends are in scope **only for threads in the owner's private chat**
+  for now (see [thread awareness](2026-10-29-agent-thread-awareness.md)).

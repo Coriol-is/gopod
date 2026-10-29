@@ -1,7 +1,18 @@
 # Group reply triggers, owner-in-group identity and group login guidance
 
-Date: 2026-10-29. Status: **requirements draft; not implemented**. Follows the default group admission
+Date: 2026-10-29. Status: **requirements accepted with the owner decisions below; implementation in progress**. Follows the default group admission
 change ([D047](../../DECISIONS.md)). Statements marked *(owner)* come from the owner; *(guess)* are proposals.
+
+## Owner decisions (2026-10-29, late)
+1. The existing group keeps `all` (today's behavior). New groups default to `mention` *(my proposal, accepted by silence on that point)*.
+2. Group-scoped commands for the owner, by user id *(proposal, owner asked me to propose)*:
+   - no confirmation: `/trigger` (show and set), `/model`, `/provider` (this group only), `/isolation status`, `/isolation disable` (kill switch must be immediate), `/help`;
+   - confirmation in the owner's private chat: `/isolation enable`, `/isolation prepare` (they change the security boundary);
+   - private chat only: `/logs`, `/restart`, memory, schedules, `/telegram doctor`, backup, anything personal or host-level.
+3. Messages that do not match the trigger are still stored as chat context.
+4. `owner` mode answers only the owner's own messages (strict meaning). Replies from other members are ignored in that mode; use `owner+mention` to let others address the bot.
+5. Codex for the group is switched by the owner from the group with `/provider codex` through the owner-in-group identity (this is why R2 is built first).
+6. CI is not mandatory: no branch protection or required checks are planned.
 
 ## Why
 *(owner)* Registered groups now run the agent by default. The owner wants to configure when the bot answers in a
@@ -63,8 +74,4 @@ Per-member allowlists, per-topic modes, enabling privacy mode changes from the b
 widening of what a group runtime can reach.
 
 ## Open questions
-1. Default for the existing group: keep `all` (my default) or switch to `owner+mention`?
-2. Which control commands should work from the group for the owner (R2.2 list), and which need private
-   confirmation?
-3. Should messages that do not match the trigger still be stored as chat context (my default: yes)?
-4. Should `owner` mode also answer replies to the bot from other members, or only the owner's own messages?
+All four earlier questions were answered (see Owner decisions).
