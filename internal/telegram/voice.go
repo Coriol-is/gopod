@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"unicode/utf8"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -156,9 +157,7 @@ func textToSpeech(ctx context.Context, apiKey, text string) ([]byte, error) {
 		return nil, fmt.Errorf("OPENAI_API_KEY not set")
 	}
 	// Truncate for TTS: OpenAI TTS has a 4096 char limit.
-	if len(text) > 4000 {
-		text = text[:4000]
-	}
+	text = legacySpeechInput(text)
 
 	reqBody, _ := json.Marshal(map[string]any{
 		"model": "tts-1",
@@ -184,10 +183,45 @@ func textToSpeech(ctx context.Context, apiKey, text string) ([]byte, error) {
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("tts API returned %d: %s", resp.StatusCode, truncateStr(string(body), 200))
+		return nil, &ttsStatusError{Status: resp.StatusCode, Body: truncateStr(string(body), 200)}
 	}
 
 	return io.ReadAll(resp.Body)
+}
+
+// legacySpeechInput is the legacy truncation: at most 4000 bytes, cut wherever
+// the limit falls (it can split a multi-byte character).
+func legacySpeechInput(text string) string {
+	if len(text) > 4000 {
+		return text[:4000]
+	}
+	return text
+}
+
+// truncateSpeech applies the same 4000-byte limit but cuts on a rune boundary,
+// so the prepared path never sends or hashes a broken character. For text of
+// at most 4000 bytes it equals the legacy input.
+func truncateSpeech(text string) string {
+	if len(text) <= 4000 {
+		return text
+	}
+	cut := 4000
+	for cut > 0 && !utf8.RuneStart(text[cut]) {
+		cut--
+	}
+	return text[:cut]
+}
+
+// ttsStatusError is a non-200 answer of the speech endpoint. Its text is the
+// legacy message; the status lets the prepared path tell an explicit refusal
+// from an ambiguous failure.
+type ttsStatusError struct {
+	Status int
+	Body   string
+}
+
+func (e *ttsStatusError) Error() string {
+	return fmt.Sprintf("tts API returned %d: %s", e.Status, e.Body)
 }
 
 // sendVoiceReply sends audio data as a Telegram voice message into

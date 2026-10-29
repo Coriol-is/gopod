@@ -96,6 +96,13 @@ type Bot struct {
 	logins        *loginSessions
 	streamEnabled bool
 
+	// tts is a test seam for the legacy personal TTS call; nil means the
+	// OpenAI endpoint (textToSpeech).
+	tts func(ctx context.Context, apiKey, text string) ([]byte, error)
+	// prepared turns on immutable preparation of personal attachments
+	// (code documents, voice). Nil: legacy paths only.
+	prepared *PreparedDelivery
+
 	// taskRun overrides how silent scheduled turns run the agent. Tests only.
 	taskRun func(ctx context.Context, folder string, thread int, tier runner.Tier, prompt string) (string, error)
 

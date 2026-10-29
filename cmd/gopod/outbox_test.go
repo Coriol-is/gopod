@@ -13,6 +13,7 @@ import (
 	"github.com/Coriol-is/gopod/internal/config"
 	"github.com/Coriol-is/gopod/internal/ipc"
 	"github.com/Coriol-is/gopod/internal/store"
+	"github.com/Coriol-is/gopod/internal/telegram"
 )
 
 func TestAcquireOutboxOwnerWaitsForThePreviousInstance(t *testing.T) {
@@ -93,4 +94,92 @@ func TestArtifactIPCNeedsTheDurableRouteAndAPrivateStore(t *testing.T) {
 	if got := artifactIPC(durableIPC(true, false, st, "owner", 42), ac); got.Store != nil {
 		t.Fatalf("V1 enabled while the dispatcher is stopped: %+v", got)
 	}
+}
+
+func TestPreparedDeliveryNeedsAnOwnerChat(t *testing.T) {
+	st, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "s.sqlite"), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if got := preparedDelivery(config.Config{}, st, nil, slog.Default()); got != nil {
+		t.Fatal("prepared delivery without an owner chat")
+	}
+	got := preparedDelivery(config.Config{OwnerChatID: 42}, st, nil, slog.Default())
+	if got == nil || got.Speech == nil || len(got.Speech.Policy.Grants) != 1 {
+		t.Fatalf("got %+v", got)
+	}
+	g := got.Speech.Policy.Grants[0]
+	if g.JID != "tg:42" || g.Backend != telegram.SpeechBackendOpenAI || !g.BilledCostAccepted || g.MaxChars != 4000 {
+		t.Fatalf("grant %+v", g)
+	}
+}
+
+func TestStartupSweepOnlyFlipsRowsOlderThanTheProcess(t *testing.T) {
+	ctx := t.Context()
+	st, err := store.Open(ctx, filepath.Join(t.TempDir(), "s.sqlite"), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if err = st.RegisterChat(ctx, store.RegisteredChat{JID: "tg:1", Folder: "owner", IsOwner: true, AddedAt: 1}); err != nil {
+		t.Fatal(err)
+	}
+	conv, err := st.SnapshotConversation(ctx, "tg:1", 0, store.VisibilityConversation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old, _, _ := st.BeginGeneration(ctx, conv.Scope, store.GenerationVoice, "old", "b")
+	time.Sleep(10 * time.Millisecond)
+	processStart := time.Now()
+	time.Sleep(10 * time.Millisecond)
+	live, _, _ := st.BeginGeneration(ctx, conv.Scope, store.GenerationVoice, "live", "b") // begun by this process
+	sweepGenerationsAtStartup(ctx, st, processStart, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if g, _ := st.GetGeneration(ctx, old.ID); g.State != store.GenerationUnknown {
+		t.Fatalf("old row = %+v", g)
+	}
+	if g, _ := st.GetGeneration(ctx, live.ID); g.State != store.GenerationGenerating {
+		t.Fatalf("a live generation was flipped: %+v", g)
+	}
+}
+
+func TestMaintainGenerationsPurgesFinishedRowsAndReconciles(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	st, err := store.Open(ctx, filepath.Join(t.TempDir(), "s.sqlite"), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if err = st.RegisterChat(ctx, store.RegisteredChat{JID: "tg:1", Folder: "owner", IsOwner: true, AddedAt: 1}); err != nil {
+		t.Fatal(err)
+	}
+	conv, _ := st.SnapshotConversation(ctx, "tg:1", 0, store.VisibilityConversation)
+	g, _, _ := st.BeginGeneration(ctx, conv.Scope, store.GenerationVoice, "k", "b")
+	_ = st.FailGeneration(ctx, g.ID, "refused")
+	time.Sleep(30 * time.Millisecond)
+	reconciled := make(chan struct{}, 8)
+	done := make(chan struct{})
+	go func() {
+		maintainGenerations(ctx, st, 20*time.Millisecond, 10*time.Millisecond, func(context.Context) { reconciled <- struct{}{} }, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		close(done)
+	}()
+	deadline := time.After(3 * time.Second)
+	for {
+		if _, err := st.GetGeneration(ctx, g.ID); errors.Is(err, store.ErrGenerationNotFound) {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("finished row was not purged")
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+	select {
+	case <-reconciled:
+	default:
+		t.Fatal("reconcile did not run")
+	}
+	cancel()
+	<-done
 }

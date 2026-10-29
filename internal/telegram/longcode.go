@@ -160,7 +160,7 @@ func (b *Bot) attachLongCode(ctx context.Context, chatID int64, thread int, text
 	}
 	sent := make([]bool, len(r.docs))
 	for i, d := range r.docs {
-		if _, err := b.sendDocument(ctx, chatID, thread, d.Name, []byte(d.Body), d.caption()); err != nil {
+		if err := b.sendCodeDoc(ctx, chatID, thread, d); err != nil {
 			b.log.Warn("code document not sent, keeping it inline",
 				slog.Int64("chat_id", chatID),
 				slog.String("name", d.Name),
@@ -170,6 +170,20 @@ func (b *Bot) attachLongCode(ctx context.Context, chatID int64, thread int, text
 		sent[i] = true
 	}
 	return r.text(sent)
+}
+
+// sendCodeDoc uploads one oversized block. With prepared delivery on (personal
+// chat) the bytes are those of a verified immutable snapshot, which are the
+// same bytes the legacy path uploads; a preparation failure keeps the block
+// inline like a failed upload.
+func (b *Bot) sendCodeDoc(ctx context.Context, chatID int64, thread int, d codeDoc) error {
+	data, release, err := b.codeDocBytes(ctx, chatID, thread, d)
+	if err != nil {
+		return err
+	}
+	defer release()
+	_, err = b.sendDocument(ctx, chatID, thread, d.Name, data, d.caption())
+	return err
 }
 
 // stripCodeBlocks removes the fenced code blocks from text, fences

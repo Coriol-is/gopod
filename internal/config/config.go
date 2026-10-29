@@ -151,6 +151,13 @@ type Config struct {
 	// (CP-007), which this flag does not check; see D039.
 	OutboxArtifactsEnabled bool
 
+	// GenerationRetentionDays is how long finished generated-artifact ledger rows
+	// (ready, failed, preparation_unknown) are kept. Default 30. A failed or
+	// unknown row blocks a second paid call for its key, so it is kept as long
+	// as a ready one; keys include the turn id and are never replayed that late.
+	// GOPOD_GENERATION_RETENTION_DAYS.
+	GenerationRetentionDays int
+
 	// --- Agent admission control (D026) ---
 
 	// MaxAgents caps agent processes running at once across all chats.
@@ -277,6 +284,12 @@ func (c Config) validate() error {
 // DefaultAgentNodeHeapMB (config does not import runner).
 func loadAgentAdmission(cfg *Config) error {
 	var err error
+	if cfg.GenerationRetentionDays, err = envInt("GOPOD_GENERATION_RETENTION_DAYS", 30); err != nil {
+		return err
+	}
+	if cfg.GenerationRetentionDays < 1 {
+		cfg.GenerationRetentionDays = 30
+	}
 	if cfg.MaxAgents, err = envInt("GOPOD_MAX_AGENTS", 2); err != nil {
 		return err
 	}
