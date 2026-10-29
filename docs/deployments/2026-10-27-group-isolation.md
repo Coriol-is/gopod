@@ -134,8 +134,9 @@ or retagging personal images. No production group-admin migration was invoked.
 
 1. Refresh Claude subscription through the existing private owner management
    flow, then rerun its final-image two-turn canary.
-2. Identify and fix the Codex post-preflight tree-budget failure without weakening
-   no-follow/file-type protections; review, test and qualify the correction.
+2. Codex tree-budget failure: root cause identified and fixed in source on branch
+   `fix/codex-group-tree-budget` (see HANDOFF 2026-10-29: arg0 alias symlinks). Review, merge,
+   rebuild the Codex group image/controller and rerun the full two-turn canary on the Pi.
 3. After both providers qualify, stop the controller, take a fresh backup and
    use revision-checked offline admin preparation/activation for the controlled
    sandbox only. Preserve retired data and intentionally pause legacy group tasks.

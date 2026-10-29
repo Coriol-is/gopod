@@ -10,6 +10,35 @@ approved queue, [proposal registry](proposals/README.md) for CP status and
 - CP-032 [reaction-reading specification](superpowers/specs/2026-10-29-telegram-reaction-reading.md): group emoji/custom-ID events, durable admission, exact message/topic mapping and no-admin/unavailable diagnostics. Private native reactions are transport-blocked; no account-reader workaround is authorized. Design only; no source or runtime flags changed.
 - Owner reports live `/restart` checked successfully on 2026-10-29; this establishes the reported baseline, not every negative/topic/provider scenario.
 
+## Codex tree-budget admission fix (2026-10-29, branch `fix/codex-group-tree-budget`, unmerged)
+- **Root cause:** pinned Codex creates `CODEX_HOME/tmp/arg0/codex-arg0<id>/` containing the
+  symlinks `apply_patch`, `applypatch` (Linux also `codex-linux-sandbox`, `codex-execve-wrapper`)
+  and a `.lock` on every start and leaves them behind after exit (also when killed); its janitor only
+  removes them at the next start, after gopod's walk. The single-turn run left them, so the next
+  `Start` hit the **symlink rule** in `privateTreeBudget` on the native tree, before any inference.
+  The number rules are not implicated: a fresh group tree (plugins/apps/skill search disabled) is
+  well under 64 MiB / 2048 files; the owner's personal `.codex` is 160 MiB / 5960 files only because of
+  plugin clones and remote catalogs that group config disables. No FIFO/socket/non-symlink found.
+- **Evidence:** local, not Pi. Codex 0.165.0 (pinned is 0.164.0, same mechanism) run offline with
+  a temp `CODEX_HOME`: `--version` alone leaves `tmp/arg0*/codex-arg0*/{.lock,apply_patch,applypatch}`;
+  an interrupted `exec` also created SQLite `-wal`/`-shm` files, `sessions/`, `skills/.system`,
+  `thread-writer-locks/`. Read-only Pi inspection (`find`/`du` metadata only) of the owner's
+  `.codex`: no symlinks, FIFOs or sockets, max depth 15, WAL files present. No Pi group namespace
+  existed to inspect (qualification data already cleaned), so the failing tree itself was not observed;
+  the attribution is inferred from the local reproduction and the stage evidence. Linux alias names
+  come from Codex's arg0 code (not re-verified on the Pi).
+- **Also fixed:** the depth test used `filepath.SplitList` (splits on `:`), so it never fired; it now
+  counts `/` components (limit 64 unchanged). Walk is entry-capped so growth or loops terminate.
+- **Diagnosable:** `TreeBudgetError{Tree, Reason, Class}` -> host `slog` warning -> `AdmissionError.Detail`
+  -> canary `admission_detail=`. Group chats still see only the generic unavailable text.
+- **Boundary:** unchanged no-follow rooted walk (Lstat + same-inode check on every directory
+  open); the only symlinks tolerated are the four exact alias names at exactly depth 5 under
+  `codex/tmp/arg0/codex-arg0<id>/`, native tree only, never followed. Claude native state may leave
+  its own entries; not observed here.
+- **Still required (owner/orchestrator):** rebuild the Codex group image and controller from the
+  merged fix and rerun the full two-turn (new + resume) Codex canary on the Pi; confirm with
+  `admission_detail=` if it still fails. Claude qualification still needs a refreshed subscription.
+
 ## Resume here (2026-10-29, Codex continuation)
 - Latest Claude session `17a9d2c0-7ae3-4ea8-bdf2-a4af91a2ebe5` stopped on a usage limit.
   Its P1 formatting child stopped after read-only exploration; the clean worktree was resumed in Codex.

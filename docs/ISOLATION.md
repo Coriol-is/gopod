@@ -131,8 +131,20 @@ ceiling applies to each command process. The kernel PID controller must report
 a ceiling of eight before commands run. Background/leftover processes prevent
 successful export; arbitrary background services are unsupported.
 
-Native/policy/workspace state has bounded admission budgets and native files have
-a hard file-size limit. Requested Docker memory settings do not prove target-host
+Native/policy/workspace state has bounded admission budgets (native 64 MiB / 2048
+files, workspace 32 MiB / 256, policy 8 MiB / 128; depth 64 path components) and
+native files have a hard file-size limit. The walk is rooted and no-follow and
+rejects symlinks, FIFOs/sockets/devices, depth, bytes and file count, returning a
+typed error with a fixed reason code (`symlink`, `special_file`, `depth`, `bytes`,
+`files`, `walk`) and a sanitized two-component path class. It is logged on the
+host and carried as `AdmissionError.Detail` for owner-private diagnostics (the
+canary prints `admission_detail=`); group chats never see it. One narrow
+exemption exists: pinned Codex leaves per-process alias symlinks at exactly
+`codex/tmp/arg0/codex-arg0<id>/{apply_patch,applypatch,codex-linux-sandbox,codex-execve-wrapper}`
+after every run (even `--version`, and when killed), so only those entries in the
+native tree may be symlinks; they are never followed and Codex's own janitor
+removes stale ones. Any other symlink, including a different name or depth under
+`tmp/arg0`, still fails closed. No limit changed (no D048). Requested Docker memory settings do not prove target-host
 memory-cgroup enforcement. T9 remains a separate paused host task: this change
 does not edit boot flags, enable the memory cgroup or reboot the Pi.
 
