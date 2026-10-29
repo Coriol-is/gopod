@@ -25,6 +25,15 @@ approved queue, [proposal registry](proposals/README.md) for CP status and
 - **Not authorized without the owner:** account logins, quota/paid fallbacks, T9 reboot,
   production group activation, schedule changes (freefeed digest stays as is).
 
+## CP-003 PR 5 in progress (2026-10-29)
+- Branch `feat/cp003-voice-code-parity` (worktree `gopod-cp003-pr5`), based on PR 4 (`6548bd6`); not pushed. Code documents
+  and the personal automatic voice clip are prepared as immutable snapshots (`internal/telegram/{prepared,artifact_prepare,
+  speech,speech_openai,voice_plan}.go`, `internal/store/generation.go`, `artifactfs.SnapshotBytes`), ADR D041.
+- Behind `GOPOD_OUTBOX_ARTIFACTS` only (same gates as PR 4, no new flag). Foreground still sends directly; `PublishVoiceReply`
+  (text + voice in one plan, truthful status) is built and tested but unused until PR 6.
+- Not done: **live TTS/billing qualification (needs its own authorized scope and evidence)**, foreground cutover (PR 6),
+  agent-requested voice (needs the runner capability issuer), operator resend of uncertain uploads. CP-002/003 stay `in-progress`.
+
 ## CP-003 PR 4 in progress (2026-10-29)
 - Branch `feat/cp003-artifacts` (worktree `gopod-cp003-pr4`), based on `07d9edd` (PR 3 merged): artifact inventory
   and quotas (`internal/store/artifacts*.go`), rooted no-follow snapshot store (`internal/artifactfs`), per-run

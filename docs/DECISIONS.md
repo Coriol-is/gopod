@@ -1319,6 +1319,66 @@ partial delivery. Operator resend of uncertain uploads remains deferred.
 
 ---
 
+## D041 — Prepared personal attachments: a ledger before any paid call, direct send until PR 6
+
+**Date:** 2026-10-29
+**Status:** Accepted
+
+**Context.** CP-003 PR 5 must put the two host-generated attachments of a personal final reply,
+oversized code documents and the automatic TTS voice clip, on immutable preparation without changing
+which replies are spoken. A TTS call is billed and its result can be lost after the money is spent,
+so "retry on failure" is not safe. Foreground delivery still goes through the direct send helpers
+(reply threading, topic-gone fallback) until PR 6, and the outbox transport has neither.
+
+**Decision.**
+1. **Preparation of host bytes** follows the agent-file order: reserve the upper bound
+   (`ReserveArtifacts`), write a private snapshot outside SQL (`artifactfs.SnapshotBytes`: 0600, fsync,
+   no overwrite), `MarkArtifactsReady` with the measured hash. The upload sends the bytes read back
+   through `ReadVerified`, never the caller's buffer. Code documents release their preparation after
+   the upload; failure to prepare keeps the block inline (the existing failure behavior).
+2. **Generated-artifact ledger** (`generated_preparations`): one row per (namespace, epoch, kind, key),
+   written by `BeginGeneration` before the call. States `generating`, `ready`, `failed`,
+   `preparation_unknown`; a finished row never reopens (trigger) and every state blocks the same key,
+   so a second paid call needs a new key, which is a new explicit intent. Only an explicit refusal
+   status (401/403/429/400/422 from the backend adapter, with a fixed lowercase code) is `failed`;
+   timeout, cancel mid-call, 5xx, empty or oversized result, or a failed write after the bytes arrived
+   is `preparation_unknown`. Terminal writes use a fresh context so a cancelled attempt still records
+   its outcome. Startup sweeps every `generating` row to unknown; a live sweep uses a 10-minute grace.
+3. **Authorization before any effect**: `SpeechPolicy` grants name the destination JID, the one
+   backend, a credential reference (never a value), a character bound and an explicit
+   `BilledCostAccepted`. An unauthorized request fails before the credential is read, storage is
+   reserved or the ledger is touched. A different backend is unauthorized; there is no fallback. The
+   personal grant is built only for the configured owner chat; groups never reach the personal key.
+4. **Storage is reserved before the call**, so a quota failure costs nothing and consumes no intent.
+5. **Direct upload is at-most-once**: the ledger row carries `upload_state` (`none`, `claimed`, `sent`,
+   `refused`, `unknown`). The claim is taken before the API call, so a retried turn, a duplicate hook
+   or a crash never uploads the same clip twice; a claim without an outcome is unknown, never
+   "not sent". The legacy voice reply is unchanged in selection (one shared `voiceCandidate`),
+   thread, reply target and filename; characterization tests run the same table on both paths.
+6. **One plan** (`VoiceReplyPlan`, `PublishVoiceReply`): rendered text parts followed by one upload
+   part carrying the host-only voice presentation (`store.UploadPresentationVoice`, in the upload
+   part's otherwise unused `ParseMode` field, so no schema change). The agent V1 request cannot set it
+   (tested), so agent files stay documents. The request identity binds the key to the text bytes and
+   the audio hash: a retry converges on one delivery and one upload, different content is a conflict.
+   `DescribeVoiceDelivery` derives the user-facing status from stored part states and never reads
+   uncertain as delivered or failed. The foreground does not use the plan yet (PR 6).
+7. **Flag**: everything is behind `GOPOD_OUTBOX_ARTIFACTS` (no new flag, no new environment name).
+   With it off or without an owner chat the legacy paths run unchanged.
+
+**Limits, stated plainly.** Fake backends only: no live TTS, billing or Telegram qualification;
+that needs its own authorized scope. Admission rate caps apply to host-generated code documents too
+(40 files and 200 MiB per namespace per hour); beyond them the block stays inline. Agent-requested
+voice (`voice:true`) stays `voice_unavailable`: it needs the runner-side capability issuer. A ready
+clip that is never published expires with its reservation (one hour) and is never regenerated.
+Same-process crash windows between the ledger write and the artifact write are covered by the
+startup sweep, not by fault injection at every boundary.
+
+**Consequences.** A paid TTS call can happen at most once per intent, and what happened is durable.
+A failed or unknown voice leaves the text reply untouched, as today. PR 6 can switch foreground
+delivery to `PublishVoiceReply` without changing preparation.
+
+---
+
 ## Template for new ADRs
 
 ```
