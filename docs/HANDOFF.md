@@ -31,7 +31,13 @@ approved queue, [proposal registry](proposals/README.md) for CP status and
   counts `/` components (limit 64 unchanged). Walk is entry-capped so growth or loops terminate.
 - **Diagnosable:** `TreeBudgetError{Tree, Reason, Class}` -> host `slog` warning -> `AdmissionError.Detail`
   -> canary `admission_detail=`. Group chats still see only the generic unavailable text.
-- **Boundary:** unchanged no-follow rooted walk (Lstat + same-inode check on every directory
+- **Owner-directed relaxation (same branch):** limits raised to native 512 MiB / 20000 files and
+  workspace 256 MiB / 5000 (runaway-growth guards, not security limits; depth cap 64 kept). A planted
+  symlink/FIFO/socket in the native or workspace tree is now unlinked via `unlinkat` on the verified
+  parent fd (no follow, no recursion), warned and counted, then admitted; only a failed removal
+  (`heal`) or a bytes/files/depth/walk violation refuses. Policy tree never heals; owner-private
+  note not implemented (log only). `/login`, control confirm and login handoff untouched.
+- **Boundary (strict part):** no-follow rooted walk (Lstat + same-inode check on every directory
   open); the only symlinks tolerated are the four exact alias names at exactly depth 5 under
   `codex/tmp/arg0/codex-arg0<id>/`, native tree only, never followed. Claude native state may leave
   its own entries; not observed here.

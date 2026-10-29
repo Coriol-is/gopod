@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"golang.org/x/sys/unix"
 )
 
 // TreeReason is a fixed, non-sensitive code explaining why a private tree was
@@ -23,6 +25,7 @@ const (
 	TreeBytes       TreeReason = "bytes"
 	TreeFiles       TreeReason = "files"
 	TreeWalk        TreeReason = "walk"
+	TreeHeal        TreeReason = "heal"
 )
 
 const (
@@ -52,23 +55,32 @@ func (e *TreeBudgetError) Detail() string {
 }
 
 // treePolicy bounds one private tree. allowSymlink exempts a specific trusted,
-// host-known path (never a pattern reachable by untrusted code); afterList is a
-// test hook invoked after a directory has been listed.
+// host-known path (never a pattern reachable by untrusted code). When heal is
+// set, a symlink or special file is unlinked in place (never followed) and
+// reported to onHeal instead of refusing admission. afterList and beforeHeal
+// are test hooks.
 type treePolicy struct {
 	Label        string
 	Bytes        int64
 	Files        int
+	heal         bool
+	onHeal       func(reason TreeReason, class string)
 	allowSymlink func(rel string) bool
 	afterList    func(rel string)
+	beforeHeal   func(rel string)
 }
 
 var (
+	// Byte and file limits are runaway-growth guards for owner-run groups, not
+	// security limits; the depth cap, no-follow traversal and removal of planted
+	// links/special files are the boundary. Policy is host-written: no healing.
+	//
 	// Pinned Codex keeps per-process alias symlinks under CODEX_HOME/tmp/arg0
 	// and leaves them behind after the process exits; its own janitor removes
 	// stale ones on the next start. The native container runs only that trusted
 	// binary (no file tools), so the alias entries are the one tolerated symlink.
-	nativeTreePolicy    = treePolicy{Label: "native", Bytes: 64 << 20, Files: 2048, allowSymlink: codexArg0AliasEntry}
-	workspaceTreePolicy = treePolicy{Label: "workspace", Bytes: 32 << 20, Files: 256}
+	nativeTreePolicy    = treePolicy{Label: "native", Bytes: 512 << 20, Files: 20000, heal: true, allowSymlink: codexArg0AliasEntry}
+	workspaceTreePolicy = treePolicy{Label: "workspace", Bytes: 256 << 20, Files: 5000, heal: true}
 	policyTreePolicy    = treePolicy{Label: "policy", Bytes: 8 << 20, Files: 128}
 )
 
@@ -152,7 +164,7 @@ func (w *treeWalker) dir(rel string, depth int) error {
 			w.p.afterList(rel)
 		}
 		for _, e := range batch {
-			if err := w.entry(path.Join(rel, e.Name()), depth+1); err != nil {
+			if err := w.entry(f, path.Join(rel, e.Name()), depth+1); err != nil {
 				return err
 			}
 		}
@@ -165,7 +177,7 @@ func (w *treeWalker) dir(rel string, depth int) error {
 	}
 }
 
-func (w *treeWalker) entry(rel string, depth int) error {
+func (w *treeWalker) entry(parent *os.File, rel string, depth int) error {
 	if w.ctx.Err() != nil {
 		return w.fail(TreeWalk, rel)
 	}
@@ -182,15 +194,15 @@ func (w *treeWalker) entry(rel string, depth int) error {
 	if err != nil {
 		return w.fail(TreeWalk, rel)
 	}
-	return w.classify(rel, depth, info)
+	return w.classify(parent, rel, depth, info)
 }
 
-func (w *treeWalker) classify(rel string, depth int, info fs.FileInfo) error {
+func (w *treeWalker) classify(parent *os.File, rel string, depth int, info fs.FileInfo) error {
 	mode := info.Mode()
 	switch {
 	case mode&os.ModeSymlink != 0:
 		if w.p.allowSymlink == nil || !w.p.allowSymlink(rel) {
-			return w.fail(TreeSymlink, rel)
+			return w.heal(parent, rel, TreeSymlink)
 		}
 		return w.count(rel, 0)
 	case mode.IsDir():
@@ -198,8 +210,36 @@ func (w *treeWalker) classify(rel string, depth int, info fs.FileInfo) error {
 	case mode.IsRegular():
 		return w.count(rel, info.Size())
 	default:
-		return w.fail(TreeSpecialFile, rel)
+		return w.heal(parent, rel, TreeSpecialFile)
 	}
+}
+
+// heal unlinks one planted symlink or special file through the verified parent
+// directory handle: the final component is never followed and a directory
+// swapped in meanwhile makes unlinkat fail (EISDIR), which refuses admission.
+func (w *treeWalker) heal(parent *os.File, rel string, reason TreeReason) error {
+	if !w.p.heal {
+		return w.fail(reason, rel)
+	}
+	if w.p.beforeHeal != nil {
+		w.p.beforeHeal(rel)
+	}
+	fd := int(parent.Fd())
+	name := path.Base(rel)
+	var st unix.Stat_t
+	if err := unix.Fstatat(fd, name, &st, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		return w.fail(TreeHeal, rel)
+	}
+	if st.Mode&unix.S_IFMT == unix.S_IFDIR {
+		return w.fail(TreeHeal, rel)
+	}
+	if err := unix.Unlinkat(fd, name, 0); err != nil {
+		return w.fail(TreeHeal, rel)
+	}
+	if w.p.onHeal != nil {
+		w.p.onHeal(reason, pathClass(rel))
+	}
+	return nil
 }
 
 func (w *treeWalker) count(rel string, size int64) error {

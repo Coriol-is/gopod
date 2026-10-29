@@ -3,14 +3,24 @@ package groupruntime
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 
 	"github.com/Coriol-is/gopod/internal/runner"
 )
+
+// treeHealedTotal counts planted symlinks/special files removed since start.
+var treeHealedTotal atomic.Int64
 
 // checkTree enforces one private-tree budget. A refusal is logged on the host
 // with its fixed reason code and sanitized path class only, and the typed error
 // travels up so owner-private diagnostics (not group chats) can show it.
 func (m *Manager) checkTree(ctx context.Context, dir string, p treePolicy) error {
+	p.onHeal = func(reason TreeReason, class string) {
+		treeHealedTotal.Add(1)
+		if m.Log != nil {
+			m.Log.Warn("group private tree entry removed", "tree", p.Label, "reason", string(reason), "class", class)
+		}
+	}
 	err := privateTreeBudget(ctx, dir, p)
 	var tb *TreeBudgetError
 	if errors.As(err, &tb) && m.Log != nil {

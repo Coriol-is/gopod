@@ -14,6 +14,8 @@ import (
 	"time"
 )
 
+var strictTree = treePolicy{Label: "workspace", Bytes: 32 << 20, Files: 256}
+
 func mustWrite(t *testing.T, path string, size int) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
@@ -88,6 +90,7 @@ func TestTreeBudgetAllowsOnlyCodexArg0Aliases(t *testing.T) {
 	// The same layout is not tolerated in a tree without the exemption.
 	strict := nativeTreePolicy
 	strict.allowSymlink = nil
+	strict.heal = false
 	wantReason(t, privateTreeBudget(context.Background(), root, strict), TreeSymlink)
 }
 
@@ -133,7 +136,9 @@ func TestTreeBudgetArg0ExemptionIsNarrow(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			root := t.TempDir()
 			plant(t, root)
-			wantReason(t, privateTreeBudget(context.Background(), root, nativeTreePolicy), TreeSymlink)
+			strictNative := nativeTreePolicy
+			strictNative.heal = false
+			wantReason(t, privateTreeBudget(context.Background(), root, strictNative), TreeSymlink)
 		})
 	}
 }
@@ -144,7 +149,7 @@ func TestTreeBudgetRejectsSymlinkEverywhereElse(t *testing.T) {
 	if err := os.Symlink("/etc/hostname", filepath.Join(root, "a", "link")); err != nil {
 		t.Fatal(err)
 	}
-	tb := wantReason(t, privateTreeBudget(context.Background(), root, workspaceTreePolicy), TreeSymlink)
+	tb := wantReason(t, privateTreeBudget(context.Background(), root, strictTree), TreeSymlink)
 	if tb.Class != "a/…" && tb.Class != "a/link" {
 		t.Fatalf("unexpected class %q", tb.Class)
 	}
@@ -155,7 +160,7 @@ func TestTreeBudgetRejectsFIFOAndSocket(t *testing.T) {
 	if err := syscall.Mkfifo(filepath.Join(root, "pipe"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	wantReason(t, privateTreeBudget(context.Background(), root, workspaceTreePolicy), TreeSpecialFile)
+	wantReason(t, privateTreeBudget(context.Background(), root, strictTree), TreeSpecialFile)
 
 	short, err := os.MkdirTemp("/tmp", "tb")
 	if err != nil {
@@ -167,7 +172,7 @@ func TestTreeBudgetRejectsFIFOAndSocket(t *testing.T) {
 		t.Skip("unix sockets unavailable")
 	}
 	defer l.Close()
-	wantReason(t, privateTreeBudget(context.Background(), short, workspaceTreePolicy), TreeSpecialFile)
+	wantReason(t, privateTreeBudget(context.Background(), short, strictTree), TreeSpecialFile)
 }
 
 func TestTreeBudgetDepthCountsPathComponents(t *testing.T) {
@@ -183,12 +188,12 @@ func TestTreeBudgetDepthCountsPathComponents(t *testing.T) {
 		t.Fatal(err)
 	}
 	mustWrite(t, filepath.Join(ok, deep(maxTreeDepth-1), "f"), 1)
-	if err := privateTreeBudget(context.Background(), ok, workspaceTreePolicy); err != nil {
+	if err := privateTreeBudget(context.Background(), ok, strictTree); err != nil {
 		t.Fatalf("depth at limit rejected: %v", err)
 	}
 	bad := t.TempDir()
 	mustWrite(t, filepath.Join(bad, deep(maxTreeDepth+1), "f"), 1)
-	wantReason(t, privateTreeBudget(context.Background(), bad, workspaceTreePolicy), TreeDepth)
+	wantReason(t, privateTreeBudget(context.Background(), bad, strictTree), TreeDepth)
 }
 
 func TestTreeBudgetBytesAndFiles(t *testing.T) {
@@ -203,12 +208,12 @@ func TestTreeBudgetBytesAndFiles(t *testing.T) {
 }
 
 func TestTreeBudgetWalkFailures(t *testing.T) {
-	wantReason(t, privateTreeBudget(context.Background(), filepath.Join(t.TempDir(), "missing"), workspaceTreePolicy), TreeWalk)
+	wantReason(t, privateTreeBudget(context.Background(), filepath.Join(t.TempDir(), "missing"), strictTree), TreeWalk)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	root := t.TempDir()
 	mustWrite(t, filepath.Join(root, "f"), 1)
-	wantReason(t, privateTreeBudget(ctx, root, workspaceTreePolicy), TreeWalk)
+	wantReason(t, privateTreeBudget(ctx, root, strictTree), TreeWalk)
 }
 
 // A directory listed as a regular file/dir that becomes a symlink before it is
@@ -223,7 +228,7 @@ func TestTreeBudgetFailsClosedWhenEntrySwappedForSymlink(t *testing.T) {
 		t.Fatal(err)
 	}
 	mustWrite(t, filepath.Join(root, "c", "x"), 1)
-	policy := workspaceTreePolicy
+	policy := strictTree
 	policy.afterList = func(rel string) {
 		for _, name := range []string{"b", "c"} {
 			p := filepath.Join(root, name)
@@ -278,7 +283,7 @@ func TestTreeBudgetErrorIsSanitized(t *testing.T) {
 	if err := os.Symlink("/etc", filepath.Join(root, hostile, "link")); err != nil {
 		t.Fatal(err)
 	}
-	tb := wantReason(t, privateTreeBudget(context.Background(), root, workspaceTreePolicy), TreeSymlink)
+	tb := wantReason(t, privateTreeBudget(context.Background(), root, strictTree), TreeSymlink)
 	text := tb.Error() + " " + tb.Detail()
 	for _, bad := range []string{"\n", "\x1b", " token", "SECRET="} {
 		if strings.Contains(text, bad) {
@@ -299,4 +304,131 @@ func TestAdmissionErrorCarriesTreeDetail(t *testing.T) {
 	if plain := newAdmissionError("admission", ErrUnavailable); plain.Detail != "" {
 		t.Fatalf("detail leaked for non-tree cause: %q", plain.Detail)
 	}
+}
+
+func healed(p treePolicy) (treePolicy, *[]string) {
+	var got []string
+	p.onHeal = func(r TreeReason, class string) { got = append(got, string(r)+":"+class) }
+	return p, &got
+}
+
+func TestTreeBudgetHealsPlantedSymlinkAndFIFO(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "keep", "f"), 10)
+	outside := t.TempDir()
+	mustWrite(t, filepath.Join(outside, "secret"), 5)
+	if err := os.Symlink(outside, filepath.Join(root, "keep", "dirlink")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("/etc/hostname", filepath.Join(root, "filelink")); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Mkfifo(filepath.Join(root, "keep", "pipe"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p, got := healed(nativeTreePolicy)
+	if err := privateTreeBudget(context.Background(), root, p); err != nil {
+		t.Fatalf("healable tree refused: %v", err)
+	}
+	if len(*got) != 3 {
+		t.Fatalf("expected 3 heals, got %v", *got)
+	}
+	for _, gone := range []string{"filelink", "keep/dirlink", "keep/pipe"} {
+		if _, err := os.Lstat(filepath.Join(root, gone)); !os.IsNotExist(err) {
+			t.Fatalf("%s not removed", gone)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(outside, "secret")); err != nil {
+		t.Fatalf("symlink target was touched: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "keep", "f")); err != nil {
+		t.Fatal("regular file removed")
+	}
+}
+
+func TestTreeBudgetHealsSocket(t *testing.T) {
+	short, err := os.MkdirTemp("/tmp", "tb")
+	if err != nil {
+		t.Skip("no short temp dir")
+	}
+	defer os.RemoveAll(short)
+	l, err := net.Listen("unix", filepath.Join(short, "s"))
+	if err != nil {
+		t.Skip("unix sockets unavailable")
+	}
+	l.(*net.UnixListener).SetUnlinkOnClose(false)
+	defer l.Close()
+	p, got := healed(nativeTreePolicy)
+	if err := privateTreeBudget(context.Background(), short, p); err != nil || len(*got) != 1 {
+		t.Fatalf("socket not healed: %v %v", err, *got)
+	}
+}
+
+func TestTreeBudgetHealLeavesArg0AliasesAlone(t *testing.T) {
+	root := t.TempDir()
+	addArg0(t, root, "apply_patch", "applypatch")
+	p, got := healed(nativeTreePolicy)
+	if err := privateTreeBudget(context.Background(), root, p); err != nil || len(*got) != 0 {
+		t.Fatalf("aliases touched: %v %v", err, *got)
+	}
+	if _, err := os.Lstat(filepath.Join(root, "codex", "tmp", "arg0", "codex-arg0AbC123", "apply_patch")); err != nil {
+		t.Fatal("alias removed")
+	}
+	// A non-alias symlink next to them is healed, aliases still kept.
+	addArg0(t, root, "evil")
+	if err := privateTreeBudget(context.Background(), root, p); err != nil || len(*got) != 1 {
+		t.Fatalf("non-alias not healed: %v %v", err, *got)
+	}
+}
+
+func TestTreeBudgetHealRefusesWhenSwappedForDirectory(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Symlink("/etc", filepath.Join(root, "x")); err != nil {
+		t.Fatal(err)
+	}
+	p, got := healed(nativeTreePolicy)
+	p.beforeHeal = func(string) {
+		_ = os.Remove(filepath.Join(root, "x"))
+		_ = os.Mkdir(filepath.Join(root, "x"), 0o700)
+		_ = os.WriteFile(filepath.Join(root, "x", "keep"), []byte("1"), 0o600)
+	}
+	wantReason(t, privateTreeBudget(context.Background(), root, p), TreeHeal)
+	if len(*got) != 0 {
+		t.Fatal("reported a heal that did not happen")
+	}
+	if _, err := os.Stat(filepath.Join(root, "x", "keep")); err != nil {
+		t.Fatal("directory content was destroyed")
+	}
+}
+
+func TestTreeBudgetHealFailureRefuses(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	root := t.TempDir()
+	sub := filepath.Join(root, "ro")
+	if err := os.MkdirAll(sub, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("/etc", filepath.Join(sub, "l")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(sub, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(sub, 0o700)
+	p, _ := healed(nativeTreePolicy)
+	wantReason(t, privateTreeBudget(context.Background(), root, p), TreeHeal)
+}
+
+func TestTreeBudgetHealStillEnforcesLimits(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Symlink("/etc", filepath.Join(root, "l")); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 5; i++ {
+		mustWrite(t, filepath.Join(root, fmt.Sprintf("f%d", i)), 1)
+	}
+	p, _ := healed(treePolicy{Label: "t", Bytes: 1 << 20, Files: 3, heal: true})
+	wantReason(t, privateTreeBudget(context.Background(), root, p), TreeFiles)
 }
