@@ -20,7 +20,7 @@ const (
 	DefaultMaxGroups = 50
 	maxGroupsCeiling = 500
 
-	groupOwnerDisabledKey = "group_owner_disabled:"
+	groupOwnerDisabledKey = store.GroupOwnerDisabledKey
 )
 
 // Is lets the runner classify any refused group start as an unavailable profile,

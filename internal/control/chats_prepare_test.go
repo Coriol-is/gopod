@@ -20,7 +20,7 @@ func TestRegisterPreparesNewGroupOnceWithoutConfirmation(t *testing.T) {
 	if err != nil || resp.Code != 0 || len(resp.Buttons) != 0 {
 		t.Fatalf("register: %+v %v", resp, err)
 	}
-	if len(prepared) != 1 || prepared[0] != "tg:-555" || !strings.Contains(resp.Text, "Group runtime prepared") {
+	if len(prepared) != 1 || prepared[0] != "tg:-555" || strings.Contains(resp.Text, "untime") {
 		t.Fatalf("prepared=%v text=%q", prepared, resp.Text)
 	}
 	// Private chats are never prepared as groups.
@@ -40,7 +40,7 @@ func TestRegisterPrepareFailureKeepsRegistrationAndLeaksNothing(t *testing.T) {
 	if err != nil || resp.Code != 0 {
 		t.Fatalf("registration must succeed: %+v %v", resp, err)
 	}
-	if strings.Contains(resp.Text, "private") || !strings.Contains(resp.Text, "not ready yet") {
+	if strings.Contains(resp.Text, "private") || strings.Contains(resp.Text, "untime") {
 		t.Fatalf("text %q", resp.Text)
 	}
 	if _, err = st.GetRegistered(ctx, "tg:-556"); err != nil {

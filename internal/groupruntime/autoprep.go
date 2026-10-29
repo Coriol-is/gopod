@@ -6,9 +6,13 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/Coriol-is/gopod/internal/runner"
 	"github.com/Coriol-is/gopod/internal/store"
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/filters"
 )
 
 const (
@@ -20,14 +24,24 @@ const (
 
 var errNotApplicable = errors.New("group preparation not applicable")
 
-// AutoPrep carries the hooks and coordination state for automatic preparation.
+// ErrNotObserved means the group is registered but has not been seen yet. It is
+// not a failure: preparation waits silently until the first message arrives.
+var ErrNotObserved = errors.New("group not observed yet")
+
+// autoPrep carries the hooks and coordination state for automatic preparation.
 // Slot serializes lifecycle steps with foreground work (the runner chat slot);
 // nil runs them directly. Notify sends a private owner notice; nil drops it.
-type AutoPrep struct {
+type autoPrep struct {
 	Slot   func(ctx context.Context, folder string, op func(context.Context) (string, error)) (string, error)
 	Notify func(context.Context, string)
 	auto   autoState
+	// ready is set once startup recovery is complete; before that nothing is
+	// prepared, so preparation cannot race queue recovery or an aborting start.
+	ready atomic.Bool
 }
+
+// MarkReady opens the startup gate for automatic preparation.
+func (a *autoPrep) MarkReady() { a.ready.Store(true) }
 
 // autoState holds the in-memory coordination for automatic preparation. Durable
 // truth stays in the store (epoch readiness, disabled flags); losing this state
@@ -35,6 +49,7 @@ type AutoPrep struct {
 type autoState struct {
 	mu       sync.Mutex
 	inflight map[string]chan struct{}
+	kicked   map[string]bool
 	failedAt map[string]time.Time
 	noticeAt map[string]time.Time
 	stages   map[string]string
@@ -57,22 +72,33 @@ func (a *autoState) clock() time.Time {
 // Concurrent calls for one group share a single execution. Failures leave the
 // group denied; nothing is deleted and no foreground work is stopped.
 func (m *Manager) EnsurePrepared(ctx context.Context, jid string, force bool) (string, error) {
-	c, err := m.autoCandidate(ctx, jid)
-	if err != nil {
-		if errors.Is(err, errNotApplicable) {
-			return "", nil
-		}
+	if !m.ready.Load() {
 		return "", ErrUnavailable
 	}
 	a := &m.auto
 	a.mu.Lock()
+	if at, failed := a.failedAt[jid]; failed && !force && a.clock().Sub(at) < autoRetryBackoff {
+		a.mu.Unlock()
+		return "", ErrUnavailable
+	}
 	if wait := a.inflight[jid]; wait != nil {
 		a.mu.Unlock()
 		return m.awaitPreparation(ctx, jid, wait)
 	}
-	if at, failed := a.failedAt[jid]; failed && !force && a.clock().Sub(at) < autoRetryBackoff {
-		a.mu.Unlock()
+	a.mu.Unlock()
+	c, err := m.autoCandidate(ctx, jid)
+	switch {
+	case errors.Is(err, errNotApplicable):
+		return "", nil
+	case errors.Is(err, ErrNotObserved):
+		return "", ErrNotObserved
+	case err != nil:
 		return "", ErrUnavailable
+	}
+	a.mu.Lock()
+	if wait := a.inflight[jid]; wait != nil {
+		a.mu.Unlock()
+		return m.awaitPreparation(ctx, jid, wait)
 	}
 	if a.inflight == nil {
 		a.inflight = map[string]chan struct{}{}
@@ -102,7 +128,7 @@ func (m *Manager) awaitPreparation(ctx context.Context, jid string, wait chan st
 }
 
 func (m *Manager) autoCandidate(ctx context.Context, jid string) (store.RegisteredChat, error) {
-	if m.Store == nil || m.Docker == nil || !m.Config.registered() || !strings.HasPrefix(jid, "tg:-") {
+	if m.Store == nil || m.Docker == nil || !m.Config.registered() || !strings.HasPrefix(jid, "tg:-") || m.Config.Qualification == "" || len(m.Config.Providers) == 0 {
 		return store.RegisteredChat{}, errNotApplicable
 	}
 	c, err := m.Store.GetRegistered(ctx, jid)
@@ -115,12 +141,17 @@ func (m *Manager) autoCandidate(ctx context.Context, jid string) (store.Register
 	if !groupChat(c) || c.GroupEpochReady {
 		return c, errNotApplicable
 	}
-	owner, err := m.Store.GetState(ctx, groupOwnerDisabledKey+c.NamespaceID)
+	owner, err := m.Store.GetState(ctx, store.GroupOwnerDisabledKey+c.NamespaceID)
 	if err != nil {
 		return c, err
 	}
 	if owner == "1" {
 		return c, errNotApplicable
+	}
+	if known, e := m.Store.IsKnownGroup(ctx, jid); e != nil {
+		return c, e
+	} else if !known {
+		return c, ErrNotObserved
 	}
 	return c, nil
 }
@@ -145,13 +176,13 @@ func (m *Manager) runPreparation(ctx context.Context, c store.RegisteredChat) (s
 		a.failedAt[c.JID] = a.clock()
 		a.mu.Unlock()
 		m.log("group preparation failed", c.JID)
-		m.notifyOnce(ctx, c, fmt.Sprintf("Group %s could not be prepared automatically; it stays denied. Check /isolation status %s.", groupLabel(c), c.JID))
+		m.notifyOnce(ctx, c, "failed", fmt.Sprintf("Group %s could not be prepared automatically; it stays denied.%s Check /isolation status %s.", groupLabel(c), m.blockerNote(ctx, c), c.JID))
 		return "", ErrUnavailable
 	}
 	a.mu.Lock()
 	delete(a.failedAt, c.JID)
 	a.mu.Unlock()
-	m.notifyOnce(ctx, c, text)
+	m.notifyOnce(ctx, c, "prepared", text)
 	return text, nil
 }
 
@@ -163,7 +194,7 @@ func (m *Manager) prepareAndEnable(ctx context.Context, jid string) (string, err
 		m.setStage(jid, "prepare")
 		return "", err
 	}
-	if _, err = m.enableCore(ctx, jid); err != nil {
+	if _, err = m.enableCore(ctx, jid, true); err != nil {
 		m.setStage(jid, "enable")
 		return "", err
 	}
@@ -174,12 +205,12 @@ func (m *Manager) prepareAndEnable(ctx context.Context, jid string) (string, err
 
 // notifyOnce sends a private owner notice, at most one per group per autoNoticeGap
 // for failures; success notices are sent once because readiness is durable.
-func (m *Manager) notifyOnce(ctx context.Context, c store.RegisteredChat, text string) {
+func (m *Manager) notifyOnce(ctx context.Context, c store.RegisteredChat, kind, text string) {
 	if m.Notify == nil {
 		return
 	}
 	a := &m.auto
-	key := c.JID + "|" + text[:min(len(text), 24)]
+	key := kind + "|" + c.NamespaceID
 	a.mu.Lock()
 	if a.noticeAt == nil {
 		a.noticeAt = map[string]time.Time{}
@@ -239,20 +270,42 @@ func groupLabel(c store.RegisteredChat) string {
 	return fmt.Sprintf("%q (%s)", name, c.JID)
 }
 
-// KickPrepare starts background preparation the first time an unready registered
-// group is seen at admission (the runner calls it when admission is denied). It
-// is cheap when nothing applies and never blocks the denied turn.
+// KickPrepare starts background preparation for an unready registered group seen
+// by a real turn (the runner calls it when a turn is denied). It does no I/O: an
+// in-memory flag admits at most one pending run per group, and a recent failure
+// suppresses it until the backoff passes, so floods cannot spawn goroutines or
+// read the database.
 func (m *Manager) KickPrepare(c store.RegisteredChat) {
-	if m.Store == nil || m.Docker == nil || !m.Config.registered() || !groupChat(c) || c.GroupEpochReady || m.Config.Qualification == "" || len(m.Config.Providers) == 0 {
+	if !m.ready.Load() || m.Store == nil || m.Docker == nil || !m.Config.registered() || !groupChat(c) || c.GroupEpochReady || m.Config.Qualification == "" || len(m.Config.Providers) == 0 {
 		return
 	}
+	a := &m.auto
+	a.mu.Lock()
+	if a.kicked[c.JID] || a.inflight[c.JID] != nil {
+		a.mu.Unlock()
+		return
+	}
+	if at, failed := a.failedAt[c.JID]; failed && a.clock().Sub(at) < autoRetryBackoff {
+		a.mu.Unlock()
+		return
+	}
+	if a.kicked == nil {
+		a.kicked = map[string]bool{}
+	}
+	a.kicked[c.JID] = true
+	a.mu.Unlock()
 	run := func() {
+		defer func() {
+			a.mu.Lock()
+			delete(a.kicked, c.JID)
+			a.mu.Unlock()
+		}()
 		ctx, cancel := context.WithTimeout(context.Background(), autoTimeout)
 		defer cancel()
 		_, _ = m.EnsurePrepared(ctx, c.JID, false)
 	}
-	if m.auto.spawn != nil {
-		m.auto.spawn(run)
+	if a.spawn != nil {
+		a.spawn(run)
 		return
 	}
 	go run()
@@ -261,7 +314,7 @@ func (m *Manager) KickPrepare(c store.RegisteredChat) {
 // ReconcileAll prepares every registered group that has no ready clean epoch.
 // Intended for startup; each group is handled independently and fails closed.
 func (m *Manager) ReconcileAll(ctx context.Context) {
-	if m.Store == nil || !m.Config.registered() {
+	if m.Store == nil || !m.Config.registered() || !m.ready.Load() {
 		return
 	}
 	rows, err := m.Store.ListRegistered(ctx)
@@ -273,4 +326,51 @@ func (m *Manager) ReconcileAll(ctx context.Context) {
 			_, _ = m.EnsurePrepared(ctx, c.JID, false)
 		}
 	}
+}
+
+// blockerNote names running containers that block preparation, sanitized, so the
+// owner can act on the private notice. Empty when nothing blocks or Docker fails.
+func (m *Manager) blockerNote(ctx context.Context, c store.RegisteredChat) string {
+	if m.Docker == nil || m.Store == nil {
+		return ""
+	}
+	folders, err := m.Store.ListNamespaceFolders(ctx, c.NamespaceID)
+	if err != nil {
+		return ""
+	}
+	var names []string
+	for _, folder := range folders {
+		found, e := m.Docker.ContainerList(ctx, container.ListOptions{All: true, Filters: filters.NewArgs(filters.Arg("label", runner.LabelChat+"="+folder))})
+		if e != nil {
+			return ""
+		}
+		for _, f := range found {
+			name := ""
+			if len(f.Names) > 0 {
+				name = f.Names[0]
+			}
+			id := sanitizeName(f.ID[:min(12, len(f.ID))])
+			if name = sanitizeName(name); name == "" {
+				name = id
+			}
+			names = append(names, fmt.Sprintf("%s (%s, %s)", name, id, sanitizeName(f.State)))
+		}
+	}
+	if len(names) == 0 {
+		return ""
+	}
+	return " Blocking containers: " + strings.Join(names, ", ") + "."
+}
+
+func sanitizeName(s string) string {
+	s = strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-' || r == '.' {
+			return r
+		}
+		return -1
+	}, s)
+	if len(s) > 40 {
+		s = s[:40]
+	}
+	return s
 }

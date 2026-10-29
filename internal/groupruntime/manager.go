@@ -46,12 +46,7 @@ type Manager struct {
 	Log              *slog.Logger
 	MCP              *groupsandbox.MCP
 	Request          func(context.Context, store.ScopeRef, int, json.RawMessage) (string, error)
-	// Slot serializes owner-visible lifecycle steps with foreground work (the
-	// runner chat slot); nil runs them directly. Notify sends a private owner
-	// notice; nil drops it.
-	Slot     func(ctx context.Context, folder string, op func(context.Context) (string, error)) (string, error)
-	Notify   func(context.Context, string)
-	auto     autoState
+	autoPrep
 	mu       sync.Mutex
 	locks    map[string]chan struct{}
 	disabled map[string]bool

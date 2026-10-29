@@ -1699,9 +1699,13 @@ ignored (documented, not a second deny list). `MaxGroups` (default 50, ceiling 5
 replaces the old ten-entry bound: groups that own a clean epoch are ranked by
 registration time and only the first `MaxGroups` are admitted, and a new epoch is
 not prepared beyond the cap. Preparation is automatic: `/register` of a group, a
-startup pass, and the first denied admission of an unready group run the same
+startup pass (after queue recovery and the scheduler are up), and the first denied real
+turn of an unready group (never IPC polling or host checks) run the same
 resumable Prepare and Enable steps under the runner chat slot, single-flight per
-group with a one-minute failure backoff. They never delete data, never stop
+group with a one-minute failure backoff; an unobserved group waits silently. A stopped
+legacy container of the namespace is removed (running ones are never touched and are
+named, sanitized, in the private owner note). The last enabling write is a store CAS
+that refuses a group carrying the owner marker. They never delete data, never stop
 foreground work, and a failure leaves the group denied with a private owner notice
 (rate limited). `/isolation disable <id>` is the per-group kill switch: it sets an
 owner marker next to the SQL CAS flag, so automatic preparation never re-enables

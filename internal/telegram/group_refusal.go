@@ -34,7 +34,7 @@ func refusalCause(err error) string {
 // account, path or error text reaches the group, and no login or retry button is
 // offered there. Both notices are rate limited per group.
 func (b *Bot) replyGroupRefusal(ctx context.Context, item queue.Item, kind errKind, err error) {
-	b.log.Warn("group agent unavailable", slog.String("chat_folder", item.Folder), slog.Int64("turn", item.ID), slog.String("kind", kind.String()), slog.String("cause", refusalCause(err)))
+	b.log.Debug("group agent unavailable", slog.String("chat_folder", item.Folder), slog.Int64("turn", item.ID), slog.String("kind", kind.String()), slog.String("cause", refusalCause(err)))
 	if b.errCooldownPass(item.ChatID, errGroupUnavailable, 0) {
 		b.sendErrorReply(ctx, item, errTextGroupUnavailable, nil)
 	}

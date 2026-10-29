@@ -2,6 +2,7 @@ package groupruntime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/Coriol-is/gopod/internal/store"
 	"os"
@@ -80,6 +81,9 @@ func (m *Manager) prepareScope(ctx context.Context, jid string) (epoch, paused i
 	if err = m.Store.SetNamespaceDisabled(ctx, c.Scope(), true); err != nil {
 		return 0, 0, err
 	}
+	if err = m.removeStoppedLegacy(ctx, c.Scope()); err != nil {
+		return 0, 0, err
+	}
 	if err = m.requireInactiveNamespace(ctx, c.Scope()); err != nil {
 		return 0, 0, err
 	}
@@ -112,7 +116,7 @@ func (m *Manager) Enable(ctx context.Context, jid string) (string, error) {
 	if m.Store == nil || m.Docker == nil {
 		return "", ErrUnavailable
 	}
-	text, err := m.enableCore(ctx, jid)
+	text, err := m.enableCore(ctx, jid, false)
 	if err != nil {
 		return "", err
 	}
@@ -126,7 +130,9 @@ func (m *Manager) Enable(ctx context.Context, jid string) (string, error) {
 	return text, nil
 }
 
-func (m *Manager) enableCore(ctx context.Context, jid string) (string, error) {
+// enableCore does the shared enabling steps. With auto set, the final write is a
+// store-level CAS that refuses to enable a group the owner has disabled.
+func (m *Manager) enableCore(ctx context.Context, jid string, auto bool) (string, error) {
 	c, err := m.Store.GetRegistered(ctx, jid)
 	if err != nil {
 		return "", ErrUnavailable
@@ -194,7 +200,12 @@ func (m *Manager) enableCore(ctx context.Context, jid string) (string, error) {
 			return "", err
 		}
 	}
-	if err = m.Store.SetNamespaceDisabled(ctx, currentScope, false); err != nil {
+	if auto {
+		err = m.Store.EnableNamespaceUnlessOwnerDisabled(ctx, currentScope)
+	} else {
+		err = m.Store.SetNamespaceDisabled(ctx, currentScope, false)
+	}
+	if err != nil {
 		return "", err
 	}
 	return "Group isolation enabled for the qualified configuration. Personal services remain unavailable.", nil
@@ -211,7 +222,13 @@ func (m *Manager) Disable(ctx context.Context, jid string) (string, error) {
 	if err = m.Store.SetState(ctx, groupOwnerDisabledKey+c.NamespaceID, "1"); err != nil {
 		return "", err
 	}
-	if err = m.Store.SetNamespaceDisabled(ctx, c.Scope(), true); err != nil {
+	if err = m.Store.SetNamespaceDisabled(ctx, c.Scope(), true); errors.Is(err, store.ErrStaleScope) {
+		// A concurrent preparation step moved the revision; retry on the fresh scope.
+		if c, err = m.Store.GetRegistered(ctx, jid); err == nil {
+			err = m.Store.SetNamespaceDisabled(ctx, c.Scope(), true)
+		}
+	}
+	if err != nil {
 		return "", err
 	}
 	return "New group work disabled. Active work may settle; no historical data was deleted.", nil
@@ -300,4 +317,33 @@ func (m *Manager) requireNoLegacyNamespace(ctx context.Context, scope store.Scop
 		}
 	}
 	return m.Store.ValidateScope(ctx, scope)
+}
+
+// removeStoppedLegacy deletes stopped personal-profile containers left under this
+// namespace's keys so they cannot block preparation. It never stops or removes a
+// running, restarting or paused container, and uses no force flag; each removal is
+// logged. Their volumes and the group's data are untouched.
+func (m *Manager) removeStoppedLegacy(ctx context.Context, scope store.ScopeRef) error {
+	folders, err := m.Store.ListNamespaceFolders(ctx, scope.NamespaceID)
+	if err != nil || len(folders) == 0 {
+		return ErrUnavailable
+	}
+	for _, folder := range folders {
+		found, e := m.Docker.ContainerList(ctx, container.ListOptions{All: true, Filters: filters.NewArgs(filters.Arg("label", runner.LabelChat+"="+folder))})
+		if e != nil {
+			return ErrUnavailable
+		}
+		for _, f := range found {
+			if f.State != "exited" && f.State != "created" && f.State != "dead" {
+				continue
+			}
+			if e = m.Docker.ContainerRemove(ctx, f.ID, container.RemoveOptions{}); e != nil {
+				return ErrUnavailable
+			}
+			if m.Log != nil {
+				m.Log.Info("removed stopped legacy group container", "namespace", scope.NamespaceID, "container", sanitizeName(f.ID[:min(12, len(f.ID))]))
+			}
+		}
+	}
+	return nil
 }

@@ -31,7 +31,7 @@ type Config struct {
 	// ready clean epoch is admitted) or "allowlist" (strict CP-020 behavior: the
 	// JID must also appear in EnabledGroups).
 	AdmissionMode string
-	// MaxGroups bounds prepared groups in registered mode; zero means 10.
+	// MaxGroups bounds prepared groups in registered mode; zero means 50.
 	MaxGroups int
 	// EnabledGroups is the allowlist in allowlist mode and ignored in registered
 	// mode (kept so older configuration files still load).

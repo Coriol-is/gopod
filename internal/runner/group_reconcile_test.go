@@ -27,8 +27,17 @@ func TestDeniedUnreadyGroupKicksPreparationWithoutAdmitting(t *testing.T) {
 	r := &Runner{}
 	r.SetAdmissionPolicy(1, profileRegistrations{rows: []store.RegisteredChat{{JID: "tg:-2", Folder: convChat}}})
 	r.SetGroupRuntime(rt)
-	if err := r.CheckAdmission(context.Background(), convChat); !errors.Is(err, ErrProfileUnavailable) {
-		t.Fatalf("denied group admitted: %v", err)
+	// IPC polling and other host checks never start preparation.
+	for i := 0; i < 5; i++ {
+		if err := r.CheckAdmission(context.Background(), convChat); !errors.Is(err, ErrProfileUnavailable) {
+			t.Fatalf("denied group admitted: %v", err)
+		}
+	}
+	if len(rt.kicked) != 0 {
+		t.Fatalf("host check kicked preparation: %v", rt.kicked)
+	}
+	if _, err := r.Run(context.Background(), convChat, 0, TierRegistered, nil, "hello"); !errors.Is(err, ErrProfileUnavailable) {
+		t.Fatalf("denied turn: %v", err)
 	}
 	if len(rt.kicked) != 1 || rt.kicked[0] != "tg:-2" {
 		t.Fatalf("kicked %v", rt.kicked)
@@ -37,7 +46,7 @@ func TestDeniedUnreadyGroupKicksPreparationWithoutAdmitting(t *testing.T) {
 	ready := &kickingGroupRuntime{deny: true}
 	r.SetAdmissionPolicy(1, profileRegistrations{rows: []store.RegisteredChat{{JID: "tg:-2", Folder: convChat, GroupEpochReady: true}}})
 	r.SetGroupRuntime(ready)
-	_ = r.CheckAdmission(context.Background(), convChat)
+	_, _ = r.Run(context.Background(), convChat, 0, TierRegistered, nil, "hello")
 	if len(ready.kicked) != 0 {
 		t.Fatal("ready group was kicked")
 	}
