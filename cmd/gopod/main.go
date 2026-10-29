@@ -601,6 +601,7 @@ func run() error {
 		// It starts before the IPC watcher so the durable IPC route (PR 3) is
 		// enabled only when the dispatcher is really running.
 		outboxRunning := false
+		var artifactIPCConfig ipc.ArtifactConfig
 		if cfg.OutboxDispatcherEnabled {
 			outboxLog := logger.With(slog.String("subsys", "outbox"))
 			// A failure here must not take the whole bot down: the legacy send
@@ -608,7 +609,19 @@ func run() error {
 			if owner, err := acquireOutboxOwner(ctx, st, 10*time.Second, 500*time.Millisecond); err != nil {
 				outboxLog.Error("outbox dispatcher DISABLED: could not take the exclusive outbox lock", slog.Any("err", err))
 			} else {
-				dispatcher := telegram.NewOutboxDispatcher(owner, tgBot.NewOutboxTransport(nil), telegram.OutboxConfig{}, outboxLog)
+				// CP-003 artifact snapshots: off unless GOPOD_OUTBOX_ARTIFACTS=1.
+				// A failure to open the store leaves uploads refused, not the bot down.
+				var opener telegram.ArtifactOpener
+				if cfg.OutboxArtifactsEnabled {
+					if ac, blobs, err := openArtifactStore(cfg, st); err != nil {
+						outboxLog.Error("artifact delivery DISABLED", slog.Any("err", err))
+					} else {
+						artifactIPCConfig = ac
+						opener = &telegram.SnapshotOpener{Inventory: st, Blobs: blobs, MaxBytes: st.ArtifactLimits().MaxFileBytes, Log: outboxLog}
+						onShutdown(func() { blobs.Close() })
+					}
+				}
+				dispatcher := telegram.NewOutboxDispatcher(owner, tgBot.NewOutboxTransport(opener), telegram.OutboxConfig{}, outboxLog)
 				if err := dispatcher.Start(ctx); err != nil {
 					owner.Release()
 					outboxLog.Error("outbox dispatcher DISABLED: start failed", slog.Any("err", err))
@@ -665,7 +678,8 @@ func run() error {
 			NamespaceAllowed: func(c context.Context, folder string) bool {
 				return agentRunner != nil && agentRunner.CheckAdmission(c, folder) == nil
 			},
-			Durable: durableIPC(cfg.OutboxIPCEnabled, outboxRunning, st, ownerFolder, cfg.OwnerChatID),
+			Durable:   durableIPC(cfg.OutboxIPCEnabled, outboxRunning, st, ownerFolder, cfg.OwnerChatID),
+			Artifacts: artifactIPC(durableIPC(cfg.OutboxIPCEnabled, outboxRunning, st, ownerFolder, cfg.OwnerChatID), artifactIPCConfig),
 		}, ipcMsgs, ipcTasks, ipcLog,
 			func(folder string) (string, bool) {
 				c, err := st.GetByFolder(ctx, folder)

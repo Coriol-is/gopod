@@ -90,7 +90,9 @@ type outboxAPI interface {
 }
 
 // ArtifactOpener resolves an immutable artifact reference to the exact bytes to
-// upload. Artifact preparation is PR 4; without an opener uploads are refused.
+// upload. The bytes are verified against the inventory before they are returned,
+// so the transport never reopens a mutable pathname. Without an opener uploads
+// are refused (the default; artifact delivery is behind GOPOD_OUTBOX_ARTIFACTS).
 type ArtifactOpener interface {
 	OpenArtifact(ctx context.Context, ref string) (name string, data io.Reader, err error)
 }
@@ -147,6 +149,7 @@ func (t *botTransport) Attempt(ctx context.Context, req SendRequest) Outcome {
 		msg, err := t.api.SendDocument(ctx, &bot.SendDocumentParams{
 			ChatID: req.ChatID, MessageThreadID: req.Thread,
 			Document: &models.InputFileUpload{Filename: name, Data: data},
+			Caption:  req.Text, // plain text; an upload has no parse mode
 		})
 		return classifySend(msg, err, 0)
 	}

@@ -432,3 +432,6 @@ func (b *Blobs) PreparationBlobs(prep string) ([]string, error) {
 	defer f.Close()
 	return f.Readdirnames(-1)
 }
+
+// RootForTest returns the blob root path so tests can tamper with files.
+func (b *Blobs) RootForTest() string { return b.root }

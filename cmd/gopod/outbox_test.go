@@ -5,10 +5,12 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/Coriol-is/gopod/internal/config"
 	"github.com/Coriol-is/gopod/internal/ipc"
 	"github.com/Coriol-is/gopod/internal/store"
 )
@@ -63,5 +65,32 @@ func TestDurableIPCNeedsFlagDispatcherOwnerAndPersonalChat(t *testing.T) {
 		if got.Store != nil || got.PersonalJID != "" {
 			t.Errorf("%s: route enabled: %+v", name, got)
 		}
+	}
+}
+
+func TestArtifactIPCNeedsTheDurableRouteAndAPrivateStore(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.Open(context.Background(), filepath.Join(dir, "s.sqlite"), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	cfg := config.Config{DataDir: dir, ChatsDir: filepath.Join(dir, "chats")}
+	ac, blobs, err := openArtifactStore(cfg, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer blobs.Close()
+	if fi, err := os.Stat(filepath.Join(dir, "artifacts")); err != nil || fi.Mode().Perm() != 0o700 {
+		t.Fatalf("artifact store dir: %v %v", fi, err)
+	}
+	if got := artifactIPC(durableIPC(true, true, st, "owner", 42), ac); got.Store == nil || got.Blobs == nil || got.Caps == nil {
+		t.Fatalf("all gates open: %+v", got)
+	}
+	if got := artifactIPC(durableIPC(false, true, st, "owner", 42), ac); got.Store != nil {
+		t.Fatalf("V1 enabled without the durable text route: %+v", got)
+	}
+	if got := artifactIPC(durableIPC(true, false, st, "owner", 42), ac); got.Store != nil {
+		t.Fatalf("V1 enabled while the dispatcher is stopped: %+v", got)
 	}
 }

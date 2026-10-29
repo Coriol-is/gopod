@@ -201,3 +201,16 @@ func TestLoadOutboxIPCFlagIsOffByDefault(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadOutboxArtifactsFlagIsOffByDefault(t *testing.T) {
+	for val, want := range map[string]bool{"": false, "0": false, "junk": false, "1": true, "true": true} {
+		t.Setenv("GOPOD_OUTBOX_ARTIFACTS", val)
+		cfg, err := Load(false)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if cfg.OutboxArtifactsEnabled != want {
+			t.Errorf("GOPOD_OUTBOX_ARTIFACTS=%q: OutboxArtifactsEnabled = %v, want %v", val, cfg.OutboxArtifactsEnabled, want)
+		}
+	}
+}

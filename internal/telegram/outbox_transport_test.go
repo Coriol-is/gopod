@@ -17,6 +17,8 @@ import (
 )
 
 type fakeAPI struct {
+	lastDoc            *bot.SendDocumentParams
+	docBytes           []byte
 	sends, edits, docs int
 	lastSend           *bot.SendMessageParams
 	lastEdit           *bot.EditMessageTextParams
@@ -36,8 +38,12 @@ func (f *fakeAPI) EditMessageText(_ context.Context, p *bot.EditMessageTextParam
 	return f.msg, f.err
 }
 
-func (f *fakeAPI) SendDocument(context.Context, *bot.SendDocumentParams) (*models.Message, error) {
+func (f *fakeAPI) SendDocument(_ context.Context, p *bot.SendDocumentParams) (*models.Message, error) {
 	f.docs++
+	f.lastDoc = p
+	if up, ok := p.Document.(*models.InputFileUpload); ok && up.Data != nil {
+		f.docBytes, _ = io.ReadAll(up.Data)
+	}
 	return f.msg, f.err
 }
 
