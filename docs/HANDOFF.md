@@ -11,20 +11,36 @@ approved queue, [proposal registry](proposals/README.md) for CP status and
   Its P1 formatting child stopped after read-only exploration; the clean worktree was resumed in Codex.
 - CP-004 PR2/PR3 (#79/#81), CP-007 foundation (#80), and rich-message requirements (#82) are merged.
   Base for this continuation: `19ae2e2`. Old branch-status notes below are historical implementation notes.
-- Current work: rich-message P1 on `feat/rich-messages-formatting` in `gopod-rich-p1`;
-  the independently requested owner `/restart` command is being implemented in `gopod-telegram-restart`.
-  Owner authorized PRs and automatic squash merge after green CI. Preserve both worktrees.
+- P1 merged as `3fcbf06` in PR #83 after green CI and independent review.
+  The owner `/restart` implementation is in `gopod-telegram-restart`.
+  Owner authorized PRs and automatic admin squash merge after green CI (ruleset 24430037 requires
+  one approval; native auto-merge is disabled). Preserve both worktrees.
 - P1 implements Markdown-default / sanitized HTML / plain text for personal durable IPC, shared canonical
   HTML validation, explicit rich-field rejection on unsupported routes, and one recorded plain fallback
   after an explicit Telegram entity-parse refusal. The original plan stays immutable; ambiguous sends
   remain uncertain and are never replayed. ADR D045. Legacy messages without rich fields stay literal.
 - Production: last recorded deploy is `07d9edd` (see [evidence](deployments/2026-10-29-07d9edd.md));
   runtime was not re-inspected during this implementation. P0 bounded owner-chat durable IPC smoke is
-  approved, but this P1 change does not deploy or enable flags. Buttons, stickers, and thread awareness
+  approved; the owner has now authorized deployment. No deployment has been performed by this branch. Buttons, stickers, and thread awareness
   remain separate slices; groups stay disabled.
-- Next: finish review/CI and merge P1; integrate the independent restart PR after its own checks.
+- Next: integrate the restart PR after green CI, then perform the owner-authorized deployment.
   Real Telegram formatting acceptance and live restart/recovery acceptance remain separate gates.
 - Not authorized here: account logins, paid fallbacks, T9 reboot, group activation or schedule changes.
+
+## Telegram restart implementation (2026-10-29)
+- CP-031 / D046: branch `feat/telegram-restart`, worktree `gopod-telegram-restart`.
+  `/restart` is owner/private-only through the Router; it records a replay-fenced
+  request, requires an acknowledged initiating-thread notice, verifies Docker
+  Compose supervision, gracefully drains and recycles exact old personal container
+  IDs. Startup reports ready/degraded only after local runtime checks.
+- Local build, vet (native and Linux ARM64), full tests and restart-related race suites passed.
+  No deployment or production restart performed. Real Compose restart, Telegram
+  notice visibility/topic behavior and provider usability remain live acceptance.
+- Active non-personal profiles and unresolved managed task holds refuse restart;
+  disabled groups stay disabled. Sessions/auth/workspaces and schedules are preserved.
+- See [spec](superpowers/specs/2026-10-29-telegram-restart.md); this is not an emergency
+  kill of a wedged drain, host reboot or image update.
+
 
 ## CP-004 PR 3 merged (#81, 2026-10-29)
 - Branch `feat/cp004-task-exec` (worktree `gopod-cp004-pr3`), merged as `39d4d5e`. ADR D044.

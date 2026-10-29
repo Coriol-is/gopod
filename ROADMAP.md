@@ -320,6 +320,10 @@ grants remain separate work. See [current policy/configuration](docs/ISOLATION.m
 Personal durable IPC formatting implemented on `feat/rich-messages-formatting`: Markdown
 by default, sanitized HTML, literal plain text, admission validation and a recorded one-shot
 plain fallback on explicit parse refusal. Existing outbox flags gate activation; legacy
-messages remain literal. PR/CI integration in progress; live Telegram acceptance pending.
+messages remain literal. Merged as `3fcbf06` (PR #83), CI green; live Telegram acceptance pending.
 See [requirements](docs/superpowers/specs/2026-10-29-rich-agent-messages.md) and D045.
 Buttons/hooks, inbound/outbound stickers and thread awareness remain separate work.
+
+### Owner restart (2026-10-29)
+
+- CP-031: `/restart` implemented; PR/CI integration pending, owner/private-only; verified Docker supervision, durable request/replay fence and truthful container-readiness notices. [Specification](docs/superpowers/specs/2026-10-29-telegram-restart.md). Production restart acceptance remains separate.

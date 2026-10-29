@@ -141,6 +141,8 @@ func run() error {
 	logger = slog.New(sqliteHandler)
 	slog.SetDefault(logger)
 
+	restart := newControllerRestart(st, cfg.ChatsDir, cfg.OwnerChatID, stop, logger)
+	var restartRecoveryErr error
 	var subsystems sync.WaitGroup
 
 	// Runner / Docker subsystem. Optional at boot: if GOPOD_NO_CONTAINER
@@ -170,6 +172,14 @@ func run() error {
 				}
 			}()
 
+			restart.docker = d.Client()
+			restartCtx, restartCancel := context.WithTimeout(ctx, 30*time.Second)
+			restartRecoveryErr = restart.recycle(restartCtx)
+			restartCancel()
+			if restartRecoveryErr != nil {
+				runLog.Warn("restart container recovery incomplete", slog.Any("err", restartRecoveryErr))
+			}
+
 			// Load the mount allowlist. A missing file is fine — callers
 			// get an empty allowlist back and construct only the standard
 			// mounts. A malformed file is fatal per D013.
@@ -184,7 +194,7 @@ func run() error {
 
 			// Boot-time leftover cleanup per ISOLATION.md §7.1.
 			d.RequirePolicyLabels(cfg.ManagedTasksEnabled)
-			if cfg.LeftoverCleanupEnabled {
+			if cfg.LeftoverCleanupEnabled && restartRecoveryErr == nil {
 				n, err := d.CleanupLeftovers(ctx, buildVersion())
 				if err != nil {
 					runLog.Warn("leftover cleanup failed",
@@ -455,7 +465,11 @@ func run() error {
 		}
 		// Restore choices first, then warm/check only the configured owner before
 		// queue recovery, scheduled work or Telegram command dispatch can race it.
-		if err := restoreAndWarmOwner(ctx, st, agentRunner, cfg.OwnerChatID, providers, allowlist, logger); err != nil {
+		warmOwnerID := cfg.OwnerChatID
+		if restartRecoveryErr != nil {
+			warmOwnerID = 0
+		} // restore choices, but never recycle after failed recovery evidence
+		if err := restoreAndWarmOwner(ctx, st, agentRunner, warmOwnerID, providers, allowlist, logger); err != nil {
 			return err
 		}
 		// Maintenance must not race restoration or warm up the default image.
@@ -580,6 +594,8 @@ func run() error {
 			return fmt.Errorf("init telegram: %w", err)
 		}
 
+		restart.notify = tgBot.SendRestartNotice
+		control.RegisterRestartCommand(router, restart.request)
 		control.RegisterTelegramCommands(router, tgBot.TelegramSnapshot, tgBot.RefreshTelegramSnapshot, func(ctx context.Context, id int64) bool {
 			_, err := st.GetRegistered(ctx, fmt.Sprintf("tg:%d", id))
 			return err == nil
@@ -790,6 +806,23 @@ func run() error {
 			slog.String("owner_folder", ownerFolder),
 			slog.Bool("durable_text", cfg.OutboxIPCEnabled && outboxRunning))
 
+		// Lifecycle notices (D027): "back" to the owner now, "restarting"
+		// to the owner and unfinished conversations on SIGTERM/SIGINT.
+		restartRecovered := restart.recovered(ctx, agentRunner, restartRecoveryErr)
+		lifecycle := tgBot.NewLifecycle(telegram.LifecycleConfig{
+			Store:       st,
+			OwnerChatID: cfg.OwnerChatID,
+			Version:     buildVersion(),
+			Enabled:     cfg.NotifyLifecycle,
+		})
+		onShutdown(func() {
+			if !restart.requested.Load() {
+				lifecycle.Shutdown(context.Background())
+			}
+		})
+		if !restartRecovered {
+			lifecycle.Started(sigCtx, replayed)
+		}
 		subsystems.Add(1)
 		go func() {
 			defer subsystems.Done()
@@ -797,17 +830,6 @@ func run() error {
 				tgLog.Error("telegram bot exited with error", slog.Any("err", err))
 			}
 		}()
-
-		// Lifecycle notices (D027): "back" to the owner now, "restarting"
-		// to the owner and unfinished conversations on SIGTERM/SIGINT.
-		lifecycle := tgBot.NewLifecycle(telegram.LifecycleConfig{
-			Store:       st,
-			OwnerChatID: cfg.OwnerChatID,
-			Version:     buildVersion(),
-			Enabled:     cfg.NotifyLifecycle,
-		})
-		onShutdown(func() { lifecycle.Shutdown(context.Background()) })
-		lifecycle.Started(sigCtx, replayed)
 	}
 
 	logger.Info("gopod ready (waiting for SIGINT/SIGTERM)")
@@ -823,6 +845,13 @@ func run() error {
 	// to drain before returning so deferred cleanup is sequenced after
 	// every goroutine has stopped touching the store.
 	subsystems.Wait()
+	if restart.requested.Load() {
+		restartCtx, restartCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer restartCancel()
+		if err := restart.recycle(restartCtx); err != nil {
+			logger.Warn("restart container shutdown incomplete", slog.Any("err", err))
+		}
+	}
 	return nil
 }
 

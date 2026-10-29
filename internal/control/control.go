@@ -42,8 +42,9 @@ const (
 
 // Caller describes the origin of a Command. Frontends populate this.
 type Caller struct {
-	ChatKind string // trusted Telegram chat type; empty for unknown/CLI
-	ChatID   int64  // Telegram chat ID; 0 for CLI
+	MessageID int    // trusted Telegram message id; restart replay fence
+	ChatKind  string // trusted Telegram chat type; empty for unknown/CLI
+	ChatID    int64  // Telegram chat ID; 0 for CLI
 	// ThreadID is the private-chat topic the command was sent in;
 	// 0 for the main chat and for CLI. It routes the command to a
 	// conversation inside an already-authorized chat and never grants
