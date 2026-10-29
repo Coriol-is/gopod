@@ -41,6 +41,7 @@ const (
 	codeSourceMissing   = "source_missing"
 	codeSourceChanged   = "source_changed"
 	codeStorageFull     = "storage_full"
+	codeRateLimited     = "rate_limited"
 	codeVoiceNA         = "voice_unavailable"
 	codeTooManyParts    = "too_many_parts"
 	codePreparationFail = "preparation_failed"

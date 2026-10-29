@@ -139,31 +139,49 @@ func (g Grant) MapPath(agentPath string) (string, error) {
 	return rel, nil
 }
 
+// Defaults for the registry.
+const (
+	// MaxGrantTTL caps how long one grant may live.
+	MaxGrantTTL = 6 * time.Hour
+	// DefaultRevokeGrace is how long after EndRun a request that was written
+	// while the run was still active is still admitted.
+	DefaultRevokeGrace = 2 * time.Minute
+)
+
 // Capabilities is the in-memory registry of active run capabilities.
 type Capabilities struct {
-	policy OutputRootPolicy
-	now    func() time.Time
-	mu     sync.Mutex
-	byHash map[[32]byte]*capState
+	// Grace is the post-EndRun window for requests written before the run ended.
+	Grace time.Duration
+
+	policy  OutputRootPolicy
+	now     func() time.Time
+	resolve FolderResolver
+	mu      sync.Mutex
+	byHash  map[[32]byte]*capState
 }
 
 type capState struct {
-	grant   Grant
-	revoked bool
+	grant     Grant
+	revoked   bool
+	revokedAt time.Time // zero for an immediate (policy) revocation: no grace
 }
 
-// NewCapabilities returns an empty registry. A nil now uses time.Now.
-func NewCapabilities(policy OutputRootPolicy, now func() time.Time) *Capabilities {
+// NewCapabilities returns an empty registry. A nil now uses time.Now. resolve
+// maps an IPC folder to its registered chat JID; Issue refuses a grant whose
+// output root or destination is not the actor's own chat.
+func NewCapabilities(policy OutputRootPolicy, now func() time.Time, resolve FolderResolver) *Capabilities {
 	if now == nil {
 		now = time.Now
 	}
-	return &Capabilities{policy: policy, now: now, byHash: make(map[[32]byte]*capState)}
+	return &Capabilities{Grace: DefaultRevokeGrace, policy: policy, now: now, resolve: resolve, byHash: make(map[[32]byte]*capState)}
 }
 
 // Issue validates a grant and returns its opaque token. The token carries no
-// information; everything it stands for is held here.
+// information; everything it stands for is held here. The output root must be
+// the actor's own chat directory and the destination its own registered chat.
 func (c *Capabilities) Issue(g Grant) (string, error) {
-	if g.Folder == "" || g.RunRef == "" || g.Actor == "" || !g.ExpiresAt.After(c.now()) {
+	now := c.now()
+	if g.Folder == "" || g.RunRef == "" || g.Actor == "" || !g.ExpiresAt.After(now) || g.ExpiresAt.After(now.Add(MaxGrantTTL)) {
 		return "", fmt.Errorf("ipc: invalid capability grant")
 	}
 	if g.Owner != store.OwnerLegacyAgentIPC && g.Owner != store.OwnerControllerResult {
@@ -176,6 +194,15 @@ func (c *Capabilities) Issue(g Grant) (string, error) {
 	if err := c.policy.Validate(g.OutputRoot); err != nil {
 		return "", err
 	}
+	if filepath.Base(g.OutputRoot) != g.Folder {
+		return "", fmt.Errorf("%w: output root is not the actor's chat directory", ErrOutputRootDenied)
+	}
+	if c.resolve == nil {
+		return "", fmt.Errorf("ipc: capability registry has no folder resolver")
+	}
+	if jid, ok := c.resolve(g.Folder); !ok || jid != g.Destination.Scope.JID {
+		return "", fmt.Errorf("ipc: capability destination is not the actor's registered chat")
+	}
 	var raw [24]byte
 	if _, err := rand.Read(raw[:]); err != nil {
 		return "", fmt.Errorf("ipc: capability token: %w", err)
@@ -183,53 +210,78 @@ func (c *Capabilities) Issue(g Grant) (string, error) {
 	token := hex.EncodeToString(raw[:])
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.pruneLocked(now)
 	c.byHash[sha256.Sum256([]byte(token))] = &capState{grant: g}
 	return token, nil
+}
+
+// pruneLocked drops expired grants and revoked grants past their grace window.
+func (c *Capabilities) pruneLocked(now time.Time) {
+	for k, st := range c.byHash {
+		if !st.grant.ExpiresAt.After(now) || (st.revoked && !now.Before(st.revokedAt.Add(c.Grace))) {
+			delete(c.byHash, k)
+		}
+	}
 }
 
 // Resolve returns the grant for a token presented by the given IPC folder. Any
 // failure is ErrStaleCapability.
 func (c *Capabilities) Resolve(token, folder string) (Grant, error) {
+	return c.ResolveAt(token, folder, time.Time{})
+}
+
+// ResolveAt is Resolve for a request file last written at `written`. A grant
+// that EndRun revoked is still honoured, for Grace, for a file written before
+// the revocation: an agent whose last action was to write the request and
+// exit must not lose it to the poll interval. A file written after the run
+// ended, an unknown write time and a policy revocation (RevokeFolder) fail.
+func (c *Capabilities) ResolveAt(token, folder string, written time.Time) (Grant, error) {
 	if token == "" || len(token) > 128 {
 		return Grant{}, ErrStaleCapability
 	}
+	now := c.now()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	st, ok := c.byHash[sha256.Sum256([]byte(token))]
-	if !ok || st.revoked || st.grant.Folder != folder || !st.grant.ExpiresAt.After(c.now()) {
+	if !ok || st.grant.Folder != folder || !st.grant.ExpiresAt.After(now) {
 		return Grant{}, ErrStaleCapability
+	}
+	if st.revoked {
+		if st.revokedAt.IsZero() || written.IsZero() || written.After(st.revokedAt) || !now.Before(st.revokedAt.Add(c.Grace)) {
+			return Grant{}, ErrStaleCapability
+		}
 	}
 	return st.grant, nil
 }
 
-// EndRun revokes every capability of a run (completion, cancellation or policy
-// change) and reports how many were active. Requests already committed to the
-// outbox are unaffected; requests still waiting in the IPC channel now fail
-// closed with a stale capability.
+// EndRun revokes every capability of a run (completion, cancellation) and
+// reports how many were active. Requests already committed to the outbox are
+// unaffected; a request written before this call is still admitted for Grace;
+// anything written later fails closed with a stale capability.
 func (c *Capabilities) EndRun(runRef string) int {
+	now := c.now()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	n := 0
-	for k, st := range c.byHash {
+	for _, st := range c.byHash {
 		if st.grant.RunRef == runRef && !st.revoked {
-			st.revoked = true
+			st.revoked, st.revokedAt = true, now
 			n++
 		}
-		if st.revoked && !st.grant.ExpiresAt.After(c.now()) {
-			delete(c.byHash, k)
-		}
 	}
+	c.pruneLocked(now)
 	return n
 }
 
-// RevokeFolder revokes every capability of an IPC folder (policy change).
+// RevokeFolder revokes every capability of an IPC folder at once, with no
+// grace (policy change).
 func (c *Capabilities) RevokeFolder(folder string) int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	n := 0
 	for _, st := range c.byHash {
 		if st.grant.Folder == folder && !st.revoked {
-			st.revoked = true
+			st.revoked, st.revokedAt = true, time.Time{}
 			n++
 		}
 	}

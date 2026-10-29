@@ -110,6 +110,7 @@ type Watcher struct {
 	receiptStates    map[string]string // folder+key -> delivery state last written
 
 	lastArtifactReconcile time.Time
+	artifactPreps         int // file-bearing requests prepared in this folder pass
 
 	// handleFolderHook overrides handleFolder when non-nil. Tests use
 	// it to assert traversal without exercising the dispatch pipeline.

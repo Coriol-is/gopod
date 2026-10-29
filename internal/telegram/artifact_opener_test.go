@@ -112,7 +112,8 @@ func (f *openerFixture) opener() *SnapshotOpener {
 }
 
 func (f *openerFixture) uploadReq() SendRequest {
-	return SendRequest{Kind: store.PartUpload, ChatID: 1, Thread: 3, Text: "the report", ArtifactRef: store.ArtifactRef(f.art.ID)}
+	return SendRequest{Kind: store.PartUpload, ChatID: 1, Thread: 3, Text: "the report", ArtifactRef: store.ArtifactRef(f.art.ID),
+		NamespaceID: f.art.NamespaceID, NamespaceEpoch: f.art.NamespaceEpoch}
 }
 
 func TestSnapshotOpenerUploadsTheExactVerifiedBytesWithNoPathReopen(t *testing.T) {
@@ -164,14 +165,14 @@ func TestSnapshotOpenerMissingAndForeignRefs(t *testing.T) {
 	if err := os.Remove(filepath.Join(f.blobPath(), f.art.BlobKey)); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := f.opener().OpenArtifact(t.Context(), store.ArtifactRef(f.art.ID)); err == nil {
+	if _, _, err := f.opener().OpenArtifact(t.Context(), store.ArtifactRef(f.art.ID), f.art.NamespaceID, f.art.NamespaceEpoch); err == nil {
 		t.Fatal("missing blob opened")
 	}
 	if art, _ := f.st.GetArtifact(t.Context(), f.art.ID); art.State != store.ArtifactQuarantined || art.ReasonCode != "blob_missing" {
 		t.Fatalf("artifact %+v", art)
 	}
 	for _, ref := range []string{"", "x", "artifact:../etc/passwd", "/etc/passwd", store.ArtifactRef("11111111-1111-4111-8111-111111111111")} {
-		if _, _, err := f.opener().OpenArtifact(t.Context(), ref); err == nil {
+		if _, _, err := f.opener().OpenArtifact(t.Context(), ref, f.art.NamespaceID, f.art.NamespaceEpoch); err == nil {
 			t.Errorf("ref %q opened", ref)
 		}
 	}
@@ -182,7 +183,7 @@ func TestSnapshotOpenerOnlyOpensReadyArtifacts(t *testing.T) {
 	if _, err := f.st.QuarantineArtifact(t.Context(), f.art.ID, "operator"); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := f.opener().OpenArtifact(t.Context(), store.ArtifactRef(f.art.ID)); err == nil {
+	if _, _, err := f.opener().OpenArtifact(t.Context(), store.ArtifactRef(f.art.ID), f.art.NamespaceID, f.art.NamespaceEpoch); err == nil {
 		t.Fatal("quarantined artifact opened")
 	}
 }
@@ -233,4 +234,32 @@ func mustOwner(t *testing.T, st *store.Store) *store.OutboxOwner {
 	}
 	t.Cleanup(o.Release)
 	return o
+}
+
+func TestSnapshotOpenerRefusesAnotherNamespaceOrEpoch(t *testing.T) {
+	f := newOpenerFixture(t, "data")
+	ref := store.ArtifactRef(f.art.ID)
+	for name, c := range map[string]struct {
+		ns    string
+		epoch int64
+	}{
+		"other namespace": {"22222222-2222-4222-8222-222222222222", f.art.NamespaceEpoch},
+		"other epoch":     {f.art.NamespaceID, f.art.NamespaceEpoch + 1},
+		"empty scope":     {"", 0},
+	} {
+		if _, _, err := f.opener().OpenArtifact(t.Context(), ref, c.ns, c.epoch); err == nil {
+			t.Errorf("%s: opened a foreign artifact", name)
+		}
+	}
+	// A foreign artifact is not quarantined by a scope mismatch: nothing is wrong with it.
+	if art, _ := f.st.GetArtifact(t.Context(), f.art.ID); art.State != store.ArtifactReady {
+		t.Fatalf("state %s", art.State)
+	}
+	// And through the transport nothing is uploaded.
+	api := &fakeAPI{msg: &models.Message{ID: 5}}
+	req := f.uploadReq()
+	req.NamespaceID = "22222222-2222-4222-8222-222222222222"
+	if out := (&botTransport{api: api, artifacts: f.opener()}).Attempt(t.Context(), req); out.Kind != OutcomeRefused || api.docs != 0 {
+		t.Fatalf("outcome %+v docs=%d", out, api.docs)
+	}
 }

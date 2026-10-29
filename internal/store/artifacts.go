@@ -23,6 +23,7 @@ const ArtifactRefPrefix = "artifact:"
 
 var (
 	ErrArtifactQuotaExceeded = errors.New("store: artifact quota exceeded")
+	ErrArtifactRateLimited   = errors.New("store: artifact admission rate limit")
 	ErrInvalidArtifact       = errors.New("store: invalid artifact request")
 	ErrPreparationExpired    = errors.New("store: artifact preparation expired")
 	ErrPreparationState      = errors.New("store: artifact preparation is not active")
@@ -112,6 +113,9 @@ func (s *Store) ReserveArtifacts(ctx context.Context, req ArtifactReservation) (
 		if ns+req.Bytes > lim.MaxNamespaceBytes || global+req.Bytes > lim.MaxGlobalBytes {
 			return ErrArtifactQuotaExceeded
 		}
+		if err = checkArtifactRateQ(ctx, q, lim, sc.NamespaceID, req.OwnerRef, req.Files, req.Bytes, now); err != nil {
+			return err
+		}
 		prep, err := newUUID()
 		if err != nil {
 			return err
@@ -164,6 +168,29 @@ func artifactUsageQ(ctx context.Context, q taskSQL, namespaceID string) (ns, glo
 // ArtifactUsage reports reserved plus stored bytes for a namespace and globally.
 func (s *Store) ArtifactUsage(ctx context.Context, namespaceID string) (ns, global int64, err error) {
 	return artifactUsageQ(ctx, s.taskDB(ctx), namespaceID)
+}
+
+// checkArtifactRateQ enforces the per-run and per-namespace-per-hour caps. A
+// reservation counts its reserved bytes while active and the measured sizes of
+// its artifacts afterwards, so tiny files do not look like 40 MiB.
+func checkArtifactRateQ(ctx context.Context, q taskSQL, lim ArtifactLimits, namespaceID, owner string, files int, bytes, now int64) error {
+	const eff = `CASE WHEN r.state='active' THEN r.bytes ELSE coalesce((SELECT sum(a.size) FROM artifacts a WHERE a.preparation_id=r.preparation_id),0) END`
+	var runFiles, hourFiles int
+	var runBytes, hourBytes int64
+	since := now - artifactRateWindow.Milliseconds()
+	if err := q.QueryRowContext(ctx, `SELECT coalesce(sum(r.file_count),0), coalesce(sum(`+eff+`),0) FROM artifact_reservations r WHERE r.namespace_id=? AND r.owner_ref=?`,
+		namespaceID, owner).Scan(&runFiles, &runBytes); err != nil {
+		return fmt.Errorf("store: artifact run usage: %w", err)
+	}
+	if err := q.QueryRowContext(ctx, `SELECT coalesce(sum(r.file_count),0), coalesce(sum(`+eff+`),0) FROM artifact_reservations r WHERE r.namespace_id=? AND r.created_at>=?`,
+		namespaceID, since).Scan(&hourFiles, &hourBytes); err != nil {
+		return fmt.Errorf("store: artifact hourly usage: %w", err)
+	}
+	if runFiles+files > lim.MaxRunFiles || runBytes+bytes > lim.MaxRunBytes ||
+		hourFiles+files > lim.MaxHourFiles || hourBytes+bytes > lim.MaxHourBytes {
+		return ErrArtifactRateLimited
+	}
+	return nil
 }
 
 type reservationRow struct {
@@ -577,13 +604,14 @@ type DeletingArtifact struct {
 	PreparationID string
 }
 
-// ListDeletingArtifacts returns up to limit artifacts awaiting blob removal, so
+// ListDeletingArtifacts pages (by id, after afterID) artifacts awaiting blob
+// removal, so a run of failing rows cannot hide the rest, and so
 // a crash between unlink and row deletion finishes idempotently.
-func (s *Store) ListDeletingArtifacts(ctx context.Context, limit int) ([]DeletingArtifact, error) {
+func (s *Store) ListDeletingArtifacts(ctx context.Context, afterID string, limit int) ([]DeletingArtifact, error) {
 	if limit <= 0 {
 		limit = 100
 	}
-	rows, err := s.taskDB(ctx).QueryContext(ctx, `SELECT artifact_id,relative_blob_key,preparation_id FROM artifacts WHERE state='deleting' ORDER BY created_at LIMIT ?`, limit)
+	rows, err := s.taskDB(ctx).QueryContext(ctx, `SELECT artifact_id,relative_blob_key,preparation_id FROM artifacts WHERE state='deleting' AND artifact_id>? ORDER BY artifact_id LIMIT ?`, afterID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -643,4 +671,35 @@ func (s *Store) KnownPreparation(ctx context.Context, prep string) (bool, error)
 	var n int
 	err := s.taskDB(ctx).QueryRowContext(ctx, `SELECT (SELECT count(*) FROM artifact_reservations WHERE preparation_id=?)+(SELECT count(*) FROM artifacts WHERE preparation_id=?)`, prep, prep).Scan(&n)
 	return n > 0, err
+}
+
+// RestoreArtifact returns a quarantined artifact to ready after the host
+// re-verified its blob (size and SHA-256), for example after a blob root was
+// restored. Parts already failed because of the quarantine stay failed.
+func (s *Store) RestoreArtifact(ctx context.Context, id string) error {
+	var changed int64
+	_, err := s.withTx(ctx, func(q taskSQL) error {
+		res, err := q.ExecContext(ctx, `UPDATE artifacts SET state='ready',reason_code='' WHERE artifact_id=? AND state='quarantined'`, id)
+		if err != nil {
+			return err
+		}
+		changed, _ = res.RowsAffected()
+		return nil
+	})
+	if err == nil && changed == 0 {
+		return ErrArtifactNotFound
+	}
+	return err
+}
+
+// QuarantinedArtifacts pages quarantined artifacts by id.
+func (s *Store) QuarantinedArtifacts(ctx context.Context, afterID string, limit int) ([]Artifact, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := s.taskDB(ctx).QueryContext(ctx, artifactSelect+` WHERE a.state='quarantined' AND a.artifact_id>? ORDER BY a.artifact_id LIMIT ?`, afterID, limit)
+	if err != nil {
+		return nil, err
+	}
+	return scanArtifacts(rows)
 }

@@ -178,7 +178,7 @@ type closeCounter struct {
 
 func (c closeCounter) Close() error { *c.n++; return nil }
 
-func (o fakeOpener) OpenArtifact(context.Context, string) (string, io.Reader, error) {
+func (o fakeOpener) OpenArtifact(context.Context, string, string, int64) (string, io.Reader, error) {
 	r := io.Reader(strings.NewReader("x"))
 	if o.closed != nil {
 		r = closeCounter{Reader: r, n: o.closed}

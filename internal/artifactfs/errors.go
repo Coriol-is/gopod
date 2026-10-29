@@ -25,7 +25,10 @@ var (
 	ErrSourceChanged = errors.New("artifactfs: source changed during preparation")
 	// ErrNotFound is a missing source or blob.
 	ErrNotFound = errors.New("artifactfs: not found")
-	// ErrCorrupt is a stored blob whose size, link count or SHA-256 differs from the inventory.
+	// ErrPreparationMissing is a host-side preparation directory that is gone
+	// (expired or reconciled away): a host fault, never the agent's doing.
+	ErrPreparationMissing = errors.New("artifactfs: preparation directory missing")
+	// ErrCorrupt is a stored blob whose size or SHA-256 differs from the inventory.
 	ErrCorrupt = errors.New("artifactfs: blob does not match its inventory")
 	// ErrStorageFull is ENOSPC or the free-space floor.
 	ErrStorageFull = errors.New("artifactfs: storage full")

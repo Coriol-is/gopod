@@ -16,7 +16,18 @@ const (
 	DefaultMaxArtifactFiles                = 4
 	DefaultPreparationTTL                  = 15 * time.Minute
 	MaxPreparationTTL                      = 24 * time.Hour
-	DefaultArtifactRetention               = 30 * 24 * time.Hour
+	// DefaultArtifactRetention is how long after every reference is terminal
+	// (sent, failed, cancelled, expired) a blob is kept. Uncertain and pending
+	// references stay pinned regardless.
+	DefaultArtifactRetention = 6 * time.Hour
+
+	// Admission rate caps: a prompt-injected agent must not fill the quota or
+	// spam the chat. Counted on reserved (upper-bound) files and measured bytes.
+	DefaultMaxRunFiles  = 8
+	DefaultMaxRunBytes  = 80 << 20
+	DefaultMaxHourFiles = 40
+	DefaultMaxHourBytes = 200 << 20
+	artifactRateWindow  = time.Hour
 )
 
 // ArtifactLimits bounds stored plus reserved artifact bytes. A zero field means
@@ -27,6 +38,11 @@ type ArtifactLimits struct {
 	MaxNamespaceBytes int64
 	MaxGlobalBytes    int64
 	MaxFiles          int
+	// Per run (reservation owner) and per namespace per hour.
+	MaxRunFiles  int
+	MaxRunBytes  int64
+	MaxHourFiles int
+	MaxHourBytes int64
 }
 
 type artifactConfig struct {
@@ -36,7 +52,8 @@ type artifactConfig struct {
 
 // SetArtifactLimits replaces the artifact quotas. Negative values are rejected.
 func (s *Store) SetArtifactLimits(l ArtifactLimits) error {
-	if l.MaxFileBytes < 0 || l.MaxRequestBytes < 0 || l.MaxNamespaceBytes < 0 || l.MaxGlobalBytes < 0 || l.MaxFiles < 0 {
+	if l.MaxFileBytes < 0 || l.MaxRequestBytes < 0 || l.MaxNamespaceBytes < 0 || l.MaxGlobalBytes < 0 || l.MaxFiles < 0 ||
+		l.MaxRunFiles < 0 || l.MaxRunBytes < 0 || l.MaxHourFiles < 0 || l.MaxHourBytes < 0 {
 		return errors.New("store: negative artifact limit")
 	}
 	s.artifacts.mu.Lock()
@@ -63,6 +80,18 @@ func (s *Store) artifactLimits() ArtifactLimits {
 	}
 	if l.MaxFiles == 0 {
 		l.MaxFiles = DefaultMaxArtifactFiles
+	}
+	if l.MaxRunFiles == 0 {
+		l.MaxRunFiles = DefaultMaxRunFiles
+	}
+	if l.MaxRunBytes == 0 {
+		l.MaxRunBytes = DefaultMaxRunBytes
+	}
+	if l.MaxHourFiles == 0 {
+		l.MaxHourFiles = DefaultMaxHourFiles
+	}
+	if l.MaxHourBytes == 0 {
+		l.MaxHourBytes = DefaultMaxHourBytes
 	}
 	return l
 }

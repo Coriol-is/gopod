@@ -104,11 +104,14 @@ func TestCapabilityLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Unix(1000, 0)
-	c := NewCapabilities(OutputRootPolicy{DataDir: filepath.Join(base, "data"), ChatsDir: chats}, func() time.Time { return now })
+	c := NewCapabilities(OutputRootPolicy{DataDir: filepath.Join(base, "data"), ChatsDir: chats}, func() time.Time { return now }, staticResolver(map[string]string{"owner": "tg:1", "other": "tg:9"}))
+	if err := os.MkdirAll(filepath.Join(chats, "other"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	g := Grant{Folder: "owner", RunRef: "run-1", Actor: "owner", Destination: testScope(), Owner: store.OwnerLegacyAgentIPC,
 		OutputRoot: filepath.Join(chats, "owner"), ExpiresAt: now.Add(time.Hour)}
 
-	bad := []Grant{g, g, g, g, g, g, g}
+	bad := []Grant{g, g, g, g, g, g, g, g, g, g}
 	bad[0].Folder = ""
 	bad[1].RunRef = ""
 	bad[2].Actor = ""
@@ -116,6 +119,9 @@ func TestCapabilityLifecycle(t *testing.T) {
 	bad[4].Owner = "x"
 	bad[5].Destination.Scope.NamespaceID = "x"
 	bad[6].OutputRoot = "/etc"
+	bad[7].OutputRoot = filepath.Join(chats, "other")     // another chat's directory
+	bad[8].Destination.Scope.JID = "tg:9"                 // a chat that is not the actor's
+	bad[9].ExpiresAt = now.Add(MaxGrantTTL + time.Second) // over the TTL cap
 	for i, b := range bad {
 		if _, err := c.Issue(b); err == nil {
 			t.Errorf("invalid grant %d accepted", i)
@@ -189,5 +195,45 @@ func TestSanitizeFilename(t *testing.T) {
 	got := sanitizeFilename(long, "")
 	if len(got) > maxFilenameBytes || !strings.HasSuffix(got, ".markdown") {
 		t.Errorf("long name %q (%d bytes)", got, len(got))
+	}
+}
+
+func TestCapabilityGraceAndPruning(t *testing.T) {
+	base := resolved(t)
+	chats := filepath.Join(base, "chats")
+	os.MkdirAll(filepath.Join(chats, "owner"), 0o755)
+	now := time.Unix(10_000, 0)
+	c := NewCapabilities(OutputRootPolicy{DataDir: filepath.Join(base, "data"), ChatsDir: chats}, func() time.Time { return now }, staticResolver(map[string]string{"owner": "tg:1"}))
+	g := Grant{Folder: "owner", RunRef: "run-1", Actor: "owner", Destination: testScope(), Owner: store.OwnerLegacyAgentIPC,
+		OutputRoot: filepath.Join(chats, "owner"), ExpiresAt: now.Add(time.Hour)}
+	tok, _ := c.Issue(g)
+
+	written := now.Add(-time.Second)
+	c.EndRun("run-1")
+	if _, err := c.ResolveAt(tok, "owner", written); err != nil {
+		t.Fatalf("file written before the run ended: %v", err)
+	}
+	if _, err := c.ResolveAt(tok, "owner", now.Add(time.Second)); !errors.Is(err, ErrStaleCapability) {
+		t.Fatalf("file written after the run ended: %v", err)
+	}
+	if _, err := c.ResolveAt(tok, "owner", time.Time{}); !errors.Is(err, ErrStaleCapability) {
+		t.Fatalf("unknown write time: %v", err)
+	}
+	if _, err := c.Resolve(tok, "owner"); !errors.Is(err, ErrStaleCapability) {
+		t.Fatalf("strict resolve after run end: %v", err)
+	}
+	now = now.Add(DefaultRevokeGrace + time.Second)
+	if _, err := c.ResolveAt(tok, "owner", written); !errors.Is(err, ErrStaleCapability) {
+		t.Fatalf("after the grace window: %v", err)
+	}
+	// Issuing prunes expired and revoked-past-grace entries.
+	now = now.Add(2 * time.Hour)
+	g.ExpiresAt = now.Add(time.Hour)
+	c.Issue(g)
+	c.mu.Lock()
+	n := len(c.byHash)
+	c.mu.Unlock()
+	if n != 1 {
+		t.Fatalf("registry holds %d entries after pruning, want 1", n)
 	}
 }

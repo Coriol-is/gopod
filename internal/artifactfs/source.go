@@ -109,7 +109,7 @@ func (r *SourceRoot) Open(rel string, maxBytes int64) (*SourceFile, error) {
 		return nil, err
 	}
 	// O_NONBLOCK so that a FIFO swapped in after the check cannot block us.
-	fd, err := unix.Openat(dir, name, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+	fd, err := unix.Openat(dir, name, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_NOCTTY|unix.O_CLOEXEC, 0)
 	if err != nil {
 		return nil, mapErrno(err)
 	}

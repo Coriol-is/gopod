@@ -25,6 +25,7 @@ import (
 	"errors"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/Coriol-is/gopod/internal/store"
@@ -280,17 +281,23 @@ func (w *Watcher) alreadyAccepted(ctx context.Context, src store.ScopeRef, key s
 	return err == nil && ok
 }
 
-// requestExpired rejects a request that waited in the channel longer than the
-// delivery would live, so a long outage cannot release stale messages.
-func (w *Watcher) requestExpired(folder, path string) bool {
+// requestModTime is the last write time of a request file in the channel.
+func (w *Watcher) requestModTime(folder, path string) (time.Time, bool) {
 	root, err := w.openNamespace(folder)
 	if err != nil {
-		return false
+		return time.Time{}, false
 	}
 	defer root.Close()
 	info, err := root.Lstat(filepath.Join("messages", filepath.Base(path)))
 	if err != nil {
-		return false
+		return time.Time{}, false
 	}
-	return w.cfg.NowFn().Sub(info.ModTime()) > store.DefaultDeliveryExpiry
+	return info.ModTime(), true
+}
+
+// requestExpired rejects a request that waited in the channel longer than the
+// delivery would live, so a long outage cannot release stale messages.
+func (w *Watcher) requestExpired(folder, path string) bool {
+	mt, ok := w.requestModTime(folder, path)
+	return ok && w.cfg.NowFn().Sub(mt) > store.DefaultDeliveryExpiry
 }

@@ -22,6 +22,7 @@ package ipc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"path"
 	"strings"
@@ -56,12 +57,23 @@ type ArtifactConfig struct {
 	ReconcileEvery time.Duration
 	// Retention is how long terminal artifacts are kept (default 30 days).
 	Retention time.Duration
+	// MaxPrepsPerTick bounds file-bearing requests prepared per folder per
+	// watcher tick (default 2).
+	MaxPrepsPerTick int
 	// Fault is a test-only fault-injection hook; ErrSimulatedCrash aborts
 	// without cleanup, any other error is an ordinary failure.
 	Fault artifactfs.FaultFunc
 }
 
 const defaultMinFreeBytes = 256 << 20
+
+// prepBudget is the number of file-bearing requests prepared per folder per tick.
+func (a ArtifactConfig) prepBudget() int {
+	if a.MaxPrepsPerTick <= 0 {
+		return 2
+	}
+	return a.MaxPrepsPerTick
+}
 
 func (a ArtifactConfig) enabled() bool { return a.Store != nil && a.Blobs != nil && a.Caps != nil }
 
@@ -118,7 +130,8 @@ func (w *Watcher) processArtifactRequest(ctx context.Context, folder, filePath s
 		code, _ := errCode(err)
 		return w.rejectDurable(ctx, src, folder, filePath, id, code)
 	}
-	grant, err := a.Caps.Resolve(req.Capability, folder)
+	written, _ := w.requestModTime(folder, filePath)
+	grant, err := a.Caps.ResolveAt(req.Capability, folder, written)
 	if err != nil {
 		return w.rejectDurable(ctx, src, folder, filePath, id, codeStaleCapability)
 	}
@@ -137,7 +150,13 @@ func (w *Watcher) processArtifactRequest(ctx context.Context, folder, filePath s
 
 	var prep store.Preparation
 	if len(req.Files) > 0 {
-		prep, err = w.prepareArtifacts(ctx, a, grant, req, src)
+		// Bounded I/O per folder per tick: a flood of file requests waits for
+		// the next tick instead of starving the rest of the watcher.
+		if w.artifactPreps >= a.prepBudget() {
+			return false
+		}
+		w.artifactPreps++
+		prep, err = w.prepareArtifacts(ctx, a, grant, req, src, written)
 		if errors.Is(err, artifactfs.ErrSimulatedCrash) {
 			return false
 		}
@@ -214,7 +233,7 @@ func (w *Watcher) authorizeArtifactGrant(ctx context.Context, a ArtifactConfig, 
 // prepareArtifacts reserves bytes, snapshots every file and marks the inventory
 // ready. On error the returned Preparation (possibly zero) must be cleaned up by
 // the caller through artifactFailure.
-func (w *Watcher) prepareArtifacts(ctx context.Context, a ArtifactConfig, g Grant, req artifactRequest, src store.ScopeRef) (store.Preparation, error) {
+func (w *Watcher) prepareArtifacts(ctx context.Context, a ArtifactConfig, g Grant, req artifactRequest, src store.ScopeRef, written time.Time) (store.Preparation, error) {
 	lim := a.Store.ArtifactLimits()
 	rels := make([]string, len(req.Files))
 	for i, f := range req.Files {
@@ -237,6 +256,9 @@ func (w *Watcher) prepareArtifacts(ctx context.Context, a ArtifactConfig, g Gran
 	if errors.Is(err, store.ErrArtifactQuotaExceeded) {
 		return store.Preparation{}, reject(codeQuotaExceeded)
 	}
+	if errors.Is(err, store.ErrArtifactRateLimited) {
+		return store.Preparation{}, reject(codeRateLimited)
+	}
 	if err != nil {
 		return store.Preparation{}, err
 	}
@@ -244,18 +266,23 @@ func (w *Watcher) prepareArtifacts(ctx context.Context, a ArtifactConfig, g Gran
 		return prep, err
 	}
 	if err = a.Blobs.NewPreparation(prep.ID); err != nil {
-		return prep, mapPrepareError(err)
+		return prep, hostFault(err)
 	}
 	root, err := artifactfs.OpenSourceRoot(g.OutputRoot)
 	if err != nil {
-		return prep, mapPrepareError(err)
+		return prep, hostFault(err)
 	}
 	defer root.Close()
 
 	facts := make([]store.ArtifactFacts, len(req.Files))
 	var total int64
 	for i, f := range req.Files {
-		file, oerr := root.Open(rels[i], lim.MaxFileBytes)
+		// Never write past the reservation: the bound is what is left of it.
+		limit := min(lim.MaxFileBytes, reserve-total)
+		if limit <= 0 {
+			return prep, reject(codeFileTooLarge)
+		}
+		file, oerr := root.Open(rels[i], limit)
 		if oerr != nil {
 			return prep, mapPrepareError(oerr)
 		}
@@ -264,10 +291,10 @@ func (w *Watcher) prepareArtifacts(ctx context.Context, a ArtifactConfig, g Gran
 			return prep, reject(codeEmptyFile)
 		}
 		_, name, _ := strings.Cut(prep.BlobKeys[i], "/")
-		snap, serr := a.Blobs.Snapshot(prep.ID, name, file, lim.MaxFileBytes)
+		snap, serr := a.Blobs.Snapshot(prep.ID, name, file, limit)
 		file.Close()
 		if serr != nil {
-			return prep, mapPrepareError(serr)
+			return prep, hostFault(serr)
 		}
 		total += snap.Size
 		if total > reserve {
@@ -284,7 +311,7 @@ func (w *Watcher) prepareArtifacts(ctx context.Context, a ArtifactConfig, g Gran
 		return prep, err
 	}
 	// Revalidate capability and scope after the (possibly slow) copy.
-	if _, rerr := a.Caps.Resolve(req.Capability, g.Folder); rerr != nil {
+	if _, rerr := a.Caps.ResolveAt(req.Capability, g.Folder, written); rerr != nil {
 		return prep, reject(codeStaleCapability)
 	}
 	if code := w.authorizeArtifactGrant(ctx, a, g, req, g.Folder, src); code != "" {
@@ -302,11 +329,22 @@ func (w *Watcher) prepareArtifacts(ctx context.Context, a ArtifactConfig, g Gran
 	return prep, a.fault("after_mark_ready")
 }
 
+// hostFault classifies a failure of a host-side step (the preparation directory,
+// the output root, the snapshot write). A missing path there is the host's
+// problem and is retried; it is never reported as a missing agent file. Link,
+// special-file, size and change errors keep their sanitized codes.
+func hostFault(err error) error {
+	if errors.Is(err, artifactfs.ErrNotFound) {
+		return fmt.Errorf("host-side path missing: %w", artifactfs.ErrPreparationMissing)
+	}
+	return mapPrepareError(err)
+}
+
 // mapPrepareError turns filesystem errors into sanitized rejection codes. A
 // simulated crash and unknown errors pass through unchanged.
 func mapPrepareError(err error) error {
 	switch {
-	case errors.Is(err, artifactfs.ErrSimulatedCrash):
+	case errors.Is(err, artifactfs.ErrSimulatedCrash), errors.Is(err, artifactfs.ErrPreparationMissing):
 		return err
 	case errors.Is(err, artifactfs.ErrUnsafePath):
 		return reject(codePathDenied)

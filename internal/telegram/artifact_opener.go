@@ -49,7 +49,7 @@ type SnapshotOpener struct {
 }
 
 // OpenArtifact returns the sanitized filename and a reader over the verified bytes.
-func (o *SnapshotOpener) OpenArtifact(ctx context.Context, ref string) (string, io.Reader, error) {
+func (o *SnapshotOpener) OpenArtifact(ctx context.Context, ref, namespaceID string, epoch int64) (string, io.Reader, error) {
 	id, ok := store.ParseArtifactRef(ref)
 	if !ok {
 		return "", nil, ErrArtifactUnavailable
@@ -58,6 +58,10 @@ func (o *SnapshotOpener) OpenArtifact(ctx context.Context, ref string) (string, 
 	if err != nil {
 		return "", nil, fmt.Errorf("%w: inventory", ErrArtifactUnavailable)
 	}
+	if art.NamespaceID != namespaceID || art.NamespaceEpoch != epoch || namespaceID == "" {
+		// A reference can only be the delivery's own namespace and epoch.
+		return "", nil, fmt.Errorf("%w: scope", ErrArtifactUnavailable)
+	}
 	if art.State != store.ArtifactReady {
 		return "", nil, fmt.Errorf("%w: state %s", ErrArtifactUnavailable, art.State)
 	}
@@ -65,7 +69,7 @@ func (o *SnapshotOpener) OpenArtifact(ctx context.Context, ref string) (string, 
 	if err != nil {
 		reason := ""
 		switch {
-		case errors.Is(err, artifactfs.ErrNotFound):
+		case errors.Is(err, artifactfs.ErrNotFound), errors.Is(err, artifactfs.ErrPreparationMissing):
 			reason = "blob_missing"
 		case errors.Is(err, artifactfs.ErrCorrupt), errors.Is(err, artifactfs.ErrUnsafePath):
 			reason = "hash_mismatch"

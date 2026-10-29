@@ -14,11 +14,13 @@ import (
 // artifactReconcileStore is the store surface of Reconcile.
 type artifactReconcileStore interface {
 	ExpiredPreparations(ctx context.Context, now time.Time) ([]string, error)
-	ListDeletingArtifacts(ctx context.Context, limit int) ([]store.DeletingArtifact, error)
+	ListDeletingArtifacts(ctx context.Context, afterID string, limit int) ([]store.DeletingArtifact, error)
 	CompleteArtifactDeletion(ctx context.Context, id string) error
 	MarkArtifactsForGC(ctx context.Context, now time.Time, retention time.Duration, limit int) (int, error)
 	ReadyArtifacts(ctx context.Context, afterID string, limit int) ([]store.Artifact, error)
 	QuarantineArtifact(ctx context.Context, id, reason string) (int, error)
+	QuarantinedArtifacts(ctx context.Context, afterID string, limit int) ([]store.Artifact, error)
+	RestoreArtifact(ctx context.Context, id string) error
 	KnownPreparation(ctx context.Context, prep string) (bool, error)
 }
 
@@ -28,11 +30,14 @@ type ReconcileReport struct {
 	DeletedBlobs        int
 	GCMarked            int
 	Quarantined         int
+	Restored            int
 	OrphanDirs          int
 }
 
+// reconcileBatch is a variable only so tests can shrink the page size.
+var reconcileBatch = 100
+
 const (
-	reconcileBatch = 100
 	// orphanGrace keeps a directory the inventory does not know (for example
 	// after a database restore) long enough that an in-flight preparation, whose
 	// reservation is committed first, can never be mistaken for one.
@@ -79,6 +84,10 @@ func (a ArtifactConfig) Reconcile(ctx context.Context, now time.Time, log *slog.
 	rep.Quarantined = q
 	errs = append(errs, err)
 
+	r, err := a.restoreQuarantined(ctx, log)
+	rep.Restored = r
+	errs = append(errs, err)
+
 	o, err := a.removeOrphans(ctx, now, log)
 	rep.OrphanDirs = o
 	errs = append(errs, err)
@@ -88,14 +97,14 @@ func (a ArtifactConfig) Reconcile(ctx context.Context, now time.Time, log *slog.
 // finishDeleting unlinks the blob of every deleting artifact and then removes
 // its row. A crash between the two steps is finished by the next call.
 func (a ArtifactConfig) finishDeleting(ctx context.Context, log *slog.Logger) (int, error) {
-	done := 0
+	done, after := 0, ""
 	for {
-		batch, err := a.Store.ListDeletingArtifacts(ctx, reconcileBatch)
+		batch, err := a.Store.ListDeletingArtifacts(ctx, after, reconcileBatch)
 		if err != nil {
 			return done, err
 		}
-		progressed := false
 		for _, d := range batch {
+			after = d.ID // page past a failing row instead of retrying it forever
 			if err = a.Blobs.RemoveBlob(d.BlobKey); err != nil {
 				log.Warn("ipc: remove artifact blob", "artifact", d.ID, "err", err)
 				continue
@@ -105,9 +114,8 @@ func (a ArtifactConfig) finishDeleting(ctx context.Context, log *slog.Logger) (i
 				continue
 			}
 			done++
-			progressed = true
 		}
-		if len(batch) < reconcileBatch || !progressed {
+		if len(batch) < reconcileBatch {
 			return done, nil
 		}
 	}
@@ -118,6 +126,22 @@ func (a ArtifactConfig) finishDeleting(ctx context.Context, log *slog.Logger) (i
 // bytes are opened for upload, so a silent corruption is quarantined there
 // without any upload.
 func (a ArtifactConfig) verifyReady(ctx context.Context, log *slog.Logger) (int, error) {
+	// A blob root with no preparation at all while ready rows exist is a root
+	// that was recreated, restored empty or remounted wrongly. Quarantining
+	// every artifact on that evidence would turn one operator mistake into a
+	// permanent loss of pending deliveries, so hold the sweep and say so.
+	if first, err := a.Store.ReadyArtifacts(ctx, "", 1); err != nil {
+		return 0, err
+	} else if len(first) > 0 {
+		dirs, derr := a.Blobs.ListPreparations()
+		if derr != nil {
+			return 0, derr
+		}
+		if len(dirs) == 0 {
+			log.Error("ipc: artifact blob root is empty but the inventory has ready artifacts; verification sweep held (restore the blob root, or the artifacts quarantine one by one at upload)")
+			return 0, nil
+		}
+	}
 	quarantined, after := 0, ""
 	for {
 		batch, err := a.Store.ReadyArtifacts(ctx, after, reconcileBatch)
@@ -129,7 +153,7 @@ func (a ArtifactConfig) verifyReady(ctx context.Context, log *slog.Logger) (int,
 			size, serr := a.Blobs.StatBlob(art.BlobKey)
 			reason := ""
 			switch {
-			case errors.Is(serr, artifactfs.ErrNotFound):
+			case errors.Is(serr, artifactfs.ErrNotFound), errors.Is(serr, artifactfs.ErrPreparationMissing):
 				reason = "blob_missing"
 			case errors.Is(serr, artifactfs.ErrCorrupt), errors.Is(serr, artifactfs.ErrUnsafePath):
 				reason = "blob_corrupt"
@@ -181,4 +205,34 @@ func (a ArtifactConfig) removeOrphans(ctx context.Context, now time.Time, log *s
 		removed++
 	}
 	return removed, nil
+}
+
+// restoreQuarantined returns quarantined artifacts to ready when their blob
+// verifies again (size and SHA-256), for example after the blob root was
+// restored. Parts already failed because of the quarantine stay failed.
+func (a ArtifactConfig) restoreQuarantined(ctx context.Context, log *slog.Logger) (int, error) {
+	restored, after := 0, ""
+	for {
+		batch, err := a.Store.QuarantinedArtifacts(ctx, after, reconcileBatch)
+		if err != nil {
+			return restored, err
+		}
+		for _, art := range batch {
+			after = art.ID
+			if size, serr := a.Blobs.StatBlob(art.BlobKey); serr != nil || size != art.Size {
+				continue // cheap check first: only hash blobs that could match
+			}
+			if _, rerr := a.Blobs.ReadVerified(art.BlobKey, art.Size, art.SHA256, art.Size); rerr != nil {
+				continue
+			}
+			if rerr := a.Store.RestoreArtifact(ctx, art.ID); rerr != nil {
+				return restored, rerr
+			}
+			log.Warn("ipc: artifact blob verifies again; restored", "artifact", art.ID)
+			restored++
+		}
+		if len(batch) < reconcileBatch {
+			return restored, nil
+		}
+	}
 }

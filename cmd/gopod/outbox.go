@@ -56,7 +56,14 @@ func openArtifactStore(cfg config.Config, st *store.Store) (ipc.ArtifactConfig, 
 	if err != nil {
 		return ipc.ArtifactConfig{}, nil, fmt.Errorf("open artifact store: %w", err)
 	}
-	caps := ipc.NewCapabilities(ipc.OutputRootPolicy{DataDir: cfg.DataDir, ChatsDir: cfg.ChatsDir}, nil)
+	resolve := func(folder string) (string, bool) {
+		c, err := st.GetByFolder(context.Background(), folder)
+		if err != nil {
+			return "", false
+		}
+		return c.JID, true
+	}
+	caps := ipc.NewCapabilities(ipc.OutputRootPolicy{DataDir: cfg.DataDir, ChatsDir: cfg.ChatsDir}, nil, resolve)
 	return ipc.ArtifactConfig{Store: st, Blobs: blobs, Caps: caps}, blobs, nil
 }
 

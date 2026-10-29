@@ -13,9 +13,11 @@ import (
 
 const testSHA = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
+var reserveSeq atomic.Int64
+
 func (f *deliveryFixture) reserve(files int, bytes int64) Preparation {
 	f.t.Helper()
-	p, err := f.st.ReserveArtifacts(f.t.Context(), ArtifactReservation{Scope: f.conv.Scope, OwnerRef: "run-1", Files: files, Bytes: bytes})
+	p, err := f.st.ReserveArtifacts(f.t.Context(), ArtifactReservation{Scope: f.conv.Scope, OwnerRef: fmt.Sprintf("run-%d", reserveSeq.Add(1)), Files: files, Bytes: bytes})
 	if err != nil {
 		f.t.Fatalf("ReserveArtifacts: %v", err)
 	}
@@ -374,7 +376,7 @@ func TestArtifactExpiredPreparationIsReconciled(t *testing.T) {
 	if ns, _, _ := f.st.ArtifactUsage(t.Context(), f.conv.Scope.NamespaceID); ns != 10 {
 		t.Fatalf("expired reservation still counted: %d", ns)
 	}
-	del, _ := f.st.ListDeletingArtifacts(t.Context(), 10)
+	del, _ := f.st.ListDeletingArtifacts(t.Context(), "", 10)
 	if len(del) != 1 || del[0].BlobKey != p.BlobKeys[0] {
 		t.Fatalf("deleting %+v", del)
 	}
@@ -551,4 +553,104 @@ func TestArtifactImmutableFacts(t *testing.T) {
 			t.Fatalf("mutable: %s", q)
 		}
 	}
+}
+
+func TestPublishDeliveryRefusesUploadParts(t *testing.T) {
+	f := newDeliveryFixture(t)
+	req := PublishRequest{Conversation: f.conv, Owner: OwnerLegacyAgentIPC,
+		Parts: []DeliveryPart{{Kind: PartUpload, ArtifactRef: ArtifactRef("11111111-1111-4111-8111-111111111111")}}}
+	if _, err := f.st.PublishDelivery(t.Context(), req); !errors.Is(err, ErrInvalidDelivery) {
+		t.Fatalf("upload via PublishDelivery: %v", err)
+	}
+	if countRows(t, f.st, `SELECT count(*) FROM delivery_groups`) != 0 {
+		t.Fatal("rejected upload left a delivery")
+	}
+}
+
+func TestArtifactRunAndHourlyRateCaps(t *testing.T) {
+	f := newDeliveryFixture(t)
+	if err := f.st.SetArtifactLimits(ArtifactLimits{MaxRunFiles: 3, MaxRunBytes: 1000, MaxHourFiles: 5, MaxHourBytes: 2000}); err != nil {
+		t.Fatal(err)
+	}
+	res := func(owner string, files int, bytes int64) error {
+		_, err := f.st.ReserveArtifacts(t.Context(), ArtifactReservation{Scope: f.conv.Scope, OwnerRef: owner, Files: files, Bytes: bytes})
+		return err
+	}
+	if err := res("a", 2, 100); err != nil {
+		t.Fatal(err)
+	}
+	if err := res("a", 2, 100); !errors.Is(err, ErrArtifactRateLimited) {
+		t.Fatalf("per-run files: %v", err)
+	}
+	if err := res("a", 1, 901); !errors.Is(err, ErrArtifactRateLimited) {
+		t.Fatalf("per-run bytes: %v", err)
+	}
+	if err := res("b", 3, 100); err != nil {
+		t.Fatalf("another run is independent: %v", err)
+	}
+	if err := res("c", 1, 100); !errors.Is(err, ErrArtifactRateLimited) {
+		t.Fatalf("per-hour files (5 used): %v", err)
+	}
+}
+
+func TestArtifactRateCountsMeasuredBytesAfterRelease(t *testing.T) {
+	f := newDeliveryFixture(t)
+	if err := f.st.SetArtifactLimits(ArtifactLimits{MaxRunBytes: 1 << 20, MaxHourBytes: 600}); err != nil {
+		t.Fatal(err)
+	}
+	p, err := f.st.ReserveArtifacts(t.Context(), ArtifactReservation{Scope: f.conv.Scope, OwnerRef: "r", Files: 1, Bytes: 500})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.ready(p, 10)
+	if _, err = f.st.PublishDeliveryWithArtifacts(t.Context(), f.uploadReq(p, ""), p.ID); err != nil {
+		t.Fatal(err)
+	}
+	// 10 measured bytes, not 500 reserved, count once released.
+	if _, err = f.st.ReserveArtifacts(t.Context(), ArtifactReservation{Scope: f.conv.Scope, OwnerRef: "r2", Files: 1, Bytes: 500}); err != nil {
+		t.Fatalf("measured bytes should leave room: %v", err)
+	}
+}
+
+func TestArtifactRestoreAfterQuarantine(t *testing.T) {
+	f := newDeliveryFixture(t)
+	p := f.reserve(1, 100)
+	f.ready(p, 1)
+	if _, err := f.st.QuarantineArtifact(t.Context(), p.ArtifactIDs[0], "blob_missing"); err != nil {
+		t.Fatal(err)
+	}
+	q, err := f.st.QuarantinedArtifacts(t.Context(), "", 10)
+	if err != nil || len(q) != 1 {
+		t.Fatalf("quarantined %v %v", q, err)
+	}
+	if err = f.st.RestoreArtifact(t.Context(), p.ArtifactIDs[0]); err != nil {
+		t.Fatal(err)
+	}
+	if f.artifactState(p.ArtifactIDs[0]) != ArtifactReady {
+		t.Fatal("not restored")
+	}
+	if err = f.st.RestoreArtifact(t.Context(), p.ArtifactIDs[0]); !errors.Is(err, ErrArtifactNotFound) {
+		t.Fatalf("restore of a ready artifact: %v", err)
+	}
+}
+
+func TestListDeletingArtifactsPagesPastFailingRows(t *testing.T) {
+	f := newDeliveryFixture(t)
+	var ids []string
+	for i := 0; i < 5; i++ {
+		p := f.reserve(1, 10)
+		if err := f.st.AbandonPreparation(t.Context(), p.ID, "x"); err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, p.ArtifactIDs[0])
+	}
+	first, _ := f.st.ListDeletingArtifacts(t.Context(), "", 2)
+	if len(first) != 2 {
+		t.Fatalf("page %d", len(first))
+	}
+	second, _ := f.st.ListDeletingArtifacts(t.Context(), first[1].ID, 10)
+	if len(second) != 3 || second[0].ID <= first[1].ID {
+		t.Fatalf("cursor did not advance past the first page: %v", second)
+	}
+	_ = ids
 }

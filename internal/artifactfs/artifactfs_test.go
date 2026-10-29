@@ -175,9 +175,9 @@ func TestSnapshotDetectsChangeDuringCopy(t *testing.T) {
 			f.Close()
 		},
 		"truncate": func(p string) { os.Truncate(p, 10) },
-		"same size rewrite": func(p string) {
+		"same size rewrite of an already copied region": func(p string) {
 			f, _ := os.OpenFile(p, os.O_WRONLY, 0)
-			f.WriteAt([]byte("ZZZZZ"), 150000) // beyond the first chunk
+			f.WriteAt([]byte("ZZZZZ"), 0)
 			f.Close()
 		},
 	}
@@ -346,11 +346,15 @@ func TestReadVerifiedRejectsTamperingAndLinks(t *testing.T) {
 	if _, err = e.blobs.StatBlob(key); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("stat missing: %v", err)
 	}
-	// hardlinked blob
+	// A hard link inside the private store is harmless: the hash decides.
 	must(t, os.WriteFile(path, []byte("payload"), 0o600))
 	must(t, os.Link(path, filepath.Join(filepath.Dir(path), "x.link")))
+	if data, err := e.blobs.ReadVerified(key, snap.Size, snap.SHA256, 100); err != nil || string(data) != "payload" {
+		t.Fatalf("hardlinked blob with correct content must verify: %q %v", data, err)
+	}
+	must(t, os.WriteFile(path, []byte("PAYLOAD"), 0o600)) // shared inode: both names change
 	if _, err = e.blobs.ReadVerified(key, snap.Size, snap.SHA256, 100); !errors.Is(err, ErrCorrupt) {
-		t.Fatalf("hardlinked blob: %v", err)
+		t.Fatalf("hardlinked blob with wrong content: %v", err)
 	}
 }
 
@@ -430,5 +434,41 @@ func TestListPreparationsIsRepeatable(t *testing.T) {
 		if l, err := e.blobs.ListPreparations(); err != nil || len(l) != 1 {
 			t.Fatalf("call %d: %v %v", i, l, err)
 		}
+	}
+}
+
+// The metadata check (ctime cannot be restored) usually fires first, so the
+// content re-read is tested on its own: same size, mtime put back, only the
+// bytes differ.
+func TestRehashContentCatchesRewriteWithRestoredMtime(t *testing.T) {
+	e := newEnv(t)
+	p := e.write("f.bin", strings.Repeat("a", 5000))
+	src, err := e.root.Open("f.bin", 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer src.Close()
+	want := hexSum(strings.Repeat("a", 5000))
+	if err = rehashContent(src, want); err != nil {
+		t.Fatalf("unchanged source: %v", err)
+	}
+	st, _ := os.Stat(p)
+	f, _ := os.OpenFile(p, os.O_WRONLY, 0)
+	f.WriteAt([]byte("Z"), 0)
+	f.Close()
+	must(t, os.Chtimes(p, st.ModTime(), st.ModTime()))
+	if err = rehashContent(src, want); !errors.Is(err, ErrSourceChanged) {
+		t.Fatalf("rewrite with restored mtime: %v", err)
+	}
+}
+
+func TestMissingPreparationIsAHostFaultNotASourceError(t *testing.T) {
+	e := newEnv(t)
+	e.write("f.txt", "data")
+	src, _ := e.root.Open("f.txt", 100)
+	defer src.Close()
+	_, err := e.blobs.Snapshot(prepA, artA+".blob", src, 100) // preparation never created
+	if !errors.Is(err, ErrPreparationMissing) || errors.Is(err, ErrNotFound) {
+		t.Fatalf("got %v", err)
 	}
 }

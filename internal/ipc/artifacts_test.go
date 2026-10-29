@@ -56,7 +56,7 @@ func newArtFixture(t *testing.T) *artFixture {
 	}
 	t.Cleanup(func() { blobs.Close() })
 	f := &artFixture{durableFixture: d, chats: chats, blobs: blobs, blobPath: blobPath,
-		caps: NewCapabilities(OutputRootPolicy{DataDir: d.root, ChatsDir: chats}, nil)}
+		caps: NewCapabilities(OutputRootPolicy{DataDir: d.root, ChatsDir: chats}, nil, staticResolver(d.jids))}
 	f.token = f.issue("owner", "tg:1", store.OwnerLegacyAgentIPC, "run-1")
 	return f
 }
@@ -396,6 +396,7 @@ func TestArtifacts_OversizeAndEmptyFiles(t *testing.T) {
 	f.sendV1("owner", "0002-empty.json", f.req("empty.bin"))
 	f.sendV1("owner", "0003-agg.json", f.req("a.bin", "b.bin")) // 180 > 150 aggregate
 	f.tick(w)
+	f.tick(w) // the per-tick preparation budget is 2
 	f.wantError("0001-big.json", "file_too_large")
 	f.wantError("0002-empty.json", "empty_file")
 	f.wantError("0003-agg.json", "file_too_large")
@@ -553,7 +554,8 @@ func TestArtifacts_AcceptedRequestSurvivesRunEnd(t *testing.T) {
 	if rc := f.receipt("owner", "0001-e.result.json"); rc["status"] != "queued" {
 		t.Fatalf("accepted request must not be revoked: %v", rc)
 	}
-	// An unaccepted request with the same revoked capability fails closed.
+	// An unaccepted request written after the run ended fails closed.
+	time.Sleep(30 * time.Millisecond) // coarse filesystem timestamps
 	f.sendV1("owner", "0002-late.json", f.req("a.csv"))
 	f.tick(f.watcher())
 	f.wantError("0002-late.json", "stale_capability")
@@ -599,7 +601,8 @@ func TestArtifacts_GroupAndOwnerAuthorityDenied(t *testing.T) {
 	os.WriteFile(filepath.Join(f.chats, "group-a", "g.txt"), []byte("g"), 0o644)
 	w := f.watcher()
 
-	// Group folder with a valid group capability: closed until CP-020/CP-019.
+	// Only the owner folder reaches the artifact route: a group folder's V1
+	// file keeps the legacy text path (which refuses it: no chatJid).
 	gTok := f.issue("group-a", "tg:-2", store.OwnerLegacyAgentIPC, "run-g")
 	writeIPC(t, f.root, "group-a", "messages", "0001-g.json", map[string]any{"version": 1, "requestId": "req-00000002", "capability": gTok,
 		"files": []map[string]any{{"path": ContainerOutputRoot + "/g.txt"}}})
@@ -616,13 +619,19 @@ func TestArtifacts_GroupAndOwnerAuthorityDenied(t *testing.T) {
 	f.sendV1("owner", "0003-c.json", body)
 	f.tick(w)
 
-	for _, c := range []struct{ folder, name string }{{"group-a", "0001-g"}, {"owner", "0002-x"}, {"owner", "0003-c"}} {
+	for _, c := range []struct{ folder, name string }{{"owner", "0002-x"}, {"owner", "0003-c"}} {
 		rc := f.receipt(c.folder, c.name+".result.json")
 		if rc["status"] != "error" || rc["error"] != "recipient_unavailable" {
 			t.Fatalf("%s: %v", c.name, rc)
 		}
 	}
+	if rc := f.receipt("group-a", "0001-g.result.json"); rc["status"] != "error" {
+		t.Fatalf("group V1 request: %v", rc)
+	}
 	f.assertNoLeak("authority")
+	if f.rows(`SELECT count(*) FROM artifact_reservations`) != 0 {
+		t.Fatal("a group folder reached the artifact route")
+	}
 	if calls := f.sink.callsSnapshot(); len(calls) != 0 {
 		t.Fatalf("direct send %+v", calls)
 	}
@@ -801,4 +810,278 @@ func TestArtifacts_ReconcileIsIdempotentAndNoopWhenDisabled(t *testing.T) {
 	if rep, err := (ArtifactConfig{}).Reconcile(t.Context(), time.Now(), slog.Default()); err != nil || rep != (ReconcileReport{}) {
 		t.Fatal("disabled reconcile did something")
 	}
+}
+
+func TestArtifacts_LastActionFileThenEndRunBeforePollIsAdmitted(t *testing.T) {
+	f := newArtFixture(t)
+	f.write("a.csv", "x")
+	f.sendV1("owner", "0001-last.json", f.req("a.csv"))
+	if f.caps.EndRun("run-1") != 1 { // the run ends before the watcher polls
+		t.Fatal("capability was not active")
+	}
+	f.tick(f.watcher())
+	if rc := f.receipt("owner", "0001-last.result.json"); rc["status"] != "queued" {
+		t.Fatalf("file written while the run was active must be admitted: %v", rc)
+	}
+	// Past the grace window the same situation fails closed and is tombstoned.
+	f2 := newArtFixture(t)
+	f2.write("a.csv", "x")
+	f2.caps.Grace = time.Millisecond
+	f2.sendV1("owner", "0001-slow.json", f2.req("a.csv"))
+	f2.caps.EndRun("run-1")
+	time.Sleep(20 * time.Millisecond)
+	f2.tick(f2.watcher())
+	f2.wantError("0001-slow.json", "stale_capability")
+}
+
+func TestArtifacts_PolicyRevocationHasNoGrace(t *testing.T) {
+	f := newArtFixture(t)
+	f.write("a.csv", "x")
+	f.sendV1("owner", "0001-p.json", f.req("a.csv"))
+	f.caps.RevokeFolder("owner")
+	f.tick(f.watcher())
+	f.wantError("0001-p.json", "stale_capability")
+}
+
+func TestArtifacts_FileFloodIsBudgetedPerTick(t *testing.T) {
+	f := newArtFixture(t)
+	f.write("a.csv", "x")
+	for i := 0; i < 5; i++ {
+		f.sendV1("owner", fmt.Sprintf("000%d-b.json", i), f.req("a.csv"))
+	}
+	w := f.watcher()
+	f.tick(w)
+	if n := f.deliveries(); n != 2 {
+		t.Fatalf("first tick published %d, want the budget of 2", n)
+	}
+	if got := dirEntries(t, f.dir("owner", "messages")); len(got) != 3 {
+		t.Fatalf("unprocessed requests must stay queued untouched: %v", got)
+	}
+	f.tick(w)
+	f.tick(w)
+	if n := f.deliveries(); n != 5 {
+		t.Fatalf("after three ticks %d deliveries", n)
+	}
+}
+
+func TestArtifacts_RunRateCapRejectsWithCode(t *testing.T) {
+	f := newArtFixture(t)
+	if err := f.st.SetArtifactLimits(store.ArtifactLimits{MaxRunFiles: 1}); err != nil {
+		t.Fatal(err)
+	}
+	f.write("a.csv", "x")
+	f.sendV1("owner", "0001-r.json", f.req("a.csv"))
+	f.sendV1("owner", "0002-r.json", f.req("a.csv"))
+	f.tick(f.watcher())
+	if rc := f.receipt("owner", "0001-r.result.json"); rc["status"] != "queued" {
+		t.Fatalf("first: %v", rc)
+	}
+	f.wantError("0002-r.json", "rate_limited")
+	if f.deliveries() != 1 {
+		t.Fatalf("deliveries %d", f.deliveries())
+	}
+}
+
+func TestArtifacts_MissingPreparationDirectoryIsRetriedNotTombstoned(t *testing.T) {
+	f := newArtFixture(t)
+	f.write("a.csv", "x")
+	f.sendV1("owner", "0001-h.json", f.req("a.csv"))
+	f.setFault("after_prep_mkdir", nil, true)
+	fired := false
+	f.blobs.Fault = func(point string) error {
+		if point == "after_prep_mkdir" && !fired {
+			fired = true
+			dirs, _ := f.blobs.ListPreparations()
+			for _, d := range dirs {
+				f.blobs.RemovePreparation(d.Name) // host-side directory vanishes
+			}
+		}
+		return nil
+	}
+	w := f.watcher()
+	f.tick(w)
+	f.clearFault()
+	if rc := f.receipt("owner", "0001-h.result.json"); rc["status"] != "retrying" || rc["error"] != "durable_unavailable" {
+		t.Fatalf("host fault must be a retry: %v", rc)
+	}
+	if f.rows(`SELECT count(*) FROM ipc_message_requests WHERE outcome='rejected'`) != 0 {
+		t.Fatal("host fault became a permanent tombstone")
+	}
+	f.clk.advance(time.Minute)
+	f.tick(w)
+	if rc := f.receipt("owner", "0001-h.result.json"); rc["status"] != "queued" {
+		t.Fatalf("retry: %v", rc)
+	}
+}
+
+func TestArtifacts_QuarantineSweepHeldForEmptyRootThenRestoredBlobUnquarantines(t *testing.T) {
+	f := newArtFixture(t)
+	f.write("a.csv", "alpha")
+	f.write("b.csv", "bravo")
+	f.sendV1("owner", "0001-a.json", f.req("a.csv"))
+	f.sendV1("owner", "0002-b.json", f.req("b.csv"))
+	f.tick(f.watcher())
+	cfg := f.cfg()
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	// Root recreated empty: every ready row looks missing. Hold, do not quarantine.
+	dirs, _ := f.blobs.ListPreparations()
+	saved := map[string][]byte{}
+	var keys []string
+	rows, _ := f.st.DB().Query(`SELECT relative_blob_key FROM artifacts`)
+	for rows.Next() {
+		var k string
+		rows.Scan(&k)
+		keys = append(keys, k)
+	}
+	rows.Close()
+	for _, k := range keys {
+		b, err := os.ReadFile(filepath.Join(f.blobPath, k))
+		if err != nil {
+			t.Fatal(err)
+		}
+		saved[k] = b
+	}
+	for _, d := range dirs {
+		if err := f.blobs.RemovePreparation(d.Name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rep, err := cfg.Reconcile(t.Context(), time.Now(), log)
+	if err != nil || rep.Quarantined != 0 || f.rows(`SELECT count(*) FROM artifacts WHERE state='ready'`) != 2 {
+		t.Fatalf("empty root must hold the sweep: %+v %v", rep, err)
+	}
+
+	// One blob lost while the root is otherwise intact: that artifact is quarantined.
+	restoreAll := func() {
+		for k, b := range saved {
+			prep, _, _ := strings.Cut(k, "/")
+			os.MkdirAll(filepath.Join(f.blobPath, prep), 0o700)
+			if err := os.WriteFile(filepath.Join(f.blobPath, k), b, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	restoreAll()
+	if err = os.Remove(filepath.Join(f.blobPath, keys[0])); err != nil {
+		t.Fatal(err)
+	}
+	rep, err = cfg.Reconcile(t.Context(), time.Now(), log)
+	if err != nil || rep.Quarantined != 1 {
+		t.Fatalf("one missing blob: %+v %v", rep, err)
+	}
+	// The blob comes back (restore from backup): it verifies and is un-quarantined.
+	if err = os.WriteFile(filepath.Join(f.blobPath, keys[0]), saved[keys[0]], 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rep, err = cfg.Reconcile(t.Context(), time.Now(), log)
+	if err != nil || rep.Restored != 1 || f.rows(`SELECT count(*) FROM artifacts WHERE state='ready'`) != 2 {
+		t.Fatalf("restore: %+v %v", rep, err)
+	}
+	// A wrong-content blob is never restored.
+	if _, err = f.st.QuarantineArtifact(t.Context(), mustArtifactID(t, f, keys[0]), "blob_corrupt"); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(f.blobPath, keys[0]), []byte("WRONG"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if rep, _ = cfg.Reconcile(t.Context(), time.Now(), log); rep.Restored != 0 {
+		t.Fatalf("restored a blob with the wrong content: %+v", rep)
+	}
+}
+
+func mustArtifactID(t *testing.T, f *artFixture, key string) string {
+	t.Helper()
+	var id string
+	if err := f.st.DB().QueryRow(`SELECT artifact_id FROM artifacts WHERE relative_blob_key=?`, key).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+func TestArtifacts_HardlinkedBlobInPrivateStoreStillSends(t *testing.T) {
+	f := newArtFixture(t)
+	f.write("a.csv", "x")
+	f.sendV1("owner", "0001-h.json", f.req("a.csv"))
+	f.tick(f.watcher())
+	var key string
+	f.st.DB().QueryRow(`SELECT relative_blob_key FROM artifacts`).Scan(&key)
+	if err := os.Link(filepath.Join(f.blobPath, key), filepath.Join(f.blobPath, "elsewhere")); err != nil {
+		t.Fatal(err)
+	}
+	cfg := f.cfg()
+	rep, err := cfg.Reconcile(t.Context(), time.Now(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil || rep.Quarantined != 0 {
+		t.Fatalf("hardlinked private blob quarantined: %+v %v", rep, err)
+	}
+}
+
+func TestArtifacts_RetentionDeletesTerminalBlobsAfterHoursKeepsPending(t *testing.T) {
+	f := newArtFixture(t)
+	f.write("a.csv", "x")
+	f.sendV1("owner", "0001-t.json", f.req("a.csv"))
+	f.tick(f.watcher())
+	cfg := f.cfg()
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	// Pending: pinned however old.
+	if rep, _ := cfg.Reconcile(t.Context(), time.Now().Add(72*time.Hour), log); rep.GCMarked != 0 || len(f.prepDirs()) != 1 {
+		t.Fatalf("pending reference collected: %+v", rep)
+	}
+	if _, err := f.st.DB().Exec(`UPDATE outbox_parts SET state='sent'; UPDATE delivery_groups SET state='sent', unresolved=0`); err != nil {
+		t.Fatal(err)
+	}
+	if rep, _ := cfg.Reconcile(t.Context(), time.Now().Add(time.Hour), log); rep.GCMarked != 0 {
+		t.Fatalf("collected one hour after terminal with the default retention: %+v", rep)
+	}
+	rep, err := cfg.Reconcile(t.Context(), time.Now().Add(store.DefaultArtifactRetention+time.Hour), log)
+	if err != nil || rep.GCMarked != 1 || rep.DeletedBlobs != 1 || len(f.prepDirs()) != 0 {
+		t.Fatalf("terminal blob not removed after the default retention: %+v %v", rep, err)
+	}
+}
+
+func TestArtifacts_FinishDeletingPagesPastFailingRows(t *testing.T) {
+	old := reconcileBatch
+	reconcileBatch = 2
+	defer func() { reconcileBatch = old }()
+	f := newArtFixture(t)
+	if err := f.st.SetArtifactLimits(store.ArtifactLimits{MaxRunFiles: 100, MaxHourFiles: 100}); err != nil {
+		t.Fatal(err)
+	}
+	src, _ := f.st.SnapshotScope(t.Context(), "owner")
+	var keys []string
+	for i := 0; i < 5; i++ {
+		p, err := f.st.ReserveArtifacts(t.Context(), store.ArtifactReservation{Scope: src, OwnerRef: fmt.Sprintf("r%d", i), Files: 1, Bytes: 10})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = f.st.AbandonPreparation(t.Context(), p.ID, "x"); err != nil {
+			t.Fatal(err)
+		}
+		keys = append(keys, p.BlobKeys[0])
+	}
+	// Make the blob removal of the three lowest ids fail: a symlinked preparation directory.
+	ids := map[string]string{}
+	rows, _ := f.st.DB().Query(`SELECT artifact_id, relative_blob_key FROM artifacts ORDER BY artifact_id`)
+	var ordered []string
+	for rows.Next() {
+		var id, k string
+		rows.Scan(&id, &k)
+		ids[id] = k
+		ordered = append(ordered, id)
+	}
+	rows.Close()
+	outside := resolved(t)
+	for _, id := range ordered[:3] {
+		prep, _, _ := strings.Cut(ids[id], "/")
+		if err := os.Symlink(outside, filepath.Join(f.blobPath, prep)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfg := f.cfg()
+	n, err := cfg.finishDeleting(t.Context(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil || n != 2 {
+		t.Fatalf("deleted %d (%v), want the two healthy rows behind three failing ones", n, err)
+	}
+	_ = keys
 }

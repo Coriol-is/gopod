@@ -103,6 +103,9 @@ func (b *Blobs) openPrep(prep string) (int, error) {
 		return -1, ErrUnsafePath
 	}
 	fd, err := unix.Openat(b.fd, prep, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if errors.Is(err, unix.ENOENT) {
+		return -1, ErrPreparationMissing
+	}
 	if err != nil {
 		return -1, mapErrno(err)
 	}
@@ -202,7 +205,10 @@ func (b *Blobs) Snapshot(prep, name string, src *SourceFile, maxBytes int64) (sn
 		return fail(serr)
 	}
 	sum := hex.EncodeToString(h.Sum(nil))
-	if serr := rehash(src, sum); serr != nil {
+	if serr := rehashContent(src, sum); serr != nil {
+		return fail(serr)
+	}
+	if serr := src.Stable(); serr != nil {
 		return fail(serr)
 	}
 	if serr := out.Sync(); serr != nil {
@@ -239,8 +245,10 @@ func sourceGrew(n, maxBytes int64) error {
 	return ErrSourceChanged
 }
 
-// rehash reads the source again from the start and compares the digest.
-func rehash(src *SourceFile, want string) error {
+// rehashContent reads the source again from the start and compares the digest.
+// It is the check that still works where timestamps are too coarse to show a
+// change, and it does not depend on metadata at all.
+func rehashContent(src *SourceFile, want string) error {
 	if _, err := src.File.Seek(0, io.SeekStart); err != nil {
 		return fmt.Errorf("artifactfs: rewind source: %w", err)
 	}
@@ -252,10 +260,10 @@ func rehash(src *SourceFile, want string) error {
 	if n != src.st.Size || hex.EncodeToString(h.Sum(nil)) != want {
 		return ErrSourceChanged
 	}
-	return src.Stable()
+	return nil
 }
 
-// openBlob walks key and returns an open, verified regular file (link count one).
+// openBlob walks key and returns an open, verified regular file (content is verified by the caller's hash).
 func (b *Blobs) openBlob(key string) (*os.File, unix.Stat_t, error) {
 	var st unix.Stat_t
 	prep, name, err := splitKey(key)
@@ -267,7 +275,7 @@ func (b *Blobs) openBlob(key string) (*os.File, unix.Stat_t, error) {
 		return nil, st, err
 	}
 	defer unix.Close(dir)
-	fd, err := unix.Openat(dir, name, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+	fd, err := unix.Openat(dir, name, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_NOCTTY|unix.O_CLOEXEC, 0)
 	if err != nil {
 		return nil, st, mapErrno(err)
 	}
@@ -275,7 +283,8 @@ func (b *Blobs) openBlob(key string) (*os.File, unix.Stat_t, error) {
 		unix.Close(fd)
 		return nil, st, mapErrno(err)
 	}
-	if st.Mode&unix.S_IFMT != unix.S_IFREG || st.Nlink != 1 {
+	// No link-count check: the store is private and the hash proves content.
+	if st.Mode&unix.S_IFMT != unix.S_IFREG {
 		unix.Close(fd)
 		return nil, st, ErrCorrupt
 	}
@@ -283,7 +292,7 @@ func (b *Blobs) openBlob(key string) (*os.File, unix.Stat_t, error) {
 }
 
 // StatBlob reports the size of a stored blob, failing if it is missing or not a
-// plain single-link file. It does not read the content.
+// regular file. It does not read the content.
 func (b *Blobs) StatBlob(key string) (int64, error) {
 	f, st, err := b.openBlob(key)
 	if err != nil {
@@ -293,8 +302,8 @@ func (b *Blobs) StatBlob(key string) (int64, error) {
 	return st.Size, nil
 }
 
-// ReadVerified opens the blob without following links, checks its type, link
-// count and size against the inventory, reads exactly size bytes into a bounded
+// ReadVerified opens the blob without following links, checks its type and
+// size against the inventory, reads exactly size bytes into a bounded
 // buffer and compares SHA-256. The caller uploads these bytes and never reopens
 // a pathname. A missing blob is ErrNotFound; any mismatch is ErrCorrupt.
 func (b *Blobs) ReadVerified(key string, size int64, sha string, maxBytes int64) ([]byte, error) {
@@ -328,7 +337,7 @@ func (b *Blobs) RemoveBlob(key string) error {
 		return err
 	}
 	dir, err := b.openPrep(prep)
-	if errors.Is(err, ErrNotFound) {
+	if errors.Is(err, ErrPreparationMissing) {
 		return nil
 	}
 	if err != nil {
@@ -363,7 +372,7 @@ func mapSync(fd int) error {
 // directory itself; it is idempotent and never follows a link.
 func (b *Blobs) RemovePreparation(prep string) error {
 	dir, err := b.openPrep(prep)
-	if errors.Is(err, ErrNotFound) {
+	if errors.Is(err, ErrPreparationMissing) {
 		return nil
 	}
 	if err != nil {

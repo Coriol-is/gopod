@@ -204,6 +204,13 @@ func (s *Store) PublishDelivery(ctx context.Context, req PublishRequest) (Delive
 	if err := validatePublish(req, now); err != nil {
 		return Delivery{}, err
 	}
+	// Uploads reference host-owned snapshots and are published only together
+	// with their references by PublishDeliveryWithArtifacts.
+	for _, p := range req.Parts {
+		if p.Kind == PartUpload {
+			return Delivery{}, fmt.Errorf("%w: uploads require PublishDeliveryWithArtifacts", ErrInvalidDelivery)
+		}
+	}
 	if req.ExpiresAt == 0 {
 		req.ExpiresAt = now + DefaultDeliveryExpiry.Milliseconds()
 	}

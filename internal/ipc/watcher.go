@@ -55,6 +55,7 @@ func (w *Watcher) handleFolder(ctx context.Context, folder string) {
 	if w.cfg.NamespaceAllowed != nil && !w.cfg.NamespaceAllowed(ctx, folder) {
 		return
 	}
+	w.artifactPreps = 0
 	if w.handleFolderHook != nil {
 		w.handleFolderHook(ctx, folder)
 		return
