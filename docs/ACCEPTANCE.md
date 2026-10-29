@@ -1,11 +1,17 @@
 # Live acceptance register
 
-Last reconciled: 2026-10-25. Application deployed: `01c18fe`.
+Last reconciled: 2026-10-29. Application deployed: `8bdff46`.
 Code merged/deployed is distinct from a real-client scenario being accepted.
 Items below are pending unless explicit evidence is linked. Do not infer a pass
 from unit tests, CLI --help/version, startup notices or a green CI job.
 
+## Latest open gates
+- Rich IPC P1: inspect Markdown/HTML rendering in the owner client; two API acknowledgements are recorded.
+- CP-031: invoke `/restart` as the owner and observe both notices, container recreation and subsequent usability.
+  Menu publication and deployment startup passed; the live command path is not yet qualified.
+
 ## Verified operational baseline
+- [Rich IPC/restart rollout](deployments/2026-10-29-8bdff46.md): gateway/owner startup, two acknowledged HTML sends, preserved schedules/counts/config and initial online backup verification.
 - [Private-login rollout](deployments/2026-10-25-01c18fe.md): image/startup/polling and immediate before/after state preserved. No live OAuth flow invoked; actual owner-DM/client proof stays A20.
 - [Doctor output rollout](deployments/2026-10-25-ea38581.md): running/startup/polling and state preservation verified. Corrected client rendering remains to be observed; group operation after privacy re-add confirmed by owner separately.
 - [Startup readiness rollout](deployments/2026-10-25-0a25267.md): actual selected Claude container starts automatically, CLI/local auth ready, management quota honestly unknown; database/schedule preserved. Live Codex quota remains A19.
@@ -27,7 +33,8 @@ from unit tests, CLI --help/version, startup notices or a green CI job.
   Codex CLI 0.164.0/Claude Code 2.1.310 authenticated turns or native resume.
 - Owner subsequently created the real FreeFeed schedule and received its task
   receipt. It was later resumed externally and is active in the 17:24 predeploy backup;
-  cron stays 09:00 Europe/Belgrade. No successful
+  the 2026-10-29 live predeploy snapshot instead has 13:00/18:00 Europe/Belgrade
+  plus a separate AI digest at 20:00; all were preserved. No successful
   recurring execution+digest delivery is recorded.
 
 ## User-reported acceptance and incident follow-up

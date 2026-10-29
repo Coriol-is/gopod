@@ -12,19 +12,19 @@ approved queue, [proposal registry](proposals/README.md) for CP status and
 - CP-004 PR2/PR3 (#79/#81), CP-007 foundation (#80), and rich-message requirements (#82) are merged.
   Base for this continuation: `19ae2e2`. Old branch-status notes below are historical implementation notes.
 - P1 merged as `3fcbf06` in PR #83 after green CI and independent review.
-  The owner `/restart` implementation is in `gopod-telegram-restart`.
+  Owner `/restart` merged as `8bdff46` in PR #84; both features are deployed.
   Owner authorized PRs and automatic admin squash merge after green CI (ruleset 24430037 requires
   one approval; native auto-merge is disabled). Preserve both worktrees.
 - P1 implements Markdown-default / sanitized HTML / plain text for personal durable IPC, shared canonical
   HTML validation, explicit rich-field rejection on unsupported routes, and one recorded plain fallback
   after an explicit Telegram entity-parse refusal. The original plan stays immutable; ambiguous sends
   remain uncertain and are never replayed. ADR D045. Legacy messages without rich fields stay literal.
-- Production: last recorded deploy is `07d9edd` (see [evidence](deployments/2026-10-29-07d9edd.md));
-  runtime was not re-inspected during this implementation. P0 bounded owner-chat durable IPC smoke is
-  approved; the owner has now authorized deployment. No deployment has been performed by this branch. Buttons, stickers, and thread awareness
-  remain separate slices; groups stay disabled.
-- Next: integrate the restart PR after green CI, then perform the owner-authorized deployment.
-  Real Telegram formatting acceptance and live restart/recovery acceptance remain separate gates.
+- Production: `8bdff46` deployed on 2026-10-29 at 19:11 UTC; see [evidence](deployments/2026-10-29-8bdff46.md).
+  Owner-personal durable text IPC and dispatcher are enabled. Two Markdown/HTML smoke messages
+  received Telegram acknowledgements; all schedules and data counts were preserved. Groups,
+  artifact delivery and managed tasks remain disabled.
+- Next: owner-client formatting inspection and an actual owner `/restart` command with before/after
+  notices. API acknowledgements and startup readiness do not establish these live acceptance gates.
 - Not authorized here: account logins, paid fallbacks, T9 reboot, group activation or schedule changes.
 
 ## Telegram restart implementation (2026-10-29)
@@ -34,7 +34,8 @@ approved queue, [proposal registry](proposals/README.md) for CP status and
   Compose supervision, gracefully drains and recycles exact old personal container
   IDs. Startup reports ready/degraded only after local runtime checks.
 - Local build, vet (native and Linux ARM64), full tests and restart-related race suites passed.
-  No deployment or production restart performed. Real Compose restart, Telegram
+  Merged in PR #84 and deployed as `8bdff46`; gateway and owner runtime recreated successfully during rollout.
+  The command itself has not been invoked in the live owner chat. Real command-driven Compose restart, Telegram
   notice visibility/topic behavior and provider usability remain live acceptance.
 - Active non-personal profiles and unresolved managed task holds refuse restart;
   disabled groups stay disabled. Sessions/auth/workspaces and schedules are preserved.
@@ -71,7 +72,8 @@ approved queue, [proposal registry](proposals/README.md) for CP status and
   controller on one data dir fails to start; `GOPOD_RECOVERY_QUARANTINE=1` or `<data>/.restore-quarantine` runs control
   plane only. Both default to normal behavior.
 - Not done: timer/retention (slice 7), session/auth/ChatsDir/IPC capture, restore + activation command, Pi drill. The
-  Pi image predates `gopod backup`; the next deploy still needs the manual cold copy. CP-007 is `in-progress`.
+  Pi now runs `gopod backup`; first online create/verify evidence is in the deployment report.
+  The rollout used a pre-deploy cold copy. Restore/activation drill remains pending. CP-007 is `in-progress`.
 
 ## CP-004 PR 2 merged (#79, 2026-10-29)
 - Branch `feat/cp004-dispatch` (worktree `gopod-cp004-pr2`), based on PR 1 (`c7ff9d2`): managed dispatch and conservative
@@ -274,8 +276,8 @@ The owner specifically advanced CP-020 full implementation ahead of that wave.
 - [Acceptance register](ACCEPTANCE.md) is the actionable current live checklist.
   Host cgroup/reboot and parallel threads are paused operational/research work,
   not implicit parts of deploying the current code.
-- IPC receipts are diagnostic, not a crash-safe delivery outbox. Network/crash
-  send ambiguity remains CP-002. Voice-only reply memo and crash windows need
+- Legacy IPC receipts are diagnostic. Owner-personal text now uses the durable outbox;
+  ambiguous sends remain uncertain and are not replayed. Full foreground/artifact cutover remains CP-002/003. Voice-only reply memo and crash windows need
   A12 verification. Queue.Close still waits without its own timeout.
 - Scheduled jobs use main's session; isolation is CP-004. System-run deadlines and same-chat preemption are deployed; full maintenance
   rescheduling/quiet hours remain proposed; compaction source-context/restart
