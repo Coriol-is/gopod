@@ -819,23 +819,24 @@ func drainStream(stream *runner.AgentStream) {
 func (b *Bot) maybeVoiceReply(ctx context.Context, item queue.Item, text string) {
 	// Bind personal credentials to the configured private destination, never
 	// mutable registration metadata such as IsOwner.
-	if b.ownerChatID <= 0 || item.ChatID != b.ownerChatID {
+	spoken, ok := b.voiceCandidate(item, text)
+	if !ok {
 		return
 	}
-	mode := b.getReplyMode(item.ChatID, item.IsVoice)
-	if mode != "voice" && mode != "voice+text" {
+	if b.prepared != nil && b.prepared.Speech != nil {
+		b.preparedVoiceReply(ctx, item, spoken)
 		return
 	}
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
 		return
 	}
-	text = stripCodeBlocks(text) // code is not read aloud
-	if strings.TrimSpace(text) == "" {
-		return
-	}
 	b.chatAction(ctx, item.ChatID, item.ThreadID, models.ChatActionRecordVoice)
-	audioData, err := textToSpeech(ctx, apiKey, text)
+	synth := b.tts
+	if synth == nil {
+		synth = textToSpeech
+	}
+	audioData, err := synth(ctx, apiKey, spoken)
 	if err != nil {
 		b.log.Warn("TTS failed",
 			slog.Any("err", err))

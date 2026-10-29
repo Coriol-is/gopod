@@ -93,5 +93,5 @@ func (s *Store) applyArtifactSchema(ctx context.Context) error {
 			return fmt.Errorf("artifact statement %d: %w\n--- sql ---\n%s", i, err, stmt)
 		}
 	}
-	return nil
+	return s.applyGenerationSchema(ctx)
 }
