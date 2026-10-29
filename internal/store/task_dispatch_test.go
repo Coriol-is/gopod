@@ -214,6 +214,16 @@ func TestSettleTaskAttemptMapsOnlyObservedExitToTerminalStates(t *testing.T) {
 		if att.Reservation != "released" {
 			t.Fatalf("reservation = %s", att.Reservation)
 		}
+		// A stop that landed on a reserved attempt settles cancelled when the
+		// controller proves its own spawn marker was refused.
+		h := newDeliveryFixture(t)
+		task, c := admitted(t, h)
+		h.st.ReserveTaskAttempt(t.Context(), c.AttemptID, testSnap, baseTime)
+		h.st.RequestRunStop(t.Context(), "owner", task.ID, c.RunID, "operator_stop")
+		wantErr(t, h.st.BeginTaskSpawn(t.Context(), c.AttemptID), ErrTransitionConflict)
+		if got, err := h.st.SettleTaskAttempt(t.Context(), c.AttemptID, Settlement{Kind: SettleNotStarted, Evidence: "not_started:spawn_marker_refused"}); err != nil || got != ExecCancelled {
+			t.Fatalf("settle after refused marker = %s, %v", got, err)
+		}
 		// A started attempt can never be settled as not started.
 		g := newDeliveryFixture(t)
 		b := startedAttempt(t, g)

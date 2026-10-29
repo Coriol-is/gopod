@@ -257,16 +257,21 @@ func settleQ(ctx context.Context, q taskSQL, attemptID string, st Settlement, no
 	}
 	switch st.Kind {
 	case SettleNotStarted:
-		if a.State != ExecQueued && a.State != ExecReserved {
-			return "", ErrTransitionConflict
-		}
-		if r.State != ExecQueued {
+		// The caller asserts the spawn marker was never committed (single
+		// controller: it refused the marker itself). A stop that landed on a
+		// reserved attempt left it cancel_requested, which then settles cancelled.
+		to := ExecFailed
+		switch {
+		case (a.State == ExecQueued || a.State == ExecReserved) && r.State == ExecQueued:
+		case a.State == ExecCancelRequested && r.State == ExecCancelRequested:
+			to = ExecCancelled
+		default:
 			return "", ErrTransitionConflict
 		}
 		if opts.FailureCode == "" {
 			opts.FailureCode = "not_started"
 		}
-		if err = step(ExecFailed, opts); err != nil {
+		if err = step(to, opts); err != nil {
 			return "", err
 		}
 		return a.State, nil
