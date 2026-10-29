@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-10-27 (evening)
+**Last updated:** 2026-10-29
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -23,6 +23,16 @@ approved queue, [proposal registry](proposals/README.md) for CP status and
   own worktree/PR. Order after that: CP-004, CP-007, CP-006, CP-016, CP-018, CP-019.
 - **Not authorized without the owner:** account logins, quota/paid fallbacks, T9 reboot,
   production group activation, schedule changes (freefeed digest stays as is).
+
+## CP-003 PR 4 in progress (2026-10-29)
+- Branch `feat/cp003-artifacts` (worktree `gopod-cp003-pr4`), based on `07d9edd` (PR 3 merged): artifact inventory
+  and quotas (`internal/store/artifacts*.go`), rooted no-follow snapshot store (`internal/artifactfs`), per-run
+  capabilities, strict V1 admission and reconcile (`internal/ipc/{capabilities,artifact_request,artifacts,artifacts_reconcile}.go`),
+  verified-bytes upload (`internal/telegram/artifact_opener.go`), ADR D039. Not pushed yet.
+- Off by default: `GOPOD_OUTBOX_ARTIFACTS=1` also needs the dispatcher and `GOPOD_OUTBOX_IPC=1`. **Do not enable** before the
+  CP-007 matched DB/artifact backup, lease and restore gate passes (D039); groups still need CP-020/CP-019.
+- Not done: the runner-side capability issuer (so every V1 request is still `stale_capability`), voice and generated-code
+  parity (PR 5), foreground freeze (PR 6), operator resend of uncertain uploads, a bounded live smoke. CP-002/003 stay `in-progress`.
 
 ## CP-002 PR 3 in progress (2026-10-28)
 - Branch `feat/cp002-ipc-durable` (worktree `gopod-cp002-pr3`), based on PR 2 (`e7eaeee`): personal text IPC
