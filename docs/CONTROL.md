@@ -305,6 +305,11 @@ in the chat history). Storage is independent of dispatch.
 
 ### 6.1 Buttons, pickers and confirmations ([D028](DECISIONS.md))
 
+**Convention (owner, 2026-10-30):** every command with a parameter from a small known set offers a picker when
+invoked without it (`/model`, `/provider`, `/trigger`, and new commands by default). The text form stays valid.
+Button presses go through `Router.Dispatch`, so `Perm` decides who may press. Free-form values and
+credential/destructive actions do not become pickers.
+
 As implemented (`internal/telegram/cmdbuttons.go`), a Response's `Buttons`
 are sent as inline buttons under the reply (last chunk). Each button's
 callback data is a random token, never the command:

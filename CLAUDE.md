@@ -82,6 +82,16 @@ drops everything else.
 - One exported `New(...)`/`Open(...)` per package, returns a struct value
   (not a pointer to interface). Interfaces are declared at the consumer side.
 
+### Commands with parameters
+
+Owner convention (2026-10-30): a command that takes a parameter from a small known set must, whenever
+possible, offer **inline-button pickers** when called without the parameter (the `/model`, `/provider`
+and `/trigger` pattern: `Response.Buttons` / `pickerButtons`, the press re-dispatches the same command through
+the Router, the current choice is marked, the message is edited in place). The text form
+`/cmd <value>` keeps working. Authorization stays in the Router (`Perm`), never in the button. Free-form
+parameters (ids, text) and destructive or credential-bearing actions use text arguments or the confirmation
+buttons ([D028](docs/DECISIONS.md)). See [docs/CONTROL.md §6.1](docs/CONTROL.md).
+
 ### Layout
 
 The package layout is fixed in [docs/ARCHITECTURE.md §5.1](docs/ARCHITECTURE.md).
