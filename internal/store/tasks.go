@@ -229,15 +229,15 @@ func (s *Store) GetTaskRun(ctx context.Context, taskID string, runAt int64) (Tas
 
 // DeleteTask removes a task. No error if it doesn't exist.
 //
-// A managed (execution_version 1) definition is never physically deleted: it is
-// tombstoned with its evidence kept (see DeleteManagedTask). A legacy row is
+// A managed (execution_version 1) definition is refused with ErrManagedTask: it
+// is never physically deleted and is tombstoned only through DeleteManagedTask
+// with an expected revision. A legacy row is
 // deleted physically only while no managed ledger row references it, checked in
 // the same transaction as the delete.
 func (s *Store) DeleteTask(ctx context.Context, id string) error {
 	_, err := s.withTx(ctx, func(q taskSQL) error {
 		var version int
-		var deleted sql.NullInt64
-		err := q.QueryRowContext(ctx, `SELECT execution_version, deleted_at FROM scheduled_tasks WHERE id = ?`, id).Scan(&version, &deleted)
+		err := q.QueryRowContext(ctx, `SELECT execution_version FROM scheduled_tasks WHERE id = ?`, id).Scan(&version)
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}
@@ -245,14 +245,8 @@ func (s *Store) DeleteTask(ctx context.Context, id string) error {
 			return err
 		}
 		if version == 1 {
-			if deleted.Valid {
-				return nil
-			}
-			t, e := readManagedTaskQ(ctx, q, id)
-			if e != nil {
-				return e
-			}
-			return s.tombstoneTaskQ(ctx, q, t, "deleted")
+			// Managed deletion needs an expected revision: DeleteManagedTask.
+			return ErrManagedTask
 		}
 		var refs int
 		if err = q.QueryRowContext(ctx, `SELECT (SELECT count(*) FROM task_runs WHERE task_id=?) + (SELECT count(*) FROM task_occurrences WHERE task_id=?)`, id, id).Scan(&refs); err != nil {

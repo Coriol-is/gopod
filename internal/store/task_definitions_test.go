@@ -233,7 +233,11 @@ func TestDeleteTaskTombstonesManagedAndGuardsLegacyMutators(t *testing.T) {
 	wantErr(t, f.st.UpdateTaskDefinition(ctx, TaskRecord{ID: task.ID, ChatFolder: "owner", Prompt: "x", ScheduleType: "once", ScheduleValue: "v"}), ErrManagedTask)
 	wantErr(t, f.st.UpdateTaskStatus(ctx, "nope", "paused", 0, 0), ErrTaskNotFound)
 
-	if err = f.st.DeleteTask(ctx, task.ID); err != nil {
+	wantErr(t, f.st.DeleteTask(ctx, task.ID), ErrManagedTask) // no revision check, no tombstone
+	if g, _ := f.st.GetManagedTask(ctx, task.ID); g.Tombstoned() {
+		t.Fatal("legacy DeleteTask tombstoned a managed task")
+	}
+	if err = f.st.DeleteManagedTask(ctx, "owner", task.ID, 1, "deleted"); err != nil {
 		t.Fatal(err)
 	}
 	got, err := f.st.GetManagedTask(ctx, task.ID)
@@ -246,8 +250,8 @@ func TestDeleteTaskTombstonesManagedAndGuardsLegacyMutators(t *testing.T) {
 	if md, _ = f.st.DueManagedTasks(ctx, baseTime+1, 10); len(md) != 0 {
 		t.Fatal("tombstone is still due")
 	}
-	if err = f.st.DeleteTask(ctx, task.ID); err != nil {
-		t.Fatalf("second delete: %v", err)
+	if err = f.st.DeleteTask(ctx, task.ID); err == nil {
+		t.Fatal("legacy delete of a managed row accepted")
 	}
 	wantErr(t, f.st.DeleteManagedTask(ctx, "owner", task.ID, 2, "deleted"), ErrTaskTombstoned)
 	_, err = f.st.UpdateManagedTask(ctx, "owner", task.ID, 2, TaskPatch{})
@@ -293,5 +297,38 @@ func TestLegacyDeleteRefusedWhenManagedRowsReferenceIt(t *testing.T) {
 	}
 	if _, err = f.st.GetTask(ctx, legacyID); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestMutationFolderCheckPrecedesExistenceDisclosure(t *testing.T) {
+	f := newDeliveryFixture(t)
+	ctx := t.Context()
+	legacyID, _ := f.st.CreateTask(ctx, TaskRecord{ChatFolder: "owner", ChatJID: "tg:1", Prompt: "p", ScheduleType: "interval", ScheduleValue: "1h", NextRun: baseTime})
+	task := f.create(f.agentSpec())
+	p := "x"
+	for _, id := range []string{legacyID, "missing", task.ID} {
+		_, err := f.st.UpdateManagedTask(ctx, "elsewhere", id, 1, TaskPatch{Prompt: &p})
+		wantErr(t, err, ErrTaskNotFound)
+	}
+	_, err := f.st.UpdateManagedTask(ctx, "owner", legacyID, 1, TaskPatch{Prompt: &p})
+	wantErr(t, err, ErrNotManagedTask)
+}
+
+func TestEditCannotReadmitRecordedSlot(t *testing.T) {
+	f := newDeliveryFixture(t)
+	ctx := t.Context()
+	task := f.create(f.agentSpec())
+	f.mustAdmit(admit(task, baseTime, baseTime+1000))
+	cur, _ := f.st.GetManagedTask(ctx, task.ID)
+	_, err := f.st.UpdateManagedTask(ctx, "owner", task.ID, cur.Revision, TaskPatch{NextRun: ptr(baseTime)})
+	wantErr(t, err, ErrInvalidTask)
+	p, err := f.st.SetManagedTaskStatus(ctx, "owner", task.ID, cur.Revision, "paused", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.st.SetManagedTaskStatus(ctx, "owner", task.ID, p.Revision, "active", baseTime)
+	wantErr(t, err, ErrInvalidTask)
+	if _, err = f.st.UpdateManagedTask(ctx, "owner", task.ID, p.Revision, TaskPatch{NextRun: ptr(baseTime + 2000)}); err != nil {
+		t.Fatalf("later cursor refused: %v", err)
 	}
 }

@@ -3,6 +3,7 @@ package control
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -374,6 +375,9 @@ func tasksCancel(ctx context.Context, st *store.Store, folder string, args []str
 	}
 
 	if err := st.DeleteTask(ctx, id); err != nil {
+		if errors.Is(err, store.ErrManagedTask) {
+			return Response{Text: "Managed tasks cannot be deleted by this command.", Code: 1}, nil
+		}
 		return Response{}, err
 	}
 	return Response{Text: fmt.Sprintf("Task %s cancelled and deleted.", id)}, nil

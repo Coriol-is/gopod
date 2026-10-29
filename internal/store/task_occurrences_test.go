@@ -553,3 +553,21 @@ func TestAdmitUsesInjectedClockNotWallClock(t *testing.T) {
 		t.Fatalf("clock: %+v", occ[0])
 	}
 }
+
+func TestAdmitRejectsRepeatedWallSlotKey(t *testing.T) {
+	f := newDeliveryFixture(t)
+	task := f.create(f.agentSpec())
+	req := admit(task, baseTime, baseTime+3_600_000)
+	req.WallSlotKey = "2027-01-01T02:30/Europe/Belgrade"
+	f.mustAdmit(req)
+	cur, _ := f.st.GetManagedTask(t.Context(), task.ID)
+	mustExec(t, f.st, `UPDATE task_runs SET execution_state='failed', settled_at=1`)
+	mustExec(t, f.st, `UPDATE task_attempts SET execution_state='failed'`)
+	again := admit(cur, baseTime+3_600_000, baseTime+7_200_000)
+	again.WallSlotKey = req.WallSlotKey
+	_, err := f.st.AdmitTaskOccurrence(t.Context(), again)
+	wantErr(t, err, ErrOccurrenceDuplicate)
+	if countRows(t, f.st, `SELECT count(*) FROM task_runs`) != 1 {
+		t.Fatal("duplicate wall slot created a run")
+	}
+}

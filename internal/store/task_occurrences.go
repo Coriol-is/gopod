@@ -244,6 +244,15 @@ func (s *Store) admitQ(ctx context.Context, q taskSQL, req AdmissionRequest) (Ad
 			return Admission{}, ErrOccurrenceDuplicate
 		}
 	}
+	if req.NominalAt != 0 && req.WallSlotKey != "" {
+		var n int
+		if err = q.QueryRowContext(ctx, `SELECT count(*) FROM task_occurrences WHERE task_id=? AND definition_revision=? AND wall_slot_key=?`, t.ID, t.Revision, req.WallSlotKey).Scan(&n); err != nil {
+			return Admission{}, err
+		}
+		if n != 0 {
+			return Admission{}, ErrOccurrenceDuplicate
+		}
+	}
 	for i, d := range req.Decisions {
 		id, e := newUUID()
 		if e != nil {

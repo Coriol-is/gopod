@@ -407,12 +407,20 @@ func (p TaskPatch) apply(t *ManagedTask) {
 // caller's expected revision. A different folder looks like a missing task so
 // a wrong-scope caller learns nothing.
 func loadForMutation(ctx context.Context, q taskSQL, folder, id string, expectedRevision int64) (ManagedTask, error) {
+	// Folder first: a foreign caller learns nothing about legacy vs missing IDs.
+	var owner string
+	if err := q.QueryRowContext(ctx, `SELECT chat_folder FROM scheduled_tasks WHERE id = ?`, id).Scan(&owner); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ManagedTask{}, ErrTaskNotFound
+		}
+		return ManagedTask{}, err
+	}
+	if owner != folder {
+		return ManagedTask{}, ErrTaskNotFound
+	}
 	t, err := readManagedTaskQ(ctx, q, id)
 	if err != nil {
 		return ManagedTask{}, err
-	}
-	if t.Conversation.Scope.Folder != folder {
-		return ManagedTask{}, ErrTaskNotFound
 	}
 	if t.Tombstoned() {
 		return ManagedTask{}, ErrTaskTombstoned
@@ -421,6 +429,19 @@ func loadForMutation(ctx context.Context, q taskSQL, folder, id string, expected
 		return ManagedTask{}, ErrRevisionConflict
 	}
 	return t, nil
+}
+
+// ensureCursorAfterLedger refuses a cursor that would re-admit a slot already
+// recorded (admitted or decided) for the task under any earlier revision.
+func ensureCursorAfterLedger(ctx context.Context, q taskSQL, taskID string, nextRun int64) error {
+	var latest sql.NullInt64
+	if err := q.QueryRowContext(ctx, `SELECT max(nominal_at) FROM task_occurrences WHERE task_id=?`, taskID).Scan(&latest); err != nil {
+		return err
+	}
+	if latest.Valid && nextRun <= latest.Int64 {
+		return invalidTask("next run %d is not after the latest recorded slot %d", nextRun, latest.Int64)
+	}
+	return nil
 }
 
 // bumpManaged writes the whole mutable definition and increments the revision,
@@ -455,8 +476,14 @@ func (s *Store) UpdateManagedTask(ctx context.Context, folder, id string, expect
 		if err != nil {
 			return err
 		}
+		before := t.NextRun
 		p.apply(&t)
 		normalizeManaged(&t)
+		if t.NextRun != before && t.NextRun > 0 {
+			if err = ensureCursorAfterLedger(ctx, q, t.ID, t.NextRun); err != nil {
+				return err
+			}
+		}
 		if err = validateManaged(t); err != nil {
 			return err
 		}
@@ -489,6 +516,11 @@ func (s *Store) SetManagedTaskStatus(ctx context.Context, folder, id string, exp
 		if status == "active" {
 			if nextRun > 0 {
 				t.NextRun = nextRun
+			}
+			if t.NextRun > 0 {
+				if err = ensureCursorAfterLedger(ctx, q, t.ID, t.NextRun); err != nil {
+					return err
+				}
 			}
 			t.TerminalReason = ""
 		}

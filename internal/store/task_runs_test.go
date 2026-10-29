@@ -255,7 +255,7 @@ func TestTombstoneCancelsUnstartedAndKeepsStartedEvidence(t *testing.T) {
 	res := f.freeze(ExecIsolatedTask, "final text", ResultMember{TurnID: frozen.TurnID, Attempt: 1})
 	mustExec(t, f.st, `UPDATE task_attempts SET execution_state='running', provider='claude' WHERE attempt_id=?`, frozen.AttemptID)
 
-	if err := f.st.DeleteTask(ctx, task.ID); err != nil {
+	if err := f.st.DeleteManagedTask(ctx, "owner", task.ID, cur.Revision, "deleted"); err != nil {
 		t.Fatal(err)
 	}
 	state := func(a Admission) (ExecState, ExecState) {
@@ -316,7 +316,7 @@ func TestTombstoneCancelsPendingReminderButNeverUnsendsUncertain(t *testing.T) {
 	mustExec(t, f.st, `UPDATE outbox_parts SET state='uncertain' WHERE delivery_id=?`, first.DeliveryID)
 	mustExec(t, f.st, `UPDATE delivery_groups SET state='uncertain', unresolved=1 WHERE delivery_id=?`, first.DeliveryID)
 
-	if err := f.st.DeleteTask(ctx, task.ID); err != nil {
+	if err := f.st.DeleteManagedTask(ctx, "owner", task.ID, cur.Revision, "deleted"); err != nil {
 		t.Fatal(err)
 	}
 	d1, _ := f.st.GetDelivery(ctx, first.DeliveryID)
