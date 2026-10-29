@@ -62,7 +62,7 @@ func RegisterTriggerCommand(r *Router, st *store.Store) {
 				return Response{Code: 1, Text: triggerUnavailable}, fmt.Errorf("trigger: %w", err)
 			}
 			if len(rest) == 0 {
-				return showTrigger(ctx, st, jid)
+				return showTrigger(ctx, st, jid, cmd.Caller.ChatID < 0)
 			}
 			mode, err := store.ParseTriggerMode(rest[0])
 			if err != nil {
@@ -75,13 +75,14 @@ func RegisterTriggerCommand(r *Router, st *store.Store) {
 		})
 }
 
-func showTrigger(ctx context.Context, st *store.Store, jid string) (Response, error) {
+func showTrigger(ctx context.Context, st *store.Store, jid string, fromGroup bool) (Response, error) {
 	mode, err := st.GroupTrigger(ctx, jid)
 	if err != nil {
 		return Response{Code: 1, Text: triggerUnavailable}, fmt.Errorf("trigger show: %w", err)
 	}
 	return Response{
-		Text: fmt.Sprintf("Trigger mode: %s\n\n%s\n\n%s", mode, triggerUsage, triggerHelp),
-		Data: map[string]any{"jid": jid, "mode": string(mode)},
+		Text:    fmt.Sprintf("Trigger mode: %s\n\n%s\n\n%s", mode, triggerUsage, triggerHelp),
+		Data:    map[string]any{"jid": jid, "mode": string(mode)},
+		Buttons: triggerButtons(jid, mode, fromGroup),
 	}, nil
 }

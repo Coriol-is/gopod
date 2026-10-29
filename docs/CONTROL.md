@@ -232,7 +232,7 @@ Cross-chat operations and global state.
 
 | Telegram | Perm | From the owner in a group | From the owner's private chat |
 |---|---|---|---|
-| `/trigger [owner\|mention\|owner+mention\|all]` | GroupOwner | shows or sets this group's trigger mode, no confirmation | `/trigger <group_chat_id> [mode]` |
+| `/trigger [owner\|mention\|owner+mention\|all]` | GroupOwner | shows or sets this group's trigger mode, no confirmation; with no mode it also shows one button per mode (current marked `✓`), and a press re-dispatches `/trigger <mode>` so the Router re-checks `GroupOwner` on the presser; the picker message is edited to the result | `/trigger <group_chat_id> [mode]`; `/trigger <group_chat_id>` shows the same picker for that group |
 | `/isolation status` / `disable` | GroupOwner | this group only, immediate (the kill switch) | `/isolation <op> <group_chat_id>`; `disable` confirms as before |
 | `/isolation enable` / `prepare` | GroupOwner | answered with a confirmation delivered to the owner's private chat; nothing runs until Yes is pressed there | confirms in place, as before |
 | `/model`, `/provider` | ChatLocal + owner check in groups | this group only, no confirmation | unchanged (`/provider` confirms) |

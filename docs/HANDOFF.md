@@ -431,3 +431,5 @@ its register and delivery priorities in ROADMAP.
 - `store.Open` builds a SQLite file URI by concatenating the raw path. A `#` in a path
   can be interpreted as a URI fragment; repeated test names exposed cross-fixture DB
   aliasing. Formatting tests use distinct descriptive names. URI escaping is a separate fix.
+
+- `/trigger` without a mode now shows an inline mode picker (control `triggerButtons`, press goes through the Router as `/trigger <mode>`); branch `feat/trigger-picker-buttons`, not pushed.
