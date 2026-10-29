@@ -41,10 +41,17 @@ What the code actually does today (verified 2026-10-29):
    strikethrough and spoilers. Tables stay out of scope here (see
    `docs/research/2026-10-25-telegram-table-rendering.md`).
 3. Applies to foreground replies (already Markdown) and to agent-initiated messages (new).
-   The outbox transport never falls back at send time (a Telegram `bad_request` fails the part), so the
-   fallback happens at **admission**: the host converts and validates the HTML (converter + `chunkHTML`)
-   before publishing, and converts first, then splits, then freezes. Markup that cannot be validated is
-   published as plain text, never as a part that can later be refused.
+   **Two layers of fallback to plain text (owner decision: back off to plaintext on a send error):**
+   (a) at **admission** the host converts, validates (converter + `chunkHTML`) and only then splits and freezes;
+   markup it cannot validate is published as plain text from the start; (b) at **send time**, if Telegram
+   explicitly refuses a formatted text part with a parse error (`bad_request`, "can't parse entities"), the
+   dispatcher makes exactly **one** plain-text re-attempt of the same part. This is safe because an explicit
+   refusal proves the message was not accepted, and it does not weaken the never-resend rule: ambiguous
+   outcomes (timeouts, 5xx, restart in `sending`) still end `uncertain` and never fall back. The plain text is
+   derived deterministically from the frozen payload (`htmlToPlain`), so the plan hash and immutability are
+   untouched; the fallback attempt is recorded as its own attempt row with a `plain_fallback` marker, and the
+   delivery diagnostic says "sent as plain text". This amends the D037 "no hidden second call" rule for this one
+   explicit, recorded case and needs a D037 amendment when implemented.
 4. The agent learns the supported subset from a short instruction snippet in the chat templates.
 5. *(owner)* The owner can ask for formatting on particular tasks. IPC message files carry no task
    identity and the task schema has no format field, so a per-task default is **not buildable** without a
