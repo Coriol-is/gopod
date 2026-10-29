@@ -7,8 +7,7 @@ from unit tests, CLI --help/version, startup notices or a green CI job.
 
 ## Latest open gates
 - Rich IPC P1: inspect Markdown/HTML rendering in the owner client; two API acknowledgements are recorded.
-- CP-031: invoke `/restart` as the owner and observe both notices, container recreation and subsequent usability.
-  Menu publication and deployment startup passed; the live command path is not yet qualified.
+- CP-031: owner reported `/restart` checked on 2026-10-29. Baseline accepted by owner; negative cases and specific topic/provider scenarios remain unqualified.
 
 ## Verified operational baseline
 - [Rich IPC/restart rollout](deployments/2026-10-29-8bdff46.md): gateway/owner startup, two acknowledged HTML sends, preserved schedules/counts/config and initial online backup verification.

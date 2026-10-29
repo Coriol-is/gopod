@@ -115,3 +115,4 @@ not enabling the feature merely by merging that document.
 | [CP-029](CP-029-scoped-location.md) | Scoped location context and expiry | proposed | M |
 | [CP-030](CP-030-agent-mailboxes.md) | Authenticated agent mailboxes and bounded delegation | proposed | L |
 | [CP-031](CP-031-telegram-restart.md) | Owner Telegram restart with durable recovery notices | in-progress | M |
+| [CP-032](CP-032-telegram-reaction-reading.md) | Read reactions and custom emoji with explicit private/non-admin limitations (design only) | accepted | M |

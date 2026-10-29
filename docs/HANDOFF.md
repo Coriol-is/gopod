@@ -6,6 +6,10 @@ Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
 [ACCEPTANCE](ACCEPTANCE.md) for pending real-client verification.
 
+## Latest design request (2026-10-29)
+- CP-032 [reaction-reading specification](superpowers/specs/2026-10-29-telegram-reaction-reading.md): group emoji/custom-ID events, durable admission, exact message/topic mapping and no-admin/unavailable diagnostics. Private native reactions are transport-blocked; no account-reader workaround is authorized. Design only; no source or runtime flags changed.
+- Owner reports live `/restart` checked successfully on 2026-10-29; this establishes the reported baseline, not every negative/topic/provider scenario.
+
 ## Resume here (2026-10-29, Codex continuation)
 - Latest Claude session `17a9d2c0-7ae3-4ea8-bdf2-a4af91a2ebe5` stopped on a usage limit.
   Its P1 formatting child stopped after read-only exploration; the clean worktree was resumed in Codex.
@@ -23,8 +27,7 @@ approved queue, [proposal registry](proposals/README.md) for CP status and
   Owner-personal durable text IPC and dispatcher are enabled. Two Markdown/HTML smoke messages
   received Telegram acknowledgements; all schedules and data counts were preserved. Groups,
   artifact delivery and managed tasks remain disabled.
-- Next: owner-client formatting inspection and an actual owner `/restart` command with before/after
-  notices. API acknowledgements and startup readiness do not establish these live acceptance gates.
+- Next: owner-client formatting inspection and remaining restart edge cases. The owner has checked the baseline `/restart`. API acknowledgements and startup readiness do not establish these live acceptance gates.
 - Not authorized here: account logins, paid fallbacks, T9 reboot, group activation or schedule changes.
 
 ## Telegram restart implementation (2026-10-29)
@@ -35,8 +38,8 @@ approved queue, [proposal registry](proposals/README.md) for CP status and
   IDs. Startup reports ready/degraded only after local runtime checks.
 - Local build, vet (native and Linux ARM64), full tests and restart-related race suites passed.
   Merged in PR #84 and deployed as `8bdff46`; gateway and owner runtime recreated successfully during rollout.
-  The command itself has not been invoked in the live owner chat. Real command-driven Compose restart, Telegram
-  notice visibility/topic behavior and provider usability remain live acceptance.
+  The owner reports the live `/restart` baseline checked. Negative cases, specific topic behavior
+  and provider usability beyond that report remain separate acceptance.
 - Active non-personal profiles and unresolved managed task holds refuse restart;
   disabled groups stay disabled. Sessions/auth/workspaces and schedules are preserved.
 - See [spec](superpowers/specs/2026-10-29-telegram-restart.md); this is not an emergency

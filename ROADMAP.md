@@ -327,3 +327,7 @@ Buttons/hooks, inbound/outbound stickers and thread awareness remain separate wo
 ### Owner restart (2026-10-29)
 
 - CP-031: `/restart` merged in PR #84 as `8bdff46`, CI green and deployed; owner/private-only; verified Docker supervision, durable request/replay fence and truthful container-readiness notices. [Specification](docs/superpowers/specs/2026-10-29-telegram-restart.md). Production restart acceptance remains separate.
+
+### Reaction reading specification (2026-10-29)
+
+- CP-032: [design](docs/superpowers/specs/2026-10-29-telegram-reaction-reading.md) saved for incoming emoji/custom reactions, scoped message correlation and no-admin capability handling. Private native reaction delivery is unavailable under the documented Bot API admin requirement. No implementation, activation or queue reprioritization.
