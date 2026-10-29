@@ -1,10 +1,61 @@
 # gopod — current handoff
 
-**Last updated:** 2026-10-29 (group triggers)
+**Last updated:** 2026-10-30 (context-reset checkpoint)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
 [ACCEPTANCE](ACCEPTANCE.md) for pending real-client verification.
+
+## START HERE — checkpoint 2026-10-30 (written before a Claude context reset)
+**State.** `main` = `c5b976e`, no open PRs, no extra worktrees, no unmerged local branches. The Pi (192.168.1.128,
+`ssh spaceinvaderz@192.168.1.128`; Tailscale name `rpi4` may be offline; needs the 1Password SSH agent unlocked) runs
+`c5b976e`. Flags on: `GOPOD_OUTBOX_DISPATCHER`, `GOPOD_OUTBOX_IPC` (owner chat). Off: artifacts, managed tasks.
+Last backup before deploy: `20261029T235150Z-db-480ab40a` (online `gopod backup create`, verified); rollback tag
+`gopod-gopod:rollback-pre-trigger-picker` (older tags `rollback-pre-*` also exist).
+
+**Shipped today (all merged and deployed):** CP-002 PR1-5 and rich formatting (D045), CP-004 PR1-3, CP-007 backup
+foundation, `/restart` (D046), default group admission (D047: registered groups run without a config entry;
+auto-prepare; legacy group `tg:-1003850302017` prepared as epoch e2), Codex tree-budget fix, group triggers +
+owner-in-group identity (D048), `/trigger` picker buttons, picker-first convention (CLAUDE.md "Commands with
+parameters"). Owner verified live: `/trigger`, `/provider`, group replies on Claude (new + resume).
+
+**How to deploy (what worked):** fast-forward `~/gopod` on the Pi (`git fetch && git merge --ff-only origin/main`),
+`docker tag gopod-gopod:latest gopod-gopod:rollback-pre-<topic>`, `docker compose build --build-arg VERSION=<sha> gopod`,
+backup with `gp backup create` + `gp backup verify <id>` where `gp() { docker compose run --rm --no-deps -v
+$HOME/gopod-backups:/backups -e GOPOD_BACKUP_DIR=/backups gopod "$@"; }` (define it as a FUNCTION: the remote shell is
+zsh and a `$GP` variable does not word-split), then `docker compose up -d --no-build gopod`, check `docker logs`.
+Push from the Mac over HTTPS when SSH is down: `git -c credential.helper= -c credential.helper='!gh auth git-credential'
+push https://github.com/Coriol-is/gopod.git <branch>:<branch>`. Flow: worktree -> PR -> independent review agent ->
+CI -> `gh pr merge --squash --admin --delete-branch` (ruleset needs one approval; admin path is the working one).
+
+**Open owner decisions (ask these first):**
+1. [Task credential adapter](superpowers/specs/2026-10-29-task-role-credential-adapter.md): recommendation B2 (task-only
+   auth dir with the access token only); 5 questions at the end of the spec (egress, B2 vs relay, expired token policy,
+   which provider first, host-side refresh).
+2. [Agent buttons and hooks](superpowers/specs/2026-10-29-agent-buttons-and-hooks.md): recommendation = press becomes a
+   normal turn + silent `record` mode, https-only URL buttons with the host shown, no named hooks yet; 5 questions.
+3. Group `/login` still asks "Authenticate group?" although groups have no sign-in (they use the owner's account:
+   `/provider <name>` + `/login` in the private chat). Recommendation: drop the prompt.
+4. Should the agent see recent group chat history? Today unaddressed group messages are stored but never read back.
+5. Four merged remote branches on GitHub are left undeleted until approved: `docs/deploy-rich-restart`,
+   `docs/reaction-reading`, `feat/rich-messages-formatting`, `feat/telegram-restart`.
+
+**Decisions already taken by the owner (do not re-ask):** groups keep trigger `all` (new groups `mention`); CI is not
+mandatory (no branch protection); thread-targeted sends only for threads in the private chat; stickers are context
+only; reactions are readable on request (CP-032, not built); lower paranoia for the owner's own actions but keep the
+boundary against group members; keep the private-chat approve mechanism; commands with set-valued parameters use
+picker buttons.
+
+**Next candidates (in order):** (a) live two-turn Codex canary in the group (owner already switched provider; check
+logs), (b) answers to the two spec question sets -> implement buttons phase B0/B1 or the task credential adapter,
+(c) CP-002 PR6-8 (foreground freeze/streaming ownership, protected challenges, staged release), CP-004 PR4-5,
+(d) stickers P2/P3, thread awareness (private chat), CP-032 reaction reading, (e) group-triggers follow-ups, (f)
+live acceptance A08-A11/A18/A20 in Telegram (owner), freefeed digest 09:00 Belgrade is the first unattended check
+of the task/IPC path.
+
+**Not authorized without the owner:** account logins/refresh, paid fallbacks, T9 reboot, schedule changes, enabling
+`GOPOD_OUTBOX_ARTIFACTS` or `GOPOD_MANAGED_TASKS` (both have unmet gates: restore drill + capability issuer; task
+credential adapter + Pi Docker-inspect round trip), changing Telegram privacy/admin rights.
 
 ## Latest design request (2026-10-29)
 - CP-032 [reaction-reading specification](superpowers/specs/2026-10-29-telegram-reaction-reading.md): group emoji/custom-ID events, durable admission, exact message/topic mapping and no-admin/unavailable diagnostics. Private native reactions are transport-blocked; no account-reader workaround is authorized. Design only; no source or runtime flags changed.
