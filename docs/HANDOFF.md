@@ -25,8 +25,17 @@ approved queue, [proposal registry](proposals/README.md) for CP status and
 - **Not authorized without the owner:** account logins, quota/paid fallbacks, T9 reboot,
   production group activation, schedule changes (freefeed digest stays as is).
 
-## CP-003 PR 5 in progress (2026-10-29)
-- Branch `feat/cp003-voice-code-parity` (worktree `gopod-cp003-pr5`), based on PR 4 (`6548bd6`); not pushed. Code documents
+## CP-004 PR 2 in progress (2026-10-29)
+- Branch `feat/cp004-dispatch` (worktree `gopod-cp004-pr2`), based on PR 1 (`c7ff9d2`): managed dispatch and conservative
+  recovery (`internal/queue/managed.go`, `internal/store/task_dispatch.go`, `cmd/gopod/managed_turns.go`, ADR D042). Not pushed.
+- Production wiring is inspect-only (`queue.ManagedRuntime` without a handler): no managed task can exist or run yet, legacy
+  queue behavior is unchanged. Possibly started attempts become `execution_unknown`, are never replayed, and their holds are
+  rebuilt before any work is scheduled. Needs PR 3 for the real handler, snapshot resolver and exit evidence.
+- Not done: PR 3-5; stop/delete vs dispatch coordination and frozen-result publication (PR 4); operator command for `ReleaseHold`.
+  CP-004 stays `in-progress`.
+
+## CP-003 PR 5 merged (#78, 2026-10-29)
+- Branch `feat/cp003-voice-code-parity` (worktree `gopod-cp003-pr5`), merged as `9cd3ce1`. Code documents
   and the personal automatic voice clip are prepared as immutable snapshots (`internal/telegram/{prepared,artifact_prepare,
   speech,speech_openai,voice_plan}.go`, `internal/store/generation.go`, `artifactfs.SnapshotBytes`), ADR D041.
 - Behind `GOPOD_OUTBOX_ARTIFACTS` only (same gates as PR 4, no new flag). Foreground still sends directly; `PublishVoiceReply`

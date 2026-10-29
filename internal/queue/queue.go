@@ -49,6 +49,13 @@ type Item struct {
 	Text      string // the user's message text
 	FilePath  string // container-side path to an uploaded file (photo/doc), empty if text-only
 	IsVoice   bool   // true if the original message was a voice message
+
+	// Managed task attempt links (CP-004). All empty for interactive and legacy
+	// task items. A non-empty AttemptID makes the item a singleton batch that is
+	// dispatched from the task ledger and never replayed once it may have started.
+	RunID       string
+	AttemptID   string
+	SessionKind string
 }
 
 // Turn statuses written through TurnStore. Mirror store.Turn* so the
@@ -120,12 +127,20 @@ type Queue struct {
 	chats  map[string]*chatState // keyed by folder
 	onDone []func(Item, error)
 	closed bool // set by Close; schedule refuses new work afterwards
+
+	// Managed task dispatch state (managed.go); all nil/zero without SetManaged.
+	managed   *ManagedRuntime
+	onManaged []func(Item, ManagedOutcome)
+	known     map[int64]struct{}   // managed turns live in this process
+	holds     map[string]holdState // attempt id -> held capacity
+	now       func() time.Time
 }
 
 type chatState struct {
 	pending []Item
 	active  bool
 	retries int
+	held    int // capacity holds blocking this folder (managed.go)
 }
 
 // DefaultMaxConcurrent is the default global cap on simultaneous
@@ -162,6 +177,7 @@ func New(ctx context.Context, handler Handler, maxConcurrent int, store TurnStor
 		ctx:         wctx,
 		cancel:      cancel,
 		chats:       make(map[string]*chatState),
+		now:         time.Now,
 	}
 }
 
@@ -239,7 +255,7 @@ func (q *Queue) schedule(item Item) bool {
 		q.chats[item.Folder] = cs
 	}
 	cs.pending = append(cs.pending, item)
-	if cs.active {
+	if cs.active || cs.held > 0 {
 		q.mu.Unlock()
 		return true // worker already running, it will drain pending
 	}
@@ -255,6 +271,11 @@ func (q *Queue) schedule(item Item) bool {
 	}()
 	return true
 }
+
+// ErrHoldsUnknown is returned by Recover when held task capacity could not be
+// rebuilt from the ledger. Nothing was scheduled; the caller should refuse to
+// start serving rather than risk work beside a possibly running attempt.
+var ErrHoldsUnknown = errors.New("queue: held task reservations could not be rebuilt")
 
 // ErrCrashLoop is passed to OnDone hooks for a turn that Recover
 // refused to replay because it already reached MaxAttempts.
@@ -274,10 +295,33 @@ func (q *Queue) Recover(ctx context.Context) (int, error) {
 	}
 	items, err := q.store.LoadUnfinished(ctx)
 	if err != nil {
+		// A failed turn load must not skip the hold rebuild: with managed dispatch
+		// configured, still block namespaces with possibly running attempts.
+		if q.runtime() != nil {
+			if herr := q.reconstructHolds(ctx); herr != nil {
+				return 0, fmt.Errorf("%w: %v (turn load: %v)", ErrHoldsUnknown, herr, err)
+			}
+		}
 		return 0, fmt.Errorf("queue: load unfinished turns: %w", err)
+	}
+	// Managed attempts are classified by the ledger and held capacity is rebuilt
+	// before anything is scheduled. Without managed rows this is a no-op.
+	runManaged, err := q.recoverManagedItems(ctx, items)
+	if err != nil {
+		return 0, fmt.Errorf("%w: %v", ErrHoldsUnknown, err)
 	}
 	n := 0
 	for _, it := range items {
+		if it.Managed() {
+			if runManaged[it.ID] {
+				if q.schedule(it) {
+					n++
+				} else {
+					q.forget(it.ID)
+				}
+			}
+			continue
+		}
 		if it.Attempts >= MaxAttempts {
 			q.log.Error("queue: turn exceeded max attempts, giving up",
 				slog.Int64("turn", it.ID),
@@ -332,7 +376,12 @@ func (q *Queue) worker(ctx context.Context, folder string) {
 		q.deactivate(folder)
 		return
 	}
-	defer func() { <-q.sem }()
+	keepSlot := false // a managed hold takes over the slot (managed.go)
+	defer func() {
+		if !keepSlot {
+			<-q.sem
+		}
+	}()
 
 	for {
 		// select picks randomly when both cases are ready, so re-check.
@@ -340,8 +389,22 @@ func (q *Queue) worker(ctx context.Context, folder string) {
 			q.deactivate(folder)
 			return
 		}
+		if q.folderHeld(folder) {
+			q.deactivate(folder) // unknown managed execution holds this folder
+			return
+		}
 		items := q.drainPending(folder)
 		if len(items) == 0 {
+			q.deactivate(folder)
+			return
+		}
+		if len(items) == 1 && items[0].Managed() {
+			switch q.runManaged(ctx, folder, items[0]) {
+			case stepNext:
+				continue
+			case stepHold:
+				keepSlot = true
+			}
 			q.deactivate(folder)
 			return
 		}
@@ -487,6 +550,9 @@ func (q *Queue) Position(folder string, turnID int64) int {
 // scheduled task must never be coalesced with a user message (either
 // would be marked done without running).
 func sameBatch(a, b Item) bool {
+	if a.Managed() || b.Managed() {
+		return false // a managed run is always a singleton batch
+	}
 	return a.ThreadID == b.ThreadID && (a.Source == "task") == (b.Source == "task")
 }
 

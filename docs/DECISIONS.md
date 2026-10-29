@@ -1449,3 +1449,49 @@ leaves either the whole admission or none of it. Later PRs wire dispatch (PR 2),
 settlement (PR 4) and the policy planner (PR 5) to these APIs. A rename needs an operator rebind
 before managed tasks in that chat run again. Managed evidence only grows until a later explicit
 maintenance step exists.
+
+## D042 — Managed task dispatch: a spawn marker splits "never started" from "may have started"
+
+**Date:** 2026-10-29
+**Status:** Accepted
+
+**Context.** CP-004/021 PR 2 must dispatch committed task turns without coalescing them with
+interactive work, and recover after a crash without ever running a model twice for one occurrence.
+The legacy queue retries failures with backoff and replays running/interrupted rows, and passes a nil
+error to done hooks for `ErrStopped`; both would mislabel or repeat managed work.
+
+**Decision.** An item with an `AttemptID` (read from `task_attempts` by the turn adapter) is a managed
+singleton batch: `sameBatch` never merges it with anything, even at thread 0. `Queue.Dispatch(turnID)`
+schedules an already committed turn; `Recover` finds it again after a crash, so no in-memory handoff
+is authoritative. In the worker, after the chat slot is acquired, the provider snapshot is resolved
+and `ReserveTaskAttempt` commits queued -> reserved (snapshot, held capacity, rechecked scope, expiry,
+tombstone, stop request, frozen result) in one transaction; a failure to commit means no handler call.
+The handler must commit the **spawn marker** (`Execution.BeginSpawn`: attempt reserved -> running, run
+queued -> running, atomically) before requesting native execution. That marker is the proof boundary:
+queued/reserved attempts are proven never started and may be redispatched with their original snapshot
+(bounded by `ErrNotStarted` backoff and the turn attempt cap); running, cancel-requested or
+`execution_unknown` attempts are never run again, by backoff or by `Recover`. Terminal states are
+produced only from host-observed exit evidence (`Execution.Exited`): a nil error, `ErrStopped`, a closed
+attachment or a timeout without that evidence settles `execution_unknown` with the reservation held,
+and a cancel request that landed during the run wins over a success report. Boot recovery moves
+possibly started attempts and frozen-result attempts to `execution_unknown`, closes their turn rows so
+they cannot replay, rebuilds held reservations **before anything is scheduled** (each hold blocks its
+folder and takes a global slot when one is free), and fails startup if holds cannot be loaded. A frozen
+result recovers publication only (`OnFrozen`). `ReleaseHold` needs `local_exit_observed` or
+`operator_reconciled` evidence and never authorizes replay of uncertain remote effects. Legacy
+`OnDone` hooks are not called for managed items; `OnManagedDone` reports the ledger state.
+
+**Assumptions and limits.** Single controller: one gopod process owns the database and task
+containers, so the ledger alone rebuilds holds; two live controllers are unsupported. An ambiguous
+spawn-marker error counts as started. Runtime execution (PR 3) must supply the real handler, snapshot
+resolver and exit evidence; production wiring in this PR is inspect-only (no handler), so nothing
+managed runs and legacy behavior is unchanged. Task deletion/stop coordination with dispatch,
+settlement into published results and `/tasks` visibility are PR 4. A stop that wins before the marker
+settles the attempt cancelled only through the controller's own refused marker.
+
+**Consequences.** A crash cannot produce a second model run for a started occurrence; the cost is that
+a possibly started attempt blocks its folder and one global slot until a local exit or an operator
+reconciles it. Orphaned `running` attempts without an unfinished turn row are listed as holds but
+only an operator release (after an `execution_unknown` transition) clears them.
+
+Shutdown classification: a shutdown that races a handler return counts as an interruption only when the handler also returned an error. A nil return with host-observed exit evidence is recorded as exited even if shutdown raced it, so a handler that swallows cancellation and returns nil after proving exit is recorded as completed. A handler that wants an interruption recorded must return the context error.
