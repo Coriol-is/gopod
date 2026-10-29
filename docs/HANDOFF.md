@@ -34,11 +34,19 @@ approved queue, [proposal registry](proposals/README.md) for CP status and
 - Not done: **live TTS/billing qualification (needs its own authorized scope and evidence)**, foreground cutover (PR 6),
   agent-requested voice (needs the runner capability issuer), operator resend of uncertain uploads. CP-002/003 stay `in-progress`.
 
-## CP-003 PR 4 in progress (2026-10-29)
-- Branch `feat/cp003-artifacts` (worktree `gopod-cp003-pr4`), based on `07d9edd` (PR 3 merged): artifact inventory
+## CP-004 PR 1 merged (#77, 2026-10-29)
+- Branch `feat/cp004-task-storage` (worktree `gopod-cp004-pr1`), merged as `c7ff9d2`: additive task storage only
+  (`internal/store/{schema_tasks,task_definitions,task_occurrences,task_runs}.go`, ADR D040).
+- Nothing calls the new APIs yet and `GetDueTasks` still serves only legacy rows, so behavior is unchanged.
+  `AdmitTaskOccurrence` takes a planned `AdmissionRequest`; the cron/DST/overlap planner is PR 5, queue
+  dispatch of the committed turn is PR 2. CP-004 is `in-progress`; CP-021/022 stay `proposed` until their slices.
+- Not done: PR 2-5, native execution, settlement, purge (always blocked), managed `/tasks` UI.
+
+## CP-003 PR 4 merged (#76, 2026-10-29)
+- Merged as `6548bd6`, off by default: artifact inventory
   and quotas (`internal/store/artifacts*.go`), rooted no-follow snapshot store (`internal/artifactfs`), per-run
   capabilities, strict V1 admission and reconcile (`internal/ipc/{capabilities,artifact_request,artifacts,artifacts_reconcile}.go`),
-  verified-bytes upload (`internal/telegram/artifact_opener.go`), ADR D039. Not pushed yet.
+  verified-bytes upload (`internal/telegram/artifact_opener.go`), ADR D039.
 - Off by default: `GOPOD_OUTBOX_ARTIFACTS=1` also needs the dispatcher and `GOPOD_OUTBOX_IPC=1`. **Do not enable** before the
   CP-007 matched DB/artifact backup, lease and restore gate passes (D039); groups still need CP-020/CP-019.
 - Not done: the runner-side capability issuer (so every V1 request is still `stale_capability`), voice and generated-code

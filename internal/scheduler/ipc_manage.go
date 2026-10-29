@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -88,8 +89,14 @@ func (a *IPCSink) Manage(ctx context.Context, op string, input store.TaskRecord)
 			}
 		}
 		err = a.st.UpdateTaskDefinition(ctx, t)
+		if errors.Is(err, store.ErrManagedTask) {
+			return fail("managed tasks cannot be changed by this command")
+		}
 	case "delete":
 		err = a.st.DeleteTask(ctx, t.ID)
+		if errors.Is(err, store.ErrManagedTask) {
+			return fail("managed tasks cannot be deleted by this command")
+		}
 		result.Deleted = err == nil
 		return result, err
 	default:

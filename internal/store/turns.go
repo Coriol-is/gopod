@@ -56,6 +56,13 @@ const turnColumns = `id, source, source_id, chat_folder, chat_id, tg_message_id,
 // constraint makes this idempotent: a duplicate returns (0, true, nil)
 // and writes nothing.
 func (s *Store) InsertTurn(ctx context.Context, t Turn) (int64, bool, error) {
+	return insertTurnQ(ctx, s.db, t)
+}
+
+// insertTurnQ is the handle-explicit form of InsertTurn, so a caller that
+// already holds a Store transaction (task admission) inserts the durable turn
+// on that same connection instead of the outer DB.
+func insertTurnQ(ctx context.Context, q taskSQL, t Turn) (int64, bool, error) {
 	if t.Source == "" || t.SourceID == "" {
 		return 0, false, errors.New("store: InsertTurn: empty Source/SourceID")
 	}
@@ -75,7 +82,7 @@ func (s *Store) InsertTurn(ctx context.Context, t Turn) (int64, bool, error) {
 		   error, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(source, source_id) DO NOTHING`
-	res, err := s.db.ExecContext(ctx, stmt,
+	res, err := q.ExecContext(ctx, stmt,
 		t.Source, t.SourceID, t.ChatFolder, t.ChatID, t.TGMessageID, t.ThreadID,
 		boolToInt(t.IsOwner), boolToInt(t.IsVoice),
 		t.Text, nullableString(t.FilePath), t.Status, t.Attempts,

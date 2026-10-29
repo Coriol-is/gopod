@@ -249,7 +249,10 @@ func (s *Store) applySchema(ctx context.Context) error {
 	if err := s.applyDeliverySchema(ctx); err != nil {
 		return err
 	}
-	return s.applyArtifactSchema(ctx)
+	if err := s.applyArtifactSchema(ctx); err != nil {
+		return err
+	}
+	return s.applyTaskSchema(ctx)
 }
 
 func isDuplicateColumn(err error) bool {
