@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -70,6 +71,10 @@ type SnapshotInfo struct {
 	SQLiteSchemaVersion int64  `json:"sqlite_schema_version"`
 	SchemaFingerprint   string `json:"schema_fingerprint"`
 	IntegrityOK         bool   `json:"integrity_ok"`
+	// UnsafeTables lists table names that are not plain identifiers. Such a
+	// name can only come from a foreign or damaged file; it is never used in a
+	// statement and a verification treats it as a problem.
+	UnsafeTables []string `json:"unsafe_tables,omitempty"`
 	// ForeignKeyViolations counts orphan rows per table (no row contents).
 	ForeignKeyViolations map[string]int64 `json:"foreign_key_violations,omitempty"`
 	Tables               map[string]int64 `json:"tables"` // row counts of ordinary tables
@@ -166,6 +171,9 @@ func SnapshotFile(ctx context.Context, srcPath, dstPath string, opts SnapshotOpt
 	if err != nil {
 		return info, err
 	}
+	if len(info.UnsafeTables) > 0 {
+		return info, fmt.Errorf("%w: table name that is not a plain identifier: %q", ErrSnapshotIntegrity, truncateName(info.UnsafeTables[0]))
+	}
 	if len(info.ForeignKeyViolations) > 0 && !opts.AllowForeignKeyViolations {
 		return info, fmt.Errorf("%w in %s", ErrForeignKeyViolation, FormatViolations(info.ForeignKeyViolations))
 	}
@@ -216,39 +224,8 @@ func copyViaBackupAPI(ctx context.Context, srcPath, dstPath string, opts Snapsho
 			return fmt.Errorf("store: backup init: %w", err)
 		}
 		defer b.Close()
-		restarts, busy, lastRemaining := 0, 0, -1
-		for {
-			if ferr := opts.fault("snapshot.step"); ferr != nil {
-				return ferr
-			}
-			if cerr := ctx.Err(); cerr != nil {
-				return fmt.Errorf("store: snapshot cancelled or timed out after %d copy restarts and %d busy retries; a concurrent writer keeps invalidating or blocking the copy, so retry in a quiet period or raise the timeout: %w", restarts, busy, cerr)
-			}
-			done, serr := b.Step(opts.StepPages)
-			if serr == nil && !done {
-				// Remaining grows when SQLite restarted the copy because the
-				// source changed under it.
-				r := b.Remaining()
-				if lastRemaining >= 0 && r > lastRemaining {
-					restarts++
-				}
-				lastRemaining = r
-			}
-			if serr != nil {
-				if isBusyOrLocked(serr) {
-					busy++
-					// A writer holds the source; retry until ctx expires.
-					select {
-					case <-ctx.Done():
-					case <-time.After(10 * time.Millisecond):
-					}
-					continue
-				}
-				return fmt.Errorf("store: backup step: %w", serr)
-			}
-			if done {
-				break
-			}
+		if err := runBackupSteps(ctx, b, opts); err != nil {
+			return err
 		}
 		if err := opts.fault("snapshot.copy_done"); err != nil {
 			return err
@@ -390,13 +367,42 @@ func InspectDB(ctx context.Context, path string) (SnapshotInfo, error) {
 		if schema.virtual[t] {
 			continue
 		}
-		var n int64
-		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM "`+strings.ReplaceAll(t, `"`, `""`)+`"`).Scan(&n); err != nil {
+		if !identPattern.MatchString(t) {
+			info.UnsafeTables = append(info.UnsafeTables, t)
+			continue
+		}
+		n, err := countTableRows(ctx, db, t)
+		if err != nil {
 			return info, fmt.Errorf("store: count %s: %w", t, err)
 		}
 		info.Tables[t] = n
 	}
 	return info, nil
+}
+
+// identPattern is the only shape of table name that is ever placed in a
+// statement. It contains no quote, space, semicolon or comment character, so
+// the quoted identifier below cannot be broken out of. Names read from a file
+// under inspection that do not match are reported, never executed.
+var identPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// countTableRows counts the rows of a table whose name already matched
+// identPattern. SQLite cannot bind an identifier as a parameter, so the vetted
+// name is quoted into the statement.
+func countTableRows(ctx context.Context, db *sql.DB, table string) (int64, error) {
+	if !identPattern.MatchString(table) {
+		return 0, fmt.Errorf("store: refusing unsafe table name %q", truncateName(table))
+	}
+	var n int64
+	err := db.QueryRowContext(ctx, `SELECT count(*) FROM "`+table+`"`).Scan(&n)
+	return n, err
+}
+
+func truncateName(s string) string {
+	if len(s) > 40 {
+		return s[:40] + "..."
+	}
+	return s
 }
 
 func fileSHA256(path string) (string, error) {
@@ -547,4 +553,50 @@ func CheckSchemaCompatIn(ctx context.Context, path, scratchDir string) error {
 		return fmt.Errorf("%w: %s", ErrSchemaNewer, firstN(unknown, 5))
 	}
 	return nil
+}
+
+// copyStats counts what slowed a copy down, for the timeout message.
+type copyStats struct{ restarts, busy, lastRemaining int }
+
+// noteRemaining records the pages left; the count grows when SQLite restarted
+// the copy because the source changed under it.
+func (c *copyStats) noteRemaining(r int) {
+	if c.lastRemaining >= 0 && r > c.lastRemaining {
+		c.restarts++
+	}
+	c.lastRemaining = r
+}
+
+func (c *copyStats) cancelErr(cause error) error {
+	return fmt.Errorf("store: snapshot cancelled or timed out after %d copy restarts and %d busy retries; a concurrent writer keeps invalidating or blocking the copy, so retry in a quiet period or raise the timeout: %w", c.restarts, c.busy, cause)
+}
+
+// runBackupSteps drives the incremental copy until done, ctx ends or a
+// non-retryable error occurs. BUSY/LOCKED mean a writer holds the source and
+// are retried until ctx expires.
+func runBackupSteps(ctx context.Context, b *sqlite3.Backup, opts SnapshotOptions) error {
+	st := copyStats{lastRemaining: -1}
+	for {
+		if err := opts.fault("snapshot.step"); err != nil {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
+			return st.cancelErr(err)
+		}
+		done, err := b.Step(opts.StepPages)
+		switch {
+		case err != nil && isBusyOrLocked(err):
+			st.busy++
+			select {
+			case <-ctx.Done():
+			case <-time.After(10 * time.Millisecond):
+			}
+		case err != nil:
+			return fmt.Errorf("store: backup step: %w", err)
+		case done:
+			return nil
+		default:
+			st.noteRemaining(b.Remaining())
+		}
+	}
 }

@@ -60,9 +60,15 @@ type Result struct {
 	Manifest Manifest
 }
 
+// Fault point names shared by the writers.
+const (
+	faultFileWrite = "file.write"
+	faultFileSync  = "file.sync"
+)
+
 // Fault points, in the order they are reached. Tests inject a failure at each.
 var FaultPoints = []string{
-	"stage.mkdir", "snapshot", "snapshot.create", "snapshot.copy_done", "snapshot.finalize", "snapshot.sync", "file.write", "file.sync", "manifest.write", "manifest.sync",
+	"stage.mkdir", "snapshot", "snapshot.create", "snapshot.copy_done", "snapshot.finalize", "snapshot.sync", faultFileWrite, faultFileSync, "manifest.write", "manifest.sync",
 	"marker.write", "marker.sync", "stage.dirsync", "publish.rename", "root.dirsync",
 }
 
@@ -87,75 +93,31 @@ func Create(ctx context.Context, o Options) (res Result, err error) {
 	if log == nil {
 		log = slog.Default()
 	}
-	if o.Mode != ModeDatabaseOnly && o.Mode != ModeMatchedStopped {
-		return res, fmt.Errorf("backup: unknown mode %q", o.Mode)
-	}
-	if o.StorePath == "" {
-		return res, errors.New("backup: store path is required")
-	}
-	if o.MaxArtifactBytes <= 0 {
-		o.MaxArtifactBytes = DefaultMaxArtifactBytes
-	}
-	if o.FreeBytes == nil {
-		o.FreeBytes = freeBytes
-	}
-	forbidden := append([]string{filepath.Dir(o.StorePath), o.ArtifactsDir}, o.Forbidden...)
-	for _, c := range o.ConfigFiles {
-		forbidden = append(forbidden, c)
-	}
-	if err = ValidateRoot(o.Root, forbidden); err != nil {
+	if err = o.prepare(); err != nil {
 		return res, err
 	}
-
 	started := o.now()
-	var fence *maintenance.Fence
-	if o.Mode == ModeMatchedStopped {
-		if o.Settlement == nil {
-			return res, errors.New("backup: matched_stopped requires a settlement check")
-		}
-		if fence, err = o.Settlement.Acquire(ctx); err != nil {
-			return res, err
-		}
-		defer func() { _ = fence.Release() }()
+	fence, err := o.acquireFence(ctx)
+	if err != nil {
+		return res, err
 	}
+	defer func() { _ = fence.Release() }()
 
-	if o.StagingMaxAge <= 0 {
-		o.StagingMaxAge = 30 * time.Minute
-	}
-	if n, cerr := CleanStaging(o.Root, o.StagingMaxAge, o.now()); cerr != nil {
-		log.Warn("backup: stale staging cleanup incomplete", slog.Any("err", cerr))
-	} else if n > 0 {
-		log.Info("backup: removed stale staging entries", slog.Int("count", n))
-	}
+	o.cleanStale(log)
 	if err = o.reserve(ctx, 0); err != nil {
 		return res, err
 	}
-
 	setID, err := newSetID(started, o.Mode)
 	if err != nil {
 		return res, err
 	}
 	stagingRoot := filepath.Join(o.Root, StagingDir)
 	stage := filepath.Join(stagingRoot, setID)
-	if err = o.fault("stage.mkdir"); err != nil {
+	release, err := o.openStage(stagingRoot, stage)
+	if err != nil {
 		return res, err
 	}
-	if err = os.MkdirAll(stagingRoot, 0o700); err != nil {
-		return res, fmt.Errorf("backup: create staging: %w", err)
-	}
-	// A per-capture lock beside the staging dir (not inside it, so it never
-	// becomes part of the set) marks the directory live for CleanStaging.
-	captureLock, err := maintenance.TryLock(stage + stageLockSuffix)
-	if err != nil {
-		return res, fmt.Errorf("backup: capture lock: %w", err)
-	}
-	defer func() {
-		_ = os.Remove(stage + stageLockSuffix)
-		_ = captureLock.Release()
-	}()
-	if err = os.Mkdir(stage, 0o700); err != nil {
-		return res, fmt.Errorf("backup: create staging set: %w", err)
-	}
+	defer release()
 	promoted := false
 	defer func() {
 		if !promoted {
@@ -172,62 +134,11 @@ func Create(ctx context.Context, o Options) (res Result, err error) {
 	if fence != nil {
 		m.Fence = &FenceRecord{ControllerLock: true, ContainerEvidence: fence.ContainerEvidence}
 	}
-
-	// 1. Database snapshot: dedicated connection, never the application's.
-	if err = o.fault("snapshot"); err != nil {
+	if err = o.capture(ctx, stage, &m); err != nil {
 		return res, err
 	}
-	dbPath := filepath.Join(stage, DBName)
-	info, err := store.SnapshotFile(ctx, o.StorePath, dbPath, store.SnapshotOptions{
-		Fault:                     o.Fault,
-		AllowForeignKeyViolations: o.Mode == ModeDatabaseOnly,
-	})
-	if err != nil {
-		return res, fmt.Errorf("backup: database snapshot: %w", err)
-	}
-	m.Database = DatabaseEntry{
-		FileEntry:           FileEntry{Role: RoleDatabase, Path: DBName, Size: info.Bytes, SHA256: info.SHA256},
-		SQLiteSchemaVersion: info.SQLiteSchemaVersion, SchemaFingerprint: info.SchemaFingerprint,
-		IntegrityOK: info.IntegrityOK, Tables: info.Tables,
-	}
-	if len(info.ForeignKeyViolations) > 0 {
-		m.Database.ForeignKeyViolations = info.ForeignKeyViolations
-		m.Warnings = append(m.Warnings, "source database already had foreign key violations (orphan rows) in: "+store.FormatViolations(info.ForeignKeyViolations)+"; they were copied as found")
-	}
-	if m.Work, err = store.ReadWorkEvidence(ctx, dbPath); err != nil {
+	if err = o.seal(stage, stagingRoot, &m); err != nil {
 		return res, err
-	}
-
-	// 2. Matched extras: declared config files and referenced artifact blobs.
-	if o.Mode == ModeMatchedStopped {
-		if err = o.copyConfig(stage, &m); err != nil {
-			return res, err
-		}
-		if err = o.copyArtifacts(ctx, dbPath, stage, &m); err != nil {
-			return res, err
-		}
-	}
-
-	// 3. Seal: manifest, marker, directory fsyncs, atomic publish.
-	m.CompletedAt = o.now().Format(time.RFC3339)
-	manifest, marker, err := marshalManifest(m)
-	if err != nil {
-		return res, err
-	}
-	if err = o.writeFile(filepath.Join(stage, ManifestName), manifest, "manifest.write", "manifest.sync"); err != nil {
-		return res, err
-	}
-	if err = o.writeFile(filepath.Join(stage, MarkerName), marker, "marker.write", "marker.sync"); err != nil {
-		return res, err
-	}
-	if err = o.fault("stage.dirsync"); err != nil {
-		return res, err
-	}
-	if err = syncTree(stage); err != nil {
-		return res, fmt.Errorf("backup: fsync staging: %w", err)
-	}
-	if err = syncDir(stagingRoot); err != nil {
-		return res, fmt.Errorf("backup: fsync staging root: %w", err)
 	}
 	final := filepath.Join(o.Root, setID)
 	if err = o.fault("publish.rename"); err != nil {
@@ -249,6 +160,135 @@ func Create(ctx context.Context, o Options) (res Result, err error) {
 	log.Info("backup published", slog.String("set", setID), slog.String("mode", o.Mode),
 		slog.Int64("db_bytes", m.Database.Size), slog.Int("files", len(m.Files)))
 	return res, nil
+}
+
+// prepare validates the options, applies defaults and checks the root.
+func (o *Options) prepare() error {
+	if o.Mode != ModeDatabaseOnly && o.Mode != ModeMatchedStopped {
+		return fmt.Errorf("backup: unknown mode %q", o.Mode)
+	}
+	if o.StorePath == "" {
+		return errors.New("backup: store path is required")
+	}
+	if o.MaxArtifactBytes <= 0 {
+		o.MaxArtifactBytes = DefaultMaxArtifactBytes
+	}
+	if o.FreeBytes == nil {
+		o.FreeBytes = freeBytes
+	}
+	if o.StagingMaxAge <= 0 {
+		o.StagingMaxAge = 30 * time.Minute
+	}
+	forbidden := append([]string{filepath.Dir(o.StorePath), o.ArtifactsDir}, o.Forbidden...)
+	forbidden = append(forbidden, o.ConfigFiles...)
+	return ValidateRoot(o.Root, forbidden)
+}
+
+// acquireFence takes the stopped-writer fence for matched_stopped; it returns
+// a nil fence (safe to Release) for database_only.
+func (o *Options) acquireFence(ctx context.Context) (*maintenance.Fence, error) {
+	if o.Mode != ModeMatchedStopped {
+		return nil, nil
+	}
+	if o.Settlement == nil {
+		return nil, errors.New("backup: matched_stopped requires a settlement check")
+	}
+	return o.Settlement.Acquire(ctx)
+}
+
+func (o *Options) cleanStale(log *slog.Logger) {
+	n, err := CleanStaging(o.Root, o.StagingMaxAge, o.now())
+	switch {
+	case err != nil:
+		log.Warn("backup: stale staging cleanup incomplete", slog.Any("err", err))
+	case n > 0:
+		log.Info("backup: removed stale staging entries", slog.Int("count", n))
+	}
+}
+
+// openStage creates the staging directory under a per-capture lock kept beside
+// it (not inside, so it never becomes part of the set) which marks the
+// directory live for CleanStaging. The returned func drops the lock.
+func (o *Options) openStage(stagingRoot, stage string) (func(), error) {
+	if err := o.fault("stage.mkdir"); err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(stagingRoot, 0o700); err != nil {
+		return nil, fmt.Errorf("backup: create staging: %w", err)
+	}
+	captureLock, err := maintenance.TryLock(stage + stageLockSuffix)
+	if err != nil {
+		return nil, fmt.Errorf("backup: capture lock: %w", err)
+	}
+	release := func() {
+		_ = os.Remove(stage + stageLockSuffix)
+		_ = captureLock.Release()
+	}
+	if err := os.Mkdir(stage, 0o700); err != nil {
+		release()
+		return nil, fmt.Errorf("backup: create staging set: %w", err)
+	}
+	return release, nil
+}
+
+// capture snapshots the database and, for matched_stopped, copies the declared
+// config files and referenced artifact blobs into the staging directory.
+func (o *Options) capture(ctx context.Context, stage string, m *Manifest) error {
+	if err := o.fault("snapshot"); err != nil {
+		return err
+	}
+	dbPath := filepath.Join(stage, DBName)
+	info, err := store.SnapshotFile(ctx, o.StorePath, dbPath, store.SnapshotOptions{
+		Fault:                     o.Fault,
+		AllowForeignKeyViolations: o.Mode == ModeDatabaseOnly,
+	})
+	if err != nil {
+		return fmt.Errorf("backup: database snapshot: %w", err)
+	}
+	m.Database = DatabaseEntry{
+		FileEntry:           FileEntry{Role: RoleDatabase, Path: DBName, Size: info.Bytes, SHA256: info.SHA256},
+		SQLiteSchemaVersion: info.SQLiteSchemaVersion, SchemaFingerprint: info.SchemaFingerprint,
+		IntegrityOK: info.IntegrityOK, Tables: info.Tables,
+	}
+	if len(info.ForeignKeyViolations) > 0 {
+		m.Database.ForeignKeyViolations = info.ForeignKeyViolations
+		m.Warnings = append(m.Warnings, "source database already had foreign key violations (orphan rows) in: "+store.FormatViolations(info.ForeignKeyViolations)+"; they were copied as found")
+	}
+	if m.Work, err = store.ReadWorkEvidence(ctx, dbPath); err != nil {
+		return err
+	}
+	if o.Mode != ModeMatchedStopped {
+		return nil
+	}
+	if err = o.copyConfig(stage, m); err != nil {
+		return err
+	}
+	return o.copyArtifacts(ctx, dbPath, stage, m)
+}
+
+// seal writes the manifest and completion marker and fsyncs the staging tree.
+func (o *Options) seal(stage, stagingRoot string, m *Manifest) error {
+	m.CompletedAt = o.now().Format(time.RFC3339)
+	manifest, marker, err := marshalManifest(*m)
+	if err != nil {
+		return err
+	}
+	if err = o.writeFile(filepath.Join(stage, ManifestName), manifest, "manifest.write", "manifest.sync"); err != nil {
+		return err
+	}
+	if err = o.writeFile(filepath.Join(stage, MarkerName), marker, "marker.write", "marker.sync"); err != nil {
+		return err
+	}
+	if err = o.fault("stage.dirsync"); err != nil {
+		return err
+	}
+	if err = syncTree(stage); err != nil {
+		return fmt.Errorf("backup: fsync staging: %w", err)
+	}
+	if err = syncDir(stagingRoot); err != nil {
+		return fmt.Errorf("backup: fsync staging root: %w", err)
+	}
+	return nil
 }
 
 func newSetID(t time.Time, mode string) (string, error) {
@@ -360,7 +400,7 @@ func (o *Options) copyConfig(stage string, m *Manifest) error {
 			return fmt.Errorf("backup: config %s: %w", name, err)
 		}
 		rel := path.Join(ConfigDir, name)
-		if err := o.writeFile(filepath.Join(stage, filepath.FromSlash(rel)), data, "file.write", "file.sync"); err != nil {
+		if err := o.writeFile(filepath.Join(stage, filepath.FromSlash(rel)), data, faultFileWrite, faultFileSync); err != nil {
 			return err
 		}
 		sum := sha256.Sum256(data)
@@ -447,7 +487,7 @@ func (o *Options) copyArtifacts(ctx context.Context, dbPath, stage string, m *Ma
 		if err := os.MkdirAll(filepath.Dir(full), 0o700); err != nil {
 			return fmt.Errorf("backup: create artifact dir: %w", err)
 		}
-		if err := o.writeFile(full, data, "file.write", "file.sync"); err != nil {
+		if err := o.writeFile(full, data, faultFileWrite, faultFileSync); err != nil {
 			return err
 		}
 		m.Files = append(m.Files, FileEntry{Role: RoleArtifact, Path: rel, Size: a.Size, SHA256: a.SHA256})
@@ -496,40 +536,52 @@ func CleanStaging(root string, maxAge time.Duration, now time.Time) (int, error)
 	removed := 0
 	var firstErr error
 	for _, e := range entries {
-		name := e.Name()
-		if strings.HasSuffix(name, stageLockSuffix) {
+		if strings.HasSuffix(e.Name(), stageLockSuffix) {
 			continue // handled with its directory, or below when orphaned
 		}
-		info, ierr := e.Info()
-		if ierr != nil || now.Sub(info.ModTime()) < maxAge {
-			continue
-		}
-		lockPath := filepath.Join(dir, name+stageLockSuffix)
-		l, lerr := maintenance.TryLock(lockPath)
-		if lerr != nil {
-			continue // held: a capture is running
-		}
-		if rerr := os.RemoveAll(filepath.Join(dir, name)); rerr != nil && firstErr == nil {
+		ok, rerr := removeIfStale(dir, e, maxAge, now)
+		if rerr != nil && firstErr == nil {
 			firstErr = rerr
-		} else if rerr == nil {
+		}
+		if ok {
 			removed++
 		}
-		_ = os.Remove(lockPath)
-		_ = l.Release()
 	}
-	// Orphaned lock files whose directory is gone.
+	removeOrphanLocks(dir, entries)
+	return removed, firstErr
+}
+
+// removeIfStale removes one staging entry that is old enough and whose
+// per-capture lock is free. It reports whether it removed the directory.
+func removeIfStale(dir string, e os.DirEntry, maxAge time.Duration, now time.Time) (bool, error) {
+	info, err := e.Info()
+	if err != nil || now.Sub(info.ModTime()) < maxAge {
+		return false, nil
+	}
+	lockPath := filepath.Join(dir, e.Name()+stageLockSuffix)
+	l, err := maintenance.TryLock(lockPath)
+	if err != nil {
+		return false, nil // held: a capture is running
+	}
+	defer func() { _ = l.Release() }()
+	rerr := os.RemoveAll(filepath.Join(dir, e.Name()))
+	_ = os.Remove(lockPath)
+	return rerr == nil, rerr
+}
+
+// removeOrphanLocks deletes lock files whose staging directory is gone.
+func removeOrphanLocks(dir string, entries []os.DirEntry) {
 	for _, e := range entries {
 		name := e.Name()
 		if !strings.HasSuffix(name, stageLockSuffix) {
 			continue
 		}
-		if _, serr := os.Stat(filepath.Join(dir, strings.TrimSuffix(name, stageLockSuffix))); !errors.Is(serr, os.ErrNotExist) {
+		if _, err := os.Stat(filepath.Join(dir, strings.TrimSuffix(name, stageLockSuffix))); !errors.Is(err, os.ErrNotExist) {
 			continue
 		}
-		if l, lerr := maintenance.TryLock(filepath.Join(dir, name)); lerr == nil {
+		if l, err := maintenance.TryLock(filepath.Join(dir, name)); err == nil {
 			_ = os.Remove(filepath.Join(dir, name))
 			_ = l.Release()
 		}
 	}
-	return removed, firstErr
 }

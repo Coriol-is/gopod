@@ -343,3 +343,44 @@ func TestSnapshotTimeoutMessageExplainsRestarts(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+const hostileTable = `evil"; DROP TABLE router_state; --`
+
+func TestInspectDBNeverExecutesHostileTableNames(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	st := openStoreAt(t, filepath.Join(dir, "store.sqlite"))
+	seedState(t, st, 7, "k")
+	snap := filepath.Join(dir, "snap.sqlite")
+	if _, err := st.Snapshot(ctx, snap, SnapshotOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	execOn(t, snap, `CREATE TABLE "evil""; DROP TABLE router_state; --" (a INTEGER)`)
+	execOn(t, snap, `CREATE TABLE "has space" (a INTEGER)`)
+
+	info, err := InspectDB(ctx, snap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(info.UnsafeTables) != 2 {
+		t.Fatalf("unsafe tables = %q", info.UnsafeTables)
+	}
+	if info.Tables["router_state"] != 7 {
+		t.Fatalf("router_state was dropped or miscounted: %v", info.Tables)
+	}
+	for name := range info.Tables {
+		if strings.ContainsAny(name, `"; -`) {
+			t.Fatalf("hostile name was counted: %q", name)
+		}
+	}
+	if _, err := countTableRows(ctx, st.DB(), hostileTable); err == nil {
+		t.Fatal("countTableRows accepted a hostile name")
+	}
+	// A source that already carries such a table is refused, not copied on trust.
+	if _, err := st.DB().Exec(`CREATE TABLE "has space" (a INTEGER)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Snapshot(ctx, filepath.Join(dir, "refused.sqlite"), SnapshotOptions{}); !errors.Is(err, ErrSnapshotIntegrity) {
+		t.Fatalf("snapshot of a source with a non-identifier table: %v", err)
+	}
+}

@@ -141,12 +141,12 @@ func TestVerifyRejectsSymlinkedParentDirectories(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			real := filepath.Join(t.TempDir(), "elsewhere")
-			copyDir(t, filepath.Join(res.Path, sub), real)
+			target := filepath.Join(t.TempDir(), "elsewhere")
+			copyDir(t, filepath.Join(res.Path, sub), target)
 			if err := os.RemoveAll(filepath.Join(res.Path, sub)); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.Symlink(real, filepath.Join(res.Path, sub)); err != nil {
+			if err := os.Symlink(target, filepath.Join(res.Path, sub)); err != nil {
 				t.Fatal(err)
 			}
 			rep, err := Verify(ctx, res.Path)
@@ -187,5 +187,31 @@ func TestVerifyScratchDefaultsUnderRootAndIsConfigurable(t *testing.T) {
 	}
 	if _, err := os.Stat(custom); err != nil {
 		t.Fatal("custom scratch dir was not used")
+	}
+}
+
+func TestVerifyReportsHostileTableNameAsProblem(t *testing.T) {
+	ctx := context.Background()
+	e := newEnv(t)
+	res, err := Create(ctx, e.opts(ModeDatabaseOnly))
+	if err != nil {
+		t.Fatal(err)
+	}
+	db := filepath.Join(res.Path, DBName)
+	execSQL(t, db, `CREATE TABLE "evil""; DROP TABLE router_state; --" (a INTEGER)`)
+	info, err := store.InspectDB(ctx, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resign(t, res.Path, func(m *Manifest) {
+		m.Database.SHA256, m.Database.Size = info.SHA256, info.Bytes
+		m.Database.SchemaFingerprint, m.Database.Tables = info.SchemaFingerprint, info.Tables
+	})
+	rep, verr := Verify(ctx, res.Path)
+	if verr == nil || rep.OK || !strings.Contains(strings.Join(rep.Problems, "|"), "not a plain identifier") {
+		t.Fatalf("hostile table accepted: %v %+v", verr, rep.Problems)
+	}
+	if info.Tables["router_state"] != 25 {
+		t.Fatalf("router_state damaged: %v", info.Tables)
 	}
 }

@@ -77,56 +77,98 @@ func Verify(ctx context.Context, setPath string) (Report, error) {
 func VerifyWith(ctx context.Context, setPath string, opt VerifyOptions) (Report, error) {
 	rep := Report{Problems: []string{}, Warnings: []string{}, Coverage: []string{}, NotCovered: []string{}, Notice: IntegrityNotice}
 	v := &verifier{rep: &rep, scratch: opt.ScratchDir, setPath: setPath}
-	finish := func() (Report, error) {
-		rep.OK = len(rep.Problems) == 0
-		if rep.OK {
-			return rep, nil
-		}
-		if v.schemaNewer != nil {
-			return rep, fmt.Errorf("%w: %w", ErrInvalidSet, v.schemaNewer)
-		}
-		return rep, fmt.Errorf("%w: %s", ErrInvalidSet, rep.Problems[0])
+	m, hard, ok := v.loadManifest()
+	if hard != nil {
+		return rep, hard
 	}
+	if !ok {
+		return v.finish()
+	}
+	v.checkIdentity(m)
+	listed := v.listFiles(m)
+	for p, f := range listed {
+		if !validRelPath(p) {
+			continue
+		}
+		if err := checkFile(setPath, f); err != nil {
+			v.problem(msgPathErr, p, err)
+		}
+		rep.Files++
+	}
+	v.checkUnlisted(setPath, listed)
+	if !hasProblem(rep, DBName) {
+		v.checkDatabase(ctx, setPath, m)
+	}
+	v.checkArtifacts(m, listed)
+	return v.finish()
+}
 
-	fi, err := os.Lstat(setPath)
+// msgPathErr formats "<name>: <error>" problems.
+const msgPathErr = "%s: %v"
+
+func (v *verifier) finish() (Report, error) {
+	v.rep.OK = len(v.rep.Problems) == 0
+	if v.rep.OK {
+		return *v.rep, nil
+	}
+	if v.schemaNewer != nil {
+		return *v.rep, fmt.Errorf("%w: %w", ErrInvalidSet, v.schemaNewer)
+	}
+	return *v.rep, fmt.Errorf("%w: %s", ErrInvalidSet, v.rep.Problems[0])
+}
+
+// loadManifest reads and authenticates the manifest and marker. ok is false
+// when verification cannot continue (the problem is recorded); hard is a
+// non-report error (unsupported future format).
+func (v *verifier) loadManifest() (m Manifest, hard error, ok bool) {
+	fi, err := os.Lstat(v.setPath)
 	if err != nil || !fi.IsDir() || fi.Mode()&os.ModeSymlink != 0 {
 		v.problem("set path is not a plain directory")
-		return finish()
+		return m, nil, false
 	}
 	if fi.Mode().Perm()&0o077 != 0 {
-		rep.Warnings = append(rep.Warnings, "set directory is accessible by group or others (expected 0700)")
+		v.rep.Warnings = append(v.rep.Warnings, "set directory is accessible by group or others (expected 0700)")
 	}
-	raw, err := readSmall(filepath.Join(setPath, ManifestName))
+	raw, err := readSmall(filepath.Join(v.setPath, ManifestName))
 	if err != nil {
 		v.problem("manifest unreadable")
-		return finish()
+		return m, nil, false
 	}
-	marker, err := readSmall(filepath.Join(setPath, MarkerName))
+	marker, err := readSmall(filepath.Join(v.setPath, MarkerName))
 	if err != nil {
 		v.problem("completion marker missing: the capture never finished")
-		return finish()
+		return m, nil, false
 	}
 	if !bytes.Equal(marker, markerFor(raw)) {
 		v.problem("completion marker does not match the manifest (tampered or truncated)")
-		return finish()
+		return m, nil, false
 	}
-	m, err := parseManifest(raw)
+	m, err = parseManifest(raw)
 	if err != nil {
 		if errors.Is(err, ErrUnsupportedFormat) {
-			return rep, err
+			return m, err, false
 		}
 		v.problem("%v", err)
-		return finish()
+		return m, nil, false
 	}
-	rep.SetID, rep.Mode, rep.Coverage, rep.NotCovered = m.SetID, m.Mode, m.Coverage, m.NotCovered
-	rep.Unsettled = m.Work.Unsettled()
-	if !setIDPattern.MatchString(m.SetID) || m.SetID != filepath.Base(setPath) {
+	return m, nil, true
+}
+
+// checkIdentity records the set facts in the report and checks id and mode.
+func (v *verifier) checkIdentity(m Manifest) {
+	v.rep.SetID, v.rep.Mode, v.rep.Coverage, v.rep.NotCovered = m.SetID, m.Mode, m.Coverage, m.NotCovered
+	v.rep.Unsettled = m.Work.Unsettled()
+	if !setIDPattern.MatchString(m.SetID) || m.SetID != filepath.Base(v.setPath) {
 		v.problem("set id does not match its directory")
 	}
 	if m.Mode != ModeDatabaseOnly && m.Mode != ModeMatchedStopped {
 		v.problem("unknown mode %q", m.Mode)
 	}
+}
 
+// listFiles indexes the database and listed files by path, reporting an
+// unexpected database entry, unsafe paths and duplicates.
+func (v *verifier) listFiles(m Manifest) map[string]FileEntry {
 	listed := map[string]FileEntry{DBName: m.Database.FileEntry}
 	if m.Database.Path != DBName || m.Database.Role != RoleDatabase {
 		v.problem("database entry has an unexpected path or role")
@@ -142,22 +184,7 @@ func VerifyWith(ctx context.Context, setPath string, opt VerifyOptions) (Report,
 		}
 		listed[f.Path] = f
 	}
-	for p, f := range listed {
-		if !validRelPath(p) {
-			continue
-		}
-		if err := checkFile(setPath, f); err != nil {
-			v.problem("%s: %v", p, err)
-		}
-		rep.Files++
-	}
-	v.checkUnlisted(setPath, listed)
-
-	if !hasProblem(rep, DBName) {
-		v.checkDatabase(ctx, setPath, m)
-	}
-	v.checkArtifacts(m, listed)
-	return finish()
+	return listed
 }
 
 func hasProblem(rep Report, prefix string) bool {
@@ -268,8 +295,11 @@ func (v *verifier) checkDatabase(ctx context.Context, setPath string, m Manifest
 	}
 	info, err := store.InspectDB(ctx, copyPath)
 	if err != nil {
-		v.problem("%s: %v", DBName, err)
+		v.problem(msgPathErr, DBName, err)
 		return
+	}
+	for _, name := range info.UnsafeTables {
+		v.problem("%s: foreign or damaged table name that is not a plain identifier (%.40q); it was not queried", DBName, name)
 	}
 	if info.SchemaFingerprint != m.Database.SchemaFingerprint {
 		v.problem("%s: schema fingerprint differs from the manifest", DBName)
@@ -294,7 +324,7 @@ func (v *verifier) checkDatabase(ctx context.Context, setPath string, m Manifest
 		if errors.Is(err, store.ErrSchemaNewer) {
 			v.schemaNewer = err
 		}
-		v.problem("%s: %v", DBName, err)
+		v.problem(msgPathErr, DBName, err)
 	}
 	inv, err := store.ArtifactInventory(ctx, copyPath)
 	if err != nil {

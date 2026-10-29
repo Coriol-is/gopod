@@ -56,11 +56,10 @@ func TestCreateVerifyRestoreRoundTrip(t *testing.T) {
 func TestPermissionsArePrivate(t *testing.T) {
 	e := newEnv(t)
 	e.addArtifact("art-1", testBlob, "hello", true)
-	res, err := Create(context.Background(), e.opts(ModeMatchedStopped))
-	if err != nil {
+	if _, err := Create(context.Background(), e.opts(ModeMatchedStopped)); err != nil {
 		t.Fatal(err)
 	}
-	err = filepath.WalkDir(e.root, func(p string, d os.DirEntry, err error) error {
+	err := filepath.WalkDir(e.root, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -77,7 +76,6 @@ func TestPermissionsArePrivate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = res
 }
 
 func TestCreateWithConcurrentWriterVerifies(t *testing.T) {
@@ -106,44 +104,55 @@ func TestCreateWithConcurrentWriterVerifies(t *testing.T) {
 }
 
 func TestFailureAtEveryBoundaryPromotesNothing(t *testing.T) {
-	ctx := context.Background()
 	for _, point := range FaultPoints {
-		t.Run(point, func(t *testing.T) {
-			e := newEnv(t)
-			e.addArtifact("art-1", testBlob, "hello", true)
-			o := e.opts(ModeMatchedStopped)
-			hit := false
-			boom := errors.New("injected " + point)
-			o.Fault = func(p string) error {
-				if p == point && !hit {
-					hit = true
-					return boom
-				}
-				return nil
-			}
-			res, err := Create(ctx, o)
-			if !hit {
-				t.Fatalf("fault point %q was never reached", point)
-			}
-			if !errors.Is(err, boom) {
-				t.Fatalf("err = %v", err)
-			}
-			sets := publishedSets(t, e.root)
-			if point == "root.dirsync" {
-				// Renamed already: the promoted set must be complete and valid.
-				if len(sets) != 1 {
-					t.Fatalf("sets = %v", sets)
-				}
-				if rep, verr := Verify(ctx, res.Path); verr != nil || !rep.OK {
-					t.Fatalf("promoted set is not valid: %v %+v", verr, rep)
-				}
-			} else if len(sets) != 0 {
-				t.Fatalf("partial set promoted: %v", sets)
-			}
-			if entries, _ := os.ReadDir(filepath.Join(e.root, StagingDir)); len(entries) != 0 && point != "root.dirsync" {
-				t.Fatalf("staging not cleaned: %v", entries)
-			}
-		})
+		t.Run(point, func(t *testing.T) { checkFailureAt(t, point) })
+	}
+}
+
+// checkFailureAt injects one failure at point during a matched capture and
+// asserts that no partial set is promoted.
+func checkFailureAt(t *testing.T, point string) {
+	ctx := context.Background()
+	e := newEnv(t)
+	e.addArtifact("art-1", testBlob, "hello", true)
+	o := e.opts(ModeMatchedStopped)
+	hit := false
+	boom := errors.New("injected " + point)
+	o.Fault = func(p string) error {
+		if p == point && !hit {
+			hit = true
+			return boom
+		}
+		return nil
+	}
+	res, err := Create(ctx, o)
+	if !hit {
+		t.Fatalf("fault point %q was never reached", point)
+	}
+	if !errors.Is(err, boom) {
+		t.Fatalf("err = %v", err)
+	}
+	sets := publishedSets(t, e.root)
+	if point == "root.dirsync" {
+		assertPromotedSetValid(t, sets, res.Path)
+		return
+	}
+	if len(sets) != 0 {
+		t.Fatalf("partial set promoted: %v", sets)
+	}
+	if entries, _ := os.ReadDir(filepath.Join(e.root, StagingDir)); len(entries) != 0 {
+		t.Fatalf("staging not cleaned: %v", entries)
+	}
+}
+
+// assertPromotedSetValid: a failure after the rename leaves a complete set.
+func assertPromotedSetValid(t *testing.T, sets []string, path string) {
+	t.Helper()
+	if len(sets) != 1 {
+		t.Fatalf("sets = %v", sets)
+	}
+	if rep, err := Verify(context.Background(), path); err != nil || !rep.OK {
+		t.Fatalf("promoted set is not valid: %v %+v", err, rep)
 	}
 }
 
@@ -437,7 +446,7 @@ func TestVerifyDoesNotModifyTheSet(t *testing.T) {
 	if _, err := Verify(ctx, res.Path); err != nil {
 		t.Fatal(err)
 	}
-	if after := dirDigest(t, res.Path); after != before {
+	if dirDigest(t, res.Path) != before {
 		t.Fatal("verify modified the set")
 	}
 }
