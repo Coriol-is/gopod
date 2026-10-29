@@ -7,6 +7,10 @@ import (
 	"strings"
 )
 
+// Registered groups are prepared and enabled automatically (D047); prepare and
+// enable remain for manual repair. disable is the per-group owner kill switch:
+// it revokes new admissions at once and automatic preparation never undoes it.
+//
 // IsolationActions are controller-owned operations, never agent-provided policy.
 // Targets are canonical negative Telegram group JIDs; Status may receive "" to
 // return a metadata-only inventory. Implementations serialize lifecycle changes,
@@ -19,7 +23,7 @@ type IsolationActions struct {
 }
 
 func RegisterIsolationCommands(r *Router, actions IsolationActions) {
-	r.Register("isolation", "isolation", "(owner) inspect and manage group isolation", PermOwnerOnly, func(ctx context.Context, cmd Command) (Response, error) {
+	r.Register("isolation", "isolation", "(owner) group isolation: status, repair, per-group disable", PermOwnerOnly, func(ctx context.Context, cmd Command) (Response, error) {
 		usage := func() (Response, error) {
 			return Response{Code: 1, Text: "Usage: /isolation [status|prepare|enable|disable] [group_chat_id]"}, nil
 		}

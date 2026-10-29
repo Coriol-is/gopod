@@ -69,6 +69,10 @@ type Deps struct {
 	// is disabled and /register is rejected from every chat.
 	OwnerChatID int64
 
+	// GroupReason describes privately, for the owner, why a registered group is
+	// not admitted. Optional.
+	GroupReason func(ctx context.Context, jid string) string
+
 	// Log is the slog logger; defaults to slog.Default if nil.
 	Log *slog.Logger
 
@@ -92,6 +96,7 @@ type Bot struct {
 	router        *control.Router
 	allowlist     *mountsec.Allowlist
 	ownerChatID   int64
+	groupReason   func(ctx context.Context, jid string) string
 	log           *slog.Logger
 	logins        *loginSessions
 	streamEnabled bool
@@ -247,6 +252,7 @@ func New(token string, deps Deps) (*Bot, error) {
 		router:        deps.Router,
 		allowlist:     deps.Allowlist,
 		ownerChatID:   deps.OwnerChatID,
+		groupReason:   deps.GroupReason,
 		log:           deps.Log,
 		logins:        newLoginSessions(),
 		streamEnabled: deps.StreamEnabled,

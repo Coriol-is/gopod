@@ -10,6 +10,17 @@ approved queue, [proposal registry](proposals/README.md) for CP status and
 - CP-032 [reaction-reading specification](superpowers/specs/2026-10-29-telegram-reaction-reading.md): group emoji/custom-ID events, durable admission, exact message/topic mapping and no-admin/unavailable diagnostics. Private native reactions are transport-blocked; no account-reader workaround is authorized. Design only; no source or runtime flags changed.
 - Owner reports live `/restart` checked successfully on 2026-10-29; this establishes the reported baseline, not every negative/topic/provider scenario.
 
+## Default group admission (branch `feat/group-default-admission`, not merged, 2026-10-29)
+- Owner decision, ADR [D047](DECISIONS.md): registered groups are admitted without a `group-runtime.json`
+  entry. `AdmissionMode` (`registered` default / `allowlist`), `MaxGroups` (default 50), automatic
+  Prepare+Enable on `/register`, at startup and on the first denied admission, owner kill switch
+  `/isolation disable`, one neutral rate-limited group notice plus a private owner notice on refusal.
+- Not done here and still gating real use: refresh the expired Claude auth, the Codex tree-budget fix
+  (separate branch), live two-turn canaries on the Pi. No production change, push or deploy was made.
+- Production config needs no edit: omitted `AdmissionMode` means registered; old `EnabledGroups` is ignored.
+- Touched near the group `/login` private-confirmation path only by adding a regression test
+  (`internal/telegram/group_refusal_test.go`); `login_handoff.go`, `login.go`, `confirm.go` are unchanged.
+
 ## Codex tree-budget admission fix (2026-10-29, branch `fix/codex-group-tree-budget`, unmerged)
 - **Root cause:** pinned Codex creates `CODEX_HOME/tmp/arg0/codex-arg0<id>/` containing the
   symlinks `apply_patch`, `applypatch` (Linux also `codex-linux-sandbox`, `codex-execve-wrapper`)

@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -164,6 +166,46 @@ func (s *Store) SetNamespaceDisabled(ctx context.Context, expected ScopeRef, dis
 		value = "1"
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO router_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, "group_disabled:"+expected.NamespaceID, value); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// GroupOwnerDisabledKey prefixes the owner kill-switch marker for a namespace.
+// Automatic preparation never overrides it.
+const GroupOwnerDisabledKey = "group_owner_disabled:"
+
+// ErrOwnerDisabled means the owner disabled the group, so automatic enabling stops.
+var ErrOwnerDisabled = errors.New("store: group disabled by owner")
+
+// EnableNamespaceUnlessOwnerDisabled clears the admission flag only if the owner
+// kill switch is not set, in the same transaction as the scope CAS. This closes the
+// window between a marker check and the enabling write for the automatic path.
+func (s *Store) EnableNamespaceUnlessOwnerDisabled(ctx context.Context, expected ScopeRef) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err = s.ValidateScopeTx(ctx, tx, expected); err != nil {
+		return err
+	}
+	c, err := readRegistered(ctx, tx, "jid = ?", expected.JID)
+	if err != nil {
+		return err
+	}
+	if !groupJID(c.JID) || c.IsOwner || !c.GroupEpochReady {
+		return ErrNamespaceIdentityConflict
+	}
+	var marker string
+	err = tx.QueryRowContext(ctx, `SELECT value FROM router_state WHERE key=?`, GroupOwnerDisabledKey+expected.NamespaceID).Scan(&marker)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if marker == "1" {
+		return ErrOwnerDisabled
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO router_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, "group_disabled:"+expected.NamespaceID, "0"); err != nil {
 		return err
 	}
 	return tx.Commit()

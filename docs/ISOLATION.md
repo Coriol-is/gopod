@@ -178,15 +178,21 @@ does not edit boot flags, enable the memory cgroup or reboot the Pi.
 
 ## 7. Lifecycle, migration and rollback
 
-Owner-only `/isolation status|prepare|enable|disable` routes through control; mutations
-require confirmation. Preparation and enable/repair hold the runner and namespace
+Registering a group prepares and enables it automatically ([D047](DECISIONS.md)):
+`/register`, startup and the first denied admission of an unready group run the
+steps below under the same slots, single-flight per group, and a failure leaves the
+group denied with a private owner notice. `/isolation disable <id>` is the owner
+kill switch and automatic preparation never undoes it. The manual commands remain
+for repair. Owner-only `/isolation status|prepare|enable|disable` routes through
+control; mutations require confirmation. Preparation and enable/repair hold the runner and namespace
 slots. Preparation retires the old key, pauses old group schedules and seeds a
 clean unready epoch without copying old state. Interrupted preparation resumes that
 same epoch. It never deletes personal/retired data or force-stops legacy foreground
 work to make migration appear safe. `/register <id>` for an existing chat uses its
 current key; an explicitly different or retired alias remains forbidden.
 
-Enable requires the explicitly qualified configuration and observed group. Disable
+Enable requires the qualified configuration and observed group; in `allowlist`
+mode it also requires the JID in `EnabledGroups`. Disable
 binds immediate new-admission revocation to the current scope with a SQL CAS; an
 active generation may settle. Configuration files load at controller startup;
 editing a file is not a live policy grant. Owner-private runtime behavior stays
@@ -225,6 +231,8 @@ Never put secret values, login URLs or refresh tokens in this JSON or Git.
 
 ```json
 {
+  "AdmissionMode": "registered",
+  "MaxGroups": 50,
   "EnabledGroups": [],
   "Qualification": "",
   "RelayImage": "gopod-gopod:qualified",
@@ -249,6 +257,14 @@ Never put secret values, login URLs or refresh tokens in this JSON or Git.
   }
 }
 ```
+
+`AdmissionMode` is `registered` (default when omitted) or `allowlist`. In
+`registered` mode an owner-registered, observed group with a ready clean epoch is
+admitted without a settings entry, `EnabledGroups` is ignored, and `MaxGroups`
+(default 50, at most 500) caps groups that own a clean epoch (oldest registration
+first; no new epoch beyond the cap). `allowlist` restores the CP-020 rule: the JID
+must also be listed in `EnabledGroups` (at most ten entries). Qualification, images,
+routes and auth-only references are required in both modes.
 
 Codex additionally requires a host-owned model catalog directly in the data
 root, never in a chat/workspace/native cache. The controller reads it without

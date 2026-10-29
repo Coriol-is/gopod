@@ -210,3 +210,46 @@ func TestNamespaceAdmissionFlagIsBoundToCurrentScope(t *testing.T) {
 		t.Fatal("revocation not durable")
 	}
 }
+
+func TestEnableUnlessOwnerDisabledHonorsMarkerAtomically(t *testing.T) {
+	st := newTestStore(t)
+	ctx := t.Context()
+	if err := st.RegisterChat(ctx, RegisteredChat{JID: "tg:-2", Folder: "group-a", AddedAt: 2}); err != nil {
+		t.Fatal(err)
+	}
+	c, _ := st.GetRegistered(ctx, "tg:-2")
+	migration, err := st.RotateGroupEpoch(ctx, c.JID, c.RegistrationRevision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ready, err := st.CompleteGroupEpoch(ctx, migration.CurrentScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = st.SetState(ctx, GroupOwnerDisabledKey+ready.NamespaceID, "1"); err != nil {
+		t.Fatal(err)
+	}
+	if err = st.SetNamespaceDisabled(ctx, ready, true); err != nil {
+		t.Fatal(err)
+	}
+	if err = st.EnableNamespaceUnlessOwnerDisabled(ctx, ready); !errors.Is(err, ErrOwnerDisabled) {
+		t.Fatalf("err=%v", err)
+	}
+	if v, _ := st.GetState(ctx, "group_disabled:"+ready.NamespaceID); v != "1" {
+		t.Fatalf("flag changed: %q", v)
+	}
+	if err = st.SetState(ctx, GroupOwnerDisabledKey+ready.NamespaceID, "0"); err != nil {
+		t.Fatal(err)
+	}
+	if err = st.EnableNamespaceUnlessOwnerDisabled(ctx, ready); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := st.GetState(ctx, "group_disabled:"+ready.NamespaceID); v != "0" {
+		t.Fatalf("flag %q", v)
+	}
+	stale := ready
+	stale.RegistrationRevision--
+	if err = st.EnableNamespaceUnlessOwnerDisabled(ctx, stale); err == nil {
+		t.Fatal("stale scope accepted")
+	}
+}

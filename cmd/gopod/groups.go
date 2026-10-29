@@ -77,3 +77,12 @@ func groupAction(st *store.Store, r *runner.Runner, operation func(context.Conte
 		return r.WithChatSlot(ctx, c.Folder, func(ctx context.Context) (string, error) { return operation(ctx, jid) })
 	}
 }
+
+// groupReasonFunc exposes the owner-only admission diagnostics to the Telegram
+// layer without importing the runtime there.
+func groupReasonFunc(m *groupruntime.Manager) func(context.Context, string) string {
+	if m == nil {
+		return nil
+	}
+	return m.Reason
+}

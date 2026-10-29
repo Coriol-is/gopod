@@ -46,9 +46,10 @@ type Manager struct {
 	Log              *slog.Logger
 	MCP              *groupsandbox.MCP
 	Request          func(context.Context, store.ScopeRef, int, json.RawMessage) (string, error)
-	mu               sync.Mutex
-	locks            map[string]chan struct{}
-	disabled         map[string]bool
+	autoPrep
+	mu       sync.Mutex
+	locks    map[string]chan struct{}
+	disabled map[string]bool
 }
 
 func (m *Manager) lock(ctx context.Context, id string) (func(), error) {
@@ -73,12 +74,7 @@ func (m *Manager) Authorize(ctx context.Context, c store.RegisteredChat) error {
 	if m.UID <= 0 || m.GID <= 0 || m.Store == nil || m.Docker == nil || m.MCP == nil || m.Config.Qualification == "" || c.IsOwner || !c.GroupEpochReady || !store.ValidScopeIdentity(c.Scope()) {
 		return ErrUnavailable
 	}
-	enabled := false
-	for _, jid := range m.Config.EnabledGroups {
-		if c.JID == jid {
-			enabled = true
-		}
-	}
+	enabled := m.groupAllowed(ctx, c)
 	m.mu.Lock()
 	blocked := m.disabled[c.JID]
 	m.mu.Unlock()

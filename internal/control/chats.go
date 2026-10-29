@@ -26,11 +26,23 @@ import (
 // The owner chat is auto-registered as folder "owner" by
 // telegram.resolveRegistered and cannot be re-registered here.
 func RegisterChatCommands(r *Router, st *store.Store, ownerChatID int64) {
-	r.Register("chats.register", "register", "(owner) register a chat for agent access",
-		PermOwnerOnly, chatsRegister(st, ownerChatID))
+	RegisterChatCommandsWith(r, st, ownerChatID, nil)
 }
 
-func chatsRegister(st *store.Store, ownerChatID int64) Handler {
+// GroupPreparer prepares the clean runtime epoch of a freshly registered group
+// chat (or one registered earlier but never made ready). It must be idempotent
+// and report to the owner privately itself: /register may run inside the group, so
+// its reply never mentions preparation. Failures leave the group denied.
+type GroupPreparer func(ctx context.Context, jid string) (string, error)
+
+// RegisterChatCommandsWith is RegisterChatCommands plus automatic group
+// preparation as part of registration (D047). A nil prepare skips it.
+func RegisterChatCommandsWith(r *Router, st *store.Store, ownerChatID int64, prepare GroupPreparer) {
+	r.Register("chats.register", "register", "(owner) register a chat for agent access",
+		PermOwnerOnly, chatsRegister(st, ownerChatID, prepare))
+}
+
+func chatsRegister(st *store.Store, ownerChatID int64, prepare GroupPreparer) Handler {
 	return func(ctx context.Context, cmd Command) (Response, error) {
 		if len(cmd.Args) < 1 || len(cmd.Args) > 2 {
 			return Response{
@@ -84,6 +96,9 @@ func chatsRegister(st *store.Store, ownerChatID int64) Handler {
 			}, fmt.Errorf("registering chat %d as %q: %w", targetID, folder, err)
 		}
 
+		if prepare != nil && targetID < 0 && (lookupErr != nil || !existing.GroupEpochReady) {
+			_, _ = prepare(ctx, rc.JID)
+		}
 		return Response{
 			Text: fmt.Sprintf(
 				"registered chat %d as folder %q.\n\nAgent execution remains subject to the qualified host isolation policy.",

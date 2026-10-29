@@ -20,6 +20,8 @@ import (
 type migrationDocker struct {
 	mu        sync.Mutex
 	legacy    bool
+	stopped   bool // an exited legacy container exists until it is removed
+	removed   []string
 	seen      []string
 	mutations int
 }
@@ -28,6 +30,12 @@ func (d *migrationDocker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json")
+	if r.Method == "DELETE" && d.stopped && strings.HasSuffix(r.URL.Path, "/containers/legacy-stopped") && r.URL.Query().Get("force") != "1" && r.URL.Query().Get("force") != "true" {
+		d.stopped = false
+		d.removed = append(d.removed, "legacy-stopped")
+		w.WriteHeader(204)
+		return
+	}
 	if r.Method != "GET" {
 		d.mutations++
 		w.WriteHeader(500)
@@ -38,7 +46,9 @@ func (d *migrationDocker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case strings.HasSuffix(r.URL.Path, "/containers/json"):
 		filter := r.URL.Query().Get("filters")
 		d.seen = append(d.seen, filter)
-		if d.legacy && strings.Contains(filter, "gopod.chat=old-group") {
+		if d.stopped && strings.Contains(filter, "gopod.chat=old-group") {
+			io.WriteString(w, `[{"Id":"legacy-stopped","Names":["/old-group-agent"],"State":"exited","Labels":{"gopod.chat":"old-group"}}]`)
+		} else if d.legacy && strings.Contains(filter, "gopod.chat=old-group") {
 			io.WriteString(w, `[{"Id":"legacy-running","State":"running","Labels":{"gopod.chat":"old-group"}}]`)
 		} else {
 			io.WriteString(w, `[]`)

@@ -34,6 +34,18 @@ func (r *Runner) CheckAdmission(ctx context.Context, folder string) error {
 	return r.authorizeProfile(ctx, folder)
 }
 
+// authorizeTurn is authorizeProfile for a real user turn. Only here does a denied,
+// unready group trigger background preparation; IPC polling and other checks never do.
+func (r *Runner) authorizeTurn(ctx context.Context, folder string) error {
+	err := r.authorizeProfile(ctx, folder)
+	if err != nil && r.groups != nil {
+		if c, ok := r.groupRegistration(ctx, folder); ok {
+			r.reconcileDeniedGroup(c)
+		}
+	}
+	return err
+}
+
 func (r *Runner) authorizeProfile(ctx context.Context, folder string) error {
 	if r.profilePolicy == nil || r.profilePolicy.ownerID <= 0 || r.profilePolicy.registrations == nil || folder == "" {
 		return ErrProfileUnavailable

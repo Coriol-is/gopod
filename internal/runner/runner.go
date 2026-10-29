@@ -298,7 +298,7 @@ func (r *Runner) Run(
 			retErr = groupPublicError(retErr)
 		}
 	}()
-	if err := r.authorizeProfile(ctx, chatFolder); err != nil {
+	if err := r.authorizeTurn(ctx, chatFolder); err != nil {
 		return "", err
 	}
 	if err := r.checkGroupInput(ctx, chatFolder, prompt); err != nil {
@@ -443,7 +443,7 @@ func (r *Runner) RunStream(
 			retErr = groupPublicError(retErr)
 		}
 	}()
-	if err := r.authorizeProfile(ctx, chatFolder); err != nil {
+	if err := r.authorizeTurn(ctx, chatFolder); err != nil {
 		return nil, err
 	}
 	if err := r.checkGroupInput(ctx, chatFolder, prompt); err != nil {
@@ -827,7 +827,7 @@ func (r *Runner) RunFresh(
 			retErr = groupPublicError(retErr)
 		}
 	}()
-	if err := r.authorizeProfile(ctx, chatFolder); err != nil {
+	if err := r.authorizeTurn(ctx, chatFolder); err != nil {
 		return "", err
 	}
 	ctx, cancel := context.WithTimeout(ctx, freshRunTimeout)
