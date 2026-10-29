@@ -37,6 +37,10 @@ type AdmissionError struct{ Stage string }
 func (e *AdmissionError) Error() string { return "group admission unavailable: " + e.Stage }
 func (e *AdmissionError) Unwrap() error { return ErrUnavailable }
 
+// Is lets the runner classify any refused group start as an unavailable profile,
+// so groups get one neutral notice instead of internals.
+func (e *AdmissionError) Is(target error) bool { return target == runner.ErrProfileUnavailable }
+
 type Manager struct {
 	Config           Config
 	Store            *store.Store
@@ -46,9 +50,15 @@ type Manager struct {
 	Log              *slog.Logger
 	MCP              *groupsandbox.MCP
 	Request          func(context.Context, store.ScopeRef, int, json.RawMessage) (string, error)
-	mu               sync.Mutex
-	locks            map[string]chan struct{}
-	disabled         map[string]bool
+	// Slot serializes owner-visible lifecycle steps with foreground work (the
+	// runner chat slot); nil runs them directly. Notify sends a private owner
+	// notice; nil drops it.
+	Slot     func(ctx context.Context, folder string, op func(context.Context) (string, error)) (string, error)
+	Notify   func(context.Context, string)
+	auto     autoState
+	mu       sync.Mutex
+	locks    map[string]chan struct{}
+	disabled map[string]bool
 }
 
 func (m *Manager) lock(ctx context.Context, id string) (func(), error) {
@@ -70,15 +80,11 @@ func (m *Manager) lock(ctx context.Context, id string) (func(), error) {
 	}
 }
 func (m *Manager) Authorize(ctx context.Context, c store.RegisteredChat) error {
+	m.kickPrepare(c)
 	if m.UID <= 0 || m.GID <= 0 || m.Store == nil || m.Docker == nil || m.MCP == nil || m.Config.Qualification == "" || c.IsOwner || !c.GroupEpochReady || !store.ValidScopeIdentity(c.Scope()) {
 		return ErrUnavailable
 	}
-	enabled := false
-	for _, jid := range m.Config.EnabledGroups {
-		if c.JID == jid {
-			enabled = true
-		}
-	}
+	enabled := m.groupAllowed(ctx, c)
 	m.mu.Lock()
 	blocked := m.disabled[c.JID]
 	m.mu.Unlock()
@@ -111,6 +117,7 @@ func (m *Manager) Start(ctx context.Context, c store.RegisteredChat, base runner
 	stage := "admission"
 	defer func() {
 		if retErr != nil {
+			m.RecordStage(c.JID, stage)
 			retErr = &AdmissionError{Stage: stage}
 		}
 	}()

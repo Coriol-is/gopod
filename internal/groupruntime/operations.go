@@ -25,7 +25,9 @@ func (m *Manager) Status(ctx context.Context, jid string) (string, error) {
 			continue
 		}
 		state := "unavailable"
-		if m.Authorize(ctx, c) == nil {
+		if reason := m.Reason(ctx, c.JID); reason != "" {
+			state = "unavailable (" + reason + ")"
+		} else if m.Authorize(ctx, c) == nil {
 			state = "enabled"
 			for name, cfg := range m.Config.Providers {
 				if _, _, _, e := m.qualifiedCatalog(name, cfg, ""); e != nil {
@@ -39,32 +41,50 @@ func (m *Manager) Status(ctx context.Context, jid string) (string, error) {
 	if len(out) == 0 {
 		return "No matching registered groups.", nil
 	}
-	return strings.Join(out, "\n"), nil
+	header := fmt.Sprintf("admission=%s max_groups=%d", m.Config.Mode(), m.Config.GroupLimit())
+	return header + "\n" + strings.Join(out, "\n"), nil
 }
 func (m *Manager) Prepare(ctx context.Context, jid string) (string, error) {
 	if m.Store == nil || m.Docker == nil {
 		return "", ErrUnavailable
 	}
+	epoch, paused, err := m.prepareScope(ctx, jid)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("Prepared clean group epoch %d; %d old schedules paused. Historical data preserved. Group remains disabled until enable.", epoch, paused), nil
+}
+
+// prepareCore returns only the number of schedules paused.
+func (m *Manager) prepareCore(ctx context.Context, jid string) (int64, error) {
+	_, paused, err := m.prepareScope(ctx, jid)
+	return paused, err
+}
+
+func (m *Manager) prepareScope(ctx context.Context, jid string) (epoch, paused int64, err error) {
 	c, err := m.Store.GetRegistered(ctx, jid)
 	if err != nil {
-		return "", ErrUnavailable
+		return 0, 0, ErrUnavailable
 	}
 	unlock, err := m.lock(ctx, c.NamespaceID)
 	if err != nil {
-		return "", err
+		return 0, 0, err
 	}
 	defer unlock()
 	if err = m.Store.ValidateScope(ctx, c.Scope()); err != nil || c.IsOwner || !strings.HasPrefix(c.JID, "tg:-") {
-		return "", ErrUnavailable
+		return 0, 0, ErrUnavailable
 	}
 	if known, e := m.Store.IsKnownGroup(ctx, jid); e != nil || !known {
-		return "", ErrUnavailable
+		return 0, 0, ErrUnavailable
 	}
 	if err = m.Store.SetNamespaceDisabled(ctx, c.Scope(), true); err != nil {
-		return "", err
+		return 0, 0, err
 	}
 	if err = m.requireInactiveNamespace(ctx, c.Scope()); err != nil {
-		return "", err
+		return 0, 0, err
+	}
+	if !m.canPrepare(ctx, c) {
+		return 0, 0, ErrUnavailable
 	}
 	// Recover an interrupted preparation in the already allocated clean epoch.
 	// Never rotate again, import old state or enable merely because roots exist.
@@ -72,24 +92,41 @@ func (m *Manager) Prepare(ctx context.Context, jid string) (string, error) {
 	if c.NamespaceEpoch <= 1 || c.GroupEpochReady {
 		migration, err = m.Store.RotateGroupEpoch(ctx, jid, c.RegistrationRevision)
 		if err != nil {
-			return "", err
+			return 0, 0, err
 		}
 	}
 	paths, err := runner.PrepareNamespacePaths(m.DataDir, migration.CurrentScope, m.UID)
 	if err != nil {
-		return "", err
+		return 0, 0, err
 	}
 	// Only new clean roots are seeded. Old custom files and all prior data remain
 	// in their retired host-only scope; they are never followed or imported.
 	if _, err = chattmpl.Seed(paths.Workspace, paths.Memory, chattmpl.Vars{ChatFolder: migration.CurrentScope.Folder}); err != nil {
-		return "", err
+		return 0, 0, err
 	}
-	return fmt.Sprintf("Prepared clean group epoch %d; %d old schedules paused. Historical data preserved. Group remains disabled until enable.", migration.CurrentScope.NamespaceEpoch, migration.PausedTasks), nil
+	return migration.CurrentScope.NamespaceEpoch, migration.PausedTasks, nil
 }
+
+// Enable is the owner's explicit re-enable; it also clears the owner kill switch.
 func (m *Manager) Enable(ctx context.Context, jid string) (string, error) {
 	if m.Store == nil || m.Docker == nil {
 		return "", ErrUnavailable
 	}
+	text, err := m.enableCore(ctx, jid)
+	if err != nil {
+		return "", err
+	}
+	c, err := m.Store.GetRegistered(ctx, jid)
+	if err != nil {
+		return "", ErrUnavailable
+	}
+	if err = m.Store.SetState(ctx, groupOwnerDisabledKey+c.NamespaceID, "0"); err != nil {
+		return "", err
+	}
+	return text, nil
+}
+
+func (m *Manager) enableCore(ctx context.Context, jid string) (string, error) {
 	c, err := m.Store.GetRegistered(ctx, jid)
 	if err != nil {
 		return "", ErrUnavailable
@@ -119,13 +156,7 @@ func (m *Manager) Enable(ctx context.Context, jid string) (string, error) {
 	if err = m.requireInactiveNamespace(ctx, c.Scope()); err != nil {
 		return "", err
 	}
-	allowed := false
-	for _, v := range m.Config.EnabledGroups {
-		if v == jid {
-			allowed = true
-		}
-	}
-	if !allowed || m.Config.Qualification == "" || len(m.Config.Providers) == 0 {
+	if !m.listedForEnable(jid) || m.Config.Qualification == "" || len(m.Config.Providers) == 0 {
 		return "", ErrUnavailable
 	}
 	if known, err := m.Store.IsKnownGroup(ctx, jid); err != nil || !known {
@@ -175,6 +206,10 @@ func (m *Manager) Disable(ctx context.Context, jid string) (string, error) {
 	c, err := m.Store.GetRegistered(ctx, jid)
 	if err != nil {
 		return "", ErrUnavailable
+	}
+	// Owner kill switch first: automatic preparation must never re-enable it.
+	if err = m.Store.SetState(ctx, groupOwnerDisabledKey+c.NamespaceID, "1"); err != nil {
+		return "", err
 	}
 	if err = m.Store.SetNamespaceDisabled(ctx, c.Scope(), true); err != nil {
 		return "", err

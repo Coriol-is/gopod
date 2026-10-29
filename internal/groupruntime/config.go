@@ -27,6 +27,14 @@ type ProviderConfig struct {
 	Routes       []isolationproxy.Route
 }
 type Config struct {
+	// AdmissionMode is "registered" (default: an owner-registered group with a
+	// ready clean epoch is admitted) or "allowlist" (strict CP-020 behavior: the
+	// JID must also appear in EnabledGroups).
+	AdmissionMode string
+	// MaxGroups bounds prepared groups in registered mode; zero means 10.
+	MaxGroups int
+	// EnabledGroups is the allowlist in allowlist mode and ignored in registered
+	// mode (kept so older configuration files still load).
 	EnabledGroups []string
 	Providers     map[string]ProviderConfig
 	RelayImage    string
@@ -56,7 +64,7 @@ func Load(path string) (Config, error) {
 	if !errors.Is(d.Decode(&rest), io.EOF) {
 		return cfg, ErrUnavailable
 	}
-	if cfg.RelayImage == "" || cfg.ToolImage == "" || len(cfg.Qualification) < 8 || len(cfg.EnabledGroups) > 10 {
+	if cfg.RelayImage == "" || cfg.ToolImage == "" || len(cfg.Qualification) < 8 || len(cfg.EnabledGroups) > 10 || !cfg.validAdmission() {
 		return cfg, ErrUnavailable
 	}
 	for _, jid := range cfg.EnabledGroups {
