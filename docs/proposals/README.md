@@ -87,7 +87,7 @@ not enabling the feature merely by merging that document.
 | [CP-001](CP-001-memory-api-capability-token.md) | Capability token for the memory API | done | S |
 | [CP-002](CP-002-telegram-outbox.md) | Telegram outbox with retry and `uncertain` state (PRs 1-3 of 8 merged) | in-progress | M |
 | [CP-003](CP-003-typed-replies-via-ipc.md) | Typed IPC replies with immutable file/voice snapshots (PR 4 of 8 merged) | in-progress | M |
-| [CP-004](CP-004-isolated-task-sessions.md) | Scheduled tasks run in their own session (task-reliability PR 1 of 5, storage only, in progress) | in-progress | S–M |
+| [CP-004](CP-004-isolated-task-sessions.md) | Scheduled tasks run in their own session (task-reliability PR 1-2 of 5: storage and managed dispatch/recovery, in progress) | in-progress | S–M |
 | [CP-005](CP-005-tools-base-image.md) | Lightweight bases and optional tool runtimes | proposed | L |
 | [CP-006](CP-006-yielding-maintenance-and-quiet-hours.md) | Maintenance yields to the user; quiet hours | proposed | S–M |
 | [CP-007](CP-007-store-backups.md) | Matched scheduled backups and restore qualification | proposed | M |

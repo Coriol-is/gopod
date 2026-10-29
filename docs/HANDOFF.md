@@ -25,6 +25,15 @@ approved queue, [proposal registry](proposals/README.md) for CP status and
 - **Not authorized without the owner:** account logins, quota/paid fallbacks, T9 reboot,
   production group activation, schedule changes (freefeed digest stays as is).
 
+## CP-004 PR 2 in progress (2026-10-29)
+- Branch `feat/cp004-dispatch` (worktree `gopod-cp004-pr2`), based on PR 1 (`c7ff9d2`): managed dispatch and conservative
+  recovery (`internal/queue/managed.go`, `internal/store/task_dispatch.go`, `cmd/gopod/managed_turns.go`, ADR D042). Not pushed.
+- Production wiring is inspect-only (`queue.ManagedRuntime` without a handler): no managed task can exist or run yet, legacy
+  queue behavior is unchanged. Possibly started attempts become `execution_unknown`, are never replayed, and their holds are
+  rebuilt before any work is scheduled. Needs PR 3 for the real handler, snapshot resolver and exit evidence.
+- Not done: PR 3-5; stop/delete vs dispatch coordination and frozen-result publication (PR 4); operator command for `ReleaseHold`.
+  CP-004 stays `in-progress`.
+
 ## CP-004 PR 1 in progress (2026-10-29)
 - Branch `feat/cp004-task-storage` (worktree `gopod-cp004-pr1`), based on `50a3d0a`: additive task storage only
   (`internal/store/{schema_tasks,task_definitions,task_occurrences,task_runs}.go`, ADR D040). Not pushed.
