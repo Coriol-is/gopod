@@ -25,7 +25,27 @@ approved queue, [proposal registry](proposals/README.md) for CP status and
 - **Not authorized without the owner:** account logins, quota/paid fallbacks, T9 reboot,
   production group activation, schedule changes (freefeed digest stays as is).
 
-## CP-007 PR 1 in progress (2026-10-29)
+## CP-004 PR 3 in progress (2026-10-29)
+- Branch `feat/cp004-task-exec` (worktree `gopod-cp004-pr3`), based on PR 2 (`5680a85`), not pushed. ADR D044.
+  `internal/runner/{exec_policy,exec_guard,task_managed,task_run,provider_task,docker_policy}.go`, `internal/taskreport`,
+  `internal/taskexec`, `internal/store/task_report.go`, `queue.ErrDenied`/`FolderHeld`, flag `GOPOD_MANAGED_TASKS` (off).
+- With the flag on, **no task can run yet**: no credential adapter is qualified for the task role (shared native state dir also holds
+  foreground transcripts). Owner decision needed: qualify a shared-dir binding explicitly, or build a separate task credential adapter.
+- Pending acceptance gates: native subscription smoke for Claude and Codex (separate explicit gate, never run in unit tests), a real
+  Docker inspection check on the Pi (digest normalisation is fixture-verified only), role round trip with the live foreground container.
+- **Before setting `GOPOD_MANAGED_TASKS` a live create/inspect/reuse round trip on the Pi is REQUIRED.** The guard compares the
+  Docker-inspected mounts, env names and hardening exactly with the digest recorded at creation; the only tolerated normalizations are
+  `CapDrop` "ALL" case and `SecurityOpt` `no-new-privileges[:true]`. A daemon that rewrites bind sources, `User` or other fields would
+  make the owner container undeployable (denied every turn) until the digest is deliberately extended.
+- With the flag on, a running container without policy labels (legacy) is replaced by the first slot-holding turn when no unproven
+  attempt holds the folder; startup cleanup does the same unless `GOPOD_LEFTOVER_CLEANUP_DISABLED` is set. The public `Runner.Ensure`
+  (used by `/login`) holds no slot and refuses to recycle a running container (`ErrRecycleNeedsSlot`), so `/login` right after a role or
+  scope change fails until a turn has run. The task role mounts only `ipc/messages` and `ipc/task-results`; the report capability env
+  is `GOPOD_TASK_REPORT_CAP` (no KEY/SECRET/TOKEN in agent env names).
+- Not done: settlement/result publication/stop coordination (PR 4), schedule policy (PR 5), per-role IPC enforcement in the watcher,
+  persisting report revisions beyond latest. CP-004 stays `in-progress`.
+
+## CP-007 PR 1 merged (#80, 2026-10-29)
 - Branch `feat/cp007-backups` (worktree `gopod-cp007-pr1`), based on `5680a85`, not pushed: backup foundation
   (reliability-operations plan slices 4-6, ADR D043). `gopod backup create|verify|list|idle|quarantine`
   (`internal/{backup,maintenance}`, `internal/store/backup*.go`, `internal/control/backup_cmds.go`,

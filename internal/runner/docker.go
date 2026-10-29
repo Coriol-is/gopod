@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"sync/atomic"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
@@ -34,6 +35,8 @@ const (
 type Docker struct {
 	cli *client.Client
 	log *slog.Logger
+
+	requirePolicyLabels bool // managed runtime: unlabeled leftovers are stale
 }
 
 // NewDocker opens a Docker client using DOCKER_HOST / DOCKER_TLS_*
@@ -281,6 +284,41 @@ type StreamHandle struct {
 	Done   <-chan error  // closed when exec finishes (nil = success)
 	cancel context.CancelFunc
 	conn   io.Closer // the attached exec connection
+
+	exit    execExit // set only when the daemon reported the exec finished
+	closing atomic.Bool
+}
+
+// execExitGrace bounds how long the exit report is polled for after the exec
+// context ended (timeout or cancel) without StreamHandle.Close, for streams
+// that opted in with withExitGrace: the kill that
+// follows is only proven by the daemon reporting the exec finished.
+const execExitGrace = 10 * time.Second
+
+type exitGraceKey struct{}
+
+// withExitGrace opts one ExecStream into the post-cancel exit polling. Only
+// managed task execs use it; interactive and foreground streams keep the
+// original behavior and timing: the wait ends the moment their context does.
+func withExitGrace(ctx context.Context) context.Context {
+	return context.WithValue(ctx, exitGraceKey{}, struct{}{})
+}
+
+// execExit records an exit the daemon reported (ExecInspect Running=false).
+// A closed attachment or a cancelled context never sets it.
+type execExit struct {
+	set  atomic.Bool
+	code atomic.Int64
+}
+
+// ExitObserved reports the exec's exit code if, and only if, the daemon told us
+// the process finished. It is the evidence a managed task needs to release its
+// capacity: a closed stream, a timeout or a kill request are not.
+func (h *StreamHandle) ExitObserved() (code int, ok bool) {
+	if !h.exit.set.Load() {
+		return 0, false
+	}
+	return int(h.exit.code.Load()), true
 }
 
 // Close cancels the exec context, closes the attached connection and
@@ -289,6 +327,7 @@ type StreamHandle struct {
 // the demux goroutine even if the process keeps running. Safe to call
 // multiple times and from several goroutines.
 func (h *StreamHandle) Close() {
+	h.closing.Store(true)
 	if h.cancel != nil {
 		h.cancel()
 	}
@@ -342,6 +381,13 @@ func (d *Docker) ExecStream(
 	stdoutR, stdoutW := io.Pipe()
 	stderrR, stderrW := io.Pipe()
 	done := make(chan error, 1)
+	handle := &StreamHandle{
+		Stdout: stdoutR,
+		Stderr: stderrR,
+		Done:   done,
+		cancel: cancel,
+		conn:   resp.Conn,
+	}
 
 	go func() {
 		defer resp.Close()
@@ -354,41 +400,62 @@ func (d *Docker) ExecStream(
 			done <- fmt.Errorf("docker: exec demux: %w", err)
 		}
 
-		// Wait for exit code.
+		// Wait for exit code. When the exec context ends without Close (timeout,
+		// cancel), keep polling on a detached, bounded context so a kill that
+		// succeeded is still observed; Close abandons the wait as before.
+		inspectCtx := execCtx
+		var graceDeadline time.Time
+		grace := execCtx.Value(exitGraceKey{}) != nil // managed task execs only
 		for {
-			info, inspErr := d.cli.ContainerExecInspect(execCtx, created.ID)
-			if inspErr != nil {
-				// Context cancelled (e.g. StreamHandle.Close) is normal.
-				if execCtx.Err() != nil {
+			if grace && execCtx.Err() != nil && inspectCtx == execCtx {
+				if handle.closing.Load() {
 					close(done)
+					return
+				}
+				var stop context.CancelFunc
+				inspectCtx, stop = context.WithTimeout(context.WithoutCancel(execCtx), execExitGrace)
+				defer stop()
+				graceDeadline = time.Now().Add(execExitGrace)
+			}
+			info, inspErr := d.cli.ContainerExecInspect(inspectCtx, created.ID)
+			if inspErr != nil {
+				if execCtx.Err() != nil {
+					close(done) // no exit report: the caller must not claim proof
 					return
 				}
 				done <- fmt.Errorf("docker: exec inspect: %w", inspErr)
 				return
 			}
 			if !info.Running {
+				handle.exit.code.Store(int64(info.ExitCode))
+				handle.exit.set.Store(true)
 				if info.ExitCode != 0 {
 					done <- &ExecError{Code: info.ExitCode}
 				}
 				close(done)
 				return
 			}
-			select {
-			case <-execCtx.Done():
+			if !graceDeadline.IsZero() && (handle.closing.Load() || !time.Now().Before(graceDeadline)) {
 				close(done)
 				return
-			case <-time.After(50 * time.Millisecond):
+			}
+			wait := time.After(50 * time.Millisecond)
+			if graceDeadline.IsZero() {
+				select {
+				case <-execCtx.Done():
+					if !grace {
+						close(done) // original behavior: the wait ends with the context
+						return
+					}
+				case <-wait:
+				}
+			} else {
+				<-wait
 			}
 		}
 	}()
 
-	return &StreamHandle{
-		Stdout: stdoutR,
-		Stderr: stderrR,
-		Done:   done,
-		cancel: cancel,
-		conn:   resp.Conn,
-	}, nil
+	return handle, nil
 }
 
 // Stop gracefully stops a container. Waits up to grace for the

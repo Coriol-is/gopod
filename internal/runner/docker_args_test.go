@@ -235,3 +235,45 @@ func hasString(xs []string, want string) bool {
 	}
 	return false
 }
+
+// The legacy argument builder must not invent policy labels: they are added only
+// by the managed runtime, after BuildContainerArgs (CP-004 PR 3).
+func TestBuildContainerArgsHasNoPolicyLabelsByDefault(t *testing.T) {
+	conf, _, _, err := BuildContainerArgs(goodSpawnConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for k := range conf.Labels {
+		if strings.HasPrefix(k, "gopod.policy.") {
+			t.Errorf("legacy spawn carries %s", k)
+		}
+	}
+	if len(conf.Labels) != 2 {
+		t.Errorf("labels = %v", conf.Labels)
+	}
+}
+
+// The creation digest equals the digest of what Docker reports back, for both
+// roles and providers, so a faithful container is never mistaken for drift.
+func TestPolicyConfigDigestMatchesInspection(t *testing.T) {
+	for _, prov := range providersUnderTest() {
+		m := newManagedTestRunner(t, prov, allowShared)
+		for _, role := range []ExecRole{RoleForegroundPersonal, RoleScheduledTaskPersonal} {
+			plan, err := m.r.planFor(t.Context(), "owner", role, prov, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			id, err := m.eng.CreateStart(t.Context(), plan.Name, plan.Conf, plan.Host)
+			if err != nil {
+				t.Fatal(err)
+			}
+			facts := m.eng.get(plan.Name)
+			if got := digestOfFacts(facts, m.r.managed.universe(m.r)); got != plan.Conf.Labels[LabelPolicyConfig] {
+				t.Errorf("%s/%s: digest %s != label (container %s)", prov.Name(), role, got, id)
+			}
+			if err := m.eng.StopRemove(t.Context(), id); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+}

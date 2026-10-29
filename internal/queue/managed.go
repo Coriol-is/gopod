@@ -34,6 +34,12 @@ var (
 	// any native execution was requested (the spawn marker was not committed).
 	// Only this error, never provider prose, earns a bounded pre-exec retry.
 	ErrNotStarted = errors.New("queue: managed attempt not started")
+	// ErrDenied marks a deterministic refusal before any spawn marker: the host
+	// will not run this attempt (policy, role, provider or profile). Unlike
+	// ErrNotStarted it earns no retry: retrying the same attempt cannot change
+	// the answer, so the attempt is settled as not started and the turn closed.
+	// Returned by the Snapshot resolver or the Handler.
+	ErrDenied = errors.New("queue: managed attempt denied before spawn")
 	// ErrSpawnRefused is returned by ManagedStore.BeginSpawn when the ledger
 	// proves the spawn marker was NOT committed (for example a stop request won
 	// the race). Any other BeginSpawn error is treated as possibly committed.
@@ -518,6 +524,10 @@ func (q *Queue) kick(folder string) {
 	}()
 }
 
+// FolderHeld reports whether a possibly running managed attempt holds the
+// folder. The runner consults it before recycling a container.
+func (q *Queue) FolderHeld(folder string) bool { return q.folderHeld(folder) }
+
 // folderHeld reports whether a hold blocks the folder.
 func (q *Queue) folderHeld(folder string) bool {
 	q.mu.Lock()
@@ -571,6 +581,9 @@ func (q *Queue) runManaged(ctx context.Context, folder string, it Item) workerSt
 			out, err = rt.Store.Reserve(context.WithoutCancel(ctx), it.AttemptID, snap, q.now())
 		}
 		if err != nil {
+			if errors.Is(err, ErrDenied) {
+				return q.denyManaged(folder, it, err)
+			}
 			// Failure to resolve or commit the reservation means no spawn.
 			if !q.preSpawnBackoff(ctx, folder, it, err) {
 				return stepStop
@@ -602,6 +615,8 @@ func (q *Queue) runManaged(ctx context.Context, folder string, it Item) workerSt
 			q.settleManaged(it, Settlement{Kind: SettleNotStarted, Evidence: "not_started:spawn_marker_refused", FailureCode: "spawn_refused"}, herr)
 			q.resetRetries(folder)
 			return stepNext
+		case !started && errors.Is(herr, ErrDenied):
+			return q.denyManaged(folder, it, herr)
 		case !started && errors.Is(herr, ErrNotStarted):
 			if !q.preSpawnBackoff(ctx, folder, it, herr) {
 				return stepStop
@@ -625,6 +640,21 @@ func (q *Queue) runManaged(ctx context.Context, folder string, it Item) workerSt
 			slog.String("attempt", it.AttemptID), slog.String("folder", folder), slog.Any("err", herr))
 		return stepHold
 	}
+}
+
+// denyManaged settles an attempt the host refused before any spawn marker. The
+// ledger records it as not started (failed, reservation released) and the turn
+// is closed, so neither the backoff loop nor Recover runs it again.
+func (q *Queue) denyManaged(folder string, it Item, cause error) workerStep {
+	s := Settlement{Kind: SettleNotStarted, Evidence: "not_started:denied", FailureCode: "denied"}
+	if q.settleManaged(it, s, cause) == "" {
+		q.forget(it.ID) // ledger untouched: the turn stays pending for Recover
+		return stepStop
+	}
+	q.log.Warn("queue: managed attempt denied before spawn",
+		slog.String("attempt", it.AttemptID), slog.Any("err", cause))
+	q.resetRetries(folder)
+	return stepNext
 }
 
 // settleRejected finishes an attempt the pre-spawn gate refused. A terminal

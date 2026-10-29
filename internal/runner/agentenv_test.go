@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -130,5 +131,19 @@ func TestStreamedClaudeAgentGetsHeapCap(t *testing.T) {
 	readResult(t, stream)
 	if got, _ := nodeOptionsOf(ex.envs[0]); got != "--max-old-space-size=768" {
 		t.Fatalf("streamed NODE_OPTIONS = %q", got)
+	}
+}
+
+// Forwarded credential env belongs to the personal foreground tier only; the
+// managed task role forwards nothing (CP-004 PR 3).
+func TestContainerEnvAllowByTierForBothProviders(t *testing.T) {
+	for _, prov := range providersUnderTest() {
+		if got := containerEnvAllow(TierRegistered, prov, []string{"EXTRA"}); len(got) != 0 {
+			t.Errorf("%s: registered tier forwards %v", prov.Name(), got)
+		}
+		got := containerEnvAllow(TierOwner, prov, []string{"EXTRA"})
+		if !slices.Contains(got, "EXTRA") || !slices.Contains(got, prov.RequiredEnvVars()[0]) {
+			t.Errorf("%s: owner tier lost its default env: %v", prov.Name(), got)
+		}
 	}
 }

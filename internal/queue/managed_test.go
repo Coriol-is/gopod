@@ -992,3 +992,64 @@ func TestCleanReturnWithProvenExitDuringShutdownIsExited(t *testing.T) {
 		t.Fatalf("ledger = %s/%s, want completed", state, res)
 	}
 }
+
+func TestDeniedBeforeSpawnIsSettledNotRetried(t *testing.T) {
+	for name, mutate := range map[string]func(*ManagedRuntime){
+		"snapshot": func(rt *ManagedRuntime) {
+			rt.Snapshot = func(context.Context, Item) (Snapshot, error) {
+				return Snapshot{}, fmt.Errorf("task role unqualified: %w", ErrDenied)
+			}
+		},
+		"handler": nil,
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(t, 1, mutate)
+			h.q.maxRetries = 5
+			h.run = func(context.Context, *harness, Item) error {
+				return fmt.Errorf("policy changed: %w", ErrDenied) // before BeginSpawn
+			}
+			it := h.ledger.admit(1, "alice", 0)
+			if ok, err := h.q.Dispatch(context.Background(), it.ID); !ok || err != nil {
+				t.Fatal(ok, err)
+			}
+			h.waitFor("outcome", func() bool { return len(h.outcomeStates()) == 1 })
+			calls := h.ledger.callList()
+			if n := count(calls, "settle:not_started"); n != 1 {
+				t.Fatalf("not_started settled %d times: %v", n, calls)
+			}
+			if h.nativeCalls() != 0 || h.q.Holds() != 0 {
+				t.Fatalf("native=%d holds=%d", h.nativeCalls(), h.q.Holds())
+			}
+			if state, _ := h.ledger.state(it.AttemptID); state != StateFailed {
+				t.Fatalf("state = %s", state)
+			}
+		})
+	}
+}
+
+// A denial reported after the spawn marker cannot be believed: the attempt may
+// have started, so it is not settled as not started.
+func TestDeniedAfterSpawnMarkerIsNotTreatedAsNotStarted(t *testing.T) {
+	h := newHarness(t, 1, nil)
+	h.run = func(ctx context.Context, _ *harness, _ Item) error {
+		e, _ := ExecutionFrom(ctx)
+		if err := e.BeginSpawn(ctx); err != nil {
+			return err
+		}
+		return ErrDenied
+	}
+	it := h.ledger.admit(1, "alice", 0)
+	h.q.Dispatch(context.Background(), it.ID)
+	h.waitFor("hold", func() bool { return h.q.Holds() == 1 })
+	if contains(h.ledger.callList(), "settle:not_started") {
+		t.Fatalf("calls = %v", h.ledger.callList())
+	}
+}
+
+func TestFolderHeldReportsHolds(t *testing.T) {
+	h := newHarness(t, 1, nil)
+	h.q.addHold("a1", "alice", false)
+	if !h.q.FolderHeld("alice") || h.q.FolderHeld("bob") {
+		t.Fatal("FolderHeld wrong")
+	}
+}

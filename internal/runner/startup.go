@@ -45,7 +45,7 @@ func (r *Runner) StartupCheck(ctx context.Context, folder string, tier Tier, all
 	if r.ensureFn != nil {
 		id, err = r.ensure(ctx, folder, tier, allowlist)
 	} else {
-		id, err = r.ensureContainer(ctx, folder, tier, allowlist, true)
+		id, err = r.ensureContainer(ctx, folder, tier, allowlist, true, true)
 	}
 	if err != nil {
 		report.Container = startupFailure(ctx)

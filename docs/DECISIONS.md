@@ -1561,3 +1561,55 @@ whole set. No timer, retention pruning, off-host copy or automated restore/activ
 sharing the database. Artifact delivery stays gated on the CP-003 extension (blob manifest is implemented;
 leases pinning GC during capture are not needed while writers are stopped but are required before an online
 matched mode).
+
+---
+
+## D044 — Managed task execution: policy-guarded containers, ephemeral native runs, attempt-bound reports
+
+**Date:** 2026-10-29
+**Status:** Accepted
+
+**Context.** CP-004 PR 3 must run a scheduled task without touching the foreground native session
+and without the reusable personal container silently granting owner mounts, env or tools. Today
+`Ensure` reuses a container by folder and image only, `RunFresh` is a one-minute maintenance path,
+and nothing proves a container's authority.
+
+**Decision.** (1) `EffectiveExecutionPolicy` is derived by the host for roles `foreground_personal`
+(the unchanged owner-tier default) and `scheduled_task_personal` (registered-tier mounts, no
+forwarded env, grants `ipc:messages` and `ipc:task-results` only). Its fingerprint (`epp1:`+sha256)
+covers role, namespace/epoch/registration revision, mount sources/targets/modes, env NAMES,
+credential binding, image reference and grants; never secret values. The snapshot resolver stores it
+as the attempt's `profile_fingerprint`, and the container carries it, the role and a digest of its
+inspectable configuration as labels. (2) Under the folder lock the guard reuses a container only if
+labels are well formed, the Docker-inspected mounts/env-name/hardening digest equals the recorded
+one, and the fingerprint equals the request. Missing or stale labels, unsupported inspection and
+drift fail closed (`ErrPolicyUnknown`). A well-formed container of another policy is recycled
+(stop, remove, recreate) only when the caller holds the folder's agent slot and no
+`execution_unknown` reservation holds the folder; native credential/session directories are host
+bind mounts and are never touched. (3) `RunTaskStream` uses `claude --no-session-persistence` /
+`codex exec --ephemeral`, no `resume`/`--continue`, no session store, handoff, memory or compaction,
+the ordinary lifetime (5 min default, 60 max) and no maintenance preemption. The attempt runs on
+its frozen provider, not the chat's current one. Exit evidence comes only from the daemon's exec
+report; a kill without that report leaves the attempt `execution_unknown`. (4) The task role is
+**denied unless a `TaskRoleQualifier` approves the credential binding**. Both providers keep login
+state in a host directory that also holds foreground transcripts, so sharing it is unqualified;
+none is qualified here, so with `GOPOD_MANAGED_TASKS=1` tasks are denied (`queue.ErrDenied`:
+settled not started, no retry). (5) `task-results` v1: strict parser (32 KiB, unknown fields and
+trailing data rejected, bounded lists/text), an in-memory token bound to folder/run/attempt/scope,
+revoked at settlement, stale/spoofed/late/changed-scope reports rejected, stored as
+`model_reported` metadata only for the live running attempt, evidence never fetched.
+
+**Review amendments.** Recycling needs an explicit `slotHeld` from the caller (turns, startup and
+`RunTaskStream` pass true; the public `Ensure` passes false and never recycles a running container).
+A container with no policy labels at all is legacy: replaced under the same conditions; a partial or
+malformed label set is denied. The task role mounts `ipc/messages` and `ipc/task-results` only. The
+exec exit wait keeps polling on a detached 10 s context after a timeout or cancel (not after
+`Close`), so a successful kill is observed. The agent-visible capability env is
+`GOPOD_TASK_REPORT_CAP`. The sweeper rules on an unparsable file only in the final sweep and refuses
+a symlinked report directory.
+
+**Consequences.** Flag off: no code path changes. Flag on: the foreground container also goes
+through the guard, and unlabeled leftovers are replaced at startup. Open: a qualified credential
+adapter for the task role, real-Docker inspection normalisation (fixture-verified only), native
+smoke, per-role IPC enforcement in the watcher (grants are declarative; authority is still the
+host namespace), report poll interval of 10 s plus a final sweep.

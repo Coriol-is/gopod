@@ -3,6 +3,7 @@ package runner
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/Coriol-is/gopod/internal/runner/mountsec"
@@ -370,5 +371,30 @@ func TestRestrictedMountsExcludeAllPersonalSources(t *testing.T) {
 	}
 	if !found {
 		t.Error("owner vault behavior regressed")
+	}
+}
+
+// The registered tier never receives owner grants, even when an allowlist would
+// give the owner extras; its native state directories are the same host paths
+// the owner tier uses, which is what lets a recycle preserve them (CP-004 PR 3).
+func TestRegisteredTierDropsOwnerGrantsButSharesNativeState(t *testing.T) {
+	p := mkPaths(t)
+	al := &mountsec.Allowlist{ExtraMounts: []mountsec.ExtraMount{{HostPath: "/srv/x", ContainerPath: "/workspace/extra/x", Mode: "rw", AllowedChats: []string{"*"}}}}
+	reg, err := BuildMounts(p, "owner", TierRegistered, al)
+	if err != nil {
+		t.Fatal(err)
+	}
+	own, err := BuildMounts(p, "owner", TierOwner, al)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range reg {
+		switch m.Target {
+		case "/workspace/project", "/workspace/store/store.sqlite", "/workspace/vault", "/home/node/.claude/skills", "/workspace/extra/x":
+			t.Errorf("registered tier mounts %s", m.Target)
+		}
+	}
+	if !slices.Equal(stateDirSources(reg), stateDirSources(own)) || len(stateDirSources(reg)) != 2 {
+		t.Errorf("state dirs differ: %v vs %v", stateDirSources(reg), stateDirSources(own))
 	}
 }
