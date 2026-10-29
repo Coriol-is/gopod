@@ -422,3 +422,13 @@ func must(t *testing.T, err error) {
 		t.Fatal(err)
 	}
 }
+
+func TestListPreparationsIsRepeatable(t *testing.T) {
+	e := newEnv(t)
+	must(t, e.blobs.NewPreparation(prepA))
+	for i := 0; i < 3; i++ {
+		if l, err := e.blobs.ListPreparations(); err != nil || len(l) != 1 {
+			t.Fatalf("call %d: %v %v", i, l, err)
+		}
+	}
+}

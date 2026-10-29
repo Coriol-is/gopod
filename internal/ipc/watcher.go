@@ -37,6 +37,7 @@ func (w *Watcher) tickOnce(ctx context.Context) {
 		}
 	}
 	sort.Strings(folders)
+	w.maybeReconcileArtifacts(ctx)
 
 	last := ""
 	for _, folder := range folders {

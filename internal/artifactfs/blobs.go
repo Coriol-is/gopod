@@ -397,7 +397,8 @@ type PreparationDir struct {
 // ListPreparations lists well-formed preparation directories directly below the
 // root. Entries with any other name or type are never reported and never touched.
 func (b *Blobs) ListPreparations() ([]PreparationDir, error) {
-	dup, err := unix.Dup(b.fd)
+	// A fresh open file description: a dup would share (and exhaust) the offset.
+	dup, err := unix.Openat(b.fd, ".", unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 	if err != nil {
 		return nil, mapErrno(err)
 	}

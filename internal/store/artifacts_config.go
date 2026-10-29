@@ -66,3 +66,7 @@ func (s *Store) artifactLimits() ArtifactLimits {
 	}
 	return l
 }
+
+// ArtifactLimits returns the effective limits (defaults filled in), so the
+// host validates requests against exactly what the store enforces.
+func (s *Store) ArtifactLimits() ArtifactLimits { return s.artifactLimits() }

@@ -55,6 +55,10 @@ type Config struct {
 	// Durable routes compatible text requests from the owner's personal chat
 	// through the outbox. Zero value keeps the legacy direct-send path.
 	Durable DurableConfig
+	// Artifacts enables strict V1 requests with immutable file snapshots
+	// (CP-003). It requires Durable; the zero value keeps V1 requests on the
+	// legacy path, which treats them as text.
+	Artifacts ArtifactConfig
 }
 
 // New constructs a Watcher. The returned value is ready to Run.
@@ -104,6 +108,8 @@ type Watcher struct {
 	retries          map[string]retryEntry
 	terminalMessages map[string]messageOutcome
 	receiptStates    map[string]string // folder+key -> delivery state last written
+
+	lastArtifactReconcile time.Time
 
 	// handleFolderHook overrides handleFolder when non-nil. Tests use
 	// it to assert traversal without exercising the dispatch pipeline.
