@@ -36,6 +36,9 @@ func main() {
 		var admission *groupruntime.AdmissionError
 		if errors.As(err, &admission) {
 			fmt.Fprintln(os.Stderr, "admission_stage="+admission.Stage)
+			if admission.Detail != "" {
+				fmt.Fprintln(os.Stderr, "admission_detail="+admission.Detail)
+			}
 		}
 		fmt.Println(`{"status":"unavailable","inference_qualified":false}`)
 		os.Exit(1)
