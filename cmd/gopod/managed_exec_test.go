@@ -60,8 +60,8 @@ func (f *fakeTaskRunner) RunTaskStream(ctx context.Context, req runner.TaskRunRe
 }
 
 func report(env map[string]string, mut func(m map[string]any)) []byte {
-	m := map[string]any{"version": 1, "runId": env["GOPOD_TASK_RUN_ID"], "attemptId": env["GOPOD_TASK_ATTEMPT_ID"],
-		"runToken": env["GOPOD_TASK_REPORT_TOKEN"],
+	m := map[string]any{"version": 1, "runId": env[taskreport.EnvRunID], "attemptId": env[taskreport.EnvAttemptID],
+		"runToken": env[taskreport.EnvCapability],
 		"outcome":  map[string]any{"status": "achieved", "checks": []string{}, "evidence": []string{"/host/path"}, "limitations": []string{}}}
 	if mut != nil {
 		mut(m)
@@ -106,6 +106,18 @@ func TestExecutorRecordsProvisionalReportAndRejectsSpoofsAndRevokes(t *testing.T
 	}
 	if run.GoalStatus != "achieved" || run.GoalAuthority != "model_reported" || run.PublicationState != "not_requested" {
 		t.Fatalf("report must be a model-reported claim only: %+v", run)
+	}
+	for name, v := range fr.envSeen {
+		up := strings.ToUpper(name)
+		if strings.Contains(up, "KEY") || strings.Contains(up, "SECRET") || strings.Contains(up, "TOKEN") {
+			t.Errorf("agent env name %s would be stripped from tool subprocesses", name)
+		}
+		if name == taskreport.EnvCapability && v == "" {
+			t.Error("the capability value is not delivered")
+		}
+	}
+	if fr.envSeen[taskreport.EnvCapability] == "" || fr.envSeen[taskreport.EnvRunID] != a.RunID || fr.envSeen[taskreport.EnvAttemptID] != a.AttemptID {
+		t.Errorf("agent-visible delivery incomplete: %v", fr.envSeen)
 	}
 	if ex.Grants.Active() != 0 {
 		t.Fatal("capability outlived the attempt")

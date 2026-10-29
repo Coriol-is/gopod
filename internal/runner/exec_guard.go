@@ -84,12 +84,21 @@ type hardening struct {
 	NoNewPrivs bool   `json:"nonewprivs"`
 }
 
+// hardeningOf normalizes the inspected security fields. The tolerated
+// normalizations are exactly these and nothing else; every other difference
+// between the recorded and the inspected configuration is a mismatch and is
+// denied (a daemon that rewrites bind sources, User or other fields makes the
+// container undeployable until the digest is deliberately extended, which is
+// why a live create/inspect/reuse check is required before enabling the flag):
+//
+//   - CapDrop "ALL" is compared case-insensitively;
+//   - SecurityOpt "no-new-privileges" and "no-new-privileges:true" are equal.
 func hardeningOf(user string, rofs, priv bool, capDrop, secOpt []string) hardening {
 	return hardening{
 		User:       user,
 		ReadonlyFS: rofs,
 		Privileged: priv,
-		DropAll:    slices.Contains(capDrop, "ALL"),
+		DropAll:    slices.ContainsFunc(capDrop, func(c string) bool { return strings.EqualFold(c, "ALL") }),
 		NoNewPrivs: slices.Contains(secOpt, "no-new-privileges:true") || slices.Contains(secOpt, "no-new-privileges"),
 	}
 }
@@ -141,6 +150,17 @@ func digestOfSpawn(conf *container.Config, host *container.HostConfig, mounts []
 		hardeningOf(conf.User, host.ReadonlyRootfs, host.Privileged, host.CapDrop, host.SecurityOpt))
 }
 
+// hasNoPolicyLabels is true only when none of the policy labels exist. A
+// partial or malformed set is corruption, not legacy, and is denied.
+func hasNoPolicyLabels(l map[string]string) bool {
+	for _, k := range []string{LabelPolicyRole, LabelPolicyFingerprint, LabelPolicyConfig, LabelPolicyVersion} {
+		if _, ok := l[k]; ok {
+			return false
+		}
+	}
+	return true
+}
+
 type guardAction int
 
 const (
@@ -174,6 +194,13 @@ func decideContainer(want *policyPlan, facts *ContainerFacts, desiredImage strin
 	}
 	if !facts.Inspected {
 		return deny("inspection_unsupported")
+	}
+	if hasNoPolicyLabels(facts.Labels) {
+		// Created before the guard existed (a legacy foreground container). Its
+		// creation policy is unknowable, so it is never reused; it may be replaced,
+		// but only by a caller that holds the folder's slot while no unproven
+		// attempt holds the folder (the recycle conditions in ensureGuarded).
+		return guardDecision{Action: actRecreate, Reason: "unlabeled_legacy"}
 	}
 	role := ExecRole(facts.Labels[LabelPolicyRole])
 	fp := facts.Labels[LabelPolicyFingerprint]

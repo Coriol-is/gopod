@@ -380,11 +380,11 @@ func TestRunTaskStreamPreSpawnDenials(t *testing.T) {
 	t.Run("wrong container", func(t *testing.T) {
 		h := newTaskHarness(t, NewClaudeProvider("img"))
 		req := h.request(t, "owner", "x")
-		// A container with this name exists but carries no policy labels.
+		// A container with this name exists but carries a malformed policy label set.
 		if _, err := h.ensureAs(RoleForegroundPersonal); err != nil {
 			t.Fatal(err)
 		}
-		h.eng.get("gopod-owner").Labels = map[string]string{}
+		h.eng.get("gopod-owner").Labels = map[string]string{LabelPolicyRole: "bogus"}
 		if _, err := h.r.RunTaskStream(context.Background(), req); !errors.Is(err, ErrPolicyUnknown) {
 			t.Fatalf("err = %v", err)
 		}
@@ -457,7 +457,7 @@ func (h *managedTestRunner) ensureAs(role ExecRole) (string, error) {
 		return "", err
 	}
 	defer rel()
-	return h.r.ensureRole(context.Background(), "owner", role, h.r.provider, nil, false, "")
+	return h.r.ensureRole(context.Background(), "owner", role, h.r.provider, nil, false, true, "")
 }
 
 func TestProviderSwitchWhileQueuedVersusStarted(t *testing.T) {

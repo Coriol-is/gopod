@@ -3,6 +3,8 @@ package runner
 import (
 	"context"
 	"errors"
+	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -117,6 +119,32 @@ func TestTaskRoleHasNoOwnerAuthority(t *testing.T) {
 					t.Errorf("task role mounts owner-only %s", mt.Target)
 				}
 			}
+			var ipc []string
+			for _, mt := range task.Mounts {
+				if strings.HasPrefix(mt.Target, "/workspace/ipc") {
+					ipc = append(ipc, mt.Target)
+				}
+				if mt.Target == "/workspace/ipc" {
+					t.Error("task role mounts the whole IPC namespace (tasks/, results/, input/)")
+				}
+			}
+			slices.Sort(ipc)
+			if !slices.Equal(ipc, []string{"/workspace/ipc/messages", "/workspace/ipc/task-results"}) {
+				t.Errorf("task IPC mounts = %v", ipc)
+			}
+			foregroundIPC := false
+			for _, mt := range fg.Mounts {
+				foregroundIPC = foregroundIPC || mt.Target == "/workspace/ipc"
+			}
+			if !foregroundIPC {
+				t.Error("foreground default lost its IPC namespace mount")
+			}
+			// Mount contents are part of the fingerprint: adding the namespace back changes it.
+			widened := task.Policy
+			widened.Mounts = append(slices.Clone(task.Policy.Mounts), Mount{Source: m.paths.DataDir + "/ipc/owner", Target: "/workspace/ipc"})
+			if widened.Fingerprint() == task.Policy.Fingerprint() {
+				t.Error("widening the task IPC mounts did not change the fingerprint")
+			}
 			if len(task.Policy.EnvNames) != 0 {
 				t.Errorf("task role forwards env %v", task.Policy.EnvNames)
 			}
@@ -178,5 +206,28 @@ func TestPlanFailsClosedWithoutScope(t *testing.T) {
 	_, err := m.r.planFor(context.Background(), "owner", RoleForegroundPersonal, m.r.provider, nil)
 	if !errors.Is(err, ErrPolicyUnknown) {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestReportDirRefusesSymlinkAndFile(t *testing.T) {
+	dir := t.TempDir()
+	good := dir + "/task-results"
+	if err := ensureReportDir(good); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureReportDir(good); err != nil {
+		t.Fatalf("idempotent: %v", err)
+	}
+	link := dir + "/link"
+	if err := os.Symlink(dir, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureReportDir(link); !errors.Is(err, ErrTaskDenied) {
+		t.Fatalf("symlink: %v", err)
+	}
+	file := dir + "/file"
+	os.WriteFile(file, nil, 0o600)
+	if err := ensureReportDir(file); !errors.Is(err, ErrTaskDenied) {
+		t.Fatalf("file: %v", err)
 	}
 }

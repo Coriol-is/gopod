@@ -185,7 +185,8 @@ func (r *Runner) ensure(ctx context.Context, chatFolder string, tier Tier, allow
 	if r.ensureFn != nil {
 		return r.ensureFn(ctx, chatFolder, tier, allowlist)
 	}
-	return r.Ensure(ctx, chatFolder, tier, allowlist)
+	// Internal callers (turns, auth checks, clears) hold the folder's agent slot.
+	return r.ensureContainer(ctx, chatFolder, tier, allowlist, false, true)
 }
 
 // Ensure boots (or re-uses) the container for the given chat folder
@@ -200,10 +201,12 @@ func (r *Runner) Ensure(
 	tier Tier,
 	allowlist *mountsec.Allowlist,
 ) (string, error) {
-	return r.ensureContainer(ctx, chatFolder, tier, allowlist, false)
+	// A public caller holds no slot, so the managed guard will not recycle a
+	// running container for it; with the runtime off nothing differs.
+	return r.ensureContainer(ctx, chatFolder, tier, allowlist, false, false)
 }
 
-func (r *Runner) ensureContainer(ctx context.Context, chatFolder string, tier Tier, allowlist *mountsec.Allowlist, reconcile bool) (string, error) {
+func (r *Runner) ensureContainer(ctx context.Context, chatFolder string, tier Tier, allowlist *mountsec.Allowlist, reconcile, slotHeld bool) (string, error) {
 	if _, group := r.groupRegistration(ctx, chatFolder); group {
 		return "", ErrProfileUnavailable
 	}
@@ -221,7 +224,7 @@ func (r *Runner) ensureContainer(ctx context.Context, chatFolder string, tier Ti
 		// Managed runtime: the foreground container goes through the same policy
 		// guard as a task, so roles cannot leak into each other.
 		prov := r.ProviderForChat(chatFolder)
-		id, err := r.ensureRole(ctx, chatFolder, RoleForegroundPersonal, prov, allowlist, reconcile, "")
+		id, err := r.ensureRole(ctx, chatFolder, RoleForegroundPersonal, prov, allowlist, reconcile, slotHeld, "")
 		if err != nil {
 			return "", err
 		}

@@ -170,6 +170,7 @@ func newManagedTestRunner(t *testing.T, prov AgentProvider, qualify TaskRoleQual
 		provider:       prov,
 		paths:          paths,
 		cfg:            SpawnDefaults{Image: prov.Image(), UID: 501, GID: 20, MemoryBytes: 4 << 30, NanoCPUs: 2e9, PidsLimit: 1024},
+		ex:             newFakeAgentExec(),
 		allow:          []string{"FREEFEED_BASE_URL"},
 		version:        "test",
 		log:            slog.New(slog.NewTextHandler(io.Discard, nil)),

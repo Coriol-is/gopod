@@ -285,8 +285,14 @@ type StreamHandle struct {
 	cancel context.CancelFunc
 	conn   io.Closer // the attached exec connection
 
-	exit execExit // set only when the daemon reported the exec finished
+	exit    execExit // set only when the daemon reported the exec finished
+	closing atomic.Bool
 }
+
+// execExitGrace bounds how long the exit report is polled for after the exec
+// context ended (timeout or cancel) without StreamHandle.Close: the kill that
+// follows is only proven by the daemon reporting the exec finished.
+const execExitGrace = 10 * time.Second
 
 // execExit records an exit the daemon reported (ExecInspect Running=false).
 // A closed attachment or a cancelled context never sets it.
@@ -311,6 +317,7 @@ func (h *StreamHandle) ExitObserved() (code int, ok bool) {
 // the demux goroutine even if the process keeps running. Safe to call
 // multiple times and from several goroutines.
 func (h *StreamHandle) Close() {
+	h.closing.Store(true)
 	if h.cancel != nil {
 		h.cancel()
 	}
@@ -383,13 +390,26 @@ func (d *Docker) ExecStream(
 			done <- fmt.Errorf("docker: exec demux: %w", err)
 		}
 
-		// Wait for exit code.
+		// Wait for exit code. When the exec context ends without Close (timeout,
+		// cancel), keep polling on a detached, bounded context so a kill that
+		// succeeded is still observed; Close abandons the wait as before.
+		inspectCtx := execCtx
+		var graceDeadline time.Time
 		for {
-			info, inspErr := d.cli.ContainerExecInspect(execCtx, created.ID)
-			if inspErr != nil {
-				// Context cancelled (e.g. StreamHandle.Close) is normal.
-				if execCtx.Err() != nil {
+			if execCtx.Err() != nil && inspectCtx == execCtx {
+				if handle.closing.Load() {
 					close(done)
+					return
+				}
+				var stop context.CancelFunc
+				inspectCtx, stop = context.WithTimeout(context.WithoutCancel(execCtx), execExitGrace)
+				defer stop()
+				graceDeadline = time.Now().Add(execExitGrace)
+			}
+			info, inspErr := d.cli.ContainerExecInspect(inspectCtx, created.ID)
+			if inspErr != nil {
+				if execCtx.Err() != nil {
+					close(done) // no exit report: the caller must not claim proof
 					return
 				}
 				done <- fmt.Errorf("docker: exec inspect: %w", inspErr)
@@ -404,11 +424,18 @@ func (d *Docker) ExecStream(
 				close(done)
 				return
 			}
-			select {
-			case <-execCtx.Done():
+			if !graceDeadline.IsZero() && (handle.closing.Load() || !time.Now().Before(graceDeadline)) {
 				close(done)
 				return
-			case <-time.After(50 * time.Millisecond):
+			}
+			wait := time.After(50 * time.Millisecond)
+			if graceDeadline.IsZero() {
+				select {
+				case <-execCtx.Done():
+				case <-wait:
+				}
+			} else {
+				<-wait
 			}
 		}
 	}()

@@ -231,14 +231,14 @@ func TestSweeperAdmitsOncePerFileAndNeverFollowsSymlinks(t *testing.T) {
 		got = append(got, p)
 		return nil
 	}}
-	res := s.Sweep(context.Background())
+	res := s.Sweep(context.Background(), true)
 	if res.Admitted != 2 || res.Rejected[CodeStale] != 1 || res.Rejected[CodeTooLarge] != 1 || res.Rejected[CodeInvalid] != 1 {
 		t.Fatalf("result = %+v", res)
 	}
 	if len(got) != 2 || got[0].PlanVersion != 3 || got[1].PlanVersion != 4 {
 		t.Fatalf("order/revisions = %+v", got)
 	}
-	if again := s.Sweep(context.Background()); again.Admitted != 0 || len(again.Rejected) != 0 {
+	if again := s.Sweep(context.Background(), true); again.Admitted != 0 || len(again.Rejected) != 0 {
 		t.Fatalf("second sweep re-admitted: %+v", again)
 	}
 	// Nothing was deleted or moved.
@@ -248,7 +248,7 @@ func TestSweeperAdmitsOncePerFileAndNeverFollowsSymlinks(t *testing.T) {
 	// After settlement every later file is late.
 	g.Revoke("att-1")
 	write("06.json", envelope(tok, nil))
-	if late := s.Sweep(context.Background()); late.Admitted != 0 || late.Rejected[CodeStale] != 1 {
+	if late := s.Sweep(context.Background(), true); late.Admitted != 0 || late.Rejected[CodeStale] != 1 {
 		t.Fatalf("late report: %+v", late)
 	}
 }
@@ -267,11 +267,75 @@ func TestSweeperRetriesWhenRecordFails(t *testing.T) {
 		}
 		return nil
 	}}
-	if r := s.Sweep(context.Background()); r.Admitted != 0 {
+	if r := s.Sweep(context.Background(), true); r.Admitted != 0 {
 		t.Fatal(fmt.Sprint(r))
 	}
 	fail = false
-	if r := s.Sweep(context.Background()); r.Admitted != 1 || n != 2 {
+	if r := s.Sweep(context.Background(), true); r.Admitted != 1 || n != 2 {
 		t.Fatalf("retry: %+v n=%d", r, n)
+	}
+}
+
+func TestSweeperRereadsPartialWritesUntilFinal(t *testing.T) {
+	g, _ := newGrants(t, nil)
+	tok, _ := g.Issue(testBinding, time.Hour)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "01.json")
+	full := envelope(tok, nil)
+	os.WriteFile(path, full[:len(full)/2], 0o600) // writer still busy
+	var n int
+	s := &Sweeper{Grants: g, Dir: dir, Folder: "owner", Record: func(context.Context, Provisional) error { n++; return nil }}
+	if r := s.Sweep(context.Background(), false); r.Admitted != 0 || len(r.Rejected) != 0 {
+		t.Fatalf("partial file ruled on early: %+v", r)
+	}
+	os.WriteFile(path, full, 0o600) // writer finished
+	if r := s.Sweep(context.Background(), false); r.Admitted != 1 || n != 1 {
+		t.Fatalf("completed file not read: %+v", r)
+	}
+	// A file that stays invalid is ruled on at the final sweep only.
+	os.WriteFile(filepath.Join(dir, "02.json"), []byte("{"), 0o600)
+	if r := s.Sweep(context.Background(), true); r.Rejected[CodeInvalid] != 1 {
+		t.Fatalf("final: %+v", r)
+	}
+	if r := s.Sweep(context.Background(), true); len(r.Rejected) != 0 {
+		t.Fatalf("seen file ruled twice: %+v", r)
+	}
+}
+
+func TestSweeperAndEnsureDirRefuseASymlinkedDirectory(t *testing.T) {
+	g, _ := newGrants(t, nil)
+	tok, _ := g.Issue(testBinding, time.Hour)
+	real := t.TempDir()
+	os.WriteFile(filepath.Join(real, "01.json"), envelope(tok, nil), 0o600)
+	link := filepath.Join(t.TempDir(), DirName)
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureDir(link); err == nil {
+		t.Fatal("EnsureDir accepted a symlink")
+	}
+	s := &Sweeper{Grants: g, Dir: link, Folder: "owner", Record: func(context.Context, Provisional) error {
+		t.Error("read through a symlinked report directory")
+		return nil
+	}}
+	if r := s.Sweep(context.Background(), true); r.Admitted != 0 {
+		t.Fatalf("%+v", r)
+	}
+	plain := filepath.Join(t.TempDir(), DirName)
+	if err := EnsureDir(plain); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureDir(plain); err != nil {
+		t.Fatalf("idempotent: %v", err)
+	}
+}
+
+func TestEnvNamesAvoidStrippedSubstrings(t *testing.T) {
+	for _, n := range []string{EnvRunID, EnvAttemptID, EnvCapability} {
+		for _, bad := range []string{"KEY", "SECRET", "TOKEN"} {
+			if strings.Contains(n, bad) {
+				t.Errorf("%s contains %s", n, bad)
+			}
+		}
 	}
 }

@@ -2,6 +2,7 @@ package taskreport
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,6 +13,33 @@ import (
 
 // DirName is the report directory under the attempt's IPC namespace.
 const DirName = "task-results"
+
+// Environment names that carry the attempt identity into the agent. None of
+// them contains KEY, SECRET or TOKEN: Codex's shell_environment_policy strips
+// such names from tool subprocesses, which would hide the capability from the
+// very commands that write the report.
+const (
+	EnvRunID      = "GOPOD_TASK_RUN_ID"
+	EnvAttemptID  = "GOPOD_TASK_ATTEMPT_ID"
+	EnvCapability = "GOPOD_TASK_REPORT_CAP"
+)
+
+// EnsureDir creates dir if missing and refuses anything that is not a plain
+// directory (a symlink or file planted from the container), without following.
+func EnsureDir(dir string) error {
+	info, err := os.Lstat(dir)
+	switch {
+	case err == nil && info.IsDir() && info.Mode()&os.ModeSymlink == 0:
+		return nil
+	case err == nil:
+		return errNotPlainDir
+	case !os.IsNotExist(err):
+		return err
+	}
+	return os.Mkdir(dir, 0o755)
+}
+
+var errNotPlainDir = errors.New("taskreport: report directory is not a plain directory")
 
 // Sweeper reads report files an agent wrote under one IPC namespace and hands
 // admitted ones to Record. It never opens a path named inside a report, never
@@ -35,9 +63,14 @@ type Result struct {
 	Rejected map[Code]int
 }
 
-// Sweep admits every new regular .json file in Dir.
-func (s *Sweeper) Sweep(ctx context.Context) Result {
+// Sweep admits every new regular .json file in Dir. A file that does not parse
+// may still be being written, so outside the final sweep it is neither counted
+// nor marked seen and is read again; final=true rules on it for good.
+func (s *Sweeper) Sweep(ctx context.Context, final bool) Result {
 	res := Result{Rejected: map[Code]int{}}
+	if info, err := os.Lstat(s.Dir); err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return res // never read through a symlink planted at the directory
+	}
 	entries, err := os.ReadDir(s.Dir)
 	if err != nil {
 		return res
@@ -61,14 +94,19 @@ func (s *Sweeper) Sweep(ctx context.Context) Result {
 		}
 		raw, code := readReport(filepath.Join(s.Dir, name))
 		if code != "" {
-			s.seen[name] = true
-			res.Rejected[code]++
+			if final {
+				s.seen[name] = true
+				res.Rejected[code]++
+			}
 			continue
 		}
 		p, _, err := s.Grants.Admit(s.Folder, raw)
 		if err != nil {
-			s.seen[name] = true
 			c, _ := CodeOf(err)
+			if c == CodeInvalid && !final {
+				continue // possibly a partial write
+			}
+			s.seen[name] = true
 			res.Rejected[c]++
 			continue
 		}

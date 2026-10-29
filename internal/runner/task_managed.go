@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"time"
 
@@ -153,6 +154,9 @@ func (r *Runner) planFor(ctx context.Context, folder string, role ExecRole, prov
 	if err != nil {
 		return nil, err
 	}
+	if role == RoleScheduledTaskPersonal {
+		mounts = taskIPCMounts(mounts, r.paths.DataDir, folder)
+	}
 	envAllow := sortedUnique(containerEnvAllow(tier, prov, r.allow))
 
 	cred := CredentialBinding{Provider: prov.Name(), Kind: credNativeStateDir, Sources: stateDirSources(mounts)}
@@ -185,19 +189,33 @@ func (r *Runner) planFor(ctx context.Context, folder string, role ExecRole, prov
 	return &policyPlan{Policy: pol, Conf: conf, Host: host, Name: name, Mounts: mounts}, nil
 }
 
-// slotHeld reports whether some run holds the folder's agent slot. Callers that
-// reach the guard hold it themselves; a caller that does not may not recycle.
-func (r *Runner) slotHeld(folder string) bool {
-	r.agentSlotsMu.Lock()
-	defer r.agentSlotsMu.Unlock()
-	_, ok := r.agentSlots[folder]
-	return ok
+// taskIPCMounts narrows the task role's IPC access to what its grants name:
+// the messages channel and the task-results channel. The whole namespace
+// directory (tasks/, results/, input/) is not mounted.
+func taskIPCMounts(mounts []Mount, dataDir, folder string) []Mount {
+	ipc := filepath.Join(dataDir, "ipc", folder)
+	out := make([]Mount, 0, len(mounts)+1)
+	for _, m := range mounts {
+		if m.Target == "/workspace/ipc" {
+			continue
+		}
+		out = append(out, m)
+	}
+	return append(out,
+		Mount{Source: filepath.Join(ipc, "messages"), Target: "/workspace/ipc/messages"},
+		Mount{Source: filepath.Join(ipc, taskResultsDir), Target: "/workspace/ipc/" + taskResultsDir},
+	)
 }
 
+// taskResultsDir is the report channel directory (taskreport.DirName).
+const taskResultsDir = "task-results"
+
 // ensureRole is the guarded Ensure: lock, authorize, plan, guard. The caller
-// of a run holds the folder's agent slot. A non-empty expectFingerprint must
+// of a run says so explicitly with slotHeld (it is not inferred from the slot
+// table: another run may hold it). Only such a caller may recycle a running
+// container. A non-empty expectFingerprint must
 // equal the planned policy's fingerprint (the attempt's frozen profile).
-func (r *Runner) ensureRole(ctx context.Context, folder string, role ExecRole, prov AgentProvider, al *mountsec.Allowlist, reconcile bool, expectFingerprint string) (string, error) {
+func (r *Runner) ensureRole(ctx context.Context, folder string, role ExecRole, prov AgentProvider, al *mountsec.Allowlist, reconcile, slotHeld bool, expectFingerprint string) (string, error) {
 	if folder == "" {
 		return "", errors.New("runner: empty chatFolder")
 	}
@@ -209,6 +227,11 @@ func (r *Runner) ensureRole(ctx context.Context, folder string, role ExecRole, p
 	if err := EnsureChatDirs(r.paths, folder, role == RoleForegroundPersonal, r.log); err != nil {
 		return "", err
 	}
+	if role == RoleScheduledTaskPersonal {
+		if err := ensureReportDir(filepath.Join(r.paths.DataDir, "ipc", folder, taskResultsDir)); err != nil {
+			return "", err
+		}
+	}
 	plan, err := r.planFor(ctx, folder, role, prov, al)
 	if err != nil {
 		return "", err
@@ -218,5 +241,5 @@ func (r *Runner) ensureRole(ctx context.Context, folder string, role ExecRole, p
 		// froze its profile: the host no longer vouches for that authority.
 		return "", fmt.Errorf("%w: execution policy changed since the attempt snapshot", ErrTaskDenied)
 	}
-	return r.ensureGuarded(ctx, plan, r.slotHeld(folder), reconcile)
+	return r.ensureGuarded(ctx, plan, slotHeld, reconcile)
 }

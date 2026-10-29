@@ -181,7 +181,7 @@ func (r *Runner) RunTaskStream(ctx context.Context, req TaskRunRequest) (*AgentS
 		}
 	}()
 
-	id, err := r.ensureRole(ctx, folder, RoleScheduledTaskPersonal, prov, nil, false, req.Snapshot.ProfileFingerprint)
+	id, err := r.ensureRole(ctx, folder, RoleScheduledTaskPersonal, prov, nil, false, true, req.Snapshot.ProfileFingerprint)
 	if err != nil {
 		return nil, err
 	}

@@ -1533,6 +1533,15 @@ trailing data rejected, bounded lists/text), an in-memory token bound to folder/
 revoked at settlement, stale/spoofed/late/changed-scope reports rejected, stored as
 `model_reported` metadata only for the live running attempt, evidence never fetched.
 
+**Review amendments.** Recycling needs an explicit `slotHeld` from the caller (turns, startup and
+`RunTaskStream` pass true; the public `Ensure` passes false and never recycles a running container).
+A container with no policy labels at all is legacy: replaced under the same conditions; a partial or
+malformed label set is denied. The task role mounts `ipc/messages` and `ipc/task-results` only. The
+exec exit wait keeps polling on a detached 10 s context after a timeout or cancel (not after
+`Close`), so a successful kill is observed. The agent-visible capability env is
+`GOPOD_TASK_REPORT_CAP`. The sweeper rules on an unparsable file only in the final sweep and refuses
+a symlinked report directory.
+
 **Consequences.** Flag off: no code path changes. Flag on: the foreground container also goes
 through the guard, and unlabeled leftovers are replaced at startup. Open: a qualified credential
 adapter for the task role, real-Docker inspection normalisation (fixture-verified only), native

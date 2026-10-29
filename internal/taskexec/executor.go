@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -96,8 +95,8 @@ func (e *Executor) Handle(ctx context.Context, items []queue.Item) error {
 	defer e.Grants.Revoke(it.AttemptID) // settlement or cancellation ends the capability
 
 	dir := filepath.Join(e.DataDir, "ipc", it.Folder, taskreport.DirName)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("%w: report dir: %v", queue.ErrNotStarted, err)
+	if err := taskreport.EnsureDir(dir); err != nil {
+		return fmt.Errorf("%w: report dir: %v", queue.ErrDenied, err)
 	}
 	sw := &taskreport.Sweeper{Grants: e.Grants, Dir: dir, Folder: it.Folder,
 		Record: func(c context.Context, p taskreport.Provisional) error {
@@ -115,9 +114,9 @@ func (e *Executor) Handle(ctx context.Context, items []queue.Item) error {
 		Timeout:      timeout,
 		Snapshot:     runner.TaskSnapshot{Provider: snap.Provider, Model: snap.Model, ProfileFingerprint: snap.ProfileFingerprint},
 		Env: []string{
-			"GOPOD_TASK_RUN_ID=" + it.RunID,
-			"GOPOD_TASK_ATTEMPT_ID=" + it.AttemptID,
-			"GOPOD_TASK_REPORT_TOKEN=" + tok,
+			taskreport.EnvRunID + "=" + it.RunID,
+			taskreport.EnvAttemptID + "=" + it.AttemptID,
+			taskreport.EnvCapability + "=" + tok,
 		},
 		Hooks: runner.TaskHooks{
 			BeginSpawn: func(c context.Context) error {
@@ -161,12 +160,12 @@ loop:
 			}
 			bytesOut += len(c)
 		case <-tick.C:
-			sw.Sweep(ctx)
+			sw.Sweep(ctx, false)
 		}
 	}
 	res = <-stream.Result
 	// Final sweep while the capability is still live, then revoke (deferred).
-	sw.Sweep(context.WithoutCancel(ctx))
+	sw.Sweep(context.WithoutCancel(ctx), true)
 	e.Log.Info("managed task attempt finished; stdout discarded",
 		slog.String("run", it.RunID), slog.String("attempt", it.AttemptID), slog.Int("stdout_bytes", bytesOut), slog.Bool("failed", res.Err != nil))
 	return res.Err
@@ -176,5 +175,5 @@ loop:
 // compiled memory. The report channel is a claim, not completion.
 func systemPrompt() string {
 	return `You are running a scheduled task with no user present. Deliver any message the task asks for through the IPC messages directory; your stdout is discarded.
-Optionally record a self-assessment by writing one JSON file (version 1, at most 32 KiB) into /workspace/ipc/task-results/ with fields version, runId (GOPOD_TASK_RUN_ID), attemptId (GOPOD_TASK_ATTEMPT_ID), runToken (GOPOD_TASK_REPORT_TOKEN), outcome {status: achieved|partial|blocked|unknown, checks, evidence, limitations (max 8 short strings each)} and checkpoint {planVersion, lastSupportedMilestone, nextSafeStep, unresolvedEffects} or null. It is your own claim and is never treated as verification.`
+Optionally record a self-assessment by writing one JSON file (version 1, at most 32 KiB) into /workspace/ipc/task-results/ with fields version, runId (` + taskreport.EnvRunID + `), attemptId (` + taskreport.EnvAttemptID + `), runToken (` + taskreport.EnvCapability + `), outcome {status: achieved|partial|blocked|unknown, checks, evidence, limitations (max 8 short strings each)} and checkpoint {planVersion, lastSupportedMilestone, nextSafeStep, unresolvedEffects} or null. It is your own claim and is never treated as verification.`
 }

@@ -17,7 +17,7 @@ func (m *managedTestRunner) ensure(t *testing.T, role ExecRole) (string, error) 
 		t.Fatal(err)
 	}
 	defer release()
-	return m.r.ensureRole(context.Background(), "owner", role, m.r.provider, nil, false, "")
+	return m.r.ensureRole(context.Background(), "owner", role, m.r.provider, nil, false, true, "")
 }
 
 func TestGuardReusesEqualPolicy(t *testing.T) {
@@ -124,7 +124,7 @@ func TestGuardRecyclesOnScopeRevisionChange(t *testing.T) {
 
 func TestGuardFailsClosedOnUntrustedContainer(t *testing.T) {
 	for name, tamper := range map[string]func(f *ContainerFacts){
-		"missing labels":      func(f *ContainerFacts) { f.Labels = map[string]string{"gopod.chat": "owner"} },
+		"partial labels":      func(f *ContainerFacts) { f.Labels = map[string]string{LabelPolicyRole: "foreground_personal"} },
 		"missing fingerprint": func(f *ContainerFacts) { delete(f.Labels, LabelPolicyFingerprint) },
 		"unknown role":        func(f *ContainerFacts) { f.Labels[LabelPolicyRole] = "owner" },
 		"stale version":       func(f *ContainerFacts) { f.Labels[LabelPolicyVersion] = "0" },
@@ -209,10 +209,10 @@ func TestGuardRecycleRequiresTheFolderSlot(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Called without holding the slot (a bare Ensure): reuse works, recycle does not.
-	if _, err := m.r.ensureRole(context.Background(), "owner", RoleScheduledTaskPersonal, m.r.provider, nil, false, ""); err != nil {
+	if _, err := m.r.ensureRole(context.Background(), "owner", RoleScheduledTaskPersonal, m.r.provider, nil, false, false, ""); err != nil {
 		t.Fatalf("reuse without slot: %v", err)
 	}
-	if _, err := m.r.ensureRole(context.Background(), "owner", RoleForegroundPersonal, m.r.provider, nil, false, ""); !errors.Is(err, ErrRecycleNeedsSlot) {
+	if _, err := m.r.ensureRole(context.Background(), "owner", RoleForegroundPersonal, m.r.provider, nil, false, false, ""); !errors.Is(err, ErrRecycleNeedsSlot) {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -243,11 +243,11 @@ func TestGuardExpectedFingerprintMismatchDeniesTask(t *testing.T) {
 	}
 	release, _ := m.r.acquireAgentSlot(context.Background(), "owner")
 	defer release()
-	if _, err := m.r.ensureRole(context.Background(), "owner", RoleScheduledTaskPersonal, m.r.provider, nil, false, snap.ProfileFingerprint); err != nil {
+	if _, err := m.r.ensureRole(context.Background(), "owner", RoleScheduledTaskPersonal, m.r.provider, nil, false, true, snap.ProfileFingerprint); err != nil {
 		t.Fatal(err)
 	}
 	m.scopes.bump("owner")
-	if _, err := m.r.ensureRole(context.Background(), "owner", RoleScheduledTaskPersonal, m.r.provider, nil, false, snap.ProfileFingerprint); !errors.Is(err, ErrTaskDenied) {
+	if _, err := m.r.ensureRole(context.Background(), "owner", RoleScheduledTaskPersonal, m.r.provider, nil, false, true, snap.ProfileFingerprint); !errors.Is(err, ErrTaskDenied) {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -262,5 +262,110 @@ func TestLegacyRunnerIsUntouchedWithoutManagedRuntime(t *testing.T) {
 	}
 	if _, err := r.ResolveTaskSnapshot(context.Background(), "owner"); !errors.Is(err, ErrManagedTasksDisabled) {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// The public Ensure (login flow) holds no slot: it never recycles a running
+// container, whether a foreground turn is live or the folder is idle, but it
+// still creates and reuses as before.
+func TestPublicEnsureNeverRecyclesARunningContainer(t *testing.T) {
+	m := newManagedTestRunner(t, NewClaudeProvider("img"), allowShared)
+	ctx := context.Background()
+	// Nothing running: Ensure creates (today's behaviour).
+	id1, err := m.r.Ensure(ctx, "owner", TierOwner, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id2, err := m.r.Ensure(ctx, "owner", TierOwner, nil); err != nil || id2 != id1 {
+		t.Fatalf("reuse: %v", err)
+	}
+	// A live foreground turn holds the slot; the scope changes under it.
+	release, err := m.r.acquireAgentSlot(ctx, "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.scopes.bump("owner")
+	if _, err := m.r.Ensure(ctx, "owner", TierOwner, nil); !errors.Is(err, ErrRecycleNeedsSlot) {
+		t.Fatalf("live turn: err = %v", err)
+	}
+	release()
+	// Idle folder, policy differs: still refused for a slotless caller.
+	if _, err := m.r.Ensure(ctx, "owner", TierOwner, nil); !errors.Is(err, ErrRecycleNeedsSlot) {
+		t.Fatalf("idle: err = %v", err)
+	}
+	if got := m.eng.opsSnapshot(); len(got) != 1 {
+		t.Fatalf("a slotless caller touched the container: %v", got)
+	}
+	// The slot-holding path (a turn, startup) does recycle.
+	if _, err := m.ensure(t, RoleForegroundPersonal); err != nil {
+		t.Fatal(err)
+	}
+	if got := m.eng.opsSnapshot(); len(got) != 3 {
+		t.Fatalf("ops = %v", got)
+	}
+}
+
+// Internal callers (r.ensure: turns, auth checks, clears) hold the slot and may
+// recycle; the explicit flag, not the slot table, decides.
+func TestInternalEnsureRecyclesWithSlot(t *testing.T) {
+	m := newManagedTestRunner(t, NewClaudeProvider("img"), allowShared)
+	ctx := context.Background()
+	if _, err := m.r.ensure(ctx, "owner", TierOwner, nil); err != nil {
+		t.Fatal(err)
+	}
+	m.scopes.bump("owner")
+	if _, err := m.r.ensure(ctx, "owner", TierOwner, nil); err != nil {
+		t.Fatalf("slot-holding caller must recycle: %v", err)
+	}
+	if got := m.eng.opsSnapshot(); len(got) != 3 {
+		t.Fatalf("ops = %v", got)
+	}
+}
+
+// A container with no policy labels at all pre-dates the guard (for example when
+// startup cleanup is disabled). It is never reused; the slot-holding caller may
+// replace it when nothing is unproven, a slotless caller may not.
+func TestGuardReplacesUnlabeledLegacyContainerOnlyUnderTheSlot(t *testing.T) {
+	m := newManagedTestRunner(t, NewClaudeProvider("img"), allowShared)
+	if _, err := m.ensure(t, RoleForegroundPersonal); err != nil {
+		t.Fatal(err)
+	}
+	m.eng.get("gopod-owner").Labels = map[string]string{"gopod.chat": "owner", "gopod.version": "test"}
+	if _, err := m.r.Ensure(context.Background(), "owner", TierOwner, nil); !errors.Is(err, ErrRecycleNeedsSlot) {
+		t.Fatalf("slotless: %v", err)
+	}
+	m.holds["owner"] = true
+	if _, err := m.ensure(t, RoleForegroundPersonal); !errors.Is(err, ErrExecutionUnproven) {
+		t.Fatalf("unproven hold: %v", err)
+	}
+	m.holds["owner"] = false
+	if _, err := m.ensure(t, RoleForegroundPersonal); err != nil {
+		t.Fatal(err)
+	}
+	if got := m.eng.opsSnapshot(); len(got) != 3 || got[2] != "create:foreground_personal" {
+		t.Fatalf("ops = %v", got)
+	}
+}
+
+// The only tolerated normalizations of the inspected hardening fields.
+func TestHardeningNormalizationIsExactlyTheDocumentedSet(t *testing.T) {
+	base := hardeningOf("501:20", true, false, []string{"ALL"}, []string{"no-new-privileges:true"})
+	for name, h := range map[string]hardening{
+		"cap case":     hardeningOf("501:20", true, false, []string{"all"}, []string{"no-new-privileges:true"}),
+		"secopt short": hardeningOf("501:20", true, false, []string{"ALL"}, []string{"no-new-privileges"}),
+	} {
+		if h != base {
+			t.Errorf("%s must be tolerated", name)
+		}
+	}
+	for name, h := range map[string]hardening{
+		"user":     hardeningOf("501", true, false, []string{"ALL"}, []string{"no-new-privileges:true"}),
+		"no caps":  hardeningOf("501:20", true, false, nil, []string{"no-new-privileges:true"}),
+		"no nnp":   hardeningOf("501:20", true, false, []string{"ALL"}, []string{"seccomp=unconfined"}),
+		"writable": hardeningOf("501:20", false, false, []string{"ALL"}, []string{"no-new-privileges:true"}),
+	} {
+		if h == base {
+			t.Errorf("%s must NOT be tolerated", name)
+		}
 	}
 }
