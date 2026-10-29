@@ -551,6 +551,10 @@ func run() error {
 			agentQueue = queue.New(ctx, tgBot.NewAgentHandler(), queue.DefaultMaxConcurrent,
 				turnStoreAdapter{st: st}, queueLog)
 			tgBot.SetQueue(agentQueue)
+			// Managed task recovery is inspect-only until execution lands (CP-004
+			// PR 3): no handler, so nothing managed runs, but possibly started
+			// attempts are never replayed and held capacity is rebuilt.
+			agentQueue.SetManaged(queue.ManagedRuntime{Store: managedLedger{st: st}})
 			agentQueue.OnDone(tgBot.NewDoneHook())
 			subsystems.Add(1)
 			go func() {
@@ -578,7 +582,10 @@ func run() error {
 		replayed := 0
 		if agentQueue != nil {
 			n, err := agentQueue.Recover(ctx)
-			if err != nil {
+			if errors.Is(err, queue.ErrHoldsUnknown) {
+				// Serving beside a possibly running task attempt is unsafe.
+				return fmt.Errorf("queue recovery: %w", err)
+			} else if err != nil {
 				logger.Error("queue: recover unfinished turns", slog.Any("err", err))
 			} else if n > 0 {
 				logger.Info("queue: recovered unfinished turns", slog.Int("count", n))
@@ -867,22 +874,7 @@ func (a turnStoreAdapter) LoadUnfinished(ctx context.Context) ([]queue.Item, err
 	}
 	out := make([]queue.Item, 0, len(turns))
 	for _, t := range turns {
-		out = append(out, queue.Item{
-			ID:               t.ID,
-			Source:           t.Source,
-			SourceID:         t.SourceID,
-			Attempts:         t.Attempts,
-			PlaceholderMsgID: t.PlaceholderMsgID,
-			ReplyMsgID:       t.ReplyMsgID,
-			ChatID:           t.ChatID,
-			MessageID:        int(t.TGMessageID),
-			ThreadID:         t.ThreadID,
-			Folder:           t.ChatFolder,
-			IsOwner:          t.IsOwner,
-			Text:             t.Text,
-			FilePath:         t.FilePath,
-			IsVoice:          t.IsVoice,
-		})
+		out = append(out, turnToItem(t))
 	}
 	return out, nil
 }
