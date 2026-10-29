@@ -410,6 +410,7 @@ func run() error {
 		control.RegisterIsolationCommands(router, control.IsolationActions{Status: groupManager.Status, Prepare: groupAction(st, agentRunner, groupManager.Prepare), Enable: groupAction(st, agentRunner, groupManager.Enable), Disable: groupManager.Disable})
 	}
 
+	control.RegisterTriggerCommand(router, st)
 	control.RegisterWhoami(router, cfg.OwnerChatID)
 	control.RegisterVoiceCommand(router, telegram.SetReplyMode)
 	control.RegisterLogsCommand(router, func(level, subsystem string, limit int) (string, error) {

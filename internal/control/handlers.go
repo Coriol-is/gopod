@@ -74,6 +74,9 @@ func RegisterWhoami(r *Router, ownerChatID int64) {
 			} else {
 				sb.WriteString("owner: no\n")
 			}
+			if cmd.Caller.IsGroupOwner {
+				sb.WriteString("group_owner: yes (this group only)\n")
+			}
 			return Response{Text: sb.String()}, nil
 		})
 }

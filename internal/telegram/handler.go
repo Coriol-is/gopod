@@ -256,6 +256,7 @@ func (b *Bot) enqueueTurn(ctx context.Context, m *models.Message, rc store.Regis
 	// What the message points at (reply, quote, forward) goes above it,
 	// so "explain this" in reply to an answer is about that answer.
 	text = withInboundContext(m, text)
+	text = b.withGroupNote(ctx, m, rc, text)
 
 	item := queue.Item{
 		ChatID:    m.Chat.ID,

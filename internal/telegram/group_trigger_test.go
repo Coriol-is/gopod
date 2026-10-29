@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -245,4 +246,22 @@ func apiCallCount(fake *fakeTelegram) int {
 
 func forwardedOrigin() *models.MessageOrigin {
 	return &models.MessageOrigin{Type: models.MessageOriginTypeUser, MessageOriginUser: &models.MessageOriginUser{SenderUser: models.User{ID: streamChat}}}
+}
+
+func TestGroupTurnsCarryTheHostTriggerLineAndPrivateTurnsDoNot(t *testing.T) {
+	f := triggerFixture(t, store.TriggerOwnerMention)
+	f.handle(groupMsg(streamChat, "from the owner"))
+	if it := f.next(t); !strings.HasPrefix(it.Text, "[gopod group: trigger=owner+mention; sender=owner]\n\n") || !strings.HasSuffix(it.Text, "from the owner") {
+		t.Fatalf("owner turn text %q", it.Text)
+	}
+	m := groupMsg(trigOther, "hi @"+trigBotName)
+	m.Entities = []models.MessageEntity{{Type: models.MessageEntityTypeMention, Offset: 3, Length: len(trigBotName) + 1}}
+	f.handle(m)
+	if it := f.next(t); !strings.HasPrefix(it.Text, "[gopod group: trigger=owner+mention; sender=member]") {
+		t.Fatalf("member turn text %q", it.Text)
+	}
+	f.handle(&models.Message{ID: 1, Chat: models.Chat{ID: streamChat, Type: models.ChatTypePrivate}, From: &models.User{ID: streamChat}, Text: "private"})
+	if it := f.next(t); strings.Contains(it.Text, "[gopod group") {
+		t.Fatalf("private turn got a group line: %q", it.Text)
+	}
 }

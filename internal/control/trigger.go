@@ -11,6 +11,8 @@ import (
 	"github.com/Coriol-is/gopod/internal/store"
 )
 
+const triggerUnavailable = "Trigger setting unavailable."
+
 const triggerUsage = "Usage: /trigger [owner|mention|owner+mention|all]"
 
 // triggerHelp explains what each mode answers and what gopod cannot change.
@@ -57,7 +59,7 @@ func RegisterTriggerCommand(r *Router, st *store.Store) {
 				return Response{Code: 1, Text: "This group is not registered."}, nil
 			}
 			if err != nil {
-				return Response{Code: 1, Text: "Trigger setting unavailable."}, fmt.Errorf("trigger: %w", err)
+				return Response{Code: 1, Text: triggerUnavailable}, fmt.Errorf("trigger: %w", err)
 			}
 			if len(rest) == 0 {
 				return showTrigger(ctx, st, jid)
@@ -67,7 +69,7 @@ func RegisterTriggerCommand(r *Router, st *store.Store) {
 				return Response{Code: 1, Text: triggerUsage}, nil
 			}
 			if err := st.SetGroupTrigger(ctx, jid, mode, time.Now().UnixMilli()); err != nil {
-				return Response{Code: 1, Text: "Trigger setting unavailable."}, fmt.Errorf("trigger set: %w", err)
+				return Response{Code: 1, Text: triggerUnavailable}, fmt.Errorf("trigger set: %w", err)
 			}
 			return Response{Text: fmt.Sprintf("Trigger mode: %s.", mode), Data: map[string]any{"jid": jid, "mode": string(mode)}}, nil
 		})
@@ -76,7 +78,7 @@ func RegisterTriggerCommand(r *Router, st *store.Store) {
 func showTrigger(ctx context.Context, st *store.Store, jid string) (Response, error) {
 	mode, err := st.GroupTrigger(ctx, jid)
 	if err != nil {
-		return Response{Code: 1, Text: "Trigger setting unavailable."}, fmt.Errorf("trigger show: %w", err)
+		return Response{Code: 1, Text: triggerUnavailable}, fmt.Errorf("trigger show: %w", err)
 	}
 	return Response{
 		Text: fmt.Sprintf("Trigger mode: %s\n\n%s\n\n%s", mode, triggerUsage, triggerHelp),

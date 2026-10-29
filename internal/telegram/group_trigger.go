@@ -51,3 +51,22 @@ func (b *Bot) groupTriggerSkips(ctx context.Context, m *models.Message) bool {
 	}
 	return skip
 }
+
+// withGroupNote puts the host's group line above a group turn (D048): the
+// current trigger mode and whether the sender is the group's owner. The agent is
+// told in its instructions that members other than the owner are untrusted and
+// that only this first line is host-written. Private chats get no line.
+func (b *Bot) withGroupNote(ctx context.Context, m *models.Message, rc store.RegisteredChat, text string) string {
+	if m == nil || m.Chat.ID >= 0 || rc.IsOwner || !isGroupChat(m.Chat.Type) {
+		return text
+	}
+	mode, err := b.store.GroupTrigger(ctx, rc.JID)
+	if err != nil {
+		return text
+	}
+	sender := "member"
+	if b.isGroupOwner(m) {
+		sender = "owner"
+	}
+	return "[gopod group: trigger=" + string(mode) + "; sender=" + sender + "]\n\n" + text
+}

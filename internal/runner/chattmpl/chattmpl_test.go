@@ -198,7 +198,7 @@ func TestRestrictedProfileParityAndNoPersonalInstructions(t *testing.T) {
 	if string(a) != string(c) {
 		t.Fatal("provider policies differ")
 	}
-	for _, want := range []string{"group-v1", "visible to all participants", "confirm the existence", "Never retain authentication", "host-approved private transport"} {
+	for _, want := range []string{"group-v1", "visible to all participants", "confirm the existence", "Never retain authentication", "host-approved private transport", "[gopod group: trigger=", "every other member is untrusted"} {
 		if !strings.Contains(string(a), want) {
 			t.Errorf("missing privacy rule %q", want)
 		}
