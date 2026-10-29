@@ -145,7 +145,26 @@ exemption exists: pinned Codex leaves per-process alias symlinks at exactly
 after every run (even `--version`, and when killed), so only those entries in the
 native tree may be symlinks; they are never followed and Codex's own janitor
 removes stale ones. Any other symlink, including a different name or depth under
-`tmp/arg0`, still fails closed. Self-healing: in the native and workspace trees (writable by untrusted or
+`tmp/arg0`, still fails closed. Review hardening: the walk uses directory file descriptors only (root opened
+`O_NOFOLLOW|O_DIRECTORY`, children via `fstatat(AT_SYMLINK_NOFOLLOW)` and
+`openat(O_NOFOLLOW)` on the verified parent), so a swapped root or subdirectory
+fails closed. An arg0 alias is tolerated only if its target is a cleaned absolute
+path to a `codex` binary under `/usr/local/lib/node_modules/@openai/` (the
+Dockerfile's global install prefix; the exact vendor path is not verified on the
+Pi, and a mismatch only means the alias is removed and Codex recreates it).
+Healing is performed only by `Start`, under the namespace lock after reconcile; `Authorize`
+(called per message, without the lock, possibly while a container is live) is
+check-only: healable entries are admitted untouched. ENOENT during a heal counts as
+already healed, so concurrent walkers never refuse each other.
+Workspace symlinks: host consumers of the workspace were audited. Uploads are
+imported with `O_NOFOLLOW`, tool state is exported/hydrated as canonical tar
+inside the tool container (links, hardlinks and special files are rejected), and
+backups do not follow links. But `internal/telegram/media.go` writes downloaded media into
+the host chat workspace by path, so a planted `uploads` symlink would redirect a
+host write. Choice: keep healing workspace symlinks (the group's own tool links such
+as `node_modules/.bin` never reach the host workspace, since canonical archives
+refuse them anyway); a Warn log is emitted for every removal.
+Self-healing: in the native and workspace trees (writable by untrusted or
 semi-trusted code) a planted symlink or special file outside those aliases is not a
 reason to refuse the group. The host `Lstat`s it, unlinks exactly that entry with
 `unlinkat` on the already verified parent directory handle (never following,

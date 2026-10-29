@@ -37,6 +37,12 @@ approved queue, [proposal registry](proposals/README.md) for CP status and
   parent fd (no follow, no recursion), warned and counted, then admitted; only a failed removal
   (`heal`) or a bytes/files/depth/walk violation refuses. Policy tree never heals; owner-private
   note not implemented (log only). `/login`, control confirm and login handoff untouched.
+- **Review fixes (independent review of 24958a8):** healing moved out of `Authorize` (check-only,
+  admits healable entries untouched) into `Start` under the namespace lock after reconcile; ENOENT
+  counts as healed; classification/unlink use the verified parent fd (`fstatat`/`openat O_NOFOLLOW`)
+  and the root is opened `O_NOFOLLOW`; arg0 aliases must point at a `codex` binary under the
+  image's npm prefix (exact path unverified on the Pi). Workspace symlink healing kept because
+  `telegram/media.go` writes into the host workspace by path; see ISOLATION.md for the audit.
 - **Boundary (strict part):** no-follow rooted walk (Lstat + same-inode check on every directory
   open); the only symlinks tolerated are the four exact alias names at exactly depth 5 under
   `codex/tmp/arg0/codex-arg0<id>/`, native tree only, never followed. Claude native state may leave

@@ -432,3 +432,108 @@ func TestTreeBudgetHealStillEnforcesLimits(t *testing.T) {
 	p, _ := healed(treePolicy{Label: "t", Bytes: 1 << 20, Files: 3, heal: true})
 	wantReason(t, privateTreeBudget(context.Background(), root, p), TreeFiles)
 }
+
+func TestTreeBudgetConcurrentWalkersBothAdmit(t *testing.T) {
+	for round := 0; round < 20; round++ {
+		root := t.TempDir()
+		if err := os.Symlink("/etc", filepath.Join(root, "planted")); err != nil {
+			t.Fatal(err)
+		}
+		var wg sync.WaitGroup
+		errs := make([]error, 4)
+		for i := range errs {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				errs[i] = privateTreeBudget(context.Background(), root, nativeTreePolicy)
+			}()
+		}
+		wg.Wait()
+		for _, err := range errs {
+			if err != nil {
+				t.Fatalf("concurrent walker refused: %v", err)
+			}
+		}
+	}
+}
+
+func TestCheckOnlyPolicyNeverMutates(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Symlink("/etc", filepath.Join(root, "link")); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Mkfifo(filepath.Join(root, "pipe"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m := &Manager{}
+	if err := m.checkTree(context.Background(), root, workspaceCheckPolicy); err != nil {
+		t.Fatalf("healable entries must be admitted by the predicate: %v", err)
+	}
+	for _, n := range []string{"link", "pipe"} {
+		if _, err := os.Lstat(filepath.Join(root, n)); err != nil {
+			t.Fatalf("check-only walk removed %s", n)
+		}
+	}
+	if err := m.checkTree(context.Background(), root, workspaceTreePolicy); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(filepath.Join(root, "link")); !os.IsNotExist(err) {
+		t.Fatal("locked start did not heal")
+	}
+}
+
+// Heal belongs to Start under the namespace lock, never to the Authorize predicate.
+func TestAuthorizeUsesCheckOnlyPolicy(t *testing.T) {
+	src, err := os.ReadFile("manager.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(src)
+	start := strings.Index(text, "func (m *Manager) Authorize(")
+	end := strings.Index(text, "func (m *Manager) Start(")
+	if start < 0 || end < start {
+		t.Fatal("manager.go layout changed")
+	}
+	auth := text[start:end]
+	if !strings.Contains(auth, "workspaceCheckPolicy") || strings.Contains(auth, "workspaceTreePolicy") || strings.Contains(auth, "checkTrees") {
+		t.Fatal("Authorize must use only the check-only workspace policy")
+	}
+	lock := strings.Index(text[end:], "m.lock(ctx")
+	trees := strings.Index(text[end:], "m.checkTrees(")
+	reconcile := strings.Index(text[end:], "m.reconcile(")
+	if lock < 0 || trees < lock || trees < reconcile {
+		t.Fatal("healing tree check must run after the namespace lock and reconcile")
+	}
+}
+
+func TestTreeBudgetRejectsSymlinkedRoot(t *testing.T) {
+	real := t.TempDir()
+	mustWrite(t, filepath.Join(real, "f"), 1)
+	link := filepath.Join(t.TempDir(), "native")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	wantReason(t, privateTreeBudget(context.Background(), link, nativeTreePolicy), TreeSymlink)
+}
+
+func TestTreeBudgetArg0AliasTargetMustBeCodexBinary(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "codex", "tmp", "arg0", "codex-arg0AbC123")
+	mustWrite(t, filepath.Join(dir, ".lock"), 0)
+	for name, target := range map[string]string{
+		"apply_patch":         "/etc/passwd",
+		"applypatch":          "../../codex",
+		"codex-linux-sandbox": "/usr/local/lib/node_modules/@openai/../../../../etc/codex",
+	} {
+		if err := os.Symlink(target, filepath.Join(dir, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	strict := nativeTreePolicy
+	strict.heal = false
+	wantReason(t, privateTreeBudget(context.Background(), root, strict), TreeSymlink)
+	p, got := healed(nativeTreePolicy)
+	if err := privateTreeBudget(context.Background(), root, p); err != nil || len(*got) != 3 {
+		t.Fatalf("bad-target aliases not healed: %v %v", err, *got)
+	}
+}

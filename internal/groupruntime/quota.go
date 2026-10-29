@@ -2,8 +2,8 @@ package groupruntime
 
 import (
 	"context"
+	"errors"
 	"io"
-	"io/fs"
 	"os"
 	"path"
 	"regexp"
@@ -64,8 +64,9 @@ type treePolicy struct {
 	Bytes        int64
 	Files        int
 	heal         bool
+	checkOnly    bool
 	onHeal       func(reason TreeReason, class string)
-	allowSymlink func(rel string) bool
+	allowSymlink func(rel, target string) bool
 	afterList    func(rel string)
 	beforeHeal   func(rel string)
 }
@@ -81,7 +82,10 @@ var (
 	// binary (no file tools), so the alias entries are the one tolerated symlink.
 	nativeTreePolicy    = treePolicy{Label: "native", Bytes: 512 << 20, Files: 20000, heal: true, allowSymlink: codexArg0AliasEntry}
 	workspaceTreePolicy = treePolicy{Label: "workspace", Bytes: 256 << 20, Files: 5000, heal: true}
-	policyTreePolicy    = treePolicy{Label: "policy", Bytes: 8 << 20, Files: 128}
+	// Authorize is a predicate that runs without the namespace lock and while
+	// an agent may be live: it never mutates, healable entries are admitted.
+	workspaceCheckPolicy = treePolicy{Label: "workspace", Bytes: 256 << 20, Files: 5000, heal: true, checkOnly: true}
+	policyTreePolicy     = treePolicy{Label: "policy", Bytes: 8 << 20, Files: 128}
 )
 
 var (
@@ -90,29 +94,46 @@ var (
 	classUnsafeRune = regexp.MustCompile(`[^A-Za-z0-9._-]`)
 )
 
-// codexArg0AliasEntry matches exactly codex/tmp/arg0/codex-arg0XXXX/<alias>.
-func codexArg0AliasEntry(rel string) bool {
+// codexInstallPrefix is where container/group/Dockerfile.codex installs the
+// pinned CLI (`npm install -g` under the node image's /usr/local prefix).
+// Codex points its aliases at its own resolved executable inside this prefix.
+const codexInstallPrefix = "/usr/local/lib/node_modules/@openai/"
+
+// codexArg0AliasEntry matches exactly codex/tmp/arg0/codex-arg0XXXX/<alias>
+// whose target is a cleaned absolute path to a `codex` binary in the install
+// prefix. Anything else is an ordinary planted symlink.
+func codexArg0AliasEntry(rel, target string) bool {
 	parts := strings.Split(rel, "/")
-	return len(parts) == 5 && parts[0] == "codex" && parts[1] == "tmp" && parts[2] == "arg0" &&
-		codexArg0Dir.MatchString(parts[3]) && codexArg0Names[parts[4]]
+	if len(parts) != 5 || parts[0] != "codex" || parts[1] != "tmp" || parts[2] != "arg0" ||
+		!codexArg0Dir.MatchString(parts[3]) || !codexArg0Names[parts[4]] {
+		return false
+	}
+	return path.Clean(target) == target && strings.HasPrefix(target, codexInstallPrefix) && path.Base(target) == "codex"
 }
 
-// privateTreeBudget walks a host-owned tree through a rooted, no-follow
-// traversal. Native clients are trusted pinned executables with no file/code
-// tools; user commands run elsewhere with stricter tmpfs/RLIMIT bounds.
+// privateTreeBudget walks a host-owned tree with directory file descriptors
+// only: the root is opened O_NOFOLLOW|O_DIRECTORY, every child is examined with
+// fstatat(AT_SYMLINK_NOFOLLOW) on its verified parent handle and every
+// subdirectory is opened with openat(O_NOFOLLOW). Nothing is resolved by path.
+// Native clients are trusted pinned executables with no file/code tools; user
+// commands run elsewhere with stricter tmpfs/RLIMIT bounds.
 func privateTreeBudget(ctx context.Context, dir string, p treePolicy) error {
-	root, err := os.OpenRoot(dir)
+	fd, err := unix.Open(dir, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if err != nil {
-		return &TreeBudgetError{Tree: p.Label, Reason: TreeWalk, Class: "root"}
+		reason := TreeWalk
+		if errors.Is(err, unix.ELOOP) || errors.Is(err, unix.ENOTDIR) {
+			reason = TreeSymlink
+		}
+		return &TreeBudgetError{Tree: p.Label, Reason: reason, Class: "root"}
 	}
+	root := os.NewFile(uintptr(fd), "tree")
 	defer root.Close()
-	w := &treeWalker{ctx: ctx, root: root, p: p}
-	return w.dir("", 0)
+	w := &treeWalker{ctx: ctx, p: p}
+	return w.dir(root, "", 0)
 }
 
 type treeWalker struct {
 	ctx     context.Context
-	root    *os.Root
 	p       treePolicy
 	bytes   int64
 	files   int
@@ -123,48 +144,26 @@ func (w *treeWalker) fail(reason TreeReason, rel string) error {
 	return &TreeBudgetError{Tree: w.p.Label, Reason: reason, Class: pathClass(rel)}
 }
 
-// openDir opens rel only if it is a real directory right now: Lstat rejects a
-// symlink, and the opened handle must be the same inode (closes the swap race).
-func (w *treeWalker) openDir(rel string) (*os.File, error) {
-	name := rel
-	if name == "" {
-		name = "."
-	}
-	before, err := w.root.Lstat(name)
-	if err != nil {
+func (w *treeWalker) openChild(parent *os.File, name, rel string) (*os.File, error) {
+	fd, err := unix.Openat(int(parent.Fd()), name, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	switch {
+	case err == nil:
+		return os.NewFile(uintptr(fd), "tree"), nil
+	case errors.Is(err, unix.ELOOP) || errors.Is(err, unix.ENOTDIR):
+		return nil, w.fail(TreeSymlink, rel)
+	default:
 		return nil, w.fail(TreeWalk, rel)
 	}
-	if before.Mode()&os.ModeSymlink != 0 {
-		return nil, w.fail(TreeSymlink, rel)
-	}
-	if !before.IsDir() {
-		return nil, w.fail(TreeSpecialFile, rel)
-	}
-	f, err := w.root.Open(name)
-	if err != nil {
-		return nil, w.fail(TreeWalk, rel)
-	}
-	after, err := f.Stat()
-	if err != nil || !os.SameFile(before, after) {
-		_ = f.Close()
-		return nil, w.fail(TreeSymlink, rel)
-	}
-	return f, nil
 }
 
-func (w *treeWalker) dir(rel string, depth int) error {
-	f, err := w.openDir(rel)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
+func (w *treeWalker) dir(f *os.File, rel string, depth int) error {
 	for {
 		batch, rerr := f.ReadDir(treeBatch)
 		if w.p.afterList != nil && len(batch) > 0 {
 			w.p.afterList(rel)
 		}
 		for _, e := range batch {
-			if err := w.entry(f, path.Join(rel, e.Name()), depth+1); err != nil {
+			if err := w.entry(f, e.Name(), path.Join(rel, e.Name()), depth+1); err != nil {
 				return err
 			}
 		}
@@ -177,7 +176,7 @@ func (w *treeWalker) dir(rel string, depth int) error {
 	}
 }
 
-func (w *treeWalker) entry(parent *os.File, rel string, depth int) error {
+func (w *treeWalker) entry(parent *os.File, name, rel string, depth int) error {
 	if w.ctx.Err() != nil {
 		return w.fail(TreeWalk, rel)
 	}
@@ -190,34 +189,56 @@ func (w *treeWalker) entry(parent *os.File, rel string, depth int) error {
 	if w.entries > 2*w.p.Files+maxTreeDepth {
 		return w.fail(TreeFiles, rel)
 	}
-	info, err := w.root.Lstat(rel)
-	if err != nil {
+	var st unix.Stat_t
+	if err := unix.Fstatat(int(parent.Fd()), name, &st, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		if errors.Is(err, unix.ENOENT) {
+			return nil // removed (healed) by another walker or the owner
+		}
 		return w.fail(TreeWalk, rel)
 	}
-	return w.classify(parent, rel, depth, info)
+	switch st.Mode & unix.S_IFMT {
+	case unix.S_IFLNK:
+		if w.aliasAllowed(parent, name, rel) {
+			return w.count(rel, 0)
+		}
+		return w.heal(parent, name, rel, TreeSymlink)
+	case unix.S_IFDIR:
+		child, err := w.openChild(parent, name, rel)
+		if err != nil {
+			return err
+		}
+		defer child.Close()
+		return w.dir(child, rel, depth)
+	case unix.S_IFREG:
+		return w.count(rel, st.Size)
+	default:
+		return w.heal(parent, name, rel, TreeSpecialFile)
+	}
 }
 
-func (w *treeWalker) classify(parent *os.File, rel string, depth int, info fs.FileInfo) error {
-	mode := info.Mode()
-	switch {
-	case mode&os.ModeSymlink != 0:
-		if w.p.allowSymlink == nil || !w.p.allowSymlink(rel) {
-			return w.heal(parent, rel, TreeSymlink)
-		}
-		return w.count(rel, 0)
-	case mode.IsDir():
-		return w.dir(rel, depth)
-	case mode.IsRegular():
-		return w.count(rel, info.Size())
-	default:
-		return w.heal(parent, rel, TreeSpecialFile)
+// aliasAllowed accepts a symlink only when the policy names its exact path and
+// its target is acceptable; the link is read, never followed.
+func (w *treeWalker) aliasAllowed(parent *os.File, name, rel string) bool {
+	if w.p.allowSymlink == nil {
+		return false
 	}
+	buf := make([]byte, 1024)
+	n, err := unix.Readlinkat(int(parent.Fd()), name, buf)
+	if err != nil || n <= 0 || n >= len(buf) {
+		return false
+	}
+	return w.p.allowSymlink(rel, string(buf[:n]))
 }
 
 // heal unlinks one planted symlink or special file through the verified parent
 // directory handle: the final component is never followed and a directory
-// swapped in meanwhile makes unlinkat fail (EISDIR), which refuses admission.
-func (w *treeWalker) heal(parent *os.File, rel string, reason TreeReason) error {
+// swapped in meanwhile makes the step fail (refusing admission). With
+// checkOnly (authorization predicate) nothing is mutated: the entry is
+// tolerated and counted, to be removed by the next locked Start.
+func (w *treeWalker) heal(parent *os.File, name, rel string, reason TreeReason) error {
+	if w.p.checkOnly && w.p.heal {
+		return w.count(rel, 0)
+	}
 	if !w.p.heal {
 		return w.fail(reason, rel)
 	}
@@ -225,21 +246,28 @@ func (w *treeWalker) heal(parent *os.File, rel string, reason TreeReason) error 
 		w.p.beforeHeal(rel)
 	}
 	fd := int(parent.Fd())
-	name := path.Base(rel)
 	var st unix.Stat_t
 	if err := unix.Fstatat(fd, name, &st, unix.AT_SYMLINK_NOFOLLOW); err != nil {
-		return w.fail(TreeHeal, rel)
+		return w.healResult(err, rel)
 	}
 	if st.Mode&unix.S_IFMT == unix.S_IFDIR {
 		return w.fail(TreeHeal, rel)
 	}
 	if err := unix.Unlinkat(fd, name, 0); err != nil {
-		return w.fail(TreeHeal, rel)
+		return w.healResult(err, rel)
 	}
 	if w.p.onHeal != nil {
 		w.p.onHeal(reason, pathClass(rel))
 	}
 	return nil
+}
+
+// healResult treats ENOENT as already healed by a concurrent walker.
+func (w *treeWalker) healResult(err error, rel string) error {
+	if errors.Is(err, unix.ENOENT) {
+		return nil
+	}
+	return w.fail(TreeHeal, rel)
 }
 
 func (w *treeWalker) count(rel string, size int64) error {

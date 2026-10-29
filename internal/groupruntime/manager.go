@@ -102,7 +102,7 @@ func (m *Manager) Authorize(ctx context.Context, c store.RegisteredChat) error {
 		return ErrUnavailable
 	}
 
-	return m.checkTree(ctx, paths.Workspace, workspaceTreePolicy)
+	return m.checkTree(ctx, paths.Workspace, workspaceCheckPolicy)
 }
 func (m *Manager) Start(ctx context.Context, c store.RegisteredChat, base runner.AgentProvider, thread int, selectedModel string) (id string, prov runner.AgentProvider, release func(), retErr error) {
 	stage := "admission"
