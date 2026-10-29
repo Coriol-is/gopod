@@ -215,7 +215,7 @@ func (r *Runner) RunTaskStream(ctx context.Context, req TaskRunRequest) (*AgentS
 	}
 
 	tctx, cancel := context.WithTimeout(ctx, timeout)
-	handle, err := r.ex.ExecStream(tctx, id, wrapWithPidFile(pidFile, cmd), env)
+	handle, err := r.ex.ExecStream(withExitGrace(tctx), id, wrapWithPidFile(pidFile, cmd), env)
 	if err != nil {
 		cancel()
 		// The marker is committed and exec creation may have reached the daemon:

@@ -17,10 +17,11 @@ import (
 // execDaemon is a fake Docker daemon speaking just enough of the exec API to
 // drive the REAL Docker.ExecStream loop (no handle fields are set by the test).
 type execDaemon struct {
-	t       *testing.T
-	running atomic.Bool
-	exit    atomic.Int64
-	conn    chan io.Closer
+	t        *testing.T
+	running  atomic.Bool
+	exit     atomic.Int64
+	conn     chan io.Closer
+	inspects atomic.Int64
 }
 
 func newExecDaemon(t *testing.T) (*Docker, *execDaemon) {
@@ -42,6 +43,7 @@ func newExecDaemon(t *testing.T) (*Docker, *execDaemon) {
 			_ = rw.Flush()
 			d.conn <- conn
 		case "/exec/e1/json":
+			d.inspects.Add(1)
 			w.Header().Set("Content-Type", "application/json")
 			fmt.Fprintf(w, `{"ID":"e1","Running":%v,"ExitCode":%d}`, d.running.Load(), d.exit.Load())
 		default:
@@ -83,7 +85,7 @@ func waitDone(t *testing.T, h *StreamHandle) error {
 func TestExecStreamObservesExitAfterContextEnds(t *testing.T) {
 	dk, daemon := newExecDaemon(t)
 	ctx, cancel := context.WithCancel(context.Background())
-	h, err := dk.ExecStream(ctx, "c1", []string{"sleep"}, nil)
+	h, err := dk.ExecStream(withExitGrace(ctx), "c1", []string{"sleep"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,5 +135,35 @@ func TestExecStreamNaturalExitStillObserved(t *testing.T) {
 	}
 	if code, ok := h.ExitObserved(); !ok || code != 0 {
 		t.Fatalf("exit = %d %v", code, ok)
+	}
+}
+
+// Default (interactive/foreground) streams keep the original cancel behavior:
+// the wait ends with the context, no detached polling, no exit evidence, and the
+// daemon is not asked about the exec again afterwards.
+func TestExecStreamDefaultDoesNotPollAfterCancel(t *testing.T) {
+	dk, daemon := newExecDaemon(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	h, err := dk.ExecStream(ctx, "c1", []string{"sleep"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	(<-daemon.conn).Close() // the stream ends; the exec is still reported running
+	go io.Copy(io.Discard, h.Stdout)
+	go io.Copy(io.Discard, h.Stderr)
+	select {
+	case <-h.Done:
+	case <-time.After(1 * time.Second):
+		t.Fatal("legacy stream kept waiting after cancel (detached polling is not opt-in)")
+	}
+	polls := daemon.inspects.Load()
+	daemon.running.Store(false) // the kill lands later
+	time.Sleep(200 * time.Millisecond)
+	if _, ok := h.ExitObserved(); ok {
+		t.Fatal("legacy stream recorded an exit after cancel")
+	}
+	if daemon.inspects.Load() != polls {
+		t.Fatal("legacy stream kept polling the daemon after cancel")
 	}
 }

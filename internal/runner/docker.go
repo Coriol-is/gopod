@@ -290,9 +290,19 @@ type StreamHandle struct {
 }
 
 // execExitGrace bounds how long the exit report is polled for after the exec
-// context ended (timeout or cancel) without StreamHandle.Close: the kill that
+// context ended (timeout or cancel) without StreamHandle.Close, for streams
+// that opted in with withExitGrace: the kill that
 // follows is only proven by the daemon reporting the exec finished.
 const execExitGrace = 10 * time.Second
+
+type exitGraceKey struct{}
+
+// withExitGrace opts one ExecStream into the post-cancel exit polling. Only
+// managed task execs use it; interactive and foreground streams keep the
+// original behavior and timing: the wait ends the moment their context does.
+func withExitGrace(ctx context.Context) context.Context {
+	return context.WithValue(ctx, exitGraceKey{}, struct{}{})
+}
 
 // execExit records an exit the daemon reported (ExecInspect Running=false).
 // A closed attachment or a cancelled context never sets it.
@@ -395,8 +405,9 @@ func (d *Docker) ExecStream(
 		// succeeded is still observed; Close abandons the wait as before.
 		inspectCtx := execCtx
 		var graceDeadline time.Time
+		grace := execCtx.Value(exitGraceKey{}) != nil // managed task execs only
 		for {
-			if execCtx.Err() != nil && inspectCtx == execCtx {
+			if grace && execCtx.Err() != nil && inspectCtx == execCtx {
 				if handle.closing.Load() {
 					close(done)
 					return
@@ -432,6 +443,10 @@ func (d *Docker) ExecStream(
 			if graceDeadline.IsZero() {
 				select {
 				case <-execCtx.Done():
+					if !grace {
+						close(done) // original behavior: the wait ends with the context
+						return
+					}
 				case <-wait:
 				}
 			} else {
