@@ -1493,3 +1493,5 @@ settles the attempt cancelled only through the controller's own refused marker.
 a possibly started attempt blocks its folder and one global slot until a local exit or an operator
 reconciles it. Orphaned `running` attempts without an unfinished turn row are listed as holds but
 only an operator release (after an `execution_unknown` transition) clears them.
+
+Shutdown classification: a shutdown that races a handler return counts as an interruption only when the handler also returned an error. A nil return with host-observed exit evidence is recorded as exited even if shutdown raced it, so a handler that swallows cancellation and returns nil after proving exit is recorded as completed. A handler that wants an interruption recorded must return the context error.
