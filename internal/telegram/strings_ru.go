@@ -58,6 +58,8 @@ const (
 	errTextAgentFailed = "Агент не смог ответить: запуск завершился ошибкой. Можно повторить запрос."
 	errTextBusy        = "Агент сейчас занят. Повторите запрос чуть позже."
 	errTextDelivery    = "Не удалось доставить ответ. Можно повторить запрос."
+	// Shown in groups when the agent runtime refuses a turn; it names no cause.
+	errTextGroupUnavailable = "Агент в этом чате сейчас недоступен."
 )
 
 // Reply action row under the newest reply (keyboard.go, replyactions.go).

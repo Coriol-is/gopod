@@ -25,12 +25,14 @@ import (
 type errKind int
 
 const (
-	errAuthExpired errKind = iota // the agent's login session expired
-	errNotLoggedIn                // the agent container was never logged in
-	errAgentFailed                // the run crashed, timed out or failed otherwise
-	errBusy                       // no agent slot; reserved: the D026 gate waits without a timeout today
-	errUsageLimit                 // provider allowance exhausted
-	errDelivery                   // the reply could not be delivered
+	errAuthExpired      errKind = iota // the agent's login session expired
+	errNotLoggedIn                     // the agent container was never logged in
+	errAgentFailed                     // the run crashed, timed out or failed otherwise
+	errBusy                            // no agent slot; reserved: the D026 gate waits without a timeout today
+	errUsageLimit                      // provider allowance exhausted
+	errDelivery                        // the reply could not be delivered
+	errGroupUnavailable                // a group's agent runtime refused the turn (D047)
+	errGroupOwnerNotice                // private owner notice about such a refusal
 )
 
 func (k errKind) String() string {
@@ -45,6 +47,10 @@ func (k errKind) String() string {
 		return "usage_limit"
 	case errDelivery:
 		return "delivery"
+	case errGroupUnavailable:
+		return "group_unavailable"
+	case errGroupOwnerNotice:
+		return "group_owner_notice"
 	}
 	return "agent_failed"
 }
@@ -59,6 +65,24 @@ type errCooldownKey struct {
 	chat      int64
 	kind      errKind
 	quotaTurn int64 // quota notices are per failed turn, including the fallback attempt
+}
+
+// Group refusal notices are rarer than ordinary error replies: the group sees one
+// neutral line per groupNoticeCooldown, the owner one private notice per
+// ownerNoticeCooldown for the same group.
+const (
+	groupNoticeCooldown = 5 * time.Minute
+	ownerNoticeCooldown = 10 * time.Minute
+)
+
+func cooldownFor(kind errKind) time.Duration {
+	switch kind {
+	case errGroupUnavailable:
+		return groupNoticeCooldown
+	case errGroupOwnerNotice:
+		return ownerNoticeCooldown
+	}
+	return errCooldown
 }
 
 // errReply is one row of the error table: the text and the button.
@@ -98,6 +122,10 @@ func classifyErr(err error) errKind {
 func (b *Bot) replyError(ctx context.Context, item queue.Item, err error) {
 	kind := classifyErr(err)
 	b.turnStatus(item).Set(stError)
+	if item.ChatID < 0 && groupRefusal(err) {
+		b.replyGroupRefusal(ctx, item, kind, err)
+		return
+	}
 	if kind == errAuthExpired || kind == errNotLoggedIn {
 		b.log.Error("agent authentication unavailable", slog.String("chat_folder", item.Folder), slog.Int64("turn", item.ID), slog.String("kind", kind.String()))
 	} else {
@@ -145,14 +173,14 @@ func (b *Bot) errCooldownPass(chatID int64, kind errKind, quotaTurn int64) bool 
 	k := errCooldownKey{chat: chatID, kind: kind, quotaTurn: quotaTurn}
 	b.errMu.Lock()
 	defer b.errMu.Unlock()
-	if last, ok := b.errShown[k]; ok && now.Sub(last) < errCooldown {
+	if last, ok := b.errShown[k]; ok && now.Sub(last) < cooldownFor(kind) {
 		return false
 	}
 	if b.errShown == nil {
 		b.errShown = make(map[errCooldownKey]time.Time)
 	}
 	for key, at := range b.errShown {
-		if now.Sub(at) >= errCooldown {
+		if now.Sub(at) >= cooldownFor(key.kind) {
 			delete(b.errShown, key)
 		}
 	}
