@@ -176,6 +176,8 @@ func (b *Bot) callbackCaller(q cbQuery) control.Caller {
 		UserID:   q.UserID,
 		Source:   control.SourceTelegram,
 		IsOwner:  b.ownerChatID != 0 && q.ChatID == b.ownerChatID,
+		// Group-scoped identity only (D048): the user who pressed.
+		IsGroupOwner: b.isGroupOwnerUser(q.ChatKind, q.ChatID, q.UserID),
 	}
 }
 

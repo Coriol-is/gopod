@@ -38,6 +38,11 @@ const (
 	PermChatLocal
 	// PermOwnerOnly — only the owner chat, CLI, or authorized socket.
 	PermOwnerOnly
+	// PermGroupOwner — the owner in the owner's private chat or CLI, or the
+	// owner's own user id in a registered group (D048). Group scope only:
+	// it never grants anything PermOwnerOnly guards, and the handler must
+	// scope its effects to the calling group.
+	PermGroupOwner
 )
 
 // Caller describes the origin of a Command. Frontends populate this.
@@ -54,6 +59,11 @@ type Caller struct {
 	Username string // display name / @username
 	Source   Source
 	IsOwner  bool // computed by the frontend
+	// IsGroupOwner is set by the frontend when the message was sent in a
+	// group by the owner's own user id: not anonymous, not forwarded, not
+	// on behalf of a chat. It is group-scoped identity only (D048): it
+	// satisfies PermGroupOwner and never PermOwnerOnly.
+	IsGroupOwner bool
 }
 
 // Command is a frontend-agnostic request.
@@ -80,6 +90,12 @@ type Response struct {
 	// dispatches the Button's command through the Router; text
 	// frontends print them (FormatText). Optional.
 	Buttons [][]Button
+	// Private asks the frontend to deliver this response (a confirmation)
+	// to the owner's private chat instead of the chat the command came
+	// from, and to answer there with Ack (D048). Frontends that cannot
+	// do so must not show the buttons where the command was sent.
+	Private bool
+	Ack     string
 }
 
 // CodeConfirm is the Response.Code of a command that asks the caller
@@ -205,6 +221,7 @@ func (r *Router) lookup(cmd Command) (entry, Response, error) {
 			slog.String("perm", permString(e.perm)),
 			slog.Int64("chat_id", cmd.Caller.ChatID),
 			slog.Bool("is_owner", cmd.Caller.IsOwner),
+			slog.Bool("is_group_owner", cmd.Caller.IsGroupOwner),
 			slog.Bool("confirmed", cmd.Confirmed))
 		return entry{}, Response{Text: "Not authorized.", Code: 1}, ErrNotAuthorized
 	}
@@ -255,6 +272,8 @@ func (r *Router) checkPerm(perm Perm, caller Caller) bool {
 		return true // enforcement is handler discipline, not Router's job
 	case PermOwnerOnly:
 		return caller.IsOwner
+	case PermGroupOwner:
+		return caller.IsOwner || (caller.IsGroupOwner && caller.ChatID < 0)
 	default:
 		return false
 	}
@@ -268,6 +287,8 @@ func permString(p Perm) string {
 		return "chat_local"
 	case PermOwnerOnly:
 		return "owner_only"
+	case PermGroupOwner:
+		return "group_owner"
 	default:
 		return "unknown"
 	}

@@ -37,6 +37,9 @@ alongside [rich agent messages](2026-10-29-rich-agent-messages.md).
 6. **Scheduled tasks.** A task records the thread it was created in (or an explicit target) so its output can
    return there; today it returns to main. Needs a task-schema field, gated on the CP-004 managed-task work.
 
+## Owner decisions (2026-10-29)
+Scope for now: **only threads in the owner's private chat**. Group topics stay out of scope until the owner decides.
+
 ## Non-goals
 Groups and shared chats (closed by CP-020), creating or deleting topics (CP-016), cross-chat sends.
 

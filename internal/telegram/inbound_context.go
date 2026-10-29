@@ -33,6 +33,9 @@ type albumBuf struct {
 	msgs       []*models.Message
 	stop       func() bool
 	generation uint64
+	// matched: some item of the album passed the group trigger gate. The
+	// album is one turn or none (D048).
+	matched bool
 }
 
 // collectAlbum adds m, one item of an album, to its album, and
@@ -63,6 +66,7 @@ func (b *Bot) collectAlbum(ctx context.Context, m *models.Message) {
 		a.stop()
 	}
 	a.msgs = append(a.msgs, m)
+	a.matched = a.matched || !b.groupTriggerSkips(ctx, m)
 	a.generation++
 	generation := a.generation
 	a.stop = clock.AfterFunc(albumWindow, func() { b.flushAlbum(k, a, generation) })
@@ -86,6 +90,10 @@ func (b *Bot) flushAlbum(k albumKey, a *albumBuf, generation uint64) {
 	b.albumMu.Unlock()
 
 	defer b.albumDownloads.Done()
+	if !a.matched {
+		b.log.Debug("album outside trigger mode dropped", slog.Int("items", len(msgs)))
+		return
+	}
 	sort.Slice(msgs, func(i, j int) bool { return msgs[i].ID < msgs[j].ID })
 	b.enqueueAlbum(a.ctx, a.rc, msgs)
 }

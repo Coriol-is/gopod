@@ -41,6 +41,9 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 	// Reject known auth material before persistence or command dispatch. Private
 	// login/device-flow handling remains on its existing protected path.
 	if sharedSensitiveInput(m) {
+		if b.groupTriggerSkips(ctx, m) {
+			return // not addressed to the bot: dropped unstored, no notice
+		}
 		b.replyTo(ctx, m.Chat.ID, inboundThreadID(m), m.ID, "Authentication material cannot be processed in shared chats. Use the private chat instead.")
 		return
 	}
@@ -75,6 +78,12 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 	}
 
 	text := strings.TrimSpace(messageText(m))
+	// The group trigger gate (D048): a message the group's mode does not
+	// answer stays stored context and starts nothing.
+	// Albums are decided once per album, when it is flushed (inbound_context.go).
+	if m.MediaGroupID == "" && b.groupTriggerSkips(ctx, m) {
+		return
+	}
 	// thread is the private-chat topic the message came from; every
 	// answer to it below goes back into that topic.
 	thread := inboundThreadID(m)
@@ -82,7 +91,7 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 	// Host-wide speech credentials are personal services, not implicit group
 	// grants. Refuse before album collection, downloads or Whisper requests.
 	if sharedSpeechInput(m, b.ownerChatID) {
-		if _, ok := b.resolveRegistered(ctx, m); ok {
+		if _, ok := b.resolveRegistered(ctx, m); ok && !b.groupTriggerSkips(ctx, m) {
 			b.replyTo(ctx, m.Chat.ID, thread, m.ID, groupSpeechUnavailable)
 		}
 		return
@@ -248,6 +257,7 @@ func (b *Bot) enqueueTurn(ctx context.Context, m *models.Message, rc store.Regis
 	// What the message points at (reply, quote, forward) goes above it,
 	// so "explain this" in reply to an answer is about that answer.
 	text = withInboundContext(m, text)
+	text = b.withGroupNote(ctx, m, rc, text)
 
 	item := queue.Item{
 		ChatID:    m.Chat.ID,
@@ -307,7 +317,9 @@ func (b *Bot) dispatchSlash(ctx context.Context, m *models.Message, text string)
 			b.sendDiagnosticResponse(ctx, m, "Telegram diagnostics unavailable.")
 			return
 		}
-		b.replyText(ctx, m.Chat.ID, thread, "unknown command")
+		if !b.silentForMember(ctx, m) {
+			b.replyText(ctx, m.Chat.ID, thread, "unknown command")
+		}
 		return
 	}
 
@@ -324,6 +336,9 @@ func (b *Bot) dispatchSlash(ctx context.Context, m *models.Message, text string)
 
 	cmdName, ok := b.router.LookupBySlash(slash)
 	if !ok {
+		if b.silentForMember(ctx, m) {
+			return // a member's unknown command in a gated group gets no reply
+		}
 		b.replyText(ctx, m.Chat.ID, thread, "unknown command: /"+slash)
 		return
 	}
@@ -340,6 +355,8 @@ func (b *Bot) dispatchSlash(ctx context.Context, m *models.Message, text string)
 			Username:  senderDisplayName(m.From),
 			Source:    control.SourceTelegram,
 			IsOwner:   b.ownerChatID != 0 && m.Chat.ID == b.ownerChatID,
+			// Group-scoped identity only (D048).
+			IsGroupOwner: b.isGroupOwner(m),
 		},
 	}
 
@@ -358,6 +375,10 @@ func (b *Bot) dispatchSlash(ctx context.Context, m *models.Message, text string)
 			return
 		}
 		b.replyTo(ctx, m.Chat.ID, thread, m.ID, resp.Text)
+		return
+	}
+	if resp.Private {
+		b.sendOwnerConfirmation(ctx, m, thread, resp, status)
 		return
 	}
 	if resp.Code != 0 {

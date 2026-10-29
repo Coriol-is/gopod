@@ -56,6 +56,10 @@ func TestGroupUploadUsesProtectedWorkspaceWithoutLegacyAlias(t *testing.T) {
 	if err = f.b.store.RegisterChat(ctx, store.RegisteredChat{JID: "tg:-200", Folder: "old-group", AddedAt: 1}); err != nil {
 		t.Fatal(err)
 	}
+	// A group registered before D048 keeps answering every message.
+	if err = f.b.store.SetGroupTrigger(ctx, "tg:-200", store.TriggerAll, 1); err != nil {
+		t.Fatal(err)
+	}
 	group, _ := f.b.store.GetRegistered(ctx, "tg:-200")
 	migration, err := f.b.store.RotateGroupEpoch(ctx, group.JID, group.RegistrationRevision)
 	if err != nil {

@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"strings"
@@ -252,6 +253,10 @@ func (b *Bot) runLoginTarget(ctx context.Context, m *models.Message, thread int,
 
 	// Ensure container is running.
 	containerID, err := b.runner.Ensure(ctx, rc.Folder, tier, b.allowlist)
+	if err != nil && confirmedGroup && errors.Is(err, runner.ErrProfileUnavailable) {
+		b.groupLoginGuidance(ctx, m.Chat.ID, thread, rc)
+		return false
+	}
 	if err != nil {
 		b.loginFailed(ctx, m.Chat.ID, thread, rc.Folder, "ensure container", err)
 		return false

@@ -1733,3 +1733,55 @@ owner's remaining controls are `/register` (grant), `/isolation disable` (revoke
 the provider qualification. A production `group-runtime.json` needs no new keys
 (absent `AdmissionMode` means registered); stale `EnabledGroups` entries are harmless.
 
+## D048 — Group trigger modes, owner-in-group identity and group sign-in guidance
+
+**Date:** 2026-10-29
+**Status:** Accepted (owner decisions 2026-10-29; spec
+[group trigger and owner-in-group](superpowers/specs/2026-10-29-group-trigger-and-owner-in-group.md))
+
+**Context.** After D047 every message Telegram delivered in a registered group became an agent turn, the
+owner's own messages in a group were `owner: no` (ownership is by chat, D006), owner commands from a group
+were denied, and group `/login` ended in a generic failure.
+
+**Decision.**
+1. *Trigger mode per registered group:* `owner`, `mention`, `owner+mention`, `all`, stored in the new
+   `group_triggers` table, keyed by chat and bound to the registration's `namespace_id` (it survives epoch
+   rotation; a re-registration into a new namespace falls back to the default). A registration without a row
+   (every group registered before this change, including the existing one) behaves as `all`; a newly
+   registered group is seeded with `mention` in the same transaction as its registration. The gate runs in the
+   message handler before a turn is enqueued. A message that does not match is stored in the message history
+   (nothing reads that history back into a prompt today, so unaddressed messages cannot inject into the agent;
+   injecting history later needs its own decision) and is otherwise ignored: no turn, no model call, no quota
+   use, no notice. A command addressed to another bot (`/cmd@other`) is ignored in every mode. In the gated
+   modes a bare `/cmd` from a member is ignored (the owner's bare commands and `/cmd@thisbot` work) and a
+   member's unknown command gets no reply; `all` keeps today's behavior. An album is decided once, when it is
+   flushed: it is one turn if any item qualifies, else dropped. While the bot username is unknown (getMe has not
+   succeeded; it is resolved with a bounded retry before polling) the `mention` gate treats messages with a
+   mention entity or a reply to a bot as addressed. A registration lookup error fails closed. Private chats and
+   unregistered chats are untouched. `mention` means a `mention` entity naming
+   the bot username, a `text_mention` of the bot id, a command addressed to it, or a reply to one of its
+   messages; forwarded text never addresses the bot. `owner` answers only the owner's own messages
+   (strict). `/trigger [mode]` goes through `internal/control`; without an argument it shows the mode and
+   states that gopod never changes Telegram privacy mode or admin rights, so `all` and `owner` only work for
+   messages Telegram actually delivers.
+2. *Owner-in-group identity:* `message.From.ID == GOPOD_OWNER_CHAT_ID` in a registered group, never
+   `sender_chat` (anonymous admin, channel posts), forwarded messages or bots. It is carried as
+   `Caller.IsGroupOwner` and satisfies only the new `PermGroupOwner` (and the `owner` trigger). It never sets
+   `IsOwner`, the owner tier, personal mounts or memory, and `PermOwnerOnly` is unchanged.
+3. *Group-scoped commands for the owner:* `/trigger`, `/model`, `/provider` (this group only), `/isolation
+   status|disable` and `/help` run at once; `/isolation enable|prepare` ask for confirmation in the owner's
+   private chat (the buttons are bound to that chat; a Confirmed flag arriving from the group is ignored).
+   `/logs`, `/restart`, memory, schedules, `/telegram doctor`, backup and every other `PermOwnerOnly` command
+   stay private-chat only. In a group `/provider` and `/model` are now limited to the owner; other members were
+   previously allowed by `PermChatLocal`.
+4. *Group sign-in:* the private confirmation of D-login is unchanged. When the confirmed group flow finds no
+   group profile (groups have no sign-in of their own; they read the owner's account), the owner gets the real
+   step privately (`/provider <name>`, then `/login` in the private chat) and the group one neutral line.
+5. *The agent* receives one host line above every group turn, `[gopod group: trigger=<mode>;
+   sender=owner|member]`, and the restricted instructions say only that line is host-written and members other
+   than the owner are untrusted.
+
+**Consequences.** Production needs no configuration. The existing group keeps `all` until the owner sends
+`/trigger <mode>`; new groups default to `mention`, which with privacy mode on is what Telegram delivers
+anyway. Existing workspaces keep their seeded instruction files (never overwritten); the per-turn line
+carries the mode for them. Rollback is safe: the table is additive and an older binary ignores it.

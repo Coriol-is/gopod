@@ -60,6 +60,9 @@ const (
 	errTextDelivery    = "Не удалось доставить ответ. Можно повторить запрос."
 	// Shown in groups when the agent runtime refuses a turn; it names no cause.
 	errTextGroupUnavailable = "Агент в этом чате сейчас недоступен."
+	// groupLoginNeutral is all a group learns about sign-in: no provider,
+	// account, URL or error text.
+	groupLoginNeutral = "Вход выполняет владелец в личном чате."
 )
 
 // Reply action row under the newest reply (keyboard.go, replyactions.go).

@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-10-29
+**Last updated:** 2026-10-29 (group triggers)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -10,6 +10,18 @@ approved queue, [proposal registry](proposals/README.md) for CP status and
 - CP-032 [reaction-reading specification](superpowers/specs/2026-10-29-telegram-reaction-reading.md): group emoji/custom-ID events, durable admission, exact message/topic mapping and no-admin/unavailable diagnostics. Private native reactions are transport-blocked; no account-reader workaround is authorized. Design only; no source or runtime flags changed.
 - Task-role credential adapter [design spec](superpowers/specs/2026-10-29-task-role-credential-adapter.md): why `GOPOD_MANAGED_TASKS=1` denies every task, options A-D, recommendation (access-token-only task auth copy), live gates and 5 owner questions. Design only; no source or flags changed.
 - Owner reports live `/restart` checked successfully on 2026-10-29; this establishes the reported baseline, not every negative/topic/provider scenario.
+
+## Group triggers, owner-in-group, group login guidance (branch `feat/group-triggers-owner`, unmerged, 2026-10-29)
+- ADR [D048](DECISIONS.md), spec [group trigger and owner-in-group](superpowers/specs/2026-10-29-group-trigger-and-owner-in-group.md).
+  Store `group_triggers` (additive), `PermGroupOwner` + `Caller.IsGroupOwner`, `/trigger`, the gate in
+  `telegram/group_trigger.go`, private confirmation of group `/isolation enable|prepare` (`Response.Private`),
+  group sign-in guidance (`telegram/group_login_guidance.go`), per-turn host line `[gopod group: ...]`.
+- Production impact: none to configure. The existing group has no row and keeps `all`; owner sends
+  `/trigger mention` (or another mode) in the group to change it. New groups start at `mention`.
+- Open: the owner private confirmation prompt of group `/login` is still shown before the guidance (kept
+  unchanged on purpose); dropping that now pointless step is an owner decision. An album answers only if its
+  first message qualifies. Existing workspaces keep their seeded instruction files; the per-turn line carries
+  the mode for them.
 
 ## Default group admission (branch `feat/group-default-admission`, not merged, 2026-10-29)
 - Owner decision, ADR [D047](DECISIONS.md): registered groups are admitted without a `group-runtime.json`
