@@ -332,13 +332,14 @@ func (b *Bot) dispatchSlash(ctx context.Context, m *models.Message, text string)
 		Name: cmdName,
 		Args: parts[1:],
 		Caller: control.Caller{
-			ChatKind: string(m.Chat.Type),
-			ChatID:   m.Chat.ID,
-			ThreadID: thread,
-			UserID:   userID(m.From),
-			Username: senderDisplayName(m.From),
-			Source:   control.SourceTelegram,
-			IsOwner:  b.ownerChatID != 0 && m.Chat.ID == b.ownerChatID,
+			MessageID: m.ID,
+			ChatKind:  string(m.Chat.Type),
+			ChatID:    m.Chat.ID,
+			ThreadID:  thread,
+			UserID:    userID(m.From),
+			Username:  senderDisplayName(m.From),
+			Source:    control.SourceTelegram,
+			IsOwner:   b.ownerChatID != 0 && m.Chat.ID == b.ownerChatID,
 		},
 	}
 

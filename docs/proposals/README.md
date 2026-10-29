@@ -114,3 +114,4 @@ not enabling the feature merely by merging that document.
 | [CP-028](CP-028-telegram-account-reading.md) | Scoped Telegram user-account reading | proposed | L |
 | [CP-029](CP-029-scoped-location.md) | Scoped location context and expiry | proposed | M |
 | [CP-030](CP-030-agent-mailboxes.md) | Authenticated agent mailboxes and bounded delegation | proposed | L |
+| [CP-031](CP-031-telegram-restart.md) | Owner Telegram restart with durable recovery notices | in-progress | M |

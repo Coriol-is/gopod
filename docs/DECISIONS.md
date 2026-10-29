@@ -1646,3 +1646,35 @@ parts are identified as sent as plain text in diagnostics (until normal history 
 
 **Limits.** Existing dispatcher/IPC flags only; no production activation or live acceptance is
 claimed. Buttons, sticker registry, thread targeting, and per-task format defaults are outside P1.
+
+## D046 — Owner restart uses verified Docker supervision and a durable receipt
+
+**Date:** 2026-10-29
+**Status:** Accepted
+
+**Context.** The owner requested a Telegram command to restart the gateway and
+agent containers, with before/after notices. A bare process exit can leave an
+unsupervised bot offline, and a generic lifecycle "back" notice does not prove
+container readiness. Replayed Telegram commands must not create restart loops.
+
+**Decision.** `/restart` is Router `PermOwnerOnly`, private Telegram messages only.
+Inspect the controller's own Docker identity, Compose service, active restart
+policy and ten-second successful-start window. Persist a request and message
+high-water mark in `router_state`, send the initiating thread an acknowledged
+notice, persist `restarting`, then cancel the normal application context. After
+subsystems drain, stop only captured personal container IDs with matching scope,
+label and workspace mount; retry that idempotent stop at next boot before cleanup.
+Existing startup restores choices and recreates/locally checks the owner runtime.
+After recovery, an explicit ready/degraded notice uses that observation plus a
+current running check; it never claims inference or quota success. Claim its send
+in durable state first; ambiguous sends are not replayed. Suppress generic
+lifecycle messages for the explicit restart. No native session/auth directory or
+volume is removed; no group is enabled. Unresolved managed attempts and active
+non-personal runtimes refuse the operation. There is no new package or schema
+migration, only typed state operations within `internal/store`.
+
+**Consequences.** Docker Compose deployments can request restart from Telegram
+without handing arbitrary host control to the model. Host binaries, unsupported
+supervisors, unqualified group recovery and a wedged drain require host operation.
+The command restarts the installed image, not a new version. Real Docker/Telegram
+acceptance is tracked separately from unit/CI success.
