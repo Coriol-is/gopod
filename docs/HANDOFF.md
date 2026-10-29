@@ -18,7 +18,7 @@ approved queue, [proposal registry](proposals/README.md) for CP status and
 - P1 merged as `3fcbf06` in PR #83 after green CI and independent review.
   Owner `/restart` merged as `8bdff46` in PR #84; both features are deployed.
   Owner authorized PRs and automatic admin squash merge after green CI (ruleset 24430037 requires
-  one approval; native auto-merge is disabled). Preserve both worktrees.
+  one approval; native auto-merge is disabled). The worktrees of the merged branches were removed after verification on 2026-10-29 night.
 - P1 implements Markdown-default / sanitized HTML / plain text for personal durable IPC, shared canonical
   HTML validation, explicit rich-field rejection on unsupported routes, and one recorded plain fallback
   after an explicit Telegram entity-parse refusal. The original plan stays immutable; ambiguous sends
@@ -28,9 +28,17 @@ approved queue, [proposal registry](proposals/README.md) for CP status and
   received Telegram acknowledgements; all schedules and data counts were preserved. Groups,
   artifact delivery and managed tasks remain disabled.
 - Next: owner-client formatting inspection and remaining restart edge cases. The owner has checked the baseline `/restart`. API acknowledgements and startup readiness do not establish these live acceptance gates.
+- **Status sync 2026-10-29 night:** `main` = `079e5ea` (PRs #70-#86 merged, none open, no extra worktrees or
+  unmerged local branches). Production `8bdff46`, restart count 1 is the owner's graceful `/restart`
+  (19:18 UTC, exit 0). Flags on: `GOPOD_OUTBOX_DISPATCHER`, `GOPOD_OUTBOX_IPC` (owner chat, thread 0).
+  Off: artifacts, managed tasks, groups. Observed since deploy: Claude usage-limit error at 19:19 UTC
+  (quota, not a defect) and a denied `/restart` from the disabled group (expected). The freefeed digest
+  (09:00 Belgrade) is still the first unattended check of the post-deploy task/IPC path.
+  Four merged remote branches (`docs/deploy-rich-restart`, `docs/reaction-reading`,
+  `feat/rich-messages-formatting`, `feat/telegram-restart`) are left for the owner to approve deleting.
 - Not authorized here: account logins, paid fallbacks, T9 reboot, group activation or schedule changes.
 
-## Telegram restart implementation (2026-10-29)
+## Telegram restart (merged #84, deployed 2026-10-29)
 - CP-031 / D046: branch `feat/telegram-restart`, worktree `gopod-telegram-restart`.
   `/restart` is owner/private-only through the Router; it records a replay-fenced
   request, requires an acknowledged initiating-thread notice, verifies Docker
@@ -114,16 +122,16 @@ approved queue, [proposal registry](proposals/README.md) for CP status and
 - Not done: the runner-side capability issuer (so every V1 request is still `stale_capability`), voice and generated-code
   parity (PR 5), foreground freeze (PR 6), operator resend of uncertain uploads, a bounded live smoke. CP-002/003 stay `in-progress`.
 
-## CP-002 PR 3 in progress (2026-10-28)
+## CP-002 PR 3 merged (#74, 2026-10-28)
 - Branch `feat/cp002-ipc-durable` (worktree `gopod-cp002-pr3`), based on PR 2 (`e7eaeee`): personal text IPC
   durable admission (`internal/ipc/durable*.go`, `store.RecentIPCRequests`), silent scheduled turns
-  (`telegram.runTaskSilently`), ADR D038. Not pushed yet.
+  (`telegram.runTaskSilently`), ADR D038. Enabled in production for the owner's personal chat since 2026-10-29.
 - Off by default: needs `GOPOD_OUTBOX_DISPATCHER=1` and `GOPOD_OUTBOX_IPC=1`; only the owner's personal chat,
   thread 0. Everything else (groups, shared chats, cross-chat owner sends) is the unchanged legacy path.
 - Not done: bounded live smoke on the real bot; operator handling of uncertain rows (diagnostics only, no
   resend); PR 4 artifacts. CP-002 stays `in-progress`.
 
-## CP-002 PR 2 in progress (2026-10-28)
+## CP-002 PR 2 merged (#73, 2026-10-28)
 - Branch `feat/cp002-dispatcher` (worktree `gopod-cp002-pr2`), based on PR 1 (`d3c3d69`): store
   claim/ack/release/fail/uncertain/sweep (`internal/store/outbox_dispatch.go`), single-attempt
   transport and dispatcher (`internal/telegram/outbox_{transport,dispatcher}.go`), ADR D037.
@@ -138,7 +146,7 @@ Core Telegram assistant, Docker runtime, Claude/Codex native sessions,
 conversation-scoped history, memory, voice, scheduler and filesystem IPC are
 implemented. No other runtime, channel, guest agent or bot-to-bot peer is enabled.
 
-The reference Pi controller now runs **a3a9c53**, deployed 2026-10-27 08:58 UTC.
+The reference Pi controller now runs **8bdff46**, deployed 2026-10-29 19:11 UTC (see Resume here; earlier baseline a3a9c53 from 2026-10-27).
 CP-020 implementation is merged (PRs #66/#67; green CI/Sonar and independent review).
 Groups remain disabled in production configuration. Both final native images
 passed TCP isolation preflight; full activation is blocked by expired Claude auth

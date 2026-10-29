@@ -36,16 +36,23 @@ Done implementation must not remain "in progress" just because a live check is
 pending. Host memory-cgroup changes/reboot (T9) and parallel execution (T5/T5b)
 remain paused operational/research items, not implicit deployment steps.
 
-## Next iteration — planned 2026-10-27
+## Next iteration — status as of 2026-10-29 (night)
 
-| Step | Work | Gate |
+Done since 2026-10-27 (all merged to `main`; production runs `8bdff46`, flags below): CP-002 PR 1-5
+(store, dispatcher, durable personal text IPC, immutable artifacts, voice/code preparation),
+CP-004 PR 1-3 (storage, managed dispatch, policy-guarded execution), CP-007 backup foundation,
+rich-message formatting P1 (D045), supervised owner `/restart` (CP-031).
+
+| Step | Work | State / gate |
 |---|---|---|
-| 1 | Owner live acceptance A08–A11, A18, A20, A02 | Owner in Telegram; failures become fix PRs |
-| 2 | CP-020 final gates: refresh Claude auth, fix Codex tree-budget admission, two-turn canaries, one controlled group | Private management only; no paid fallback |
-| 3 | CP-002 bounded outbox, then CP-004 task sessions, CP-007 backups | Specs in the [reliability wave](docs/superpowers/plans/2026-10-26-reliability-wave.md); one PR each |
+| 1 | Owner live acceptance A08–A11, A18, A20, A02, plus formatting and `/restart` edge cases | Owner in Telegram; failures become fix PRs |
+| 2 | CP-020 final gates: refresh Claude auth, fix Codex tree-budget admission, two-turn canaries, one controlled group; groups meanwhile give a plain refusal | Private management only; no paid fallback |
+| 3 | CP-002 PR 6-8 (foreground freeze/streaming ownership, protected challenges, staged release), CP-004 PR 4-5 (settlement/visibility, schedule policy) | One PR each; artifacts flag also gated on CP-007 restore drill and the capability issuer |
+| 4 | Rich messages: stickers P2/P3, [thread awareness](docs/superpowers/specs/2026-10-29-agent-thread-awareness.md), [buttons/hooks](docs/superpowers/specs/2026-10-29-agent-buttons-and-hooks.md), [reaction reading](docs/superpowers/specs/2026-10-29-telegram-reaction-reading.md) | Specs saved; no implementation |
+| 5 | Task-role credential adapter (needed before `GOPOD_MANAGED_TASKS` can run anything); Pi Docker-inspect round trip | Owner decision pending |
 | Deferred | CP-014 media, CP-018 per-thread providers, T9 cgroup reboot, observability | Owner re-prioritises |
 
-Open owner decisions: branch protection requiring `test` + `isolation-spike`; whether to add a CD workflow.
+Open owner decisions: branch protection requiring `test` + `isolation-spike` (a ruleset requiring one approval exists; admin squash-merge is the working path); whether to add a CD workflow.
 
 ## Planning candidates — 2026-10-26
 
