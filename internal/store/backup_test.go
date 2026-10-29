@@ -344,8 +344,6 @@ func TestSnapshotTimeoutMessageExplainsRestarts(t *testing.T) {
 	}
 }
 
-const hostileTable = `evil"; DROP TABLE router_state; --`
-
 func TestInspectDBNeverExecutesHostileTableNames(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -373,14 +371,67 @@ func TestInspectDBNeverExecutesHostileTableNames(t *testing.T) {
 			t.Fatalf("hostile name was counted: %q", name)
 		}
 	}
-	if _, err := countTableRows(ctx, st.DB(), hostileTable); err == nil {
-		t.Fatal("countTableRows accepted a hostile name")
-	}
 	// A source that already carries such a table is refused, not copied on trust.
 	if _, err := st.DB().Exec(`CREATE TABLE "has space" (a INTEGER)`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := st.Snapshot(ctx, filepath.Join(dir, "refused.sqlite"), SnapshotOptions{}); !errors.Is(err, ErrSnapshotIntegrity) {
 		t.Fatalf("snapshot of a source with a non-identifier table: %v", err)
+	}
+}
+
+func TestRowCountSQLCoversEverySchemaTable(t *testing.T) {
+	ctx := context.Background()
+	st := openStoreAt(t, filepath.Join(t.TempDir(), "s.sqlite"))
+	db, err := openSnapshotDB(st.Path(), "mode=ro")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	schema, err := readSchema(ctx, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, tbl := range schema.tables() {
+		if schema.virtual[tbl] || schema.isShadow(tbl) {
+			continue
+		}
+		seen[tbl] = true
+		if _, ok := rowCountSQL[tbl]; !ok {
+			t.Errorf("table %q is created by Open but missing from rowCountSQL (backup_counts.go)", tbl)
+		}
+	}
+	for tbl, stmt := range rowCountSQL {
+		if !seen[tbl] {
+			t.Errorf("rowCountSQL lists %q, which Open does not create", tbl)
+		}
+		if stmt != "SELECT count(*) FROM "+tbl {
+			t.Errorf("statement for %q is not its own count: %q", tbl, stmt)
+		}
+	}
+}
+
+func TestInspectDBReportsUnknownTablesWithoutCounting(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	st := openStoreAt(t, filepath.Join(dir, "store.sqlite"))
+	snap := filepath.Join(dir, "snap.sqlite")
+	if _, err := st.Snapshot(ctx, snap, SnapshotOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	execOn(t, snap, `CREATE TABLE from_a_newer_binary (a INTEGER)`)
+	info, err := InspectDB(ctx, snap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(info.UnknownTables) != 1 || info.UnknownTables[0] != "from_a_newer_binary" {
+		t.Fatalf("unknown = %v", info.UnknownTables)
+	}
+	if _, counted := info.Tables["from_a_newer_binary"]; counted {
+		t.Fatal("unknown table was counted")
+	}
+	if _, counted := info.Tables["memory_vec_chunks"]; counted {
+		t.Fatal("shadow table was counted")
 	}
 }

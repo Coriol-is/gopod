@@ -316,16 +316,34 @@ func TestConfigSymlinkIsRejected(t *testing.T) {
 
 func TestVerifyRejectsTamperedAndInvalidSets(t *testing.T) {
 	ctx := context.Background()
-	mk := func(t *testing.T) (*env, string) {
-		e := newEnv(t)
-		e.addArtifact("art-1", testBlob, "hello", true)
-		res, err := Create(ctx, e.opts(ModeMatchedStopped))
-		if err != nil {
-			t.Fatal(err)
-		}
-		return e, res.Path
+	for name, tamper := range tamperCases() {
+		t.Run(name, func(t *testing.T) {
+			e, dir := newMatchedSet(t)
+			tamper(t, e, dir)
+			rep, err := Verify(ctx, dir)
+			if err == nil || rep.OK {
+				t.Fatalf("tampered set accepted: %+v", rep)
+			}
+			if !errors.Is(err, ErrInvalidSet) {
+				t.Fatalf("err = %v", err)
+			}
+		})
 	}
-	tests := map[string]func(t *testing.T, e *env, dir string){
+}
+
+// newMatchedSet captures a matched_stopped set with one artifact and a config file.
+func newMatchedSet(t *testing.T) (*env, string) {
+	e := newEnv(t)
+	e.addArtifact("art-1", testBlob, "hello", true)
+	res, err := Create(context.Background(), e.opts(ModeMatchedStopped))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return e, res.Path
+}
+
+func tamperCases() map[string]func(t *testing.T, e *env, dir string) {
+	return map[string]func(t *testing.T, e *env, dir string){
 		"flipped database byte": func(t *testing.T, _ *env, dir string) {
 			p := filepath.Join(dir, DBName)
 			b, _ := os.ReadFile(p)
@@ -391,21 +409,7 @@ func TestVerifyRejectsTamperedAndInvalidSets(t *testing.T) {
 			})
 		},
 	}
-	for name, tamper := range tests {
-		t.Run(name, func(t *testing.T) {
-			e, dir := mk(t)
-			tamper(t, e, dir)
-			rep, err := Verify(ctx, dir)
-			if err == nil || rep.OK {
-				t.Fatalf("tampered set accepted: %+v", rep)
-			}
-			if !errors.Is(err, ErrInvalidSet) {
-				t.Fatalf("err = %v", err)
-			}
-		})
-	}
 }
-
 func TestVerifyRejectsFutureFormatAndNewerSchema(t *testing.T) {
 	ctx := context.Background()
 	e := newEnv(t)

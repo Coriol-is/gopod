@@ -75,6 +75,9 @@ type SnapshotInfo struct {
 	// name can only come from a foreign or damaged file; it is never used in a
 	// statement and a verification treats it as a problem.
 	UnsafeTables []string `json:"unsafe_tables,omitempty"`
+	// UnknownTables are well-formed table names this binary does not create
+	// (for example from a newer schema); they are reported, not counted.
+	UnknownTables []string `json:"unknown_tables,omitempty"`
 	// ForeignKeyViolations counts orphan rows per table (no row contents).
 	ForeignKeyViolations map[string]int64 `json:"foreign_key_violations,omitempty"`
 	Tables               map[string]int64 `json:"tables"` // row counts of ordinary tables
@@ -367,36 +370,28 @@ func InspectDB(ctx context.Context, path string) (SnapshotInfo, error) {
 		if schema.virtual[t] {
 			continue
 		}
-		if !identPattern.MatchString(t) {
+		switch stmt, known := rowCountSQL[t]; {
+		case !identPattern.MatchString(t):
 			info.UnsafeTables = append(info.UnsafeTables, t)
-			continue
+		case schema.isShadow(t):
+			// vec0 and fts shadow tables hold index internals, not data rows.
+		case !known:
+			info.UnknownTables = append(info.UnknownTables, t) // reported, not counted
+		default:
+			var n int64
+			if err := db.QueryRowContext(ctx, stmt).Scan(&n); err != nil {
+				return info, fmt.Errorf("store: count %s: %w", t, err)
+			}
+			info.Tables[t] = n
 		}
-		n, err := countTableRows(ctx, db, t)
-		if err != nil {
-			return info, fmt.Errorf("store: count %s: %w", t, err)
-		}
-		info.Tables[t] = n
 	}
 	return info, nil
 }
 
-// identPattern is the only shape of table name that is ever placed in a
-// statement. It contains no quote, space, semicolon or comment character, so
-// the quoted identifier below cannot be broken out of. Names read from a file
-// under inspection that do not match are reported, never executed.
+// identPattern separates ordinary identifiers from names that cannot come from
+// this binary (quotes, spaces, semicolons, comments). Neither kind is ever
+// placed in SQL; see rowCountSQL.
 var identPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
-
-// countTableRows counts the rows of a table whose name already matched
-// identPattern. SQLite cannot bind an identifier as a parameter, so the vetted
-// name is quoted into the statement.
-func countTableRows(ctx context.Context, db *sql.DB, table string) (int64, error) {
-	if !identPattern.MatchString(table) {
-		return 0, fmt.Errorf("store: refusing unsafe table name %q", truncateName(table))
-	}
-	var n int64
-	err := db.QueryRowContext(ctx, `SELECT count(*) FROM "`+table+`"`).Scan(&n)
-	return n, err
-}
 
 func truncateName(s string) string {
 	if len(s) > 40 {
@@ -422,6 +417,16 @@ func fileSHA256(path string) (string, error) {
 type dbSchema struct {
 	cols    map[string][]string // table -> ordered column names
 	virtual map[string]bool
+}
+
+// isShadow reports whether t is a shadow table of a virtual table (vec0, fts5).
+func (d dbSchema) isShadow(t string) bool {
+	for v := range d.virtual {
+		if d.virtual[v] && strings.HasPrefix(t, v+"_") {
+			return true
+		}
+	}
+	return false
 }
 
 func (d dbSchema) tables() []string {

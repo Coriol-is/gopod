@@ -411,7 +411,7 @@ func (o *Options) copyConfig(stage string, m *Manifest) error {
 
 // readNoFollow reads a regular file (never through a symlink or hardlink-sized
 // surprise) and fails when its size or mtime changed while reading.
-func readNoFollow(p string, max int64) ([]byte, error) {
+func readNoFollow(p string, limit int64) ([]byte, error) {
 	fd, err := unix.Open(p, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
 	if err != nil {
 		return nil, err
@@ -425,10 +425,10 @@ func readNoFollow(p string, max int64) ([]byte, error) {
 	if before.Mode&unix.S_IFMT != unix.S_IFREG {
 		return nil, errors.New("not a regular file")
 	}
-	if before.Size > max {
+	if before.Size > limit {
 		return nil, errors.New("file too large")
 	}
-	data, err := io.ReadAll(io.LimitReader(f, max+1))
+	data, err := io.ReadAll(io.LimitReader(f, limit+1))
 	if err != nil {
 		return nil, err
 	}

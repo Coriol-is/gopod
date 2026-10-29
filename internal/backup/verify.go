@@ -301,6 +301,9 @@ func (v *verifier) checkDatabase(ctx context.Context, setPath string, m Manifest
 	for _, name := range info.UnsafeTables {
 		v.problem("%s: foreign or damaged table name that is not a plain identifier (%.40q); it was not queried", DBName, name)
 	}
+	for _, name := range info.UnknownTables {
+		v.rep.Warnings = append(v.rep.Warnings, fmt.Sprintf("unknown table %.40q (not counted)", name))
+	}
 	if info.SchemaFingerprint != m.Database.SchemaFingerprint {
 		v.problem("%s: schema fingerprint differs from the manifest", DBName)
 	}
