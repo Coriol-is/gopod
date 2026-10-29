@@ -12,7 +12,7 @@ func TestSanitizeCanonicalAndHostileInputs(t *testing.T) {
 			t.Errorf("%q => %q %v", s, clean, ok)
 		}
 	}
-	for _, s := range []string{`<b><i>x</b></i>`, `<code><b>x</b></code>`, `<blockquote><blockquote>x</blockquote></blockquote>`, strings.Repeat("<b>", 33) + "x" + strings.Repeat("</b>", 33)} {
+	for _, s := range []string{`<a href="https://example.com/` + strings.Repeat("x", 2048) + `">label</a>`, `<b><i>x</b></i>`, `<code><b>x</b></code>`, `<blockquote><blockquote>x</blockquote></blockquote>`, strings.Repeat("<b>", 33) + "x" + strings.Repeat("</b>", 33)} {
 		if _, ok := Sanitize(s); ok {
 			t.Errorf("accepted %q", s)
 		}

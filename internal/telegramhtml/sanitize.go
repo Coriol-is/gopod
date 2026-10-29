@@ -53,7 +53,7 @@ func writeToken(out *strings.Builder, stack *[]sanitizedTag, token xml.Token, ra
 }
 
 func openToken(out *strings.Builder, stack *[]sanitizedTag, t xml.StartElement, raw string) bool {
-	if len(*stack) >= 32 || t.Name.Space != "" {
+	if len(*stack) >= 32 || len(raw) > 1024 || t.Name.Space != "" {
 		return false
 	}
 	open, close := telegramTag(t)
