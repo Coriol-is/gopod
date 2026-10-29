@@ -1,9 +1,16 @@
 # Rich agent messages: formatting, buttons and stickers (personal chats)
 
-Date: 2026-10-29. Status: **requirements and feasibility only; no implementation or enablement**.
+Date: 2026-10-29. Status: **requirements accepted by the owner 2026-10-29 (decisions below); implementation phased and flag-gated**.
 Scope: the owner's personal chat. Group chats are explicitly out of scope until the owner decides
 (CP-020 keeps them closed anyway). Statements marked *(owner)* come from the owner; everything marked
 *(guess)* is a proposal that needs confirmation.
+
+## Owner decisions (2026-10-29)
+1. Enabling the durable IPC route in production for the owner's personal chat, with a bounded live smoke, is approved (P0).
+2. **Buttons are split out** into a separate spec ([agent buttons and hooks](2026-10-29-agent-buttons-and-hooks.md)): press handling probably needs a dedicated endpoint/hooks, so it is not part of this spec's implementation. R2 below is kept only as background.
+3. Formatting: the agent chooses per message. `markdown` **and** `html` are supported; **`markdown` is the default** when `format` is omitted (`plain` stays available explicitly).
+4. URL-button policy is deferred together with buttons.
+5. Stickers: the agent may send **any sticker the bot has already seen**. *(guess, unconfirmed)* A sticker-only inbound message is treated like a captionless photo: it starts a normal turn with sticker metadata.
 
 ## Why
 
@@ -24,9 +31,12 @@ What the code actually does today (verified 2026-10-29):
 ## Requirements
 
 ### R1 Formatting
-1. A message from the agent declares `format`: `plain` (default, today's behavior), `markdown`.
-   *(guess)* Raw agent HTML is not accepted: the host converts Markdown to the Telegram HTML subset, so the
-   agent can never inject arbitrary tags.
+1. A message from the agent declares `format`: `markdown` (**default**, owner decision), `html`, or `plain`.
+   `markdown` goes through the host converter. `html` is accepted only after the host sanitizes it against the
+   Telegram HTML allowlist (`b i u s code pre a blockquote tg-spoiler`, attributes limited to `href` and
+   `expandable`, http/https/tg links only); anything else is escaped or rejected, so the agent can never
+   inject arbitrary tags. Note the default change: agent-initiated messages that were plain text before are
+   rendered as Markdown, so literal `*`/`_`/backticks in such text will now format; `plain` opts out.
 2. The converter gains headings (rendered bold), unordered/ordered lists, blockquote (expandable when long),
    strikethrough and spoilers. Tables stay out of scope here (see
    `docs/research/2026-10-25-telegram-table-rendering.md`).
@@ -39,10 +49,10 @@ What the code actually does today (verified 2026-10-29):
 5. *(owner)* The owner can ask for formatting on particular tasks. IPC message files carry no task
    identity and the task schema has no format field, so a per-task default is **not buildable** without a
    task-identity channel. *(guess)* First cut: `format` is set per message by the agent, and the task prompt
-   tells it to; the chat-wide default stays `plain` so existing digests do not change unannounced. A global
-   `markdown` default for owner-chat IPC is the alternative (open question 3).
+   tells it to. Per the owner decision the default when `format` is omitted is `markdown`.
 
-### R2 Agent buttons
+### R2 Agent buttons — DEFERRED to [a separate spec](2026-10-29-agent-buttons-and-hooks.md)
+*Background only; not part of the first implementation.*
 1. A message may carry up to 8 buttons in at most 4 rows: `url` buttons (http/https only) and `callback`
    buttons. *(guess)* Label ≤ 32 characters, payload ≤ 256 bytes.
 2. Callback buttons are host-registered: the host stores `(token, chat, thread, task/run ref, payload, expiry)`
@@ -59,8 +69,8 @@ What the code actually does today (verified 2026-10-29):
 1. Inbound: a sticker becomes agent input with metadata (emoji, set name, type). Static stickers may also be
    passed as an image (WebP); animated/video stickers are metadata only.
 2. Outbound: the agent sends a sticker by reference to a host-maintained registry of known stickers
-   (populated from stickers the owner sent and from sets the owner allows). No creation or modification of
-   sticker sets.
+   (every sticker the bot has received; owner decision: any sticker already seen). No creation or modification
+   of sticker sets.
 3. Stickers are a separate delivery part kind with the same ordering/uncertain-delivery rules as text.
 
 ### R4 Later, not in the first cut
@@ -122,19 +132,14 @@ smoke the HANDOFF already requires. Until then none of this reaches the owner.
   change is deliberate and must cover albums and reply-to context.
 - **Legacy-path safety.** No behavior change for any path that does not opt in.
 
-## Suggested phasing (each behind its own flag, personal chat only)
-1. P0: enable durable IPC for the owner chat after the live smoke (prerequisite, owner-authorized).
-2. P1: formatting for agent-initiated messages + converter subset + instruction snippet + per-task `format`.
-3. P2: agent buttons (token table, `ab:` handler, synthetic turn).
-4. P3: inbound stickers.
-5. P4: outbound stickers (registry + part kind).
+## Phasing (each behind its own flag, personal chat only)
+1. P0: deploy current `main`, then enable `GOPOD_OUTBOX_DISPATCHER` + `GOPOD_OUTBOX_IPC` for the owner chat and
+   run a bounded live smoke (approved by the owner).
+2. P1: formatting for agent-initiated messages (markdown default, html sanitized), converter subset,
+   instruction snippet, admission-time validation, explicit rejection of rich fields on non-durable paths.
+3. P2: inbound stickers (registry fills from received stickers).
+4. P3: outbound stickers (new part kind + migration + transport).
+5. Buttons: separate spec; not scheduled.
 
-## Open questions for the owner
-1. May the durable IPC route be enabled in production for your personal chat, with a bounded live smoke? (P0;
-   without it none of this reaches you. Everything else can be built behind flags against the fake transport.)
-2. Button press: an ordinary new turn in the same chat (my default, small), or resuming the originating task/run
-   (needs task/run identity on IPC messages, which the host does not have today)?
-3. Formatting opt-in: per message by the agent (my default) or `markdown` as the default for owner-chat IPC?
-4. URL buttons: any http(s) link, or an allowlist? (The agent can put arbitrary links under trusted text.)
-5. Stickers: any sticker the bot has seen or only from sets you list; and should a sticker-only message start a
-   model turn or be recorded as context only?
+## Remaining open questions
+- Sticker-only inbound: model turn (my default) or context only — confirm when P2 starts.
