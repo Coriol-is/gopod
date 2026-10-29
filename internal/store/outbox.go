@@ -55,6 +55,7 @@ const (
 	MaxPartPayloadBytes   = 64 << 10 // text/edit body; Telegram text is far smaller
 	MaxReplyMarkupBytes   = 8 << 10
 	MaxArtifactRefBytes   = 512
+	MaxUploadCaptionBytes = 4096 // an upload part's payload is its caption
 	MaxParseModeBytes     = 32
 	MaxRequestKeyBytes    = 255
 	DefaultDeliveryExpiry = 24 * time.Hour
@@ -72,7 +73,7 @@ var (
 // DeliveryPart is one exact, immutable operation. Retries never re-render it.
 type DeliveryPart struct {
 	Kind            PartKind
-	Payload         []byte // text/edit body; empty for uploads
+	Payload         []byte // text/edit body; an upload's optional caption
 	ArtifactRef     string // opaque immutable artifact reference for uploads
 	ParseMode       string
 	ReplyMarkup     string
@@ -164,7 +165,7 @@ func validatePublish(req PublishRequest, now int64) error {
 		case PartEdit:
 			ok = len(p.Payload) > 0 && p.ArtifactRef == "" && p.TargetMessageID > 0
 		case PartUpload:
-			ok = len(p.Payload) == 0 && p.ArtifactRef != "" && p.TargetMessageID == 0
+			ok = len(p.Payload) <= MaxUploadCaptionBytes && p.ArtifactRef != "" && p.TargetMessageID == 0
 		}
 		if !ok {
 			return fmt.Errorf("%w: part %d (%q) is malformed", ErrInvalidDelivery, i, p.Kind)
@@ -202,6 +203,13 @@ func (s *Store) PublishDelivery(ctx context.Context, req PublishRequest) (Delive
 	now := time.Now().UnixMilli()
 	if err := validatePublish(req, now); err != nil {
 		return Delivery{}, err
+	}
+	// Uploads reference host-owned snapshots and are published only together
+	// with their references by PublishDeliveryWithArtifacts.
+	for _, p := range req.Parts {
+		if p.Kind == PartUpload {
+			return Delivery{}, fmt.Errorf("%w: uploads require PublishDeliveryWithArtifacts", ErrInvalidDelivery)
+		}
 	}
 	if req.ExpiresAt == 0 {
 		req.ExpiresAt = now + DefaultDeliveryExpiry.Milliseconds()

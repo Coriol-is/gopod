@@ -294,6 +294,7 @@ func (d *OutboxDispatcher) execute(attemptCtx context.Context, c store.OutboxCla
 		Kind: c.Part.Kind, ChatID: chatID, Thread: c.Conversation.ThreadID,
 		Text: string(c.Part.Payload), ParseMode: c.Part.ParseMode, ReplyMarkup: c.Part.ReplyMarkup,
 		TargetMessageID: c.Part.TargetMessageID, ArtifactRef: c.Part.ArtifactRef,
+		NamespaceID: c.Conversation.Scope.NamespaceID, NamespaceEpoch: c.Conversation.Scope.NamespaceEpoch,
 	}
 	d.persist(c, d.attempt(attemptCtx, req))
 }

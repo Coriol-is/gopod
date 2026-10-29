@@ -80,6 +80,10 @@ type SendRequest struct {
 	ReplyMarkup     string // JSON of an inline keyboard, as frozen at publication
 	TargetMessageID int64
 	ArtifactRef     string
+	// NamespaceID and NamespaceEpoch are the delivery's scope; an artifact of
+	// any other namespace or epoch is never uploaded.
+	NamespaceID    string
+	NamespaceEpoch int64
 }
 
 // outboxAPI is the subset of *bot.Bot the real transport calls.
@@ -90,9 +94,11 @@ type outboxAPI interface {
 }
 
 // ArtifactOpener resolves an immutable artifact reference to the exact bytes to
-// upload. Artifact preparation is PR 4; without an opener uploads are refused.
+// upload. The bytes are verified against the inventory before they are returned,
+// so the transport never reopens a mutable pathname. Without an opener uploads
+// are refused (the default; artifact delivery is behind GOPOD_OUTBOX_ARTIFACTS).
 type ArtifactOpener interface {
-	OpenArtifact(ctx context.Context, ref string) (name string, data io.Reader, err error)
+	OpenArtifact(ctx context.Context, ref, namespaceID string, epoch int64) (name string, data io.Reader, err error)
 }
 
 // botTransport is the Telegram implementation.
@@ -137,7 +143,7 @@ func (t *botTransport) Attempt(ctx context.Context, req SendRequest) Outcome {
 		if t.artifacts == nil {
 			return refused("upload_unavailable")
 		}
-		name, data, err := t.artifacts.OpenArtifact(ctx, req.ArtifactRef)
+		name, data, err := t.artifacts.OpenArtifact(ctx, req.ArtifactRef, req.NamespaceID, req.NamespaceEpoch)
 		if c, ok := data.(io.Closer); ok && c != nil {
 			defer c.Close()
 		}
@@ -147,6 +153,7 @@ func (t *botTransport) Attempt(ctx context.Context, req SendRequest) Outcome {
 		msg, err := t.api.SendDocument(ctx, &bot.SendDocumentParams{
 			ChatID: req.ChatID, MessageThreadID: req.Thread,
 			Document: &models.InputFileUpload{Filename: name, Data: data},
+			Caption:  req.Text, // plain text; an upload has no parse mode
 		})
 		return classifySend(msg, err, 0)
 	}

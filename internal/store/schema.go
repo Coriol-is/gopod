@@ -249,6 +249,9 @@ func (s *Store) applySchema(ctx context.Context) error {
 	if err := s.applyDeliverySchema(ctx); err != nil {
 		return err
 	}
+	if err := s.applyArtifactSchema(ctx); err != nil {
+		return err
+	}
 	return s.applyTaskSchema(ctx)
 }
 

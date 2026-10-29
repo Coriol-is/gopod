@@ -79,6 +79,9 @@ func (w *Watcher) processMessageFile(ctx context.Context, folder, path string) (
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return fail(fmt.Errorf("parse: %w", err))
 	}
+	if w.artifactsEnabled() && folder == w.cfg.OwnerFolder && isArtifactVersion(raw) {
+		return w.processArtifactRequest(ctx, folder, path, raw)
+	}
 	if w.durableEligible(folder, p.ChatJID) {
 		return w.processDurable(ctx, folder, path, raw, p)
 	}

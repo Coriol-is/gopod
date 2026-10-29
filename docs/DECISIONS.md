@@ -1217,6 +1217,108 @@ A live smoke on the real bot is still required before enabling the flag in produ
 
 ---
 
+## D039 — Immutable artifact snapshots: reserve first, copy outside SQL, publish with references
+
+**Date:** 2026-10-29
+**Status:** Accepted
+
+**Context.** CP-003 PR 4 lets an agent attach generated files to an IPC message. The Store has one
+SQL connection (no transaction may span file I/O), the filesystem and SQLite are not one atomic
+resource, the source path is writable by the agent, and the outbox must never upload bytes that
+were not the ones accepted.
+
+**Decision.** Strict V1 requests (unknown fields rejected) are authorized by a host-issued per-run
+capability, an in-memory token bound to the IPC folder, the destination `ConversationScope`
+(therefore its `ScopeRef`), the delivery owner, an expiry and one ordinary output root. No request
+field names a recipient, thread, privacy level or owner role; a controller-owned run, a group
+folder or a destination other than the owner's personal chat is `recipient_unavailable`. Output
+roots must be a direct child of the chats directory; the data directory, `ipc`, `sessions`,
+`shared-namespaces` (CP-020 protected siblings), snapshots, artifact blobs, backups, mount-denied
+paths, hidden trees, `memory/` and database/WAL names are refused. Revoking at run end makes
+unaccepted requests fail closed (`stale_capability`); an already accepted request is looked up
+first and converges on its delivery, so a revoked run does not lose committed work.
+
+Preparation order: (1) `ReserveArtifacts` takes the full upper bound (`min(files x 20 MiB, 40 MiB)`)
+under namespace (512 MiB) and global (2 GiB) quota and creates one `preparing` artifact per file,
+in one transaction; (2) outside SQL each source is walked from a held directory descriptor with
+`O_NOFOLLOW` on every component, must be a regular file with link count one within the bound, is
+copied into a 0600 file in a 0700 host-owned UUID directory while hashing, fsynced, re-read and
+compared (so a change is caught even where timestamps are too coarse), renamed and the directory
+fsynced; (3) capability and scope are revalidated and `MarkArtifactsReady` commits the facts;
+(4) `PublishDeliveryWithArtifacts` publishes the plan, attaches `artifact_refs` to the parts and
+releases the reservation in one transaction. A duplicate request (same key and bytes) returns the
+first delivery and abandons the new preparation; changed bytes are a conflict. Upload parts carry
+a plain caption in their payload and a reference `artifact:<uuid>`.
+
+Upload: `SnapshotOpener` resolves the reference through the inventory (state must be `ready`),
+opens the blob without following links, checks size, link count and SHA-256 into a buffer bounded
+by the file limit, and hands those bytes to the single upload attempt. There is no second pathname
+open. A mismatch or missing blob quarantines the artifact and uploads nothing; the part fails with
+an explicit refusal and the acknowledged prefix is never resent. Quarantine also fails still-pending
+parts that reference the artifact.
+
+GC and reconcile: an artifact is pinned while any referencing part is pending, sending or
+uncertain or its group is unresolved; the pin is one SQL predicate used by GC, completion and
+deletion triggers on `artifacts` and `artifact_refs`. Terminal artifacts become `deleting` six hours
+(configurable `ArtifactConfig.Retention`, a deliberate shortening of the spec's 30 days so a
+prompt-injected agent cannot hold the quota) after the last reference activity; the host unlinks the blob, then drops the row, so a crash
+between the two finishes idempotently. `Reconcile` (at the watcher cadence, default 5 minutes)
+expires preparations past their deadline (15 minutes, a shorter bound than the spec's 24 hours
+because nothing here prepares slowly), finishes deleting states, quarantines ready artifacts whose
+blob is missing or the wrong size, un-quarantines an artifact whose blob verifies again, and
+removes unknown UUID directories older than two hours. The sweep is held (loudly logged) when the
+blob root holds no preparation at all while ready rows exist, so a recreated or wrongly mounted
+root does not quarantine everything. A hard link inside the private blob store is not an error:
+the SHA-256 decides. Deleting rows are paged by id so failing rows cannot block the rest. It
+never touches other names or follows links.
+
+Flag and gate: `GOPOD_OUTBOX_ARTIFACTS` (default off) opens the private store and enables V1
+only while the dispatcher and the durable text route run. The legacy upload paths are untouched.
+**Enablement prerequisite:** the CP-007 matched DB and artifact backup, lease and restore must pass
+first; this flag does not check it. Groups additionally need CP-020 and CP-019 acceptance.
+
+**Limits, stated plainly.** Tests use temporary directories and SQLite with injected failure points
+(including simulated crashes at every fsync/DB boundary); they are not a security proof and not a
+Raspberry Pi qualification. Path policy detects links, special files, hardlinks and changes during
+copy; it does not detect a secret placed in an innocent file and it is not a container boundary.
+Hash verification happens when bytes are opened for upload, not in the reconcile sweep. Unix only
+(Linux/macOS). Nothing in this binary issues capabilities yet, so even with the flag on every V1
+request is rejected as `stale_capability` until the runner integration lands. Voice is refused
+(`voice_unavailable`). `photo` presentation and MIME are hints; uploads are always documents.
+
+**Review amendments (2026-10-29).** (1) `PublishDelivery` refuses upload parts; they exist only
+through `PublishDeliveryWithArtifacts`, and the dispatcher passes the delivery's namespace and
+epoch to the opener, which refuses an artifact of any other namespace or epoch. (2) A revoked
+capability is honoured for a two-minute grace window (`Capabilities.Grace`) for a request file
+written before `EndRun` (file mtime not after the revocation), so an agent whose last action was
+writing the request does not lose it to the poll interval; later files, an unknown write time and a
+policy revocation (`RevokeFolder`) fail closed with `stale_capability` (tombstoned). The grace
+trusts the file mtime, which a stray process left in the container could backdate; the window is
+short and the scope, destination and quotas still apply. (3) Per-run (8 files, 80 MiB) and
+per-namespace-per-hour (40 files, 200 MiB) admission caps, counted on reserved bytes while active
+and measured bytes afterwards (`rate_limited`), plus a budget of two file-bearing requests prepared
+per folder per watcher tick. A snapshot is written with a bound of the remaining reservation, never
+past it. (4) `Issue` requires the output root to be the actor's own chat directory and the
+destination to be the actor's registered chat (resolver), caps a grant at six hours, and prunes
+expired entries. (5) Only the owner folder reaches the artifact route; other folders keep the legacy
+text path. (6) Opens use `O_NOCTTY`. A vanished host-side preparation directory or output root is a
+retried host fault, never a `source_missing` tombstone.
+
+**Not a defence against a hostile owner-chat agent writing the database.** The owner-tier container
+mounts `store.sqlite` read-write. The triggers and inventory invariants above therefore do not hold
+against an agent that writes the DB file directly; they protect against bugs and against the
+request path. The blast radius of such an agent is bounded by UUID-validated blob keys (a key that
+is not `<uuid>/<uuid>.blob` is never opened), no-follow opens under the held blob root, and
+SHA-256 verification of the bytes before any upload; it could still redirect uploads to other
+blobs it can name, or break the inventory.
+
+**Consequences.** Reserved, stored, quarantined and deleting bytes all count against quota, so a
+leaked reservation is visible and bounded by its TTL. A multi-file request is all-or-nothing at
+admission but not at Telegram: parts are acknowledged separately and a failed upload leaves a
+partial delivery. Operator resend of uncertain uploads remains deferred.
+
+---
+
 ## Template for new ADRs
 
 ```

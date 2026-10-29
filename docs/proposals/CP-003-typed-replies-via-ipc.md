@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | proposed |
+| Status | in-progress |
 | Date | 2026-10-05 |
 | Origin | feature survey of `rzaytsev/codex-agent` (2026-10-05) and the 2026-10-03 public-release audit |
 | Size | M |
@@ -41,7 +41,7 @@ Text-only IPC now has diagnostic receipts under results/messages. Future typed
 files/voice must return equivalent scoped reasons and preserve an explicit
 public/private delivery target (CP-019), rather than treating a filesystem path
 or a failed private send as permission to publish elsewhere. This proposal
-remains unimplemented and supports appropriate CP-014 artifact output slices.
+supports appropriate CP-014 artifact output slices.
 
 ## 2026-10-26 adoption design
 
@@ -57,3 +57,10 @@ Canonical design refined against Go source at `33e026a291fbe577efabf43e9d0b6e760
 defines schema, failure recovery, test criteria and staged release gates. Status remains
 **proposed**; no runtime code or feature enablement is included. The canonical spec supersedes
 earlier retry shorthand: generic 5xx/timeouts are uncertain, never presumed safe to resend.
+
+## 2026-10-29 implementation status
+
+PR 4 (immutable artifact inventory and secure preparation) is implemented behind
+`GOPOD_OUTBOX_ARTIFACTS` (off by default; [D039](../DECISIONS.md)). Voice (PR 5),
+foreground long-code parity, the runner-side capability issuer and the CP-007
+matched artifact backup/restore gate are not done, so nothing is enabled.
