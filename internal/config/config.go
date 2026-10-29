@@ -143,6 +143,14 @@ type Config struct {
 	// dispatcher is running; group and shared chats always stay on the legacy path.
 	OutboxIPCEnabled bool
 
+	// OutboxArtifactsEnabled accepts strict V1 IPC requests with file
+	// attachments, snapshotted into an immutable host-private store and sent by
+	// the outbox dispatcher (CP-003 PR 4). Default false. GOPOD_OUTBOX_ARTIFACTS=1
+	// takes effect only while the dispatcher and the durable IPC route run.
+	// Enablement is gated on a verified matched DB/artifact backup and restore
+	// (CP-007), which this flag does not check; see D039.
+	OutboxArtifactsEnabled bool
+
 	// --- Agent admission control (D026) ---
 
 	// MaxAgents caps agent processes running at once across all chats.
@@ -190,6 +198,7 @@ func Load(loadDotenv bool) (Config, error) {
 		ProgressEnabled:         !envOff("GOPOD_PROGRESS"),
 		OutboxDispatcherEnabled: envFlag("GOPOD_OUTBOX_DISPATCHER"),
 		OutboxIPCEnabled:        envFlag("GOPOD_OUTBOX_IPC"),
+		OutboxArtifactsEnabled:  envFlag("GOPOD_OUTBOX_ARTIFACTS"),
 		CompactAfter:            compactAfter,
 		CompactInterval:         os.Getenv("GOPOD_COMPACT_INTERVAL"),
 		CompactTime:             os.Getenv("GOPOD_COMPACT_TIME"),

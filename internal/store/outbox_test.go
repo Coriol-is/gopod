@@ -319,8 +319,8 @@ func TestPublishValidation(t *testing.T) {
 		"empty text":               func(r *PublishRequest) { r.Parts = []DeliveryPart{{Kind: PartText}} },
 		"edit without target":      func(r *PublishRequest) { r.Parts = []DeliveryPart{{Kind: PartEdit, Payload: []byte("x")}} },
 		"upload without artifact":  func(r *PublishRequest) { r.Parts = []DeliveryPart{{Kind: PartUpload}} },
-		"upload with payload": func(r *PublishRequest) {
-			r.Parts = []DeliveryPart{{Kind: PartUpload, ArtifactRef: "a", Payload: []byte("x")}}
+		"upload with oversized caption": func(r *PublishRequest) {
+			r.Parts = []DeliveryPart{{Kind: PartUpload, ArtifactRef: "a", Payload: make([]byte, MaxUploadCaptionBytes+1)}}
 		},
 		"unknown kind":     func(r *PublishRequest) { r.Parts = []DeliveryPart{{Kind: "x", Payload: []byte("x")}} },
 		"expired":          func(r *PublishRequest) { r.ExpiresAt = time.Now().Add(-time.Second).UnixMilli() },
@@ -345,8 +345,12 @@ func TestPublishValidation(t *testing.T) {
 		t.Errorf("32 parts: %v", err)
 	}
 	upload := PublishRequest{Conversation: f.conv, Owner: OwnerLegacyAgentIPC, Parts: []DeliveryPart{{Kind: PartUpload, ArtifactRef: "art-1"}, {Kind: PartEdit, Payload: []byte("e"), TargetMessageID: 5}}}
-	if d, err := f.st.PublishDelivery(t.Context(), upload); err != nil || d.Parts[0].Part.ArtifactRef != "art-1" || d.Parts[1].Part.TargetMessageID != 5 {
-		t.Errorf("upload/edit: %+v %v", d, err)
+	if _, err := f.st.PublishDelivery(t.Context(), upload); !errors.Is(err, ErrInvalidDelivery) {
+		t.Errorf("plain PublishDelivery must refuse uploads: %v", err)
+	}
+	edit := PublishRequest{Conversation: f.conv, Owner: OwnerLegacyAgentIPC, Parts: []DeliveryPart{{Kind: PartEdit, Payload: []byte("e"), TargetMessageID: 5}}}
+	if d, err := f.st.PublishDelivery(t.Context(), edit); err != nil || d.Parts[0].Part.TargetMessageID != 5 {
+		t.Errorf("edit: %+v %v", d, err)
 	}
 }
 
