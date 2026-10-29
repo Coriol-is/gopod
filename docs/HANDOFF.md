@@ -25,6 +25,14 @@ approved queue, [proposal registry](proposals/README.md) for CP status and
 - **Not authorized without the owner:** account logins, quota/paid fallbacks, T9 reboot,
   production group activation, schedule changes (freefeed digest stays as is).
 
+## CP-004 PR 1 in progress (2026-10-29)
+- Branch `feat/cp004-task-storage` (worktree `gopod-cp004-pr1`), based on `50a3d0a`: additive task storage only
+  (`internal/store/{schema_tasks,task_definitions,task_occurrences,task_runs}.go`, ADR D040). Not pushed.
+- Nothing calls the new APIs yet and `GetDueTasks` still serves only legacy rows, so behavior is unchanged.
+  `AdmitTaskOccurrence` takes a planned `AdmissionRequest`; the cron/DST/overlap planner is PR 5, queue
+  dispatch of the committed turn is PR 2. CP-004 is `in-progress`; CP-021/022 stay `proposed` until their slices.
+- Not done: PR 2-5, native execution, settlement, purge (always blocked), managed `/tasks` UI.
+
 ## CP-002 PR 3 in progress (2026-10-28)
 - Branch `feat/cp002-ipc-durable` (worktree `gopod-cp002-pr3`), based on PR 2 (`e7eaeee`): personal text IPC
   durable admission (`internal/ipc/durable*.go`, `store.RecentIPCRequests`), silent scheduled turns

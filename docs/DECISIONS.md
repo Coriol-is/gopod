@@ -1232,3 +1232,41 @@ A live smoke on the real bot is still required before enabling the flag in produ
 
 **Consequences.** What changes as a result. What becomes easier, what becomes harder.
 ```
+
+## D040 — Task reliability storage: managed definitions are revisioned tombstones; admission is one planned CAS transaction
+
+**Date:** 2026-10-29
+**Status:** Accepted
+
+**Context.** CP-004/021/022 PR 1 adds the storage for isolated, outcome-tracked and policy-driven
+tasks. Today the scheduler logs, enqueues and advances a cursor in separate writes, `DeleteTask`
+hard-deletes, and the Store has one SQLite connection, so an admission that calls `Queue.Enqueue`
+or any helper on the outer handle from inside a transaction deadlocks.
+
+**Decision.** `scheduled_tasks` gains additive columns (`execution_version` 0 legacy / 1 managed,
+`definition_revision`, kind, session and delivery mode, the ScopeRef snapshot copied from CP-002's
+namespace identity, policy bounds, expiry, tombstone). Legacy rows keep `legacy_main`, `legacy_ipc`,
+thread 0 and no scope; nothing is backfilled and legacy mutators refuse managed rows. Managed
+definitions are never physically deleted: `DeleteTask` tombstones them (revision bump, future
+admission off, proven-never-started turns stopped, started or uncertain attempts left
+`cancel_requested`/`execution_unknown` with their reservation, pending reminder deliveries cancelled
+through CP-002, uncertain ones untouched). Ledger tables (`task_occurrences`, `task_runs`,
+`task_attempts`, `task_verifications`) use `ON DELETE RESTRICT`, `BEFORE DELETE` triggers reject raw
+deletion, and terminal states, occurrence decisions, receipts and the provider snapshot are
+immutable. `AdmitTaskOccurrence` takes a plan made outside the store (cron, DST and policy code
+stays in the scheduler) and applies it in one transaction: it compare-and-sets revision and
+cursor, revalidates the stored ScopeRef, applies expiry, `max_runs` and overlap, records bounded
+skipped/coalesced/expired decisions, inserts run, attempt and the durable turn through the
+transaction-aware `insertTurnQ` (or the CP-002 delivery for a literal reminder), and advances the
+cursor, which may only move forward. The injected `Now` is the only clock inside it. Schedule
+`pause/delete` and execution `RequestRunStop` are separate intents. A chat rename advances the
+registration revision and makes admission fail closed until an explicit `RebindManagedTaskScope`
+(same namespace, epoch, chat and folder only). Purge is not implemented: `TaskPurgeBlockers`
+always includes `audit_export_unverified`. Group chats are refused. Activation stays off: nothing
+calls the new APIs yet.
+
+**Consequences.** One committed writer wins between competing ticks, edits and pauses, and a crash
+leaves either the whole admission or none of it. Later PRs wire dispatch (PR 2), execution (PR 3),
+settlement (PR 4) and the policy planner (PR 5) to these APIs. A rename needs an operator rebind
+before managed tasks in that chat run again. Managed evidence only grows until a later explicit
+maintenance step exists.
