@@ -21,7 +21,21 @@ const (
 // (D048): the owner gets the real step privately, the group a neutral line.
 func (b *Bot) groupLoginGuidance(ctx context.Context, ownerChat int64, thread int, rc store.RegisteredChat) {
 	b.log.Info("group sign-in redirected to the owner account", slog.String("folder", rc.Folder))
-	b.replyLoginText(ctx, ownerChat, thread, groupLoginOwnerNote)
+	note := groupLoginOwnerNote
+	reason := ""
+	if b.groupReason != nil {
+		reason = b.groupReason(ctx, rc.JID)
+	}
+	if b.groupReason == nil || reason != "" {
+		// The group is not admitted (or the cause is unknown): the account is
+		// not the problem, so do not send the owner down the wrong path.
+		note = "Group sign-in could not start"
+		if reason != "" {
+			note += " (" + reason + ")"
+		}
+		note += ". Check /isolation status " + rc.JID + "."
+	}
+	b.replyLoginText(ctx, ownerChat, thread, note)
 	groupChat, err := strconv.ParseInt(strings.TrimPrefix(rc.JID, "tg:"), 10, 64)
 	if err != nil || groupChat >= 0 {
 		return

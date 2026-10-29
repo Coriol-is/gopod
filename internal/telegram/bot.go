@@ -96,6 +96,7 @@ type Bot struct {
 	router        *control.Router
 	allowlist     *mountsec.Allowlist
 	ownerChatID   int64
+	resolveTries  int   // test seam: negative skips the startup username resolution
 	botID         int64 // from the token; identifies replies to and mentions of this bot
 	groupReason   func(ctx context.Context, jid string) string
 	log           *slog.Logger
@@ -324,6 +325,11 @@ func (b *Bot) registerHandlers(api *bot.Bot) {
 // command discovery is nice-to-have, not a hard requirement.
 func (b *Bot) Run(ctx context.Context) error {
 	if b.capabilities != nil {
+		// The mention gate needs the bot username: resolve it before polling,
+		// boundedly (about 10 s), and carry on without it if getMe keeps failing.
+		if b.resolveTries >= 0 && !b.capabilities.Resolve(ctx, 3, 3*time.Second, time.Second) {
+			b.log.Warn("bot username unresolved at startup; mention gate fails open until getMe succeeds")
+		}
 		b.capabilities.Start(ctx)
 		defer b.capabilities.Close()
 	}

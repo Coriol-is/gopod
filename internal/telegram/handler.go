@@ -80,7 +80,8 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 	text := strings.TrimSpace(messageText(m))
 	// The group trigger gate (D048): a message the group's mode does not
 	// answer stays stored context and starts nothing.
-	if b.groupTriggerSkips(ctx, m) {
+	// Albums are decided once per album, when it is flushed (inbound_context.go).
+	if m.MediaGroupID == "" && b.groupTriggerSkips(ctx, m) {
 		return
 	}
 	// thread is the private-chat topic the message came from; every
@@ -90,7 +91,7 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 	// Host-wide speech credentials are personal services, not implicit group
 	// grants. Refuse before album collection, downloads or Whisper requests.
 	if sharedSpeechInput(m, b.ownerChatID) {
-		if _, ok := b.resolveRegistered(ctx, m); ok {
+		if _, ok := b.resolveRegistered(ctx, m); ok && !b.groupTriggerSkips(ctx, m) {
 			b.replyTo(ctx, m.Chat.ID, thread, m.ID, groupSpeechUnavailable)
 		}
 		return
@@ -316,7 +317,9 @@ func (b *Bot) dispatchSlash(ctx context.Context, m *models.Message, text string)
 			b.sendDiagnosticResponse(ctx, m, "Telegram diagnostics unavailable.")
 			return
 		}
-		b.replyText(ctx, m.Chat.ID, thread, "unknown command")
+		if !b.silentForMember(ctx, m) {
+			b.replyText(ctx, m.Chat.ID, thread, "unknown command")
+		}
 		return
 	}
 
@@ -333,6 +336,9 @@ func (b *Bot) dispatchSlash(ctx context.Context, m *models.Message, text string)
 
 	cmdName, ok := b.router.LookupBySlash(slash)
 	if !ok {
+		if b.silentForMember(ctx, m) {
+			return // a member's unknown command in a gated group gets no reply
+		}
 		b.replyText(ctx, m.Chat.ID, thread, "unknown command: /"+slash)
 		return
 	}

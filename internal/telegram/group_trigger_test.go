@@ -211,13 +211,7 @@ func TestTriggerGateDoesNotTouchPrivateOrUnregisteredChats(t *testing.T) {
 	}
 	f.handle(other)
 	f.none(t)
-	// Commands in a group are never gated: they are not turns.
-	if f.b.groupTriggerSkips(t.Context(), groupMsg(trigOther, "/ping")) {
-		t.Fatal("command gated")
-	}
-	if f.b.groupTriggerSkips(t.Context(), groupMsg(trigOther, "/ping@"+trigBotName)) {
-		t.Fatal("addressed command gated")
-	}
+	// Commands: see TestGroupCommandsFollowTheTriggerMode.
 }
 
 func TestBotCommandEntityAddressedToBotCountsAsMention(t *testing.T) {

@@ -162,3 +162,30 @@ func (c *capabilityCache) startLocked() {
 		close(done)
 	}()
 }
+
+// Resolve fetches the bot identity synchronously, up to tries attempts with gap
+// between them, so the username is known before polling starts (D048). It never
+// fails startup: when every attempt fails the cache is left as it was and the
+// background refresh and the gate's fail-open rule cover the gap.
+func (c *capabilityCache) Resolve(ctx context.Context, tries int, perTry, gap time.Duration) bool {
+	for i := 0; i < tries; i++ {
+		tctx, cancel := context.WithTimeout(ctx, perTry)
+		result := c.fetch(tctx)
+		cancel()
+		if result.valid {
+			c.mu.Lock()
+			c.view.Settings, c.view.Username, c.view.CheckedAt = result.settings, result.username, c.now()
+			c.view.ErrorClass = ""
+			c.mu.Unlock()
+			return true
+		}
+		if i+1 < tries {
+			select {
+			case <-ctx.Done():
+				return false
+			case <-time.After(gap):
+			}
+		}
+	}
+	return false
+}

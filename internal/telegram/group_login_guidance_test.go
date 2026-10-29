@@ -1,6 +1,7 @@
 package telegram
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -11,7 +12,8 @@ import (
 
 func TestConfirmedGroupLoginExplainsTheRealStepPrivatelyAndStaysNeutralInTheGroup(t *testing.T) {
 	b, fake := handoffFixture(t)
-	b.runner = &runner.Runner{} // a group profile is never available: Ensure refuses
+	b.groupReason = func(context.Context, string) string { return "" } // admitted: only the runtime checks remain
+	b.runner = &runner.Runner{}                                        // a group profile is never available: Ensure refuses
 	target, ok := b.groupLoginTarget(t.Context(), handoffGroup)
 	if !ok {
 		t.Fatal("group target")
@@ -47,5 +49,16 @@ func TestGroupLoginStillRequiresPrivateConfirmation(t *testing.T) {
 	sends := sendsTo(fake, streamChat)
 	if len(sends) != 1 || len(buttonsOf(t, sends[0])) != 2 {
 		t.Fatalf("private confirmation missing: %+v", sends)
+	}
+}
+
+func TestGroupLoginGuidanceDoesNotBlameTheAccountWhenGroupIsNotAdmitted(t *testing.T) {
+	b, fake := handoffFixture(t)
+	b.groupReason = func(context.Context, string) string { return "disabled by owner" }
+	target, _ := b.groupLoginTarget(t.Context(), handoffGroup)
+	b.groupLoginGuidance(t.Context(), streamChat, 0, target)
+	owner := sendsTo(fake, streamChat)
+	if len(owner) != 1 || strings.Contains(owner[0].Form["text"], "your account") || !strings.Contains(owner[0].Form["text"], "disabled by owner") {
+		t.Fatalf("owner note: %+v", owner)
 	}
 }

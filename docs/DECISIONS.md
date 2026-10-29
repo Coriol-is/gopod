@@ -1749,9 +1749,16 @@ were denied, and group `/login` ended in a generic failure.
    rotation; a re-registration into a new namespace falls back to the default). A registration without a row
    (every group registered before this change, including the existing one) behaves as `all`; a newly
    registered group is seeded with `mention` in the same transaction as its registration. The gate runs in the
-   message handler before a turn is enqueued. A message that does not match is already stored as chat
-   context and then ignored: no turn, no model call, no quota use, no notice. Commands are not turns and are
-   not gated; private chats and unregistered chats are untouched. `mention` means a `mention` entity naming
+   message handler before a turn is enqueued. A message that does not match is stored in the message history
+   (nothing reads that history back into a prompt today, so unaddressed messages cannot inject into the agent;
+   injecting history later needs its own decision) and is otherwise ignored: no turn, no model call, no quota
+   use, no notice. A command addressed to another bot (`/cmd@other`) is ignored in every mode. In the gated
+   modes a bare `/cmd` from a member is ignored (the owner's bare commands and `/cmd@thisbot` work) and a
+   member's unknown command gets no reply; `all` keeps today's behavior. An album is decided once, when it is
+   flushed: it is one turn if any item qualifies, else dropped. While the bot username is unknown (getMe has not
+   succeeded; it is resolved with a bounded retry before polling) the `mention` gate treats messages with a
+   mention entity or a reply to a bot as addressed. A registration lookup error fails closed. Private chats and
+   unregistered chats are untouched. `mention` means a `mention` entity naming
    the bot username, a `text_mention` of the bot id, a command addressed to it, or a reply to one of its
    messages; forwarded text never addresses the bot. `owner` answers only the owner's own messages
    (strict). `/trigger [mode]` goes through `internal/control`; without an argument it shows the mode and

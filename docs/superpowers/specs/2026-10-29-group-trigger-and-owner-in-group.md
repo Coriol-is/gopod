@@ -9,7 +9,7 @@ change ([D047](../../DECISIONS.md)). Statements marked *(owner)* come from the o
    - no confirmation: `/trigger` (show and set), `/model`, `/provider` (this group only), `/isolation status`, `/isolation disable` (kill switch must be immediate), `/help`;
    - confirmation in the owner's private chat: `/isolation enable`, `/isolation prepare` (they change the security boundary);
    - private chat only: `/logs`, `/restart`, memory, schedules, `/telegram doctor`, backup, anything personal or host-level.
-3. Messages that do not match the trigger are still stored as chat context.
+3. Messages that do not match the trigger are still stored in the message history. Nothing currently reads that history back into a prompt, so unaddressed messages have no prompt-injection exposure by construction; injecting history later would need its own decision.
 4. `owner` mode answers only the owner's own messages (strict meaning). Replies from other members are ignored in that mode; use `owner+mention` to let others address the bot.
 5. Codex for the group is switched by the owner from the group with `/provider codex` through the owner-in-group identity (this is why R2 is built first).
 6. CI is not mandatory: no branch protection or required checks are planned.
@@ -43,7 +43,7 @@ person who controls the group, but the bot currently treats the owner's group me
    - `owner+mention`: owner messages always, others only when addressed;
    - `all`: every message the bot receives.
 2. The gate runs in the message handler **before** a turn is enqueued. A message that does not match is ignored
-   silently: no turn, no model call, no quota use, no group notice. It is still stored as ordinary chat history
+   silently: no turn, no model call, no quota use, no group notice. It is still stored in the message history (not injected into prompts today)
    *(guess: yes, so later addressed turns have context)*.
 3. *(guess)* Defaults: new groups `mention`; the existing group keeps `all` (today's behavior) until the owner
    changes it. The owner decides the default for the existing group (open question 1).

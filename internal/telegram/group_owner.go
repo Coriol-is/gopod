@@ -40,7 +40,7 @@ func (b *Bot) addressesBot(m *models.Message) bool {
 		!(m.IsTopicMessage && r.ID == m.MessageThreadID) {
 		return true
 	}
-	username := b.TelegramSnapshot().Username
+	username := b.botUsername()
 	return b.entitiesAddressBot(m.Text, m.Entities, username) || b.entitiesAddressBot(m.Caption, m.CaptionEntities, username)
 }
 

@@ -156,6 +156,7 @@ func TestDiagnosticsPreserveOrdinaryCommand(t *testing.T) {
 
 func TestDiagnosticsSlowGetMeDoesNotBlockPollingAndJoins(t *testing.T) {
 	b, fake, _ := diagnosticFixture(t)
+	b.resolveTries = -1 // the bounded startup resolution has its own test
 	started, joined := make(chan struct{}), make(chan struct{})
 	b.capabilities = newCapabilityCache(func(ctx context.Context) capabilityResult {
 		close(started)
