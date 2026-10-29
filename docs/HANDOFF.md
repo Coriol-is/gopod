@@ -7,6 +7,7 @@ approved queue, [proposal registry](proposals/README.md) for CP status and
 [ACCEPTANCE](ACCEPTANCE.md) for pending real-client verification.
 
 ## Resume here (2026-10-27 evening)
+- **Deployed 2026-10-29:** Pi runs `07d9edd` (CP-002 PR1–3, flags off); see [evidence](deployments/2026-10-29-07d9edd.md). Pi LAN address is 192.168.1.128 when the Tailscale name is offline. In-flight: CP-003 PR4 (artifacts) in worktree `gopod-cp003-pr4`.
 - **Repo is clean:** `main` has no open PRs, no stale local/remote branches and no
   extra worktrees (all 67 merged remote branches and 40 worktrees were removed after
   verifying their PRs merged). CI on `main` is green; PR #70 moved actions to
