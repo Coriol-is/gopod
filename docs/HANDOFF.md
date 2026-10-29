@@ -80,6 +80,15 @@ approved queue, [proposal registry](proposals/README.md) for CP status and
   received Telegram acknowledgements; all schedules and data counts were preserved. Groups,
   artifact delivery and managed tasks remain disabled.
 - Next: owner-client formatting inspection and remaining restart edge cases. The owner has checked the baseline `/restart`. API acknowledgements and startup readiness do not establish these live acceptance gates.
+- **Group admission live 2026-10-29 (late):** Pi runs `2543950` (D047 default group admission + tree-budget fix #88);
+  first online `gopod backup create` set `20261029T222618Z-db-63737a76` (verified), rollback tag
+  `gopod-gopod:rollback-pre-group-admission`. The legacy group `tg:-1003850302017` was prepared automatically
+  (epoch `e2`); after the owner re-logged in Claude in the private chat, new and resume group turns ran on Claude.
+  Owner-only commands from the group are denied because ownership is by chat (see
+  [group trigger and owner-in-group spec](superpowers/specs/2026-10-29-group-trigger-and-owner-in-group.md)).
+  Group `/login` always fails by design (groups use the owner's account); fix and trigger modes are specified, not built.
+  Still open: live two-turn Codex canary in the group, trigger modes, owner-in-group commands, stickers, buttons spec,
+  thread awareness.
 - **Status sync 2026-10-29 night:** `main` = `079e5ea` (PRs #70-#86 merged, none open, no extra worktrees or
   unmerged local branches). Production `8bdff46`, restart count 1 is the owner's graceful `/restart`
   (19:18 UTC, exit 0). Flags on: `GOPOD_OUTBOX_DISPATCHER`, `GOPOD_OUTBOX_IPC` (owner chat, thread 0).
