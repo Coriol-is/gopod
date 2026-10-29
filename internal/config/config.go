@@ -157,6 +157,14 @@ type Config struct {
 	// (CP-007), which this flag does not check; see D039.
 	OutboxArtifactsEnabled bool
 
+	// RecoveryQuarantine starts only the control plane: no Telegram polling,
+	// scheduler, IPC watchers, queue recovery, model/auth warmup, container
+	// cleanup or delivery, and no migrations. Default false.
+	// GOPOD_RECOVERY_QUARANTINE=1. A restore-quarantine latch file in the data
+	// directory (maintenance.LatchPath) forces the same mode regardless of this
+	// variable. See docs/deployments/BACKUP-RESTORE.md (CP-007).
+	RecoveryQuarantine bool
+
 	// GenerationRetentionDays is how long finished generated-artifact ledger rows
 	// (ready, failed, preparation_unknown) are kept. Default 30. A failed or
 	// unknown row blocks a second paid call for its key, so it is kept as long
@@ -213,6 +221,7 @@ func Load(loadDotenv bool) (Config, error) {
 		ManagedTasksEnabled:     envFlag("GOPOD_MANAGED_TASKS"),
 		OutboxIPCEnabled:        envFlag("GOPOD_OUTBOX_IPC"),
 		OutboxArtifactsEnabled:  envFlag("GOPOD_OUTBOX_ARTIFACTS"),
+		RecoveryQuarantine:      envFlag("GOPOD_RECOVERY_QUARANTINE"),
 		CompactAfter:            compactAfter,
 		CompactInterval:         os.Getenv("GOPOD_COMPACT_INTERVAL"),
 		CompactTime:             os.Getenv("GOPOD_COMPACT_TIME"),

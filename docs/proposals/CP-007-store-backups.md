@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | proposed |
+| Status | in-progress |
 | Date | 2026-10-05 |
 | Origin | feature survey of `rzaytsev/codex-agent` (2026-10-05) and the 2026-10-03 public-release audit |
 | Size | M |
@@ -41,3 +41,13 @@ The linked spec now defines this candidate in the [adoption map](2026-10-26-code
 wave **1 support**. Status remains proposed; a saved design does not approve
 implementation or change the existing delivery queue. New acceptance/migration
 requirements in the dated spec supersede conflicting early shorthand here.
+
+## 2026-10-29 implementation, PR 1 (slices 4-6)
+
+Delivered on branch `feat/cp007-backups` ([D043](../DECISIONS.md), [runbook](../deployments/BACKUP-RESTORE.md)):
+store-owned online snapshot (`internal/store/backup*.go`), sealed backup sets with atomic publication and offline
+verify (`internal/backup`), controller-lock fence, settlement check and restore latch (`internal/maintenance`),
+`gopod backup create|verify|list|idle|quarantine`, and the quarantine start mode. Still open: slice 7 (opt-in
+timer, bounded retention), capture of ChatsDir/provider session and auth homes/IPC files (so `matched_stopped` is not
+yet a full matched recovery), restore epoch invalidation of transient approvals, an activation/restore command,
+online artifact leases (needed only for an online matched mode), a Pi restore drill and qualification.

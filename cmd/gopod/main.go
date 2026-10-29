@@ -37,6 +37,7 @@ import (
 	"github.com/Coriol-is/gopod/internal/control"
 	"github.com/Coriol-is/gopod/internal/ipc"
 	picoclog "github.com/Coriol-is/gopod/internal/log"
+	"github.com/Coriol-is/gopod/internal/maintenance"
 	"github.com/Coriol-is/gopod/internal/memory"
 	"github.com/Coriol-is/gopod/internal/observability"
 	"github.com/Coriol-is/gopod/internal/queue"
@@ -54,6 +55,10 @@ import (
 var version = "dev"
 
 func main() {
+	// `gopod backup ...` is an operator CLI: it never starts the application.
+	if len(os.Args) > 1 && os.Args[1] == "backup" {
+		os.Exit(runBackupCLI(os.Args[2:], os.Stdout, os.Stderr))
+	}
 	if err := run(); err != nil {
 		// run() may exit before slog is wired, so go to stderr.
 		fmt.Fprintf(os.Stderr, "gopod: %v\n", err)
@@ -82,6 +87,15 @@ func run() error {
 		slog.String("store_path", cfg.StorePath),
 	)
 
+	// CP-007: a restore latch or GOPOD_RECOVERY_QUARANTINE runs the control
+	// plane only. This precedes the metrics listener, the store open
+	// (migrations), polling, scheduler, IPC, warmup and delivery.
+	if q, why := recoveryQuarantine(cfg); q {
+		qctx, qstop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer qstop()
+		return runQuarantine(qctx, cfg, why, logger)
+	}
+
 	// Observability (M3.6). Opt-in Prometheus /metrics listener gated by
 	// GOPOD_METRICS_ADDR; tracing is still the otel no-op provider (O4).
 	// A failed Init (e.g. the address cannot be bound) is fatal so an
@@ -102,6 +116,12 @@ func run() error {
 
 	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// The controller instance lock is the stopped-writer backup fence.
+	instanceLock, err := maintenance.LockWait(sigCtx, maintenance.ControllerLockPath(cfg.DataDir), 60*time.Second)
+	if err != nil {
+		return fmt.Errorf("controller instance lock (a backup capture or another controller holds it): %w", err)
+	}
+	defer instanceLock.Release()
 	// ctx is the app context: cancelled after the signal once the
 	// shutdown hooks (restart notice, D027) have run.
 	ctx, onShutdown := gracefulContext(sigCtx, stop)

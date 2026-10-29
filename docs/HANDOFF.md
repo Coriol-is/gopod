@@ -45,6 +45,17 @@ approved queue, [proposal registry](proposals/README.md) for CP status and
 - Not done: settlement/result publication/stop coordination (PR 4), schedule policy (PR 5), per-role IPC enforcement in the watcher,
   persisting report revisions beyond latest. CP-004 stays `in-progress`.
 
+## CP-007 PR 1 merged (#80, 2026-10-29)
+- Branch `feat/cp007-backups` (worktree `gopod-cp007-pr1`), based on `5680a85`, not pushed: backup foundation
+  (reliability-operations plan slices 4-6, ADR D043). `gopod backup create|verify|list|idle|quarantine`
+  (`internal/{backup,maintenance}`, `internal/store/backup*.go`, `internal/control/backup_cmds.go`,
+  `cmd/gopod/{backup_cli,quarantine}.go`), runbook [BACKUP-RESTORE](deployments/BACKUP-RESTORE.md).
+- Behavior change on `main`: the controller now takes `<data>/.controller.lock` at start (waits 60 s), so a second
+  controller on one data dir fails to start; `GOPOD_RECOVERY_QUARANTINE=1` or `<data>/.restore-quarantine` runs control
+  plane only. Both default to normal behavior.
+- Not done: timer/retention (slice 7), session/auth/ChatsDir/IPC capture, restore + activation command, Pi drill. The
+  Pi image predates `gopod backup`; the next deploy still needs the manual cold copy. CP-007 is `in-progress`.
+
 ## CP-004 PR 2 in progress (2026-10-29)
 - Branch `feat/cp004-dispatch` (worktree `gopod-cp004-pr2`), based on PR 1 (`c7ff9d2`): managed dispatch and conservative
   recovery (`internal/queue/managed.go`, `internal/store/task_dispatch.go`, `cmd/gopod/managed_turns.go`, ADR D042). Not pushed.

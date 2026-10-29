@@ -1496,6 +1496,72 @@ only an operator release (after an `execution_unknown` transition) clears them.
 
 Shutdown classification: a shutdown that races a handler return counts as an interruption only when the handler also returned an error. A nil return with host-observed exit evidence is recorded as exited even if shutdown raced it, so a handler that swallows cancellation and returns nil after proving exit is recorded as completed. A handler that wants an interruption recorded must return the context error.
 
+## D043 — Backup foundation: private-connection snapshots, a lock-based fence, sealed sets and a restore latch
+
+**Date:** 2026-10-29
+**Status:** Accepted
+
+**Context.** CP-007 slices 4–6 need a consistent copy of the single SQLite file on a host with no
+`sqlite3` binary, while the application keeps one pooled connection (`SetMaxOpenConns(1)`), without ever
+stopping owner work and without letting a restored copy start polling Telegram.
+
+**Decision.**
+1. *Snapshot.* `store.SnapshotFile` uses SQLite's online backup API (`ncruces/go-sqlite3` v0.20.0
+   `Conn.BackupInit`/`Step`) from a **separate, private** connection opened `mode=rw` (never created), so the
+   application's pooled connection is never borrowed and cannot deadlock; WAL readers do not block writers. Read-only
+   was tried and rejected: under a concurrent writer a read-only WAL reader fails with `READONLY_RECOVERY`. Steps are
+   bounded, `BUSY/LOCKED` retry until `ctx`, the destination is created 0600 `O_EXCL`, converted to
+   `journal_mode=DELETE` (a single file, no sidecars), integrity- and foreign-key-checked, fsynced. Alternatives
+   rejected: live `cp` of db/wal, `VACUUM INTO` (no incremental cancel, spec names the backup API).
+2. *Compatibility without a ledger.* There is no migration ledger and SQLite `schema_version` is only a change
+   counter, so "newer than this binary" is decided by comparing the file's tables and columns with what
+   `Open` creates on a scratch database (`CheckSchemaCompat`): an unknown table or column means newer
+   (`ErrSchemaNewer`); missing ones mean older and are migrated forward. The manifest also records a table/column
+   fingerprint and per-table row counts.
+3. *Sets.* A set is a directory (`store.sqlite`, optional `config/`, `artifacts/`, `manifest.json` with per-file
+   SHA-256, `COMPLETE` marker = hash of the manifest). It is written in `<root>/.staging/<id>`, fsynced file by
+   file and directory by directory, and **published only by one `rename`**; every failure before that removes the
+   staging tree, so no partial set is ever listed or restorable. Failure at the final root fsync keeps a complete,
+   verifiable set and reports the error. The root must be absolute, 0700, owned by the user, a non-symlink and
+   outside the data dir, chats dir, repo and every declared source. Caps and free space are checked first and fail
+   closed. Verify restores the DB into a scratch dir and inspects it read-only; it never calls `Store.Open`.
+4. *Fence.* The controller holds an advisory `flock` on `<data>/.controller.lock` for its life (60 s wait at
+   start). `matched_stopped` takes the same lock, so success is kernel evidence that no controller runs and none can
+   start during the copy, then requires a **read-only** inventory of live owned containers (Docker label
+   `gopod.chat`; running/restarting/paused). An unknown inventory is refused unless the operator asserts that no
+   containers exist (recorded as `operator_asserted_none`). The fence interface has no stop, kill or remove
+   method: unsettled writers produce a refusal (exit 3) and nothing is changed. This replaces the specified Unix
+   socket + host supervisor for this slice because an in-process `flock` is dependable evidence, needs no
+   agent-reachable endpoint and survives crashes; the socket remains a later option for an online fence.
+5. *Quarantine.* `GOPOD_RECOVERY_QUARANTINE=1` or a latch file `<data>/.restore-quarantine` (fail-closed: any
+   state but "absent" counts) makes `main` run the control plane only, **before** the metrics listener, `Store.Open`
+   and every subsystem; it only reads the DB read-only and logs a validation result. Leaving it is
+   `gopod backup quarantine release --yes` (host action) then a normal start.
+6. *Operator surface.* `gopod backup create|verify|list|idle|quarantine` go through the control Router
+   (`PermOwnerOnly`, empty slash name so no chat can reach them; `LookupBySlash("")` no longer resolves).
+
+7. *Review hardening.* Root overlap is also decided by device/inode identity along the ancestor chain, so aliases
+   and bind mounts count. Each capture holds a per-capture lock file beside its staging dir; later captures remove
+   staging entries older than 30 minutes only when that lock is free, and staging never counts toward the byte
+   cap. Verify opens every file component by component with `O_NOFOLLOW`. Pre-existing foreign key violations:
+   `database_only` copies the database as found and records a manifest warning (table names and counts only,
+   re-checked by verify, and a manifest that hides them is a mismatch), because a protective backup of a damaged
+   database is better than none; `matched_stopped` stays strict and refuses, because it claims a recoverable cut.
+   The scratch directory for verify defaults to `<root>/.staging` and is configurable. `matched_stopped` also
+   refuses while a non-one-off container of the compose service `gopod` is live (best effort), closing the gap
+   left by pre-lock controllers.
+
+**Limits.** `matched_stopped` here covers the database, declared config files and artifact blobs only; ChatsDir
+workspaces, provider session/auth homes and IPC files are listed in the manifest as `not_covered`, so it is **not**
+a full matched filesystem/auth recovery guarantee. Hashes detect corruption, not an adversary who can rewrite a
+whole set. No timer, retention pruning, off-host copy or automated restore/activation exist yet.
+
+**Consequences.** A backup can be taken online (`database_only`) or with the controller stopped
+(`matched_stopped`) from the existing image. A second controller on the same data dir now fails to start instead of
+sharing the database. Artifact delivery stays gated on the CP-003 extension (blob manifest is implemented;
+leases pinning GC during capture are not needed while writers are stopped but are required before an online
+matched mode).
+
 ---
 
 ## D044 — Managed task execution: policy-guarded containers, ephemeral native runs, attempt-bound reports
