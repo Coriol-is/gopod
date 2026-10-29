@@ -233,6 +233,9 @@ func (r *Router) List() []CommandInfo {
 // LookupBySlash finds a command by its Telegram slash name.
 // Returns ("", false) if no command matches.
 func (r *Router) LookupBySlash(slash string) (string, bool) {
+	if slash == "" {
+		return "", false // commands without a slash form are not reachable from chat
+	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	for name, e := range r.handlers {

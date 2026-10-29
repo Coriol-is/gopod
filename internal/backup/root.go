@@ -51,8 +51,8 @@ func ValidateRoot(root string, forbidden []string) error {
 		return fmt.Errorf("%w: %v", ErrUnsafeRoot, err)
 	}
 	for _, f := range forbidden {
-		if f == "" {
-			continue
+		if f == "" || !filepath.IsAbs(f) {
+			continue // unset or relative (unresolvable) trees cannot be compared
 		}
 		rf, err := resolveLoose(f)
 		if err != nil {
