@@ -12,13 +12,22 @@ import (
 )
 
 const (
-	autoRetryBackoff = 5 * time.Minute
-	autoNoticeGap    = time.Hour
+	autoRetryBackoff = time.Minute
+	autoNoticeGap    = 10 * time.Minute
 	autoTimeout      = 30 * time.Second
 	maxLabelRunes    = 48
 )
 
 var errNotApplicable = errors.New("group preparation not applicable")
+
+// AutoPrep carries the hooks and coordination state for automatic preparation.
+// Slot serializes lifecycle steps with foreground work (the runner chat slot);
+// nil runs them directly. Notify sends a private owner notice; nil drops it.
+type AutoPrep struct {
+	Slot   func(ctx context.Context, folder string, op func(context.Context) (string, error)) (string, error)
+	Notify func(context.Context, string)
+	auto   autoState
+}
 
 // autoState holds the in-memory coordination for automatic preparation. Durable
 // truth stays in the store (epoch readiness, disabled flags); losing this state
@@ -204,16 +213,12 @@ func (m *Manager) setStage(jid, stage string) {
 	a.stages[jid] = stage
 }
 
-// RecordStage remembers the last structural admission stage that refused a turn,
-// for owner diagnostics only.
-func (m *Manager) RecordStage(jid, stage string) { m.setStage(jid, "admission:"+stage) }
-
 func (m *Manager) lastStage(jid string) string {
 	a := &m.auto
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if s := a.stages[jid]; s != "" {
-		return "last refusal at " + s
+		return "; automatic preparation failed at " + s
 	}
 	return ""
 }
@@ -234,9 +239,10 @@ func groupLabel(c store.RegisteredChat) string {
 	return fmt.Sprintf("%q (%s)", name, c.JID)
 }
 
-// kickPrepare starts background preparation the first time an unready registered
-// group is seen at admission. It is cheap when nothing applies.
-func (m *Manager) kickPrepare(c store.RegisteredChat) {
+// KickPrepare starts background preparation the first time an unready registered
+// group is seen at admission (the runner calls it when admission is denied). It
+// is cheap when nothing applies and never blocks the denied turn.
+func (m *Manager) KickPrepare(c store.RegisteredChat) {
 	if m.Store == nil || m.Docker == nil || !m.Config.registered() || !groupChat(c) || c.GroupEpochReady || m.Config.Qualification == "" || len(m.Config.Providers) == 0 {
 		return
 	}

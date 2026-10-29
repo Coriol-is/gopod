@@ -37,10 +37,6 @@ type AdmissionError struct{ Stage string }
 func (e *AdmissionError) Error() string { return "group admission unavailable: " + e.Stage }
 func (e *AdmissionError) Unwrap() error { return ErrUnavailable }
 
-// Is lets the runner classify any refused group start as an unavailable profile,
-// so groups get one neutral notice instead of internals.
-func (e *AdmissionError) Is(target error) bool { return target == runner.ErrProfileUnavailable }
-
 type Manager struct {
 	Config           Config
 	Store            *store.Store
@@ -80,7 +76,6 @@ func (m *Manager) lock(ctx context.Context, id string) (func(), error) {
 	}
 }
 func (m *Manager) Authorize(ctx context.Context, c store.RegisteredChat) error {
-	m.kickPrepare(c)
 	if m.UID <= 0 || m.GID <= 0 || m.Store == nil || m.Docker == nil || m.MCP == nil || m.Config.Qualification == "" || c.IsOwner || !c.GroupEpochReady || !store.ValidScopeIdentity(c.Scope()) {
 		return ErrUnavailable
 	}
@@ -117,7 +112,6 @@ func (m *Manager) Start(ctx context.Context, c store.RegisteredChat, base runner
 	stage := "admission"
 	defer func() {
 		if retErr != nil {
-			m.RecordStage(c.JID, stage)
 			retErr = &AdmissionError{Stage: stage}
 		}
 	}()

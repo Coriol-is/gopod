@@ -394,6 +394,9 @@ func run() error {
 		return err
 	}
 	defer stopGroups()
+	if groupManager != nil {
+		groupManager.Slot = agentRunner.WithChatSlot
+	}
 
 	// Control plane Router (M3.5). Built-in commands are registered
 	// here; subsystem-specific commands are registered by the subsystems
@@ -574,7 +577,14 @@ func run() error {
 			return control.Response{Text: "Use /login directly (interactive OAuth flow)."}, nil
 		})
 	// /register: owner-only command to register other chats.
-	control.RegisterChatCommands(router, st, cfg.OwnerChatID)
+	// Registering a group also prepares its clean runtime epoch (D047).
+	var prepareGroup control.GroupPreparer
+	if groupManager != nil {
+		prepareGroup = func(ctx context.Context, jid string) (string, error) {
+			return groupManager.EnsurePrepared(ctx, jid, true)
+		}
+	}
+	control.RegisterChatCommandsWith(router, st, cfg.OwnerChatID, prepareGroup)
 
 	if cfg.TelegramBotToken == "" {
 		logger.Warn("telegram subsystem skipped: TELEGRAM_BOT_TOKEN is unset (store-only mode)")
@@ -587,11 +597,16 @@ func run() error {
 			Router:        router,
 			Allowlist:     allowlist,
 			OwnerChatID:   cfg.OwnerChatID,
+			GroupReason:   groupReasonFunc(groupManager),
 			Log:           tgLog,
 			StreamEnabled: cfg.StreamEnabled,
 		})
 		if err != nil {
 			return fmt.Errorf("init telegram: %w", err)
+		}
+		if groupManager != nil {
+			groupManager.Notify = tgBot.NotifyOwner
+			go groupManager.ReconcileAll(ctx)
 		}
 
 		restart.notify = tgBot.SendRestartNotice

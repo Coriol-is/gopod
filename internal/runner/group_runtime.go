@@ -16,6 +16,14 @@ type GroupRuntime interface {
 	Start(context.Context, store.RegisteredChat, AgentProvider, int, string) (string, AgentProvider, func(), error)
 }
 
+// reconcileDeniedGroup lets a runtime that supports it prepare a registered but
+// not yet ready group in the background (D047). The denied turn is not delayed.
+func (r *Runner) reconcileDeniedGroup(c store.RegisteredChat) {
+	if p, ok := r.groups.(interface{ KickPrepare(store.RegisteredChat) }); ok && !c.GroupEpochReady {
+		p.KickPrepare(c)
+	}
+}
+
 func (r *Runner) SetGroupRuntime(g GroupRuntime) { r.groups = g }
 func isGroupRegistration(c store.RegisteredChat) bool {
 	if c.IsOwner || !strings.HasPrefix(c.JID, "tg:") {

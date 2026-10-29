@@ -208,12 +208,10 @@ func TestEnsurePreparedRespectsGroupCap(t *testing.T) {
 	}
 }
 
-func TestAuthorizeKicksPreparationAndReconcileAll(t *testing.T) {
+func TestKickPrepareAndReconcileAll(t *testing.T) {
 	m, _, _, c := autoFixture(t)
 	ctx := t.Context()
-	if m.Authorize(ctx, c) == nil {
-		t.Fatal("unready group admitted")
-	}
+	m.KickPrepare(c)
 	got, _ := m.Store.GetRegistered(ctx, c.JID)
 	if !got.GroupEpochReady {
 		t.Fatal("first admission attempt did not reconcile")

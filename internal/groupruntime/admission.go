@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/Coriol-is/gopod/internal/runner"
 	"github.com/Coriol-is/gopod/internal/store"
 )
 
@@ -16,11 +17,15 @@ const (
 
 	// DefaultMaxGroups bounds prepared groups so a flood of registrations cannot
 	// create unbounded runtime state.
-	DefaultMaxGroups = 10
-	maxGroupsCeiling = 100
+	DefaultMaxGroups = 50
+	maxGroupsCeiling = 500
 
 	groupOwnerDisabledKey = "group_owner_disabled:"
 )
+
+// Is lets the runner classify any refused group start as an unavailable profile,
+// so groups get one neutral notice instead of internals.
+func (e *AdmissionError) Is(target error) bool { return target == runner.ErrProfileUnavailable }
 
 func (c Config) validAdmission() bool {
 	switch c.AdmissionMode {
@@ -110,7 +115,7 @@ func (m *Manager) Reason(ctx context.Context, jid string) string {
 	case m.Config.Qualification == "":
 		return "runtime not qualified"
 	case !c.GroupEpochReady:
-		return "clean epoch not ready"
+		return "clean epoch not ready" + m.lastStage(jid)
 	}
 	if known, e := m.Store.IsKnownGroup(ctx, jid); e != nil || !known {
 		return "group not observed yet"
@@ -130,7 +135,7 @@ func (m *Manager) Reason(ctx context.Context, jid string) string {
 		}
 		return "not in allowlist"
 	}
-	return m.lastStage(jid)
+	return ""
 }
 
 // listedForEnable applies the allowlist only in allowlist mode.

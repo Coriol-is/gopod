@@ -51,6 +51,7 @@ func (r *Runner) authorizeProfile(ctx context.Context, folder string) error {
 		count++
 		if chat.JID != ownerJID || !chat.IsOwner {
 			if r.groups == nil || !isGroupRegistration(chat) || r.groups.Authorize(ctx, chat) != nil {
+				r.reconcileDeniedGroup(chat)
 				return ErrProfileUnavailable
 			}
 		}
