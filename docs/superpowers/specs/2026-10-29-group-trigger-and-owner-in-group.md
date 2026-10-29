@@ -1,6 +1,6 @@
 # Group reply triggers, owner-in-group identity and group login guidance
 
-Date: 2026-10-29. Status: **requirements accepted with the owner decisions below; implementation in progress**. Follows the default group admission
+Date: 2026-10-29. Status: **implemented on branch `feat/group-triggers-owner` (ADR [D048](../../DECISIONS.md)), not yet merged or deployed**. Follows the default group admission
 change ([D047](../../DECISIONS.md)). Statements marked *(owner)* come from the owner; *(guess)* are proposals.
 
 ## Owner decisions (2026-10-29, late)

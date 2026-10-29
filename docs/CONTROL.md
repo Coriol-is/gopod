@@ -77,6 +77,7 @@ const (
     PermPublic     Perm = iota // any chat, any user
     PermChatLocal              // any chat, but must affect only the calling chat
     PermOwnerOnly              // only the owner chat / CLI / authorized socket
+    PermGroupOwner             // owner chat / CLI, or the owner's own user id in a group (D048)
 )
 
 // A Handler implements one Command. It receives a fully-validated Command:
@@ -146,11 +147,16 @@ one place auth lives.
 | `PermPublic` | always |
 | `PermChatLocal` | always, but the handler MUST scope its effects to `cmd.Caller.ChatID` (Router cannot enforce this — it's a handler discipline backed by tests) |
 | `PermOwnerOnly` | `cmd.Caller.IsOwner == true` |
+| `PermGroupOwner` | `IsOwner`, or `Caller.IsGroupOwner` in a group (`ChatID < 0`). Group scope only: the handler acts on the calling group and never on anything `PermOwnerOnly` guards ([D048](DECISIONS.md)) |
 
 `IsOwner` is computed once by the frontend when constructing `Caller`:
 
 - **Telegram frontend:** `IsOwner = (ChatID == GOPOD_OWNER_CHAT_ID)`. Per
   [D006](DECISIONS.md), there is exactly one owner chat.
+- **Telegram, group scope (D048):** `IsGroupOwner = (From.ID == GOPOD_OWNER_CHAT_ID)` in a group or
+  supergroup, using the sender Telegram supplied for the message or button press. `sender_chat` (anonymous
+  admin, channel post), forwarded messages and bots never qualify. It never sets `IsOwner`; every
+  `PermOwnerOnly` command stays denied from a group, including to the owner.
 - **CLI frontend:** `IsOwner = true` always. Anyone with shell access to the
   gopod box is implicitly owner. Document this trust assumption.
 
@@ -221,6 +227,20 @@ Cross-chat operations and global state.
 | `/system health` | `gopod system health` | OwnerOnly | Container daemon, DB, embedder, scheduler, queue health |
 | `/system uptime` | `gopod system uptime` | OwnerOnly | Process uptime, last restart cause |
 | `/debug ...` | `gopod debug ...` | OwnerOnly | Free-form diagnostics (per-subcommand) |
+
+### 5.3a Group-scoped owner commands (D048)
+
+| Telegram | Perm | From the owner in a group | From the owner's private chat |
+|---|---|---|---|
+| `/trigger [owner\|mention\|owner+mention\|all]` | GroupOwner | shows or sets this group's trigger mode, no confirmation | `/trigger <group_chat_id> [mode]` |
+| `/isolation status` / `disable` | GroupOwner | this group only, immediate (the kill switch) | `/isolation <op> <group_chat_id>`; `disable` confirms as before |
+| `/isolation enable` / `prepare` | GroupOwner | answered with a confirmation delivered to the owner's private chat; nothing runs until Yes is pressed there | confirms in place, as before |
+| `/model`, `/provider` | ChatLocal + owner check in groups | this group only, no confirmation | unchanged (`/provider` confirms) |
+| `/help` | Public | lists the commands the caller may use | unchanged |
+
+`Response.Private` and `Response.Ack` let a handler ask the frontend to deliver a confirmation to the owner's
+private chat and answer the group with a one-line acknowledgement. `/logs`, `/restart`, memory, schedules,
+`/telegram doctor` and backup are not in this table: they are private-chat only.
 
 ### 5.4 Notes on the table
 

@@ -48,3 +48,11 @@ remediation plan remain separate. No personal service account should be treated
 as safe for a group merely because its login link was displayed privately.
 Previously published group messages/authorization inputs are not deleted by
 this patch; historical cleanup and any credential rotation are separate actions.
+
+## Group sign-in guidance (D048)
+
+A group has no sign-in of its own: the group runtime reads the owner's account (read-only, inference only). The
+private confirmation above is unchanged. When a confirmed group flow finds no group profile, the owner receives
+the real step in the private chat (`/provider <name>`, then `/login` there to refresh the account groups use) and
+the group receives one neutral line without provider, account or error detail. No credential material is
+involved in either message.
