@@ -1259,12 +1259,17 @@ parts that reference the artifact.
 
 GC and reconcile: an artifact is pinned while any referencing part is pending, sending or
 uncertain or its group is unresolved; the pin is one SQL predicate used by GC, completion and
-deletion triggers on `artifacts` and `artifact_refs`. Terminal artifacts become `deleting` 30 days
-after the last reference activity; the host unlinks the blob, then drops the row, so a crash
+deletion triggers on `artifacts` and `artifact_refs`. Terminal artifacts become `deleting` six hours
+(configurable `ArtifactConfig.Retention`, a deliberate shortening of the spec's 30 days so a
+prompt-injected agent cannot hold the quota) after the last reference activity; the host unlinks the blob, then drops the row, so a crash
 between the two finishes idempotently. `Reconcile` (at the watcher cadence, default 5 minutes)
 expires preparations past their deadline (15 minutes, a shorter bound than the spec's 24 hours
 because nothing here prepares slowly), finishes deleting states, quarantines ready artifacts whose
-blob is missing or the wrong size, and removes unknown UUID directories older than two hours. It
+blob is missing or the wrong size, un-quarantines an artifact whose blob verifies again, and
+removes unknown UUID directories older than two hours. The sweep is held (loudly logged) when the
+blob root holds no preparation at all while ready rows exist, so a recreated or wrongly mounted
+root does not quarantine everything. A hard link inside the private blob store is not an error:
+the SHA-256 decides. Deleting rows are paged by id so failing rows cannot block the rest. It
 never touches other names or follows links.
 
 Flag and gate: `GOPOD_OUTBOX_ARTIFACTS` (default off) opens the private store and enables V1
@@ -1280,6 +1285,32 @@ Hash verification happens when bytes are opened for upload, not in the reconcile
 (Linux/macOS). Nothing in this binary issues capabilities yet, so even with the flag on every V1
 request is rejected as `stale_capability` until the runner integration lands. Voice is refused
 (`voice_unavailable`). `photo` presentation and MIME are hints; uploads are always documents.
+
+**Review amendments (2026-10-29).** (1) `PublishDelivery` refuses upload parts; they exist only
+through `PublishDeliveryWithArtifacts`, and the dispatcher passes the delivery's namespace and
+epoch to the opener, which refuses an artifact of any other namespace or epoch. (2) A revoked
+capability is honoured for a two-minute grace window (`Capabilities.Grace`) for a request file
+written before `EndRun` (file mtime not after the revocation), so an agent whose last action was
+writing the request does not lose it to the poll interval; later files, an unknown write time and a
+policy revocation (`RevokeFolder`) fail closed with `stale_capability` (tombstoned). The grace
+trusts the file mtime, which a stray process left in the container could backdate; the window is
+short and the scope, destination and quotas still apply. (3) Per-run (8 files, 80 MiB) and
+per-namespace-per-hour (40 files, 200 MiB) admission caps, counted on reserved bytes while active
+and measured bytes afterwards (`rate_limited`), plus a budget of two file-bearing requests prepared
+per folder per watcher tick. A snapshot is written with a bound of the remaining reservation, never
+past it. (4) `Issue` requires the output root to be the actor's own chat directory and the
+destination to be the actor's registered chat (resolver), caps a grant at six hours, and prunes
+expired entries. (5) Only the owner folder reaches the artifact route; other folders keep the legacy
+text path. (6) Opens use `O_NOCTTY`. A vanished host-side preparation directory or output root is a
+retried host fault, never a `source_missing` tombstone.
+
+**Not a defence against a hostile owner-chat agent writing the database.** The owner-tier container
+mounts `store.sqlite` read-write. The triggers and inventory invariants above therefore do not hold
+against an agent that writes the DB file directly; they protect against bugs and against the
+request path. The blast radius of such an agent is bounded by UUID-validated blob keys (a key that
+is not `<uuid>/<uuid>.blob` is never opened), no-follow opens under the held blob root, and
+SHA-256 verification of the bytes before any upload; it could still redirect uploads to other
+blobs it can name, or break the inventory.
 
 **Consequences.** Reserved, stored, quarantined and deleting bytes all count against quota, so a
 leaked reservation is visible and bounded by its TTL. A multi-file request is all-or-nothing at
