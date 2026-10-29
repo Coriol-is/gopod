@@ -46,11 +46,21 @@ type Turn struct {
 	CreatedAt        int64
 	StartedAt        int64
 	FinishedAt       int64
+
+	// Managed task links, empty for interactive and legacy task turns. They are
+	// read from the task_attempts ledger (the turn row stays unchanged), so the
+	// queue can tell a managed attempt from a legacy one after a restart.
+	RunID       string
+	AttemptID   string
+	SessionKind string
 }
 
 const turnColumns = `id, source, source_id, chat_folder, chat_id, tg_message_id, thread_id,
 	is_owner, is_voice, text, file_path, status, attempts,
-	placeholder_msg_id, reply_msg_id, error, created_at, started_at, finished_at`
+	placeholder_msg_id, reply_msg_id, error, created_at, started_at, finished_at,
+	IFNULL((SELECT a.attempt_id FROM task_attempts a WHERE a.turn_id = turns.id), ''),
+	IFNULL((SELECT a.run_id FROM task_attempts a WHERE a.turn_id = turns.id), ''),
+	IFNULL((SELECT r.session_kind FROM task_attempts a JOIN task_runs r ON r.run_id = a.run_id WHERE a.turn_id = turns.id), '')`
 
 // InsertTurn inserts t as a pending turn. The UNIQUE(source, source_id)
 // constraint makes this idempotent: a duplicate returns (0, true, nil)
@@ -194,7 +204,7 @@ func scanTurns(rows *sql.Rows) ([]Turn, error) {
 		if err := rows.Scan(&t.ID, &t.Source, &t.SourceID, &t.ChatFolder, &t.ChatID,
 			&t.TGMessageID, &t.ThreadID, &isOwner, &isVoice, &t.Text, &filePath, &t.Status,
 			&t.Attempts, &t.PlaceholderMsgID, &t.ReplyMsgID, &errText,
-			&t.CreatedAt, &startedAt, &finishedAt); err != nil {
+			&t.CreatedAt, &startedAt, &finishedAt, &t.AttemptID, &t.RunID, &t.SessionKind); err != nil {
 			return nil, fmt.Errorf("store: scan turn: %w", err)
 		}
 		t.IsOwner = isOwner != 0

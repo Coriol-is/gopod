@@ -263,23 +263,29 @@ func (s *Store) TransitionRun(ctx context.Context, runID string, from, to ExecSt
 	if needsEvidence(from, to) && o.Evidence == "" {
 		return fmt.Errorf("%w: %s -> %s needs host evidence", ErrInvalidTransition, from, to)
 	}
-	now := time.Now().UnixMilli()
-	unresolved := to == ExecExecutionUnknown || o.EffectsUnresolved
 	_, err := s.withTx(ctx, func(q taskSQL) error {
-		res, e := q.ExecContext(ctx, `UPDATE task_runs SET execution_state=?, failure_code=CASE WHEN ?<>'' THEN ? ELSE failure_code END,
- effects_state=CASE WHEN ? THEN 'unresolved' ELSE effects_state END,
- settled_at=CASE WHEN ? THEN ? ELSE settled_at END
- WHERE run_id=? AND execution_state=?`,
-			string(to), o.FailureCode, o.FailureCode, unresolved, to.terminal(), now, runID, string(from))
-		if e != nil {
-			return e
-		}
-		return transitionResult(ctx, q, res, "task_runs", "run_id", runID, ErrRunNotFound)
+		return transitionRunQ(ctx, q, runID, from, to, o, time.Now().UnixMilli())
 	})
 	if err != nil {
 		return fmt.Errorf("store: TransitionRun: %w", err)
 	}
 	return nil
+}
+
+// transitionRunQ is the handle-explicit compare-and-set behind TransitionRun, so
+// dispatch and settlement can move run and attempt in one transaction. Graph
+// and evidence validation stay in the exported wrapper and in settleQ.
+func transitionRunQ(ctx context.Context, q taskSQL, runID string, from, to ExecState, o TransitionOptions, now int64) error {
+	unresolved := to == ExecExecutionUnknown || o.EffectsUnresolved
+	res, e := q.ExecContext(ctx, `UPDATE task_runs SET execution_state=?, failure_code=CASE WHEN ?<>'' THEN ? ELSE failure_code END,
+ effects_state=CASE WHEN ? THEN 'unresolved' ELSE effects_state END,
+ settled_at=CASE WHEN ? THEN ? ELSE settled_at END
+ WHERE run_id=? AND execution_state=?`,
+		string(to), o.FailureCode, o.FailureCode, unresolved, to.terminal(), now, runID, string(from))
+	if e != nil {
+		return e
+	}
+	return transitionResult(ctx, q, res, "task_runs", "run_id", runID, ErrRunNotFound)
 }
 
 func transitionResult(ctx context.Context, q taskSQL, res sql.Result, table, key, id string, notFound error) error {
@@ -317,9 +323,18 @@ func (s *Store) TransitionAttempt(ctx context.Context, attemptID string, from, t
 	if to == ExecReserved && o.Provider == "" {
 		return fmt.Errorf("%w: reserving an attempt needs its provider snapshot", ErrInvalidTransition)
 	}
-	now := time.Now().UnixMilli()
 	_, err := s.withTx(ctx, func(q taskSQL) error {
-		res, e := q.ExecContext(ctx, `UPDATE task_attempts SET execution_state=?,
+		return transitionAttemptQ(ctx, q, attemptID, from, to, o, time.Now().UnixMilli())
+	})
+	if err != nil {
+		return fmt.Errorf("store: TransitionAttempt: %w", err)
+	}
+	return nil
+}
+
+// transitionAttemptQ is the handle-explicit form of TransitionAttempt.
+func transitionAttemptQ(ctx context.Context, q taskSQL, attemptID string, from, to ExecState, o TransitionOptions, now int64) error {
+	res, e := q.ExecContext(ctx, `UPDATE task_attempts SET execution_state=?,
  failure_code=CASE WHEN ?<>'' THEN ? ELSE failure_code END,
  provider=CASE WHEN provider='' THEN ? ELSE provider END,
  model=CASE WHEN provider='' THEN ? ELSE model END,
@@ -331,19 +346,14 @@ func (s *Store) TransitionAttempt(ctx context.Context, attemptID string, from, t
  reservation_state=CASE WHEN ?='reserved' THEN 'held'
    WHEN ? AND ?<>'' AND reservation_state='held' THEN 'released' ELSE reservation_state END
  WHERE attempt_id=? AND execution_state=?`,
-			string(to), o.FailureCode, o.FailureCode, o.Provider, o.Model, o.ProfileFingerprint,
-			o.NativeSessionUUID, o.NativeSessionUUID, string(to), now,
-			to.terminal(), o.Evidence, now, to.terminal(), o.Evidence, o.Evidence,
-			string(to), to.terminal(), o.Evidence, attemptID, string(from))
-		if e != nil {
-			return e
-		}
-		return transitionResult(ctx, q, res, "task_attempts", "attempt_id", attemptID, ErrAttemptNotFound)
-	})
-	if err != nil {
-		return fmt.Errorf("store: TransitionAttempt: %w", err)
+		string(to), o.FailureCode, o.FailureCode, o.Provider, o.Model, o.ProfileFingerprint,
+		o.NativeSessionUUID, o.NativeSessionUUID, string(to), now,
+		to.terminal(), o.Evidence, now, to.terminal(), o.Evidence, o.Evidence,
+		string(to), to.terminal(), o.Evidence, attemptID, string(from))
+	if e != nil {
+		return e
 	}
-	return nil
+	return transitionResult(ctx, q, res, "task_attempts", "attempt_id", attemptID, ErrAttemptNotFound)
 }
 
 // ReleaseProof names why a held reservation may be released.
