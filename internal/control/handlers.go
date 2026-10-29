@@ -46,6 +46,9 @@ func helpHandler(r *Router) Handler {
 			if c.Perm == PermOwnerOnly && !cmd.Caller.IsOwner {
 				continue
 			}
+			if c.Perm == PermGroupOwner && !r.checkPerm(PermGroupOwner, cmd.Caller) {
+				continue
+			}
 			fmt.Fprintf(&sb, "/%s — %s\n", c.SlashName, c.Description)
 		}
 		sb.WriteString("\nSend any non-/ text to talk to Claude.")
@@ -182,6 +185,9 @@ type ProviderSwitchFunc func(ctx context.Context, chatFolder, providerName strin
 func RegisterProviderCommand(r *Router, switchFn ProviderSwitchFunc, currentFn func(chatFolder string) string, names []string, chatFolderLookup func(chatID int64) string) {
 	r.Register("provider", "provider", "switch agent provider (claude, codex)", PermChatLocal,
 		func(ctx context.Context, cmd Command) (Response, error) {
+			if groupMemberDenied(cmd.Caller) {
+				return notAuthorizedInGroup(), ErrNotAuthorized
+			}
 			folder := chatFolderLookup(cmd.Caller.ChatID)
 			if folder == "" {
 				return Response{Text: "Chat not registered.", Code: 1}, nil
@@ -204,7 +210,7 @@ func RegisterProviderCommand(r *Router, switchFn ProviderSwitchFunc, currentFn f
 			if cmd.Args[0] == currentFn(folder) {
 				return Response{Text: "Already using " + cmd.Args[0] + ". Nothing changed."}, nil
 			}
-			if !cmd.Confirmed {
+			if !cmd.Confirmed && !cmd.Caller.IsGroupOwner {
 				return Confirm(cmd, "Switch this chat to "+cmd.Args[0]+"? Conversations keep their recent context."), nil
 			}
 			result, err := switchFn(ctx, folder, cmd.Args[0])
@@ -224,6 +230,9 @@ func RegisterProviderCommand(r *Router, switchFn ProviderSwitchFunc, currentFn f
 func RegisterModelCommand(r *Router, currentFn func(chatFolder string) string, setFn func(chatFolder, model string) (string, error), choicesFn func(chatFolder string) []string, chatFolderLookup func(chatID int64) string) {
 	r.Register("model", "model", "show or set the model for this chat", PermChatLocal,
 		func(ctx context.Context, cmd Command) (Response, error) {
+			if groupMemberDenied(cmd.Caller) {
+				return notAuthorizedInGroup(), ErrNotAuthorized
+			}
 			folder := chatFolderLookup(cmd.Caller.ChatID)
 			if folder == "" {
 				return Response{Text: "Chat not registered.", Code: 1}, nil
