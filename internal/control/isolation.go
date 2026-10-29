@@ -7,6 +7,10 @@ import (
 	"strings"
 )
 
+// Registered groups are prepared and enabled automatically (D047); prepare and
+// enable remain for manual repair. disable is the per-group owner kill switch:
+// it revokes new admissions at once and automatic preparation never undoes it.
+//
 // IsolationActions are controller-owned operations, never agent-provided policy.
 // Targets are canonical negative Telegram group JIDs; Status may receive "" to
 // return a metadata-only inventory. Implementations serialize lifecycle changes,

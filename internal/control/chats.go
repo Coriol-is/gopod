@@ -26,11 +26,27 @@ import (
 // The owner chat is auto-registered as folder "owner" by
 // telegram.resolveRegistered and cannot be re-registered here.
 func RegisterChatCommands(r *Router, st *store.Store, ownerChatID int64) {
-	r.Register("chats.register", "register", "(owner) register a chat for agent access",
-		PermOwnerOnly, chatsRegister(st, ownerChatID))
+	RegisterChatCommandsWith(r, st, ownerChatID, nil)
 }
 
-func chatsRegister(st *store.Store, ownerChatID int64) Handler {
+// GroupPreparer prepares the clean runtime epoch of a freshly registered group
+// chat (or one registered earlier but never made ready). It returns a short
+// owner-facing line and must be idempotent; failures leave the group denied.
+type GroupPreparer func(ctx context.Context, jid string) (string, error)
+
+// RegisterChatCommandsWith is RegisterChatCommands plus automatic group
+// preparation as part of registration (D047). A nil prepare skips it.
+func RegisterChatCommandsWith(r *Router, st *store.Store, ownerChatID int64, prepare GroupPreparer) {
+	r.Register("chats.register", "register", "(owner) register a chat for agent access",
+		PermOwnerOnly, chatsRegister(st, ownerChatID, prepare))
+}
+
+const (
+	groupPreparedText   = "Group runtime prepared; the agent is available in this chat."
+	groupUnpreparedText = "Group runtime is not ready yet; the group stays unavailable and preparation is retried on the next message. See /isolation status."
+)
+
+func chatsRegister(st *store.Store, ownerChatID int64, prepare GroupPreparer) Handler {
 	return func(ctx context.Context, cmd Command) (Response, error) {
 		if len(cmd.Args) < 1 || len(cmd.Args) > 2 {
 			return Response{
@@ -84,10 +100,14 @@ func chatsRegister(st *store.Store, ownerChatID int64) Handler {
 			}, fmt.Errorf("registering chat %d as %q: %w", targetID, folder, err)
 		}
 
+		extra := ""
+		if prepare != nil && targetID < 0 && (lookupErr != nil || !existing.GroupEpochReady) {
+			extra = "\n\n" + prepareLine(ctx, prepare, rc.JID)
+		}
 		return Response{
 			Text: fmt.Sprintf(
-				"registered chat %d as folder %q.\n\nAgent execution remains subject to the qualified host isolation policy.",
-				targetID, folder),
+				"registered chat %d as folder %q.\n\nAgent execution remains subject to the qualified host isolation policy.%s",
+				targetID, folder, extra),
 			Data: map[string]any{
 				"chat_id": targetID,
 				"folder":  folder,
@@ -101,4 +121,16 @@ func chatsRegister(st *store.Store, ownerChatID int64) Handler {
 // telegram.buildChatJID.
 func chatJID(chatID int64) string {
 	return "tg:" + strconv.FormatInt(chatID, 10)
+}
+
+// prepareLine runs the group preparer and reports only a fixed status line.
+func prepareLine(ctx context.Context, prepare GroupPreparer, jid string) string {
+	text, err := prepare(ctx, jid)
+	switch {
+	case err != nil:
+		return groupUnpreparedText
+	case text == "":
+		return "Group runtime preparation is not automatic in this configuration. See /isolation status."
+	}
+	return groupPreparedText
 }
