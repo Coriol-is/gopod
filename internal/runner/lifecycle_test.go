@@ -132,3 +132,19 @@ func TestIdleWatcherTimeoutDefault(t *testing.T) {
 	// give the goroutine a moment to observe the cancelled context
 	time.Sleep(10 * time.Millisecond)
 }
+
+func TestLeftoverStaleRequiresPolicyLabelsOnlyWhenManaged(t *testing.T) {
+	labelled := map[string]string{LabelPolicyFingerprint: "epp1:x"}
+	if leftoverStale("v1", "v1", nil, false) {
+		t.Error("legacy: same version must be kept")
+	}
+	if !leftoverStale("v1", "v1", nil, true) {
+		t.Error("managed: an unlabeled container must be replaced")
+	}
+	if leftoverStale("v1", "v1", labelled, true) {
+		t.Error("managed: a labeled current container must be kept")
+	}
+	if !leftoverStale("v0", "v1", labelled, true) {
+		t.Error("version mismatch is always stale")
+	}
+}

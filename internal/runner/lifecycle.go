@@ -63,7 +63,7 @@ func (d *Docker) CleanupLeftovers(ctx context.Context, currentVersion string) (i
 		version := c.Labels[LabelVersion]
 		running := c.State == "running"
 
-		stale := version != currentVersion
+		stale := leftoverStale(version, currentVersion, c.Labels, d.requirePolicyLabels)
 		exited := !running
 
 		// Running container at the current TAGGED version is kept so a
@@ -111,6 +111,17 @@ func (d *Docker) CleanupLeftovers(ctx context.Context, currentVersion string) (i
 	}
 	return cleaned, nil
 }
+
+// leftoverStale reports whether a leftover container must not be re-attached.
+// With the managed runtime on, a container without policy labels pre-dates the
+// guard and its creation policy is unknowable, so it is replaced at startup.
+func leftoverStale(version, current string, labels map[string]string, requirePolicyLabels bool) bool {
+	return version != current || (requirePolicyLabels && labels[LabelPolicyFingerprint] == "")
+}
+
+// RequirePolicyLabels makes CleanupLeftovers treat containers that lack policy
+// labels as stale. Call it before CleanupLeftovers when managed tasks are on.
+func (d *Docker) RequirePolicyLabels(on bool) { d.requirePolicyLabels = on }
 
 // StartIdleWatcher launches a single background goroutine that checks
 // every active chat's LastActivity once per idleTickInterval. Any

@@ -35,6 +35,8 @@ const (
 type Docker struct {
 	cli *client.Client
 	log *slog.Logger
+
+	requirePolicyLabels bool // managed runtime: unlabeled leftovers are stale
 }
 
 // NewDocker opens a Docker client using DOCKER_HOST / DOCKER_TLS_*

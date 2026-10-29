@@ -44,6 +44,8 @@ import (
 	"github.com/Coriol-is/gopod/internal/runner/mountsec"
 	"github.com/Coriol-is/gopod/internal/scheduler"
 	"github.com/Coriol-is/gopod/internal/store"
+	"github.com/Coriol-is/gopod/internal/taskexec"
+	"github.com/Coriol-is/gopod/internal/taskreport"
 	"github.com/Coriol-is/gopod/internal/telegram"
 )
 
@@ -126,6 +128,7 @@ func run() error {
 	// in "no runner" mode (telegram still echoes /ping).
 	var (
 		agentRunner *runner.Runner
+		folderHeld  func(string) bool // set once the queue exists (managed tasks)
 		allowlist   *mountsec.Allowlist
 		agentMemory *memory.Memory
 	)
@@ -160,6 +163,7 @@ func run() error {
 			allowlist = al
 
 			// Boot-time leftover cleanup per ISOLATION.md §7.1.
+			d.RequirePolicyLabels(cfg.ManagedTasksEnabled)
 			if cfg.LeftoverCleanupEnabled {
 				n, err := d.CleanupLeftovers(ctx, buildVersion())
 				if err != nil {
@@ -202,6 +206,27 @@ func run() error {
 			agentRunner = r
 			r.SetStore(st)
 			r.SetAdmissionPolicy(cfg.OwnerChatID, st)
+			if cfg.ManagedTasksEnabled {
+				// Before any container use, so the foreground container is already
+				// created under the policy guard. Holds fail closed until the queue
+				// exists. No task credential adapter is qualified: tasks stay denied.
+				if err := r.SetManagedTasks(runner.ManagedTaskConfig{
+					Scopes: st,
+					Holds: func(folder string) bool {
+						if folderHeld == nil {
+							return true
+						}
+						return folderHeld(folder)
+					},
+					Providers: map[string]runner.AgentProvider{
+						"claude": runner.NewClaudeProvider(cfg.ContainerImage),
+						"codex":  runner.NewCodexProvider(""),
+					},
+				}); err != nil {
+					return fmt.Errorf("managed tasks: %w", err)
+				}
+				runLog.Info("managed task runtime enabled (task role denied until a credential adapter is qualified)")
+			}
 			r.SetAgentLimits(runner.AgentLimits{
 				MaxAgents:      cfg.MaxAgents,
 				MinAvailableMB: cfg.MinAvailableMB,
@@ -555,7 +580,21 @@ func run() error {
 			// Managed task recovery is inspect-only until execution lands (CP-004
 			// PR 3): no handler, so nothing managed runs, but possibly started
 			// attempts are never replayed and held capacity is rebuilt.
-			agentQueue.SetManaged(queue.ManagedRuntime{Store: managedLedger{st: st}})
+			managedRT := queue.ManagedRuntime{Store: managedLedger{st: st}}
+			if cfg.ManagedTasksEnabled && agentRunner != nil {
+				folderHeld = agentQueue.FolderHeld
+				exec := &taskexec.Executor{
+					Runner:  agentRunner,
+					Reports: st,
+					DataDir: cfg.DataDir,
+					Log:     queueLog,
+					Grants: taskreport.NewGrants(nil, func(s store.ScopeRef) error {
+						return st.ValidateScope(context.Background(), s)
+					}),
+				}
+				managedRT.Handler, managedRT.Snapshot = exec.Handle, exec.Snapshot
+			}
+			agentQueue.SetManaged(managedRT)
 			agentQueue.OnDone(tgBot.NewDoneHook())
 			subsystems.Add(1)
 			go func() {

@@ -25,6 +25,17 @@ approved queue, [proposal registry](proposals/README.md) for CP status and
 - **Not authorized without the owner:** account logins, quota/paid fallbacks, T9 reboot,
   production group activation, schedule changes (freefeed digest stays as is).
 
+## CP-004 PR 3 in progress (2026-10-29)
+- Branch `feat/cp004-task-exec` (worktree `gopod-cp004-pr3`), based on PR 2 (`5680a85`), not pushed. ADR D044.
+  `internal/runner/{exec_policy,exec_guard,task_managed,task_run,provider_task,docker_policy}.go`, `internal/taskreport`,
+  `internal/taskexec`, `internal/store/task_report.go`, `queue.ErrDenied`/`FolderHeld`, flag `GOPOD_MANAGED_TASKS` (off).
+- With the flag on, **no task can run yet**: no credential adapter is qualified for the task role (shared native state dir also holds
+  foreground transcripts). Owner decision needed: qualify a shared-dir binding explicitly, or build a separate task credential adapter.
+- Pending acceptance gates: native subscription smoke for Claude and Codex (separate explicit gate, never run in unit tests), a real
+  Docker inspection check on the Pi (digest normalisation is fixture-verified only), role round trip with the live foreground container.
+- Not done: settlement/result publication/stop coordination (PR 4), schedule policy (PR 5), per-role IPC enforcement in the watcher,
+  persisting report revisions beyond latest. CP-004 stays `in-progress`.
+
 ## CP-004 PR 2 in progress (2026-10-29)
 - Branch `feat/cp004-dispatch` (worktree `gopod-cp004-pr2`), based on PR 1 (`c7ff9d2`): managed dispatch and conservative
   recovery (`internal/queue/managed.go`, `internal/store/task_dispatch.go`, `cmd/gopod/managed_turns.go`, ADR D042). Not pushed.

@@ -137,6 +137,12 @@ type Config struct {
 	// enables it; it never changes where existing messages are sent.
 	OutboxDispatcherEnabled bool
 
+	// ManagedTasksEnabled turns on the CP-004 managed task runtime
+	// (GOPOD_MANAGED_TASKS=1). Off by default: with it off the runner, queue and
+	// containers behave exactly as before. A task role additionally needs a
+	// qualified credential adapter; none ships, so tasks stay denied.
+	ManagedTasksEnabled bool
+
 	// OutboxIPCEnabled routes text IPC requests from the owner's personal chat
 	// through the durable outbox (CP-002 PR 3) instead of the legacy direct
 	// send. Default false. GOPOD_OUTBOX_IPC=1 takes effect only while the
@@ -204,6 +210,7 @@ func Load(loadDotenv bool) (Config, error) {
 		NotifyLifecycle:         !envOff("GOPOD_NOTIFY_LIFECYCLE"),
 		ProgressEnabled:         !envOff("GOPOD_PROGRESS"),
 		OutboxDispatcherEnabled: envFlag("GOPOD_OUTBOX_DISPATCHER"),
+		ManagedTasksEnabled:     envFlag("GOPOD_MANAGED_TASKS"),
 		OutboxIPCEnabled:        envFlag("GOPOD_OUTBOX_IPC"),
 		OutboxArtifactsEnabled:  envFlag("GOPOD_OUTBOX_ARTIFACTS"),
 		CompactAfter:            compactAfter,
