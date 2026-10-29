@@ -617,6 +617,7 @@ func run() error {
 						outboxLog.Error("artifact delivery DISABLED", slog.Any("err", err))
 					} else {
 						artifactIPCConfig = ac
+						tgBot.EnablePreparedDelivery(preparedDelivery(cfg, st, blobs, outboxLog))
 						opener = &telegram.SnapshotOpener{Inventory: st, Blobs: blobs, MaxBytes: st.ArtifactLimits().MaxFileBytes, Log: outboxLog}
 						onShutdown(func() { blobs.Close() })
 					}
@@ -649,6 +650,25 @@ func run() error {
 			if rc, err := st.GetRegistered(ctx, fmt.Sprintf("tg:%d", cfg.OwnerChatID)); err == nil && agentRunner.CheckAdmission(ctx, rc.Folder) == nil {
 				ownerFolder = rc.Folder
 			}
+		}
+		// Prepared personal attachments (CP-003 PR 5) need the ledger sweep and, when
+		// the IPC watcher does not reconcile artifacts itself, the reconciler too.
+		if artifactIPCConfig.Store != nil {
+			durable := durableIPC(cfg.OutboxIPCEnabled, outboxRunning, st, ownerFolder, cfg.OwnerChatID)
+			var reconcile func(context.Context)
+			if artifactIPC(durable, artifactIPCConfig).Store == nil {
+				ac := artifactIPCConfig
+				reconcile = func(c context.Context) {
+					if _, err := ac.Reconcile(c, time.Now(), ipcLog); err != nil {
+						ipcLog.Warn("artifact reconcile", slog.Any("err", err))
+					}
+				}
+			}
+			subsystems.Add(1)
+			go func() {
+				defer subsystems.Done()
+				maintainGenerations(ctx, st, 5*time.Minute, reconcile, ipcLog)
+			}()
 		}
 		ipcMsgs := telegram.NewIPCSink(tgBot)
 		ipcTasks := scheduler.NewIPCSink(st)

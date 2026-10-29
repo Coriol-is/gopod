@@ -184,10 +184,22 @@ func textToSpeech(ctx context.Context, apiKey, text string) ([]byte, error) {
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("tts API returned %d: %s", resp.StatusCode, truncateStr(string(body), 200))
+		return nil, &ttsStatusError{Status: resp.StatusCode, Body: truncateStr(string(body), 200)}
 	}
 
 	return io.ReadAll(resp.Body)
+}
+
+// ttsStatusError is a non-200 answer of the speech endpoint. Its text is the
+// legacy message; the status lets the prepared path tell an explicit refusal
+// from an ambiguous failure.
+type ttsStatusError struct {
+	Status int
+	Body   string
+}
+
+func (e *ttsStatusError) Error() string {
+	return fmt.Sprintf("tts API returned %d: %s", e.Status, e.Body)
 }
 
 // sendVoiceReply sends audio data as a Telegram voice message into

@@ -91,6 +91,7 @@ type outboxAPI interface {
 	SendMessage(ctx context.Context, p *bot.SendMessageParams) (*models.Message, error)
 	EditMessageText(ctx context.Context, p *bot.EditMessageTextParams) (*models.Message, error)
 	SendDocument(ctx context.Context, p *bot.SendDocumentParams) (*models.Message, error)
+	SendVoice(ctx context.Context, p *bot.SendVoiceParams) (*models.Message, error)
 }
 
 // ArtifactOpener resolves an immutable artifact reference to the exact bytes to
@@ -149,6 +150,15 @@ func (t *botTransport) Attempt(ctx context.Context, req SendRequest) Outcome {
 		}
 		if err != nil {
 			return refused("artifact_unavailable")
+		}
+		if req.ParseMode == store.UploadPresentationVoice {
+			// Host-generated audio only (the V1 agent request cannot set this).
+			msg, err := t.api.SendVoice(ctx, &bot.SendVoiceParams{
+				ChatID: req.ChatID, MessageThreadID: req.Thread,
+				Voice:   &models.InputFileUpload{Filename: name, Data: data},
+				Caption: req.Text,
+			})
+			return classifySend(msg, err, 0)
 		}
 		msg, err := t.api.SendDocument(ctx, &bot.SendDocumentParams{
 			ChatID: req.ChatID, MessageThreadID: req.Thread,
