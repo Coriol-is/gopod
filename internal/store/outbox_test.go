@@ -319,8 +319,8 @@ func TestPublishValidation(t *testing.T) {
 		"empty text":               func(r *PublishRequest) { r.Parts = []DeliveryPart{{Kind: PartText}} },
 		"edit without target":      func(r *PublishRequest) { r.Parts = []DeliveryPart{{Kind: PartEdit, Payload: []byte("x")}} },
 		"upload without artifact":  func(r *PublishRequest) { r.Parts = []DeliveryPart{{Kind: PartUpload}} },
-		"upload with payload": func(r *PublishRequest) {
-			r.Parts = []DeliveryPart{{Kind: PartUpload, ArtifactRef: "a", Payload: []byte("x")}}
+		"upload with oversized caption": func(r *PublishRequest) {
+			r.Parts = []DeliveryPart{{Kind: PartUpload, ArtifactRef: "a", Payload: make([]byte, MaxUploadCaptionBytes+1)}}
 		},
 		"unknown kind":     func(r *PublishRequest) { r.Parts = []DeliveryPart{{Kind: "x", Payload: []byte("x")}} },
 		"expired":          func(r *PublishRequest) { r.ExpiresAt = time.Now().Add(-time.Second).UnixMilli() },

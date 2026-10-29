@@ -246,7 +246,10 @@ func (s *Store) applySchema(ctx context.Context) error {
 	if err := s.initializeNamespaceMetadata(ctx); err != nil {
 		return err
 	}
-	return s.applyDeliverySchema(ctx)
+	if err := s.applyDeliverySchema(ctx); err != nil {
+		return err
+	}
+	return s.applyArtifactSchema(ctx)
 }
 
 func isDuplicateColumn(err error) bool {

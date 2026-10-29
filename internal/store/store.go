@@ -33,7 +33,8 @@ type Store struct {
 	path string
 	log  *slog.Logger
 
-	outbox outboxConfig // quotas and post-commit publication notifier
+	outbox    outboxConfig   // quotas and post-commit publication notifier
+	artifacts artifactConfig // artifact quotas (CP-003)
 }
 
 // Open opens (and creates if necessary) the SQLite database at path,
