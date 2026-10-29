@@ -370,6 +370,10 @@ func (b *Bot) dispatchSlash(ctx context.Context, m *models.Message, text string)
 		b.replyTo(ctx, m.Chat.ID, thread, m.ID, resp.Text)
 		return
 	}
+	if resp.Private {
+		b.sendOwnerConfirmation(ctx, m, thread, resp, status)
+		return
+	}
 	if resp.Code != 0 {
 		status.Set(stError) // e.g. "Chat not registered.": not done
 	} else {
