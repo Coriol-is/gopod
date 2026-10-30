@@ -60,6 +60,7 @@ func finalReplyHTML(md string) string {
 func renderMarkdown(md string, collapseOver int) string {
 	lines := strings.Split(md, "\n")
 	var result strings.Builder
+	plainAt := -1 // the line right after a table never starts another one
 	for i := 0; i < len(lines); i++ {
 		var rendered string
 		switch {
@@ -68,8 +69,9 @@ func renderMarkdown(md string, collapseOver int) string {
 		case strings.HasPrefix(lines[i], "> "):
 			rendered, i = renderQuote(lines, i)
 		default:
-			if header, aligns, rows, end, ok := parseTable(lines, i); ok {
+			if header, aligns, rows, end, ok := parseTable(lines, i); ok && i != plainAt {
 				rendered, i = renderTable(header, aligns, rows), end
+				plainAt = end + 1
 			} else {
 				rendered = renderMarkdownLine(lines[i])
 			}

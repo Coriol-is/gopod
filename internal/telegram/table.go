@@ -3,6 +3,7 @@ package telegram
 import (
 	"html"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -49,15 +50,17 @@ func parseTable(lines []string, start int) (header []string, aligns []tableAlign
 		aligns = append(aligns, a)
 	}
 	end = start + 1
-	for end+1 < len(lines) && strings.Contains(lines[end+1], "|") && !isFence(lines[end+1]) {
-		end++
-		row := splitTableRow(lines[end])
+	for end+1 < len(lines) && strings.Contains(lines[end+1], "|") && !isFence(lines[end+1]) && !startsBlock(lines[end+1]) {
+		row := splitTableRow(lines[end+1])
+		for len(row) > len(header) && row[len(row)-1] == "" {
+			row = row[:len(row)-1] // trailing empty cells are padding
+		}
 		if len(row) > len(header) {
 			// More cells than the header: not a row of this table. Leave
 			// the line as text rather than drop its extra cells.
-			end--
 			break
 		}
+		end++
 		for len(row) < len(header) {
 			row = append(row, "")
 		}
@@ -66,8 +69,24 @@ func parseTable(lines []string, start int) (header []string, aligns []tableAlign
 	return header, aligns, rows, end, true
 }
 
-// splitTableRow splits a table line into trimmed cells. A pipe splits
-// unless it is escaped (\|) or inside an inline code span.
+var orderedItemRe = regexp.MustCompile(`^\d+[.)] `)
+
+// startsBlock reports whether line opens a quote, heading or list item,
+// which ends a table even when it contains a pipe.
+func startsBlock(line string) bool {
+	t := strings.TrimSpace(line)
+	if strings.HasPrefix(t, ">") || orderedItemRe.MatchString(t) {
+		return true
+	}
+	if _, ok := markdownHeading(t); ok {
+		return true
+	}
+	return strings.HasPrefix(t, "- ") || strings.HasPrefix(t, "* ") || strings.HasPrefix(t, "+ ")
+}
+
+// splitTableRow splits a table line into trimmed cells, following GFM: an
+// unescaped pipe always splits (even inside a code span), and \| is a
+// literal pipe.
 func splitTableRow(line string) []string {
 	line = strings.TrimSpace(line)
 	var cells []string
@@ -77,14 +96,6 @@ func splitTableRow(line string) []string {
 		case c == '\\' && i+1 < len(line) && line[i+1] == '|':
 			cur.WriteByte('|')
 			i += 2
-		case c == '`':
-			if j := strings.IndexByte(line[i+1:], '`'); j >= 0 {
-				cur.WriteString(strings.ReplaceAll(line[i:i+j+2], `\|`, "|"))
-				i += j + 2
-			} else {
-				cur.WriteByte(c)
-				i++
-			}
 		case c == '|':
 			cells = append(cells, strings.TrimSpace(cur.String()))
 			cur.Reset()
@@ -110,17 +121,58 @@ var (
 	cellBoldRe   = regexp.MustCompile(`\*\*(.+?)\*\*|__(.+?)__`)
 	cellStrikeRe = regexp.MustCompile(`~~(.+?)~~`)
 	cellItalicRe = regexp.MustCompile(`\*(\S[^*]*?)\*`)
-	cellCodeRe   = regexp.MustCompile("`([^`]*)`")
 )
 
 // plainCell strips inline markdown from a cell, leaving plain text. Code
-// spans are cut out first so their contents stay verbatim.
+// spans are swapped for placeholders while the emphasis and link patterns
+// run, so they can wrap a span without touching its contents.
 func plainCell(s string) string {
-	m := cellCodeRe.FindStringSubmatchIndex(s)
-	if m == nil {
-		return plainEmphasis(s)
+	var codes []string
+	var masked strings.Builder
+	for i := 0; i < len(s); {
+		if s[i] != '`' {
+			masked.WriteByte(s[i])
+			i++
+			continue
+		}
+		n := 1
+		for i+n < len(s) && s[i+n] == '`' {
+			n++
+		}
+		if end := closingRun(s, i+n, n); end >= 0 {
+			masked.WriteString("\x00" + strconv.Itoa(len(codes)) + "\x00")
+			codes = append(codes, s[i+n:end])
+			i = end + n
+			continue
+		}
+		masked.WriteString(s[i : i+n]) // unmatched: literal backticks
+		i += n
 	}
-	return plainEmphasis(s[:m[0]]) + s[m[2]:m[3]] + plainCell(s[m[1]:])
+	out := plainEmphasis(masked.String())
+	for k, c := range codes {
+		out = strings.Replace(out, "\x00"+strconv.Itoa(k)+"\x00", c, 1)
+	}
+	return strings.ReplaceAll(out, "\t", "    ")
+}
+
+// closingRun returns the index of the next run of exactly n backticks in
+// s at or after from, or -1.
+func closingRun(s string, from, n int) int {
+	for i := from; i < len(s); {
+		if s[i] != '`' {
+			i++
+			continue
+		}
+		j := i
+		for j < len(s) && s[j] == '`' {
+			j++
+		}
+		if j-i == n {
+			return i
+		}
+		i = j
+	}
+	return -1
 }
 
 func plainEmphasis(s string) string {
@@ -134,13 +186,14 @@ func plainEmphasis(s string) string {
 // combining marks, joiners and variation selectors 0, the rest 1.
 func displayWidth(s string) int {
 	w, last := 0, 0 // last is the width of the most recent glyph
-	joined := false // the previous rune was a ZWJ: the next one joins its glyph
+	joined := false // the previous rune was an emoji-joining ZWJ
+	var prev rune
 	for _, r := range s {
 		switch {
 		case r == 0x200D:
-			joined = true
-		case r == 0xFE0F: // emoji presentation: a narrow base becomes wide
-			if last == 1 {
+			joined = last == 2
+		case r == 0xFE0F: // emoji presentation: a narrow emoji-capable base becomes wide
+			if last == 1 && emojiCapable(prev) {
 				w++
 				last = 2
 			}
@@ -151,9 +204,19 @@ func displayWidth(s string) int {
 		default:
 			last = runeWidth(r)
 			w += last
+			prev = r
 		}
 	}
 	return w
+}
+
+// emojiCapable reports whether r can take an emoji presentation selector.
+func emojiCapable(r rune) bool {
+	switch r {
+	case 0xA9, 0xAE, 0x203C, 0x2049, 0x2122, 0x2139, 0x3030, 0x303D, 0x3297, 0x3299:
+		return true
+	}
+	return (r >= 0x2190 && r <= 0x2BFF) || (r >= 0x1F000 && r <= 0x1FAFF)
 }
 
 func runeWidth(r rune) int {
@@ -217,7 +280,7 @@ func renderTable(header []string, aligns []tableAlign, rows [][]string) string {
 	plainHeader := make([]string, len(header))
 	widths := make([]int, len(header))
 	for c, h := range header {
-		plainHeader[c] = plainCell(h)
+		plainHeader[c] = strings.TrimSpace(plainCell(h))
 		widths[c] = max(displayWidth(plainHeader[c]), 1)
 	}
 	plainRows := make([][]string, len(rows))

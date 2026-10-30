@@ -1815,5 +1815,6 @@ line (lossless; empty cells omitted). `chunkHTML` already closes and reopens `<p
 long table splits into valid chunks on row boundaries.
 
 **Consequences.** Streaming previews stay plain text; the table appears on the final edit. Command paging
-(`splitPages`) cuts on lines, so a table split across pages loses its header on the later pages, which then show
-as plain pipe lines (valid HTML). Native Rich Tables remain a separate spike.
+(`splitPages`) repeats a table's header and separator at the top of every continuation page, so each page renders as a
+table. Cells follow GFM: an unescaped pipe splits even inside a code span, `\\|` is a literal pipe; a quote, heading or
+list line ends a table. Native Rich Tables remain a separate spike.

@@ -28,7 +28,6 @@ func TestTableAlignmentAndCells(t *testing.T) {
 	}{
 		{"center", "|a|b|\n|:-:|:-:|\n|xxxx|y|", "<pre> a   | b\n-----+--\nxxxx | y</pre>"},
 		{"escaped pipe", `|a|b|` + "\n|-|-|\n" + `|x\|y|z|`, "<pre>a   | b\n----+--\nx|y | z</pre>"},
-		{"pipe in code", "|a|b|\n|-|-|\n|`x|y`|z|", "<pre>a   | b\n----+--\nx|y | z</pre>"},
 		{"inline markup stripped", "|**a**|b|\n|-|-|\n|[l](http://x.y)|*i* ~~s~~|", "<pre>a | b\n--+----\nl | i s</pre>"},
 		{"escaped html", "|a|b|\n|-|-|\n|<x>|&|", "<pre>a   | b\n----+--\n&lt;x&gt; | &amp;</pre>"},
 		{"ragged padded", "|a|b|\n|-|-|\n|1|\n|1|2|", "<pre>a | b\n--+--\n1 |\n1 | 2</pre>"},
@@ -77,6 +76,82 @@ func TestTableMoreCases(t *testing.T) {
 		if got := markdownToTelegramHTML(tc.md); got != tc.want {
 			t.Errorf("%s:\ngot  %q\nwant %q", tc.name, got, tc.want)
 		}
+	}
+}
+
+func TestTableReviewRound2(t *testing.T) {
+	long := strings.Repeat("x", 40)
+	tests := []struct{ name, md, want string }{
+		{"emphasis around code", "|a|b|\n|-|-|\n|**a `b` c**|[`x`](http://u)|", "<pre>a     | b\n------+--\na b c | x</pre>"},
+		{"unescaped pipe in code splits", "|a|b|\n|-|-|\n|`x|y`|z|", "<pre>a | b\n--+--</pre>\n|<code>x|y</code>|z|"},
+		{"unmatched backticks across cells", "|a|b|c|\n|-|-|-|\n|5`|x`y|z|", "<pre>a  | b   | c\n---+-----+--\n5` | x`y | z</pre>"},
+		{"double backtick span", "|a|b|\n|-|-|\n|``a`b``|z|", "<pre>a   | b\n----+--\na`b | z</pre>"},
+		{"quote after table", "|a|b|\n|-|-|\n|1|2|\n> note | x", "<pre>a | b\n--+--\n1 | 2</pre>\n<blockquote>note | x</blockquote>"},
+		{"heading after table", "|a|b|\n|-|-|\n|1|2|\n## Итог | x", "<pre>a | b\n--+--\n1 | 2</pre>\n<b>Итог | x</b>"},
+		{"bullet after table", "|a|b|\n|-|-|\n|1|2|\n- a | b", "<pre>a | b\n--+--\n1 | 2</pre>\n• a | b"},
+		{"numbered after table", "|a|b|\n|-|-|\n|1|2|\n1. a | b", "<pre>a | b\n--+--\n1 | 2</pre>\n1. a | b"},
+		{"trailing empty cell", "|a|b|\n|-|-|\n|1|2| |", "<pre>a | b\n--+--\n1 | 2</pre>"},
+		{"overflow line is not a header", "|a|\n|-|\n|x|y|\n|-|-|\n|1|2|", "<pre>a\n-</pre>\n|x|y|\n|-|-|\n|1|2|"},
+		{"tab expanded", "|a|\n|-|\n|x\ty|", "<pre>a\n------\nx    y</pre>"},
+		{"whitespace header cards", "|__ __|" + long + "|\n|-|-|\n|v|w|", "v\n<b>" + long + "</b>: w"},
+	}
+	for _, tc := range tests {
+		if got := markdownToTelegramHTML(tc.md); got != tc.want {
+			t.Errorf("%s:\ngot  %q\nwant %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestDisplayWidthRound2(t *testing.T) {
+	for name, tc := range map[string]struct {
+		s    string
+		want int
+	}{
+		"zwj between letters": {"a\u200Db", 2},
+		"vs16 on a letter":    {"a\uFE0F", 1},
+		"zwj after emoji":     {"\U0001F468\u200D\U0001F469", 2},
+	} {
+		if got := displayWidth(tc.s); got != tc.want {
+			t.Errorf("%s: width %d want %d", name, got, tc.want)
+		}
+	}
+}
+
+func TestTablePagingRepeatsHeader(t *testing.T) {
+	var sb strings.Builder
+	sb.WriteString("Intro\n\n| Имя | Сумма |\n|:--|--:|\n")
+	for i := 0; i < 400; i++ {
+		fmt.Fprintf(&sb, "| Платёж %d | %d,50 |\n", i, i*7)
+	}
+	md := strings.TrimSuffix(sb.String(), "\n")
+	pages := splitPages(md, pageFits)
+	if len(pages) < 2 {
+		t.Fatalf("want several pages, got %d", len(pages))
+	}
+	next := 0
+	for i, p := range pages {
+		lines := strings.Split(p, "\n")
+		if i == 0 {
+			lines = lines[2:] // "Intro" and the blank line
+		}
+		if lines[0] != "| Имя | Сумма |" || lines[1] != "|:--|--:|" {
+			t.Fatalf("page %d does not start with the header: %q", i, lines[:2])
+		}
+		if !pageFits(p) {
+			t.Errorf("page %d too big", i)
+		}
+		for _, l := range lines[2:] {
+			if want := fmt.Sprintf("| Платёж %d | %d,50 |", next, next*7); l != want {
+				t.Fatalf("page %d: got %q want %q", i, l, want)
+			}
+			next++
+		}
+		if h := markdownToTelegramHTML(p); !strings.HasPrefix(h, "<pre>") && i > 0 {
+			t.Errorf("page %d did not render as a table: %.60q", i, h)
+		}
+	}
+	if next != 400 {
+		t.Errorf("rows across pages: %d, want 400", next)
 	}
 }
 

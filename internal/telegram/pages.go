@@ -76,6 +76,12 @@ func splitPages(text string, fits func(string) bool) []string {
 	fenceOpen := ""
 	openerLast := false // cur ends with the opener of the current block
 	fresh := false      // cur holds only a reopened opener
+	// A table cut by a page boundary repeats its header and separator on the
+	// next page, so every page renders as a table. Header and separator
+	// stay together.
+	all := strings.Split(text, "\n")
+	tableStart, tableEnd := -1, -1 // the table being paged: header line, last row
+	idx := 0
 	flush := func() {
 		if openerLast {
 			// Do not end a page with an opener: it starts the next one.
@@ -89,12 +95,22 @@ func splitPages(text string, fits func(string) bool) []string {
 		cur, fresh = nil, false
 		if inFence {
 			cur, fresh = []string{fenceOpen}, true
+		} else if idx > tableStart+1 && idx <= tableEnd {
+			cur, fresh = []string{all[tableStart], all[tableStart+1]}, true
 		}
 	}
-	for _, line := range strings.Split(text, "\n") {
+	for i, line := range all {
+		idx = i
 		isFence := isFence(line)
 		after := inFence != isFence
-		if len(cur) > 0 && !fresh && !fits(render(withLine(cur, line), after)) {
+		unit := withLine(cur, line)
+		if !inFence && !isFence && i > tableEnd {
+			if _, _, _, end, ok := parseTable(all, i); ok {
+				tableStart, tableEnd = i, end
+				unit = withLine(unit, all[i+1])
+			}
+		}
+		if len(cur) > 0 && !fresh && !fits(render(unit, after)) {
 			flush()
 		}
 		rest := line
