@@ -19,7 +19,7 @@ unasked from hard-coded prompts; gopod has none.
 
 ## Proposal
 The gateway ships a small catalog of **preset recurring tasks** for the main connectors the
-owner has connected to Codex or Claude (first candidates: Gmail, Google Calendar, Drive). A
+owner has connected to Codex or Claude (first set, owner decision 2026-10-30: Gmail and Google Calendar; Drive and others later). A
 preset is a normal scheduled task, created from a built-in prompt template with a default
 schedule, and runs through the same scheduler, queue and delivery as a task the owner set up in
 dialog; the only difference is that it is defined in the gateway, not in conversation. It shows
@@ -49,8 +49,8 @@ for a connector that is not ready stay off and say why. Exact link targets, plug
 the CLI commands are verified in the spec, not taken from this paragraph.
 
 ## Out of scope
-Restricting what a preset may do in the owner's own chat; new connectors beyond the first
-catalog; performing connector sign-in or consent for the owner (only the setup guide is in scope); autonomous reflection
+Restricting what a preset may do in the owner's own chat; new connectors beyond Gmail and Calendar
+catalog (Gmail and Calendar); performing connector sign-in or consent for the owner (only the setup guide is in scope); autonomous reflection
 or learning; groups and any non-owner scope; changing the existing freefeed digest or other
 tasks; a free-form editor for preset prompts (a later spec may allow it).
 
