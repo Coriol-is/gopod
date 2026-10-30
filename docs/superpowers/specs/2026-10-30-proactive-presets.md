@@ -1,6 +1,6 @@
 # Built-in recurring presets for Gmail and Google Calendar (`/proactive`)
 
-Date: 2026-10-30. CP-033. Status: **design, owner decisions of 2026-10-30 applied (section 16); PR 1 (core + store) implemented, see section 18**; no flag or runtime change, nothing calls the package from production wiring yet.
+Date: 2026-10-30. CP-033. Status: **design, owner decisions of 2026-10-30 applied (section 16); PR 1 (core + store) implemented, see section 18; PR 2 (command), section 19; PR 3 (templates, outcome display, agent guide), section 20**; no flag or runtime change, nothing calls the package from production wiring yet.
 Source baseline: `origin/main` at `f3095fe`. Proposal: [CP-033](../../proposals/CP-033-proactive-controls.md).
 Related: [mechanisms note](../../research/2026-10-30-skills-and-plugins-mechanisms.md),
 [autonomy note](../../research/2026-10-30-codex-agent-autonomy-prioritization.md),
@@ -813,3 +813,55 @@ Where the code and this spec differ, the code wins. Differences found while impl
   `ReasonInsideQuiet`. `lead` on a preset without leads answers "has no reminder lead". Owner decisions: "Pause all"
   needs no confirmation (reversible); `reset` keeps its confirmation; `UpgradeTemplates` on screen open stays; replies
   stay English for now (language question is with the owner).
+
+## 20. Implementation notes (PR 3, templates, outcome display, agent guide)
+
+Where the code and this spec differ, the code wins.
+
+- **Templates are `TemplateVersion` 2.** The three fixed paragraphs and the six bodies are final in
+  `internal/proactive/catalog.go`. Every body opens with one shared connector sentence (`gmailAccess`, `calAccess`): "use the
+  Gmail / Google Calendar connector connected to this agent (a connector, MCP server or plugin; do not assume tool names, look
+  at the tools you have)" plus "only read", so one text works for a Claude connector and a Codex plugin. No tool name appears
+  anywhere (a test forbids `mcp__`, `claude_ai`, plugin ids and tool names). The text only reads and notifies, as section 2
+  says; nothing blocks the owner's writes.
+- **Fixed paragraph 3 reworded.** Section 5.1 said to send the "unavailable" message "only if the last file already says
+  unavailable was not reported today", which is ambiguous. The template now says: send one short IPC message, "unless the
+  previous `<id>.last` file already says unavailable from today". Once per day, per preset.
+- **Silent when empty** is explicit in every body: "write result empty and send nothing".
+- **`cal.reminder` is the poll half only**, as the owner assigned the one-shot lifecycle to PR 4. The template lists events in the
+  lookahead, keeps `cal.reminder.state.json` (`{"handled":[{"event","start","lead"}]}`), and handles the send-now case only: when
+  `start - lead` has passed and the event has not started it sends one reminder and records the event. For a future `fire` it
+  does nothing and does not record the event, and says so ("scheduling timed reminders is added in a later version of this
+  template"). Until PR 4 the preset therefore reminds late (up to one poll interval) rather than on time. It does not touch
+  `/workspace/ipc/tasks`.
+- **Outcome display.** `proactive.ReadOutcome` / `ParseOutcome` (`internal/proactive/outcome.go`) read the host side of
+  `/workspace/chat/proactive/<id>.last`: only catalog ids name a file, symlinks and non-regular files are refused, 4 KiB cap,
+  `result` outside the four values becomes unknown, a bad `at` is dropped, the note is made one line, printable, without
+  backticks and capped at 120 runes. The preset screen (`outcomeLine`) adds `Last outcome: sent a message | stayed silent
+  (nothing to report) | connector not available | error`, each followed by the time and the note in a code span, with markup characters removed from the note.
+  `ran, outcome unknown` is shown when the task ran but the file is missing, corrupt, has an unrecognized result, or predates
+  the last run by more than a minute (the agent wrote none this time). It is computed from the task's own `last_run`; the
+  spec's mention of `task_run_logs` is not used because `Status.LastRun` already carries the time. A preset that never ran
+  and has no file shows nothing. `ProactiveDeps.ChatDir` supplies the directory (`cmd/gopod/proactive.go` resolves it from the
+  registered owner chat and `ChatsDir`); nothing acts on the file.
+- **Integrations guide.** `internal/runner/chattmpl/INTEGRATIONS.md.tmpl` is seeded with `writeIfMissing` for **owner
+  workspaces only** (existing workspaces get it on their next seed call, like `SCHEDULING.md`; an edited file is never
+  overwritten). Contents follow the section 12 outline and add: never put service text into a stored task prompt, quiet hours
+  and the working window apply to presets only, and the built-in presets are the owner's `/proactive` business.
+- **`IntegrationsPolicy`** is appended after `SchedulingPolicy` in `systemPromptWith`, so Claude gets it as system prompt and
+  Codex as the prompt prefix (one test covers both providers, Run and RunStream, with and without memory). Because the system
+  prompt is shared by every chat, the policy is conditional ("If /workspace/chat/INTEGRATIONS.md exists ... If that file does
+  not exist, ignore this section"), so a group agent is not pointed at a file it does not have. This is a deviation from the
+  unconditional wording one might expect from "exactly like SchedulingPolicy".
+- **Optional skill added:** `container/skills/integrations/SKILL.md`, a pointer only (Claude mounts it, Codex does not; the
+  policy and workspace file are the route that works for both).
+- **Not done in PR 3 by design:** the `cal.reminder` one-shot creation, the one-shot prompt, the quiet-window rule for
+  `fire` (the prompt has no quiet-hours placeholder yet), the sweep, the probe and offers. The spec's PR 3 outline item "one run
+  in which a scheduled poll creates a `once` task through IPC" moved to the owner-run acceptance rows (ACCEPTANCE P03), since
+  PR 4 owns that logic.
+- **For PR 4:** add a `{{quiet}}` input to `PromptInput` if the template must refuse reminders inside quiet hours; replace the
+  send-now-only paragraph of the `cal.reminder` body with the section 7.2 text and bump the version to 3 (the upgrade path then
+  rewrites an untouched poll task); the one-shot prompt should write its outcome to `cal.reminder.last` (the preset's id) so the
+  panel shows it; the state-file entry format already has `event`, `start`, `lead`, add `task` when scheduling.
+- **Live runs are owner-run** (no provider or connector was started for this PR): see ACCEPTANCE rows P01 to P03.
+

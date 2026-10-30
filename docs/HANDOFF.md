@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-10-30 (CP-033 PR 2 added)
+**Last updated:** 2026-10-30 (CP-033 PR 3 added)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -56,6 +56,17 @@ of the task/IPC path.
 **Not authorized without the owner:** account logins/refresh, paid fallbacks, T9 reboot, schedule changes, enabling
 `GOPOD_OUTBOX_ARTIFACTS` or `GOPOD_MANAGED_TASKS` (both have unmet gates: restore drill + capability issuer; task
 credential adapter + Pi Docker-inspect round trip), changing Telegram privacy/admin rights.
+
+## CP-033 PR 3: templates, outcome display, agent guide (branch `feat/cp033-templates`, 2026-10-30)
+Final prompts of the six presets at `TemplateVersion` 2 (`internal/proactive/catalog.go`: connector-generic wording, three
+fixed paragraphs, silent-when-empty; `cal.reminder` is the poll half only, send-now case, one-shot creation is PR 4). The
+preset screen shows the last outcome from the agent's `<chat dir>/proactive/<id>.last` (`proactive.ReadOutcome`, sanitized,
+untrusted; `ProactiveDeps.ChatDir`). `INTEGRATIONS.md` is seeded into the owner workspace (`chattmpl`), `IntegrationsPolicy`
+is in the system prompt for both providers (conditional on the file existing), plus the pointer skill
+`container/skills/integrations`. Existing preset tasks pick up v2 through `UpgradeTemplates` (untouched tasks only; edited
+ones show "Reset to template"). No provider or connector was run. **Owner-run live checks:** ACCEPTANCE rows P01 to P03
+(templates per provider, the guide, a scheduled run creating a `once` task through IPC). Spec section 20 lists the
+differences and what PR 4 needs. Next: PR 4 (`cal.reminder` one-shot lifecycle).
 
 ## CP-033 PR 2: `/proactive` command (branch `feat/cp033-command`, 2026-10-30)
 `internal/control/proactive*.go` registers `/proactive` (`PermOwnerOnly`; the Router refuses it in groups and for forged
