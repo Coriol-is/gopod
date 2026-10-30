@@ -1,6 +1,7 @@
 # Telegram table rendering — code and API research
 
-Date: 2026-10-25. Status: analysis only; no formatter or transport implemented.
+Date: 2026-10-25. Status: the monospace `<pre>` table with a row-card fallback for wide tables shipped
+(D050, 2026-10-30); native Rich Tables remain a separate spike, not implemented.
 This is separate from CP-017 capability diagnostics.
 
 ## Finding and recommended direction
