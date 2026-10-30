@@ -51,7 +51,9 @@ Code only, flag untouched.
   - falls back to **one** `sendDocument` of the same buffer only when Telegram answers 400 and the
     description, parsed as `Bad Request: <TOKEN>` from go-telegram v1.27.0's `"%w, %s"` error, has a TOKEN
     that is **equal** to `PHOTO_INVALID_DIMENSIONS` or `IMAGE_PROCESS_FAILED`. If the attempt context has
-    ended by then, no document is sent (`not_sent`/`canceled_before_dispatch`).
+    ended by then, no document is sent: the part is released as `not_sent` with the distinct code
+    `photo_refused_canceled`, which the dispatcher does not refund (unlike `canceled_before_dispatch`), so the
+    attempt is counted and the retry budget of five bounds repeated photo sends (dispatcher-level test).
   - **Assumption, not evidence:** that such a 400 means Telegram stored nothing, and that these two strings
     are what Telegram sends, are assumed from memory. Nothing in the repository or in a cited Bot API page
     supports them. `PHOTO_SAVE_FILE_INVALID` and `PHOTO_EXT_INVALID` were considered and dropped for the same

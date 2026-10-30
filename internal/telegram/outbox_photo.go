@@ -43,6 +43,12 @@ const (
 	maxPhotoRatio   = 20
 )
 
+// codePhotoRefusedCanceled is a proven pre-delivery result (Telegram refused the
+// photo, nothing was stored by assumption) that ended before the document could
+// be sent. It is released for retry like any proven-unsent failure but, unlike
+// canceled_before_dispatch, is not refunded, so it consumes the retry budget.
+const codePhotoRefusedCanceled = "photo_refused_canceled"
+
 // photoRefusalTokens are the 400 descriptions (after "Bad Request: ") treated as
 // a refusal of the picture itself. ASSUMED FROM MEMORY of Telegram's behavior,
 // not from documentation or anything in this repository: verify each in the
@@ -83,7 +89,7 @@ func isAnimatedPNG(data []byte) bool {
 		case "IDAT", "IEND":
 			return false
 		}
-		if n < 0 || n > len(data) || off+12+n > len(data) {
+		if n < 0 || n > len(data)-off-12 {
 			return false
 		}
 		off += 12 + n
@@ -144,7 +150,10 @@ func (t *botTransport) attemptPhoto(ctx context.Context, req SendRequest, name s
 		if ctx.Err() != nil {
 			// Proven refusal, but the attempt is over: do not start a second
 			// call whose timeout would be recorded as an uncertain outcome.
-			return Outcome{Kind: OutcomeNotSent, Code: "canceled_before_dispatch"}
+			// NOT "canceled_before_dispatch": the dispatcher refunds that code,
+			// and Telegram did answer, so the attempt must stay counted or the
+			// photo would be re-sent without a budget.
+			return Outcome{Kind: OutcomeNotSent, Code: codePhotoRefusedCanceled}
 		}
 		if t.log != nil {
 			t.log.Info("photo refused by telegram; sending the same bytes as a document",

@@ -360,7 +360,7 @@ func TestPhotoRefusalWithAnEndedContextSendsNoDocument(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	api := &cancelOnPhoto{fakeAPI: fakeAPI{msg: &models.Message{ID: 1}, photoErr: fmt.Errorf("%w, Bad Request: PHOTO_INVALID_DIMENSIONS", bot.ErrorBadRequest)}, cancel: cancel}
 	out := photoTransport(api, realPNG(t, 50, 50)).Attempt(ctx, photoReq())
-	if out.Kind != OutcomeNotSent || out.Code != "canceled_before_dispatch" || api.docs != 0 {
+	if out.Kind != OutcomeNotSent || out.Code != codePhotoRefusedCanceled || api.docs != 0 {
 		t.Fatalf("%+v docs=%d", out, api.docs)
 	}
 }
@@ -502,4 +502,69 @@ func TestPhotoSnapshotReadFailureAndOversizeAreRefusedBeforeAnyCall(t *testing.T
 	if api.photos != 1 || api.docs != 0 {
 		t.Fatalf("photos=%d docs=%d", api.photos, api.docs)
 	}
+}
+
+// A photo refusal that outlived its attempt context must stay counted by the
+// dispatcher: the part is retried only within the budget and then fails.
+func TestPhotoRefusedCanceledConsumesTheRetryBudget(t *testing.T) {
+	f := newOutboxFixture(t)
+	tr := &fakeTransport{script: func(int, SendRequest) Outcome {
+		return Outcome{Kind: OutcomeNotSent, Code: codePhotoRefusedCanceled}
+	}}
+	f.start(f.owner, tr, fastCfg())
+	d := f.publish(f.conv, "a")
+	diag := f.waitState(d.ID, store.DeliveryFailed)
+	if diag.Parts[0].Attempts != store.MaxPartAttempts || diag.Parts[0].ReasonCode != "retry_budget_exhausted" {
+		t.Fatalf("diag %+v", diag)
+	}
+	quiet(t, tr, store.MaxPartAttempts)
+}
+
+// The refunded code, for contrast, is not counted (documents the difference).
+func TestCanceledBeforeDispatchIsRefundedButPhotoRefusedCanceledIsNot(t *testing.T) {
+	f := newOutboxFixture(t)
+	n := 0
+	tr := &fakeTransport{script: func(c int, _ SendRequest) Outcome {
+		n = c
+		if c <= store.MaxPartAttempts+2 {
+			return Outcome{Kind: OutcomeNotSent, Code: "canceled_before_dispatch"}
+		}
+		return ack(c)
+	}}
+	f.start(f.owner, tr, fastCfg())
+	d := f.publish(f.conv, "a")
+	f.waitState(d.ID, store.DeliverySent)
+	if n <= store.MaxPartAttempts {
+		t.Fatalf("refunded code did not exceed the budget: %d calls", n)
+	}
+}
+
+func TestPhotoFitsNeverPanicsOnTruncatedOrHostileChunks(t *testing.T) {
+	apng := apngWithActl(t)
+	for i := 0; i <= len(apng); i++ {
+		photoFits(apng[:i]) // must not panic
+	}
+	plain := realPNG(t, 20, 20)
+	for i := 0; i <= len(plain); i++ {
+		photoFits(plain[:i])
+	}
+	// A chunk that claims 0xFFFFFFFF bytes right after IHDR.
+	huge := append([]byte{}, plain[:8+8+13+4]...)
+	huge = append(huge, 0xFF, 0xFF, 0xFF, 0xFF, 'z', 'T', 'X', 't')
+	huge = append(huge, plain[8+8+13+4:]...)
+	if isAnimatedPNG(huge) {
+		t.Fatal("huge chunk reported as animated")
+	}
+	photoFits(huge)
+	if !photoFits(plain) {
+		t.Fatal("control PNG rejected")
+	}
+	// acTL after IDAT is not an animation marker: still a photo.
+	late := append(append([]byte{}, plain[:len(plain)-12]...), 0, 0, 0, 8, 'a', 'c', 'T', 'L', 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0)
+	late = append(late, plain[len(plain)-12:]...)
+	if isAnimatedPNG(late) || !photoFits(late) {
+		t.Fatal("acTL after IDAT must stay a photo")
+	}
+	// A PNG-shaped input with a 4-component JPEG body must not panic either way.
+	photoFits(append([]byte("\x89PNG\r\n\x1a\n"), jpegHeader(0xC0, 10, 10, 4)...))
 }
