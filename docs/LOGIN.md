@@ -1,28 +1,16 @@
 # Private login delivery and group target confirmation
 
 Login URLs, OAuth/device codes and raw CLI output are not public group content.
-Private chats keep their ordinary interactive login flow. Group authentication
-requires an explicit request from the configured owner's Telegram actor and a
-second confirmation in that owner's private chat. Other members cannot start
-this cross-chat operation.
+Private chats keep their ordinary interactive login flow. A group has no
+sign-in of its own (D048, D049): `/login` from the configured owner in a
+registered group starts no CLI and asks nothing. The owner receives the real step
+in the private chat; the group receives one neutral line. Other members, bots,
+unregistered groups and commands addressed to another bot (`/login@Other`) are
+ignored. Redirects are limited to one per group per 30 seconds; the state is
+in memory.
 
-The private confirmation identifies the target group. Its opaque random token
-is bound to actor, group, registered folder and a five-minute expiry; it is
-single-use and checked again against current registration. Requests have a
-30-second group cooldown and at most eight pending entries. Restart expires
-in-memory confirmations; nothing is replayed automatically.
-
-The hidden confirmation command passes through the control Router's owner-only
-permission check and then requires the actual owner private chat/user. Only
-successful private confirmation starts the CLI flow. If private delivery fails,
-no public fallback is sent. Callback feedback is a short private toast; ordinary
-group `/login` does not publish authentication material or service errors.
-
-Display and authority are separate. A group flow displays URL/code/status in the
-owner's DM, but uses the target group's folder/provider and `TierRegistered`.
-It does not copy the owner's CLI home or turn the target into an owner runtime.
-The owner must choose an account appropriate for that group's use; this delivery
-feature is not an account-service isolation boundary.
+No URL, code, provider name or raw output is ever sent to a group. If private
+delivery fails, no public fallback is sent.
 
 Active auth input is intercepted before normal message persistence, media work,
 model queueing and memory ingestion. Login commands are not persisted, including
@@ -49,10 +37,10 @@ as safe for a group merely because its login link was displayed privately.
 Previously published group messages/authorization inputs are not deleted by
 this patch; historical cleanup and any credential rotation are separate actions.
 
-## Group sign-in guidance (D048)
+## Group sign-in guidance (D048, D049)
 
-A group has no sign-in of its own: the group runtime reads the owner's account (read-only, inference only). The
-private confirmation above is unchanged. When a confirmed group flow finds no group profile, the owner receives
-the real step in the private chat (`/provider <name>`, then `/login` there to refresh the account groups use) and
-the group receives one neutral line without provider, account or error detail. No credential material is
-involved in either message.
+A group has no sign-in of its own: the group runtime reads the owner's account (read-only, inference only). An
+owner `/login` in a group (or the group login button) sends the owner the real step in the private chat
+(`/provider <name>`, then `/login` there to refresh the account groups use) and the group one neutral line
+without provider, account or error detail. No credential material is involved in either message. The earlier
+private confirmation ("Authenticate group?") and the group-scoped login CLI path were removed by D049.

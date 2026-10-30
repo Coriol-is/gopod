@@ -67,7 +67,7 @@ person who controls the group, but the bot currently treats the owner's group me
 ### R3 Group `/login` guidance
 Replace the generic failure with a neutral group reply ("sign-in is managed in the owner's private chat") and a
 private note to the owner explaining the actual step (`/provider <name>`, then `/login` in the private chat to
-refresh the account that groups use). The private confirmation mechanism itself is unchanged.
+refresh the account that groups use). (Superseded by D049: the private confirmation was removed.)
 
 ## Non-goals
 Per-member allowlists, per-topic modes, enabling privacy mode changes from the bot, a Guest-bot summon path, any

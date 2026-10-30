@@ -17,8 +17,8 @@ const (
 		"here in this private chat."
 )
 
-// groupLoginGuidance replaces the generic failure of a confirmed group sign-in
-// (D048): the owner gets the real step privately, the group a neutral line.
+// groupLoginGuidance answers an owner /login in a group (D048, D049): the owner
+// gets the real step privately, the group a neutral line.
 func (b *Bot) groupLoginGuidance(ctx context.Context, ownerChat int64, thread int, rc store.RegisteredChat) {
 	b.log.Info("group sign-in redirected to the owner account", slog.String("folder", rc.Folder))
 	note := groupLoginOwnerNote

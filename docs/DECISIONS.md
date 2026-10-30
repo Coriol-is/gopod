@@ -1785,3 +1785,18 @@ were denied, and group `/login` ended in a generic failure.
 `/trigger <mode>`; new groups default to `mention`, which with privacy mode on is what Telegram delivers
 anyway. Existing workspaces keep their seeded instruction files (never overwritten); the per-turn line
 carries the mode for them. Rollback is safe: the table is additive and an older binary ignores it.
+
+## D049 — Group `/login` is a private redirect, not a confirmation
+
+**Status:** accepted 2026-10-30. Supersedes item 4 of [D048](#d048--group-trigger-modes-owner-in-group-identity-and-group-sign-in-guidance).
+
+**Decision.** Groups have no sign-in of their own, so the owner's `/login` in a registered group (and the group
+login button) no longer asks "Authenticate group?". It sends the owner the real step in the private chat and the
+group one neutral line, and starts no login CLI. The confirmation tokens, `login.group.confirm` and the
+group-scoped login path (`runLoginTarget` with a confirmed group) are removed, so no code can run a login
+against a group folder from the owner's private chat. Commands addressed to another bot are ignored; redirects
+are limited to one per group per 30 seconds (in memory).
+
+**Consequences.** Old confirmation buttons in the owner's private chat stop working (unknown command). Groups
+cannot be given an account of their own without a new ADR.
+

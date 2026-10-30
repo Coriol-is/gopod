@@ -28,17 +28,15 @@ Push from the Mac over HTTPS when SSH is down: `git -c credential.helper= -c cre
 push https://github.com/Coriol-is/gopod.git <branch>:<branch>`. Flow: worktree -> PR -> independent review agent ->
 CI -> `gh pr merge --squash --admin --delete-branch` (ruleset needs one approval; admin path is the working one).
 
-**Open owner decisions (ask these first):**
-1. [Task credential adapter](superpowers/specs/2026-10-29-task-role-credential-adapter.md): recommendation B2 (task-only
-   auth dir with the access token only); 5 questions at the end of the spec (egress, B2 vs relay, expired token policy,
-   which provider first, host-side refresh).
-2. [Agent buttons and hooks](superpowers/specs/2026-10-29-agent-buttons-and-hooks.md): recommendation = press becomes a
-   normal turn + silent `record` mode, https-only URL buttons with the host shown, no named hooks yet; 5 questions.
-3. Group `/login` still asks "Authenticate group?" although groups have no sign-in (they use the owner's account:
-   `/provider <name>` + `/login` in the private chat). Recommendation: drop the prompt.
-4. Should the agent see recent group chat history? Today unaddressed group messages are stored but never read back.
-5. Four merged remote branches on GitHub are left undeleted until approved: `docs/deploy-rich-restart`,
-   `docs/reaction-reading`, `feat/rich-messages-formatting`, `feat/telegram-restart`.
+**Owner decisions (answered 2026-10-30):**
+1. Task credential adapter: take the recommendation (B2, task-only auth dir with the access token only). The spec's other
+   questions use their recommended answers: [spec](superpowers/specs/2026-10-29-task-role-credential-adapter.md). Not built yet.
+2. [Agent buttons and hooks](superpowers/specs/2026-10-29-agent-buttons-and-hooks.md): still open (5 questions).
+3. Group `/login` prompt: dropped (branch `feat/group-login-no-prompt`): the owner's group `/login` now sends the real
+   step privately and a neutral line to the group; the private confirmation, token maps and `login.group.confirm`
+   are removed.
+4. Agent reading group chat history: not now.
+5. The four merged remote branches were deleted on GitHub.
 
 **Decisions already taken by the owner (do not re-ask):** groups keep trigger `all` (new groups `mention`); CI is not
 mandatory (no branch protection); thread-targeted sends only for threads in the private chat; stickers are context
@@ -69,8 +67,7 @@ credential adapter + Pi Docker-inspect round trip), changing Telegram privacy/ad
   group sign-in guidance (`telegram/group_login_guidance.go`), per-turn host line `[gopod group: ...]`.
 - Production impact: none to configure. The existing group has no row and keeps `all`; owner sends
   `/trigger mention` (or another mode) in the group to change it. New groups start at `mention`.
-- Open: the owner private confirmation prompt of group `/login` is still shown before the guidance (kept
-  unchanged on purpose); dropping that now pointless step is an owner decision. An album answers only if its
+- The private confirmation prompt of group `/login` was removed by D049 (owner decision 2026-10-30). An album answers only if its
   first message qualifies. Existing workspaces keep their seeded instruction files; the per-turn line carries
   the mode for them.
 
@@ -482,5 +479,3 @@ its register and delivery priorities in ROADMAP.
 - `store.Open` builds a SQLite file URI by concatenating the raw path. A `#` in a path
   can be interpreted as a URI fragment; repeated test names exposed cross-fixture DB
   aliasing. Formatting tests use distinct descriptive names. URI escaping is a separate fix.
-
-- `/trigger` without a mode now shows an inline mode picker (control `triggerButtons`, press goes through the Router as `/trigger <mode>`); branch `feat/trigger-picker-buttons`, not pushed.

@@ -4,23 +4,13 @@ import (
 	"context"
 	"strings"
 	"testing"
-
-	"github.com/go-telegram/bot/models"
-
-	"github.com/Coriol-is/gopod/internal/runner"
 )
 
-func TestConfirmedGroupLoginExplainsTheRealStepPrivatelyAndStaysNeutralInTheGroup(t *testing.T) {
+func TestGroupLoginExplainsTheRealStepPrivatelyAndStaysNeutralInTheGroup(t *testing.T) {
 	b, fake := handoffFixture(t)
-	b.groupReason = func(context.Context, string) string { return "" } // admitted: only the runtime checks remain
-	b.runner = &runner.Runner{}                                        // a group profile is never available: Ensure refuses
-	target, ok := b.groupLoginTarget(t.Context(), handoffGroup)
-	if !ok {
-		t.Fatal("group target")
-	}
-	private := &models.Message{Chat: models.Chat{ID: streamChat, Type: models.ChatTypePrivate}, From: &models.User{ID: streamChat}}
-	if b.runLoginTarget(t.Context(), private, 0, target, true) {
-		t.Fatal("no session may be stored")
+	b.groupReason = func(context.Context, string) string { return "" } // admitted
+	if !b.requestLoginHandoff(t.Context(), ownerGroupLogin()) {
+		t.Fatal("redirect not sent")
 	}
 	owner, group := sendsTo(fake, streamChat), sendsTo(fake, handoffGroup)
 	if len(owner) != 1 || !strings.Contains(owner[0].Form["text"], "/provider") || !strings.Contains(owner[0].Form["text"], "/login") || strings.Contains(owner[0].Form["text"], loginTextFailed) {
@@ -33,22 +23,6 @@ func TestConfirmedGroupLoginExplainsTheRealStepPrivatelyAndStaysNeutralInTheGrou
 		if strings.Contains(strings.ToLower(group[0].Form["text"]), bad) {
 			t.Fatalf("group text leaks %q", bad)
 		}
-	}
-}
-
-// The private confirmation is unchanged by D048: the group /login still asks
-// the owner in the private chat first and starts nothing in the group.
-func TestGroupLoginStillRequiresPrivateConfirmation(t *testing.T) {
-	b, fake := handoffFixture(t)
-	if !b.requestLoginHandoff(t.Context(), ownerGroupLogin()) {
-		t.Fatal("handoff not requested")
-	}
-	if len(sendsTo(fake, handoffGroup)) != 0 {
-		t.Fatal("group got output before confirmation")
-	}
-	sends := sendsTo(fake, streamChat)
-	if len(sends) != 1 || len(buttonsOf(t, sends[0])) != 2 {
-		t.Fatalf("private confirmation missing: %+v", sends)
 	}
 }
 
