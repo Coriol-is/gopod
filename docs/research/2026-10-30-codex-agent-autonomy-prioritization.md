@@ -92,6 +92,16 @@ owner already has through connectors on the Mac versus on the Pi. Output: a reco
 with the minimum credential scope. Acceptance: states where each credential lives and who can
 read it.
 
+**A3a. Can a proactive run be made read-only on connectors?**
+Question: for each pinned CLI, can a single run be given only the read tools of the Gmail and
+Calendar connectors (tool allow/deny list, per-run config, or a read-only Google scope)?
+Method: read the CLI documentation and configuration schema for tool allowlists; if unclear,
+a design-only note listing what must be tried on the Pi with synthetic data and no account
+send. Output: yes/no per provider and the exact mechanism. Acceptance: until this is a
+documented yes, no unattended turn gets a mail or calendar connector at all, only a normal
+owner-initiated turn does. This is the condition for the owner's 2026-10-30 decision to be
+safe.
+
 **A4. Quota and budget model for proactive turns.**
 Question: what do N proactive turns per day cost on the shared subscription, and what happens
 at the 20/10/5 percent thresholds? Method: use observed foreground turn sizes and the donor's
@@ -145,8 +155,14 @@ needs first. Rank is my recommendation, not an approval.
   quota is low (the 20/10/5 percent rules).
 - The first target is the existing freefeed digest moved onto the same framework, so no new
   data source is needed to prove it.
-- Mail and calendar are the second step through connectors in the private chat, read-only;
-  any send, reply or event change goes through CP-027 approvals, never autonomously.
+- Mail and calendar are the second step through connectors in the private chat. They must be
+  read-only for proactive turns. CP-027 does **not** cover this: it governs only brokered
+  actions whose credentials the host holds (spec: "Full-access personal shells/native
+  integrations that can bypass the broker are not silently claimed to be covered"). A
+  provider connector holds its own Google consent, so the host cannot intercept a send made
+  through it. Read-only therefore has to be enforced by what the proactive run is allowed to
+  call (see A3a), and any send, reply or event change is available only in a normal owner
+  turn or through a host-held mail credential under CP-027.
 
 ## 6. What not to take
 
