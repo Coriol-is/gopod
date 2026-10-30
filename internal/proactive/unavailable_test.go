@@ -54,7 +54,7 @@ func TestEnableRefusesAnUnavailablePreset(t *testing.T) {
 	}
 }
 
-func TestUpgradeTemplatesLeavesAnUnavailablePresetAlone(t *testing.T) {
+func TestUpgradeTemplatesNeverRewritesAnUnavailablePreset(t *testing.T) {
 	f := newFixture(t)
 	makeAvailable(t, "cal.reminder") // as if enabled by an earlier build
 	f.enable("cal.reminder")
@@ -71,11 +71,103 @@ func TestUpgradeTemplatesLeavesAnUnavailablePresetAlone(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, r := range res {
-		if r.PresetID == "cal.reminder" {
-			t.Fatalf("upgrade touched an unavailable preset: %+v", r)
+		if r.PresetID == "cal.reminder" && r.Outcome != UpgradePausedUnavailable {
+			t.Fatalf("upgrade rewrote an unavailable preset: %+v", r)
 		}
+	}
+	after := f.task("cal.reminder")
+	if after.Prompt != before.Prompt || after.ScheduleValue != before.ScheduleValue {
+		t.Fatalf("definition changed: %+v -> %+v", before, after)
+	}
+}
+
+// liveUnavailable leaves cal.reminder as a live task from "an earlier build"
+// and then closes the gate again.
+func (f *fixture) liveUnavailable() {
+	f.t.Helper()
+	makeAvailable(f.t, "cal.reminder")
+	f.enable("cal.reminder")
+	for i := range catalog {
+		if catalog[i].ID == "cal.reminder" {
+			catalog[i].unavailable = "timed reminders arrive in a later update"
+		}
+	}
+}
+
+func TestServiceOperationsRefuseAnUnavailablePreset(t *testing.T) {
+	f := newFixture(t)
+	f.liveUnavailable()
+	before := f.task("cal.reminder")
+	ctx := context.Background()
+	if err := f.svc.Configure(ctx, "cal.reminder", Settings{Freq: "30m", Lead: 60}); !errors.Is(err, ErrPresetUnavailable) {
+		t.Errorf("Configure: %v", err)
+	}
+	if err := f.svc.UpdateSettings(ctx, "cal.reminder", func(*Settings) error { return nil }); !errors.Is(err, ErrPresetUnavailable) {
+		t.Errorf("UpdateSettings: %v", err)
+	}
+	if err := f.svc.ResetToTemplate(ctx, "cal.reminder"); !errors.Is(err, ErrPresetUnavailable) {
+		t.Errorf("ResetToTemplate: %v", err)
 	}
 	if after := f.task("cal.reminder"); after != before {
 		t.Fatalf("task changed: %+v -> %+v", before, after)
+	}
+}
+
+func TestSetTimezoneAndResumeAllLeaveAnUnavailablePresetAlone(t *testing.T) {
+	f := newFixture(t)
+	f.enable("gmail.morning")
+	f.liveUnavailable()
+	ctx := context.Background()
+	before := f.task("cal.reminder")
+	if _, err := f.svc.SetTimezone(ctx, "Asia/Tokyo"); err != nil {
+		t.Fatal(err)
+	}
+	if after := f.task("cal.reminder"); after.ScheduleValue != before.ScheduleValue || after.Prompt != before.Prompt {
+		t.Fatalf("SetTimezone rendered an unavailable preset: %q", after.ScheduleValue)
+	}
+	if got := f.task("gmail.morning").ScheduleValue; !strings.Contains(got, "Asia/Tokyo") {
+		t.Fatalf("available preset not moved: %s", got)
+	}
+	if err := f.svc.PauseAll(ctx); err != nil {
+		t.Fatal(err)
+	}
+	rep, err := f.svc.ResumeAll(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := f.task("cal.reminder"); got.Status != "paused" {
+		t.Fatalf("ResumeAll reactivated an unavailable preset: %s", got.Status)
+	}
+	if !containsString(rep.Skipped, "cal.reminder") || !containsString(rep.Resumed, "gmail.morning") {
+		t.Fatalf("report = %+v", rep)
+	}
+}
+
+func TestUpgradeTemplatesPausesALiveUnavailablePresetOnce(t *testing.T) {
+	f := newFixture(t)
+	f.liveUnavailable()
+	ctx := context.Background()
+	res, err := f.svc.UpgradeTemplates(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []UpgradeResult
+	for _, r := range res {
+		if r.PresetID == "cal.reminder" {
+			got = append(got, r)
+		}
+	}
+	if len(got) != 1 || got[0].Outcome != UpgradePausedUnavailable {
+		t.Fatalf("results = %+v", res)
+	}
+	if tk := f.task("cal.reminder"); tk.Status != "paused" {
+		t.Fatalf("status = %s", tk.Status)
+	}
+	if st := f.status("cal.reminder"); st.PausedReason == "" {
+		t.Error("the pause has no reason on the panel")
+	}
+	res, err = f.svc.UpgradeTemplates(ctx)
+	if err != nil || len(res) != 0 {
+		t.Fatalf("second run reported again: %+v %v", res, err)
 	}
 }

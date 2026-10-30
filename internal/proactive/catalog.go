@@ -131,25 +131,25 @@ const (
 
 var catalog = []Preset{
 	{
-		ID: "gmail.morning", Title: "morning summary", TemplateVersion: 2,
+		ID: "gmail.morning", Title: "morning summary", TemplateVersion: 3,
 		freqs: []string{"daily", "weekdays"}, defaultSet: Settings{Freq: "daily", Time: "0800"},
 		timeMin: "0600", timeMax: "1100",
 		body: gmailAccess + " Summarize mail received since yesterday 18:00 ({{tz}}): at most 7 items, those needing a reply first, one line each (sender, subject, why). Skip newsletters and notifications unless they contain a deadline. If there is no such mail, write result empty and send nothing.",
 	},
 	{
-		ID: "gmail.urgent", Title: "important mail check", TemplateVersion: 2,
+		ID: "gmail.urgent", Title: "important mail check", TemplateVersion: 3,
 		freqs: []string{"15m", "30m", "60m"}, defaultSet: Settings{Freq: "60m"},
 		polling: true,
 		body:    gmailAccess + " List mail received since the last run that is time-sensitive or from a person expecting a reply. Keep the ids of mail you have already looked at in /workspace/chat/proactive/gmail.urgent.state.json as a JSON list: skip those, add the new ones, keep the newest 200 and drop ids older than 3 days. Send a message only if at least one item qualifies, with sender, subject and why it is urgent; otherwise write result empty and send nothing.",
 	},
 	{
-		ID: "gmail.evening", Title: "evening wrap-up", TemplateVersion: 2,
+		ID: "gmail.evening", Title: "evening wrap-up", TemplateVersion: 3,
 		freqs: []string{"daily", "weekdays"}, defaultSet: Settings{Freq: "weekdays", Time: "1800"},
 		timeMin: "1600", timeMax: "2100",
 		body: gmailAccess + " List unanswered threads ({{tz}}) where the last message is incoming and older than 4 hours, at most 7, oldest first, one line each (sender, subject, age). If there are none, write result empty and send nothing.",
 	},
 	{
-		ID: "cal.agenda", Title: "today's agenda", TemplateVersion: 2,
+		ID: "cal.agenda", Title: "today's agenda", TemplateVersion: 3,
 		freqs: []string{"daily", "weekdays"}, defaultSet: Settings{Freq: "daily", Time: "0800"},
 		timeMin: "0600", timeMax: "1000",
 		body: calAccess + " List today's events ({{tz}}) in time order with start time, title and place or link; mention overlaps and gaps over 2 hours. On a day with no events write result empty and send nothing.",
@@ -157,7 +157,7 @@ var catalog = []Preset{
 	{
 		// The poll half only. Creating the one-shot reminder tasks is PR 4
 		// (section 7.2); this template says so and handles the "send now" case.
-		ID: "cal.reminder", Title: "meeting reminders", TemplateVersion: 2,
+		ID: "cal.reminder", Title: "meeting reminders", TemplateVersion: 3,
 		freqs: []string{"30m"}, defaultSet: Settings{Freq: "30m", Lead: 10},
 		leads: []int{10, 15, 30, 60}, polling: true, pollMinutes: 30,
 		// A 30-minute poll that only sends when the lead has already passed misses
@@ -167,7 +167,7 @@ var catalog = []Preset{
 		body:        calAccess + " This is the lookahead poll of the meeting reminder preset. List events that start within the next {{lookahead}} minutes ({{tz}}), skipping all-day events and events I declined. The reminder lead is {{lead}} minutes. Keep the events you have already handled in /workspace/chat/proactive/cal.reminder.state.json as {\"handled\":[{\"event\":\"<id>\",\"start\":\"<RFC3339>\",\"lead\":{{lead}}}]} and drop entries whose start is more than 2 days old. For each event not yet handled: if start minus {{lead}} minutes has already passed and the event has not started, send one reminder now (title, start time in {{tz}}, place or link, one line) and record the event as handled. If that moment is still in the future, do nothing for it yet and do not record it: scheduling timed reminders is added in a later version of this template, and until then only the send-now case is handled. If no event needs a reminder, write result empty and send nothing.",
 	},
 	{
-		ID: "cal.weekly", Title: "week ahead", TemplateVersion: 2,
+		ID: "cal.weekly", Title: "week ahead", TemplateVersion: 3,
 		freqs: []string{"sun", "mon"}, defaultSet: Settings{Freq: "sun", Time: "1800"},
 		timeMin: "1600", timeMax: "2000",
 		body: calAccess + " Summarize next week ({{tz}}): number of events per day, the busiest day, any all-day items and conflicts, at most 10 lines. If the week has no events write result empty and send nothing.",

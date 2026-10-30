@@ -16,6 +16,9 @@ const (
 	UpgradeNeedsApply UpgradeOutcome = "needs-apply"
 	// UpgradeBlocked: the new template cannot be rendered now (quiet hours).
 	UpgradeBlocked UpgradeOutcome = "blocked"
+	// UpgradePausedUnavailable: a live task of a preset that is no longer
+	// available (an earlier build allowed it) was paused, once.
+	UpgradePausedUnavailable UpgradeOutcome = "paused-unavailable"
 )
 
 // UpgradeResult names one preset touched by UpgradeTemplates.
@@ -36,9 +39,6 @@ func (s *Service) UpgradeTemplates(ctx context.Context) ([]UpgradeResult, error)
 			return err
 		}
 		for _, p := range Catalog() {
-			if _, off := p.Unavailable(); off {
-				continue // left exactly as it is until the preset becomes available
-			}
 			row, err := s.loadRow(ctx, p.ID)
 			if err != nil {
 				return err
@@ -46,6 +46,27 @@ func (s *Service) UpgradeTemplates(ctx context.Context) ([]UpgradeResult, error)
 			task, ts, err := s.lookupTask(ctx, p)
 			if err != nil {
 				return err
+			}
+			if reason, off := p.Unavailable(); off {
+				// Never rewritten. A live task from an earlier build would keep
+				// running a template that cannot work, so it is paused once.
+				if ts == taskLive && task.Status == "active" {
+					if err = s.st.UpdateTaskStatus(ctx, task.ID, "paused", 0, task.LastRun); err != nil {
+						return err
+					}
+					set, derr := decodeSettings(row, p)
+					if derr != nil {
+						return derr
+					}
+					set.Reason = "not available yet (" + reason + ")"
+					row.PresetID = p.ID
+					row.Settings, row.UpdatedAt = encodeSettings(set), s.now().UnixMilli()
+					if err = s.st.PutProactivePreset(ctx, row); err != nil {
+						return err
+					}
+					out = append(out, UpgradeResult{p.ID, UpgradePausedUnavailable})
+				}
+				continue
 			}
 			if ts != taskLive || row.TemplateVersion >= p.TemplateVersion {
 				continue
