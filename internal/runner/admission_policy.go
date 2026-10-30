@@ -39,7 +39,7 @@ func (r *Runner) CheckAdmission(ctx context.Context, folder string) error {
 func (r *Runner) authorizeTurn(ctx context.Context, folder string) error {
 	err := r.authorizeProfile(ctx, folder)
 	if err != nil && r.groups != nil {
-		if c, ok := r.groupRegistration(ctx, folder); ok {
+		if c, ok, lookupErr := r.groupRegistration(ctx, folder); lookupErr == nil && ok {
 			r.reconcileDeniedGroup(c)
 		}
 	}
