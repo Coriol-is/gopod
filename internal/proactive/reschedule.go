@@ -2,9 +2,10 @@ package proactive
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/Coriol-is/gopod/internal/scheduler"
 )
 
 // Report says what a zone, window or quiet-hours change did to the presets.
@@ -52,6 +53,11 @@ func (s *Service) SetWindow(ctx context.Context, w Window) error {
 // Presets with no run time left outside the window are paused with
 // ReasonInsideQuiet; nothing is shifted and nothing resumes by itself.
 func (s *Service) SetQuiet(ctx context.Context, q *Quiet) error {
+	if q != nil {
+		if err := q.validate(); err != nil {
+			return err
+		}
+	}
 	return s.inLockedTx(ctx, func(ctx context.Context) error {
 		var err error
 		if q == nil {
@@ -70,7 +76,10 @@ func (s *Service) SetQuiet(ctx context.Context, q *Quiet) error {
 // rerender applies the current environment to every live preset task.
 func (s *Service) rerender(ctx context.Context, tzChanged bool) (Report, error) {
 	var rep Report
-	env := s.env(ctx)
+	env, err := s.env(ctx)
+	if err != nil {
+		return rep, err
+	}
 	for _, p := range Catalog() {
 		row, err := s.loadRow(ctx, p.ID)
 		if err != nil {
@@ -83,16 +92,24 @@ func (s *Service) rerender(ctx context.Context, tzChanged bool) (Report, error) 
 		if ts != taskLive {
 			continue
 		}
-		set := decodeSettings(row, p)
+		set, err := decodeSettings(row, p)
+		if err != nil {
+			return rep, err
+		}
 
 		if modified(row, task) {
+			// The owner's edit stands: no quiet-hours or window rules apply to it.
+			// A zone change moves only the CRON_TZ prefix of an edited cron; any
+			// other schedule type, or text that would not parse, is left as is.
 			if !tzChanged {
 				continue
 			}
-			sched := withTimezone(task.ScheduleValue, env.TZ)
-			if sched != task.ScheduleValue {
-				if err = s.rewrite(ctx, &task, task.Prompt, sched); err != nil {
-					return rep, err
+			if task.ScheduleType == "cron" {
+				sched := withTimezone(task.ScheduleValue, env.TZ)
+				if sched != task.ScheduleValue && scheduler.ValidateCron(sched) == nil {
+					if err = s.rewrite(ctx, &task, task.Prompt, sched); err != nil {
+						return rep, err
+					}
 				}
 			}
 			rep.Kept = append(rep.Kept, p.ID)
@@ -100,7 +117,7 @@ func (s *Service) rerender(ctx context.Context, tzChanged bool) (Report, error) 
 		}
 
 		prompt, sched, err := s.renderTask(p, set.Settings, env)
-		if errors.Is(err, ErrInsideQuiet) || errors.Is(err, ErrNoRunHours) {
+		if blocked(err) {
 			if task.Status != "active" {
 				continue
 			}
@@ -125,7 +142,7 @@ func (s *Service) rerender(ctx context.Context, tzChanged bool) (Report, error) 
 			return rep, err
 		}
 		set.Reason = ""
-		if err = s.putRow(ctx, row, set, row.TemplateVersion, ContentHash(prompt, sched)); err != nil {
+		if err = s.putRow(ctx, row, set, p.TemplateVersion, ContentHash(prompt, "cron", sched)); err != nil {
 			return rep, err
 		}
 		rep.Rescheduled = append(rep.Rescheduled, p.ID)

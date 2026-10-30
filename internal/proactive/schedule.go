@@ -42,10 +42,18 @@ func ParseQuiet(from, to string) (Quiet, error) {
 	if err != nil {
 		return Quiet{}, err
 	}
-	if s == e {
-		return Quiet{}, errors.New("quiet window is empty")
+	q := Quiet{StartMin: s, EndMin: e}
+	return q, q.validate()
+}
+
+func (q Quiet) validate() error {
+	if q.StartMin < 0 || q.StartMin >= 24*60 || q.EndMin < 0 || q.EndMin >= 24*60 {
+		return fmt.Errorf("quiet window %d-%d is outside the day", q.StartMin, q.EndMin)
 	}
-	return Quiet{StartMin: s, EndMin: e}, nil
+	if q.StartMin == q.EndMin {
+		return errors.New("quiet window is empty")
+	}
+	return nil
 }
 
 // Contains reports whether a minute of day lies inside the quiet window.

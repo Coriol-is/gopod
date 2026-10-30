@@ -26,6 +26,7 @@ type Status struct {
 	TemplateOutdated bool   // the stored template version is older than the catalog's
 	PausedReason     string // set when gopod paused the task itself
 	GloballyPaused   bool
+	Conflict         bool // a foreign task holds the preset's id; it is never touched
 	TaskID           string
 	NextRun          int64
 	LastRun          int64
@@ -45,8 +46,15 @@ func (s *Service) Status(ctx context.Context, id string) (Status, error) {
 	if err != nil {
 		return Status{}, err
 	}
-	set := decodeSettings(row, p)
-	st := Status{Preset: p, State: StateOff, Settings: set.Settings, GloballyPaused: s.GloballyPaused(ctx)}
+	set, err := decodeSettings(row, p)
+	if err != nil {
+		return Status{}, err
+	}
+	gp, err := s.GloballyPaused(ctx)
+	if err != nil {
+		return Status{}, err
+	}
+	st := Status{Preset: p, State: StateOff, Settings: set.Settings, GloballyPaused: gp, Conflict: ts == taskForeign}
 	if ts != taskLive {
 		return st, nil
 	}
@@ -74,11 +82,13 @@ func (s *Service) List(ctx context.Context) ([]Status, error) {
 	return out, nil
 }
 
-// inLockedTx runs fn holding scheduler.LockTasks inside one store transaction.
+// inLockedTx runs fn holding the task lock inside one store transaction.
+// scheduler.WithTaskLock honors the lock key of the IPC path, so a caller that
+// is already inside ProcessTaskRequest does not deadlock.
 func (s *Service) inLockedTx(ctx context.Context, fn func(ctx context.Context) error) error {
-	unlock := scheduler.LockTasks(s.st)
-	defer unlock()
-	return s.st.InTaskTx(ctx, fn)
+	return scheduler.WithTaskLock(ctx, s.st, func(ctx context.Context) error {
+		return s.st.InTaskTx(ctx, fn)
+	})
 }
 
 // Enable switches a preset on: it creates the deterministic task, or
@@ -91,24 +101,37 @@ func (s *Service) Enable(ctx context.Context, id string) error {
 		return ErrUnknownPreset
 	}
 	return s.inLockedTx(ctx, func(ctx context.Context) error {
-		if s.GloballyPaused(ctx) {
+		if on, err := s.GloballyPaused(ctx); err != nil {
+			return err
+		} else if on {
 			return ErrGloballyPaused
 		}
 		row, err := s.loadRow(ctx, id)
 		if err != nil {
 			return err
 		}
-		set := decodeSettings(row, p)
+		set, err := decodeSettings(row, p)
+		if err != nil {
+			return err
+		}
 		set.Reason = ""
 		task, ts, err := s.lookupTask(ctx, p)
 		if err != nil {
 			return err
 		}
-		env := s.env(ctx)
+		if ts == taskForeign {
+			return fmt.Errorf("%w: %s belongs to folder %q", ErrTaskConflict, task.ID, task.ChatFolder)
+		}
+		env, err := s.env(ctx)
+		if err != nil {
+			return err
+		}
 		now := s.now().UnixMilli()
 
 		if ts == taskLive && modified(row, task) {
-			// Owner-edited: reactivate as is, keep the owner's definition.
+			// Owner-edited: reactivate the owner's definition as is. By design this
+			// skips the quiet-hours check: the owner's edit is the owner's decision
+			// (no restrictions for the owner, 2026-10-30).
 			next, err := s.schedulerNext(task.ScheduleType, task.ScheduleValue)
 			if err != nil {
 				return err
@@ -126,7 +149,7 @@ func (s *Service) Enable(ctx context.Context, id string) error {
 		switch ts {
 		case taskLive:
 			next := task.NextRun
-			if task.Status != "active" || next == 0 || sched != task.ScheduleValue {
+			if task.Status != "active" || next <= 0 || sched != task.ScheduleValue {
 				if next, err = s.schedulerNext("cron", sched); err != nil {
 					return err
 				}
@@ -155,7 +178,7 @@ func (s *Service) Enable(ctx context.Context, id string) error {
 				return err
 			}
 		}
-		return s.putRow(ctx, row, set, p.TemplateVersion, ContentHash(prompt, sched))
+		return s.putRow(ctx, row, set, p.TemplateVersion, ContentHash(prompt, "cron", sched))
 	})
 }
 
@@ -189,7 +212,10 @@ func (s *Service) Disable(ctx context.Context, id string) error {
 		if err != nil {
 			return err
 		}
-		set := decodeSettings(row, p)
+		set, err := decodeSettings(row, p)
+		if err != nil {
+			return err
+		}
 		set.Reason = ""
 		row.TaskID, row.Settings, row.UpdatedAt = task.ID, encodeSettings(set), s.now().UnixMilli()
 		if err = s.st.PutProactivePreset(ctx, row); err != nil {
@@ -222,7 +248,11 @@ func (s *Service) Configure(ctx context.Context, id string, next Settings) error
 		if ts == taskLive && modified(row, task) {
 			return ErrUserModified
 		}
-		prompt, sched, err := s.renderTask(p, next, s.env(ctx))
+		env, err := s.env(ctx)
+		if err != nil {
+			return err
+		}
+		prompt, sched, err := s.renderTask(p, next, env)
 		if err != nil {
 			return fmt.Errorf("configuring %s: %w", id, err)
 		}
@@ -235,14 +265,15 @@ func (s *Service) Configure(ctx context.Context, id string, next Settings) error
 		if err = s.rewrite(ctx, &task, prompt, sched); err != nil {
 			return err
 		}
-		return s.putRow(ctx, row, set, p.TemplateVersion, ContentHash(prompt, sched))
+		return s.putRow(ctx, row, set, p.TemplateVersion, ContentHash(prompt, "cron", sched))
 	})
 }
 
 // rewrite replaces a live task's definition, keeping its status. An active task
-// gets a fresh next run, a paused one stays unscheduled.
+// gets a fresh next run; a paused one keeps its next_run (0, or the global pause
+// marker, which must survive a rewrite).
 func (s *Service) rewrite(ctx context.Context, task *store.TaskRecord, prompt, sched string) error {
-	next := int64(0)
+	next := task.NextRun
 	if task.Status == "active" {
 		var err error
 		if next, err = s.schedulerNext("cron", sched); err != nil {
@@ -272,14 +303,21 @@ func (s *Service) ResetToTemplate(ctx context.Context, id string) error {
 		if ts != taskLive {
 			return ErrNotEnabled
 		}
-		set := decodeSettings(row, p)
-		prompt, sched, err := s.renderTask(p, set.Settings, s.env(ctx))
+		set, err := decodeSettings(row, p)
+		if err != nil {
+			return err
+		}
+		env, err := s.env(ctx)
+		if err != nil {
+			return err
+		}
+		prompt, sched, err := s.renderTask(p, set.Settings, env)
 		if err != nil {
 			return fmt.Errorf("resetting %s: %w", id, err)
 		}
 		if err = s.rewrite(ctx, &task, prompt, sched); err != nil {
 			return err
 		}
-		return s.putRow(ctx, row, set, p.TemplateVersion, ContentHash(prompt, sched))
+		return s.putRow(ctx, row, set, p.TemplateVersion, ContentHash(prompt, "cron", sched))
 	})
 }

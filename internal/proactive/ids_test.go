@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Coriol-is/gopod/internal/store"
 )
 
 func TestTaskIDIsDeterministic(t *testing.T) {
@@ -12,17 +14,22 @@ func TestTaskIDIsDeterministic(t *testing.T) {
 	}
 }
 
-func TestContentHashCoversPromptAndSchedule(t *testing.T) {
-	a := ContentHash("p", "s")
-	if a != ContentHash("p", "s") || len(a) != 64 {
+func TestContentHashCoversPromptTypeAndSchedule(t *testing.T) {
+	a := ContentHash("p", "cron", "s")
+	if a != ContentHash("p", "cron", "s") || len(a) != 64 {
 		t.Fatalf("hash unstable or wrong length: %q", a)
 	}
-	// The separator must keep ("a|b","c") apart from ("a","b|c").
-	if ContentHash("a|b", "c") == ContentHash("a", "b|c") {
-		t.Fatal("hash is ambiguous across the prompt/schedule boundary")
+	// The separator must keep neighbouring fields apart.
+	if ContentHash("a\x00b", "cron", "c") == ContentHash("a", "b\x00cron", "c") ||
+		ContentHash("a", "cron", "b") == ContentHash("a", "cron\x00b", "") {
+		t.Fatal("hash is ambiguous across a field boundary")
 	}
-	if a == ContentHash("p", "s2") || a == ContentHash("p2", "s") {
+	if a == ContentHash("p", "cron", "s2") || a == ContentHash("p2", "cron", "s") {
 		t.Fatal("hash ignores a field")
+	}
+	// An owner IPC update that changes only the schedule type is an edit.
+	if a == ContentHash("p", "interval", "s") {
+		t.Fatal("hash ignores schedule_type")
 	}
 }
 
@@ -38,16 +45,29 @@ func TestReminderOneShotIDs(t *testing.T) {
 	if id == ReminderOneShotID("evt1", start, 15) || id == ReminderOneShotID("evt1", start.Add(time.Minute), 10) || id == ReminderOneShotID("evt2", start, 10) {
 		t.Fatal("id must change with lead, start and event")
 	}
-	if !IsReminderOneShot(id, "anything") {
+	oneShot := func(id, folder, typ, prompt string) store.TaskRecord {
+		return store.TaskRecord{ID: id, ChatFolder: folder, ScheduleType: typ, Prompt: prompt}
+	}
+	if !IsReminderOneShot(oneShot(id, "owner", "once", "x"), "owner") {
 		t.Fatal("prefix not recognised")
 	}
-	if IsReminderOneShot("preset-cal.reminder", "p") || IsReminderOneShot("preset-cal.agenda", "p") || IsReminderOneShot("other", "p") {
-		t.Fatal("poll task or foreign task taken for a one-shot")
+	for name, tk := range map[string]store.TaskRecord{
+		"poll task":       oneShot("preset-cal.reminder", "owner", "cron", "p"),
+		"other preset":    oneShot("preset-cal.agenda", "owner", "cron", "p"),
+		"foreign id":      oneShot("other", "owner", "once", "p"),
+		"foreign folder":  oneShot(id, "alice", "once", "x"),
+		"not a once task": oneShot(id, "owner", "cron", "x"),
+		"forged marker":   oneShot("agent-chosen", "alice", "once", ReminderMarker+" x"),
+		"marker not once": oneShot("agent-chosen", "owner", "interval", ReminderMarker+" x"),
+	} {
+		if IsReminderOneShot(tk, "owner") {
+			t.Errorf("%s taken for a one-shot", name)
+		}
 	}
-	if !IsReminderOneShot("agent-chose-this", ReminderMarker+" Reminder check. Event id e.") {
-		t.Fatal("marker fallback not recognised")
+	if !IsReminderOneShot(oneShot("agent-chosen", "owner", "once", ReminderMarker+" Reminder check. Event id e."), "owner") {
+		t.Fatal("marker fallback not recognised for an owner-folder once task")
 	}
-	if IsReminderOneShot("agent-chose-this", "text "+ReminderMarker) {
+	if IsReminderOneShot(oneShot("agent-chosen", "owner", "once", "text "+ReminderMarker), "owner") {
 		t.Fatal("the marker must start the prompt")
 	}
 }

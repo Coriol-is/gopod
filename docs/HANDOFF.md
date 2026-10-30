@@ -64,7 +64,7 @@ tables `proactive_presets` / `proactive_settings` in `internal/store` (+ `InTask
 wiring: no command, no flag, behaviour unchanged. Differences from the spec are in its section 18. Next is PR 2
 (`/proactive` command and timezone picker): it needs `Service.List/Status/Enable/Disable/Configure/SetTimezone/
 SetWindow/SetQuiet/PauseAll/ResumeAll/ResetToTemplate/UpgradeTemplates` and the `ErrInsideQuiet`, `ErrNoRunHours`,
-`ErrUserModified`, `ErrGloballyPaused` sentinels; the connector-ready gate is the caller's.
+`ErrUserModified`, `ErrGloballyPaused`, `ErrTaskConflict` sentinels (getters `Timezone/Window/Quiet/GloballyPaused` return errors; `ResumeAll` returns a `ResumeReport`); the connector-ready gate is the caller's.
 
 ## Latest design request (2026-10-29)
 - CP-032 [reaction-reading specification](superpowers/specs/2026-10-29-telegram-reaction-reading.md): group emoji/custom-ID events, durable admission, exact message/topic mapping and no-admin/unavailable diagnostics. Private native reactions are transport-blocked; no account-reader workaround is authorized. Design only; no source or runtime flags changed.

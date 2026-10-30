@@ -375,11 +375,11 @@ func TestGlobalPauseRestoresExactlyTheActiveSet(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, id := range []string{"gmail.morning", "cal.agenda", "cal.weekly"} {
-		if tk := f.task(id); tk.Status != "paused" || tk.NextRun != 0 {
+		if tk := f.task(id); tk.Status != "paused" || tk.NextRun > 0 {
 			t.Fatalf("%s after pause: %+v", id, tk)
 		}
 	}
-	if !f.svc.GloballyPaused(ctx) {
+	if !f.paused() {
 		t.Fatal("not reported paused")
 	}
 	if err := f.svc.Enable(ctx, "gmail.evening"); !errors.Is(err, ErrGloballyPaused) {
@@ -388,10 +388,8 @@ func TestGlobalPauseRestoresExactlyTheActiveSet(t *testing.T) {
 	if err := f.svc.Disable(ctx, "cal.agenda"); err != nil { // owner turns one off during the pause
 		t.Fatal(err)
 	}
-	if err := f.svc.ResumeAll(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if f.svc.GloballyPaused(ctx) {
+	f.resume()
+	if f.paused() {
 		t.Fatal("still paused")
 	}
 	if tk := f.task("gmail.morning"); tk.Status != "active" || tk.NextRun == 0 {
@@ -402,9 +400,7 @@ func TestGlobalPauseRestoresExactlyTheActiveSet(t *testing.T) {
 			t.Fatalf("%s must stay off", id)
 		}
 	}
-	if err := f.svc.ResumeAll(ctx); err != nil { // nothing saved: no-op
-		t.Fatal(err)
-	}
+	f.resume() // nothing saved: no-op
 }
 
 func TestOwnerMayResumeAPresetFromTasksDuringPause(t *testing.T) {
@@ -421,15 +417,13 @@ func TestOwnerMayResumeAPresetFromTasksDuringPause(t *testing.T) {
 	if s := f.status("gmail.morning"); s.State != StateActive || !s.GloballyPaused {
 		t.Fatalf("status must show the real task state under a pause: %+v", s)
 	}
-	if err := f.svc.ResumeAll(ctx); err != nil {
-		t.Fatal(err)
-	}
+	f.resume()
 }
 
 func TestTimezoneDefaultAndValidation(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
-	if tz := f.svc.Timezone(ctx); tz != "Europe/Belgrade" {
+	if tz := f.tz(); tz != "Europe/Belgrade" {
 		t.Fatalf("default = %s", tz)
 	}
 	f.enable("gmail.morning")
@@ -439,7 +433,7 @@ func TestTimezoneDefaultAndValidation(t *testing.T) {
 			t.Errorf("%q accepted", bad)
 		}
 	}
-	if f.task("gmail.morning") != before || f.svc.Timezone(ctx) != "Europe/Belgrade" {
+	if f.task("gmail.morning") != before || f.tz() != "Europe/Belgrade" {
 		t.Fatal("a rejected zone changed state")
 	}
 	for _, ok := range []string{"UTC", "Asia/Tbilisi"} {
@@ -491,7 +485,7 @@ func TestSetTimezoneRerendersEveryPresetAndPersists(t *testing.T) {
 	if s := f.status("cal.agenda"); !s.Modified {
 		t.Fatal("edited preset lost its modified mark")
 	}
-	if f.service().Timezone(ctx) != "America/New_York" { // survives a restart
+	if mustTZ(t, f.service()) != "America/New_York" { // survives a restart
 		t.Fatal("zone not persisted")
 	}
 }
@@ -573,7 +567,7 @@ func TestSetWindowRerendersPollersOnly(t *testing.T) {
 	if err := f.svc.SetWindow(ctx, Window{StartHour: 20, EndHour: 8}); err == nil {
 		t.Fatal("invalid window accepted")
 	}
-	if f.svc.Window(ctx) != (Window{StartHour: 8, EndHour: 20}) {
+	if f.mustWindow() != (Window{StartHour: 8, EndHour: 20}) {
 		t.Fatal("rejected window was stored")
 	}
 }
@@ -589,7 +583,9 @@ func TestSettingsPersistAcrossServiceInstances(t *testing.T) {
 		t.Fatal(err)
 	}
 	g := f.service()
-	if got := g.Quiet(ctx); got == nil || *got != q || g.Window(ctx) != (Window{10, 18}) {
-		t.Fatalf("not persisted: quiet=%v window=%v", g.Quiet(ctx), g.Window(ctx))
+	got, _ := g.Quiet(ctx)
+	w, _ := g.Window(ctx)
+	if got == nil || *got != q || w != (Window{10, 18}) {
+		t.Fatalf("not persisted: quiet=%v window=%v", got, w)
 	}
 }

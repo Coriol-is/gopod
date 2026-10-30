@@ -735,18 +735,39 @@ Where the code and this spec differ, the code wins. Differences found while impl
   `cancel` and treats a primary-key conflict as success. An IPC `cancel` leaves a `done` row under
   `preset-<id>`, so a plain create would fail on the primary key. `Enable` deletes the finished row first
   (`DeleteTask`) and creates a fresh one; `/tasks cancel` already removed the row.
-- **`user_modified` is derived, not stored.** It is `sha256(prompt, 0x00, schedule_value) != applied_hash`
-  (the 0x00 separator replaces `|` so two fields cannot slide into each other). `Status.Modified` and
-  `Status.TemplateOutdated` are computed on read.
-- **Edited tasks.** `Configure` on an owner-edited task returns `ErrUserModified` (the spec only said a gopod write
-  recomputes the hash); `ResetToTemplate` is the way back. `Enable` of an edited paused task reactivates it with the
-  owner's definition untouched. `SetTimezone` on an edited task leaves its prompt and cron fields and swaps only the
-  `CRON_TZ` prefix, and lists it in `Report.Kept`; window and quiet changes do not touch it.
-- **Global pause.** `Enable` during the pause returns `ErrGloballyPaused` (spec silent). `Disable` during the pause
-  removes the preset from the restore set, so `ResumeAll` never undoes an explicit off.
-- **Quiet hours.** A polling hour is dropped when any minute of it is quiet (`22:00-09:30` removes hour 09).
-  A preset paused by quiet hours stores `reason` in its settings JSON and does not resume by itself when quiet hours
-  are cleared; the owner enables it again. Quiet and window are whole-hour for polling; fixed times use minutes.
+- **`user_modified` is derived, not stored.** It is a digest of the length-prefixed `prompt`, `schedule_type` and
+  `schedule_value` compared with `applied_hash` (the spec said prompt and value only; the type is included so an IPC
+  `update` that changes only the type counts as an edit). `Status.Modified` and `Status.TemplateOutdated` are
+  computed on read.
+- **Edited tasks (owner decision 2026-10-30).** An owner-edited preset task is not subject to quiet hours or window
+  changes: the edit is the owner's decision. `Enable` reactivates an edited task as written and skips the quiet check
+  by design (commented in the code); `ResumeAll` does the same. `Configure` on an edited task returns
+  `ErrUserModified` (the spec only said a gopod write recomputes the hash); `ResetToTemplate` is the way back.
+  `SetTimezone` moves only the `CRON_TZ` prefix of an edited `cron` task whose result still parses; an edited task of
+  any other schedule type, or unparsable text, is left untouched and listed in `Report.Kept`. Schedule type is never
+  changed on that path.
+- **Foreign task under a preset id.** `lookupTask` classifies a task whose folder or chat differs from the owner's as
+  a conflict: `Enable` returns `ErrTaskConflict`, `Status.Conflict` is set, and no other operation touches it. The IPC
+  watcher also rejects `schedule` requests with a `preset-` task id from any folder but the owner's.
+- **Global pause (owner decision (b)).** `PauseAll` always sets the pause, even with nothing active ("off means off"):
+  `Enable` returns `ErrGloballyPaused` until `ResumeAll`. `PauseAll` leaves `next_run = -1` on each task it paused;
+  the scheduler ignores it (requires an active status and `next_run > 0`) and every other writer overwrites it
+  (`/tasks` resume sets a time, `/tasks` pause and `Disable` set 0), so `ResumeAll` reactivates only tasks still
+  carrying it and never undoes an owner's resume-then-pause. `ResumeAll` re-renders each unedited task under the
+  current zone, window and quiet hours and keeps one paused (reason `inside quiet hours`) if no run time is left; it
+  returns a `ResumeReport` (`Resumed`, `StillPaused`, `Skipped`). `Disable` during the pause removes the preset from
+  the restore set. While paused, `rerender` rewrites paused tasks whenever they can still be rendered; a paused task
+  that cannot be rendered under new quiet hours keeps its old text until `ResumeAll` re-renders it.
+- **Errors are not swallowed.** `Timezone`, `Window`, `Quiet`, `GloballyPaused` and the per-preset settings return an
+  error for a stored value that does not parse (unset still means the default), and the enclosing transaction fails.
+- **Locking.** The service uses `scheduler.WithTaskLock`, which honors the lock key the IPC path puts in its context,
+  so a future caller inside `ProcessTaskRequest` does not deadlock on the non-reentrant mutex.
+- **`ReminderOneShot` helper** takes the whole task and requires the owner folder and `once` schedule type besides the
+  id prefix or the prompt marker, since both of those are agent-chosen text.
+- **Quiet hours.** A polling hour is dropped when any minute of it is quiet (`22:00-09:30` removes hour 09). A preset
+  paused by quiet hours stores `reason` in its settings JSON and does not resume by itself when quiet hours are
+  cleared; the owner enables it again. `SetQuiet` rejects minutes outside `0..1439` and `start == end`. Polling
+  uses whole hours; fixed times use minutes.
 - **`cal.reminder`.** PR 1 renders only the poll task (cron `*/30` in the window, lead and lookahead written into the
   prompt) and ships the id, prefix and marker helpers. Deleting pending one-shots on disable, global pause or lead
   change, the state file, and the sweep are PR 4; until then `Disable` and `PauseAll` touch only the poll task.

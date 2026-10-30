@@ -2,7 +2,6 @@ package proactive
 
 import (
 	"context"
-	"errors"
 	"fmt"
 )
 
@@ -32,7 +31,10 @@ func (s *Service) UpgradeTemplates(ctx context.Context) ([]UpgradeResult, error)
 	var out []UpgradeResult
 	err := s.inLockedTx(ctx, func(ctx context.Context) error {
 		out = out[:0]
-		env := s.env(ctx)
+		env, err := s.env(ctx)
+		if err != nil {
+			return err
+		}
 		for _, p := range Catalog() {
 			row, err := s.loadRow(ctx, p.ID)
 			if err != nil {
@@ -49,9 +51,12 @@ func (s *Service) UpgradeTemplates(ctx context.Context) ([]UpgradeResult, error)
 				out = append(out, UpgradeResult{p.ID, UpgradeNeedsApply})
 				continue
 			}
-			set := decodeSettings(row, p)
+			set, err := decodeSettings(row, p)
+			if err != nil {
+				return err
+			}
 			prompt, sched, err := s.renderTask(p, set.Settings, env)
-			if errors.Is(err, ErrInsideQuiet) || errors.Is(err, ErrNoRunHours) {
+			if blocked(err) {
 				out = append(out, UpgradeResult{p.ID, UpgradeBlocked})
 				continue
 			}
@@ -61,7 +66,7 @@ func (s *Service) UpgradeTemplates(ctx context.Context) ([]UpgradeResult, error)
 			if err = s.rewrite(ctx, &task, prompt, sched); err != nil {
 				return err
 			}
-			if err = s.putRow(ctx, row, set, p.TemplateVersion, ContentHash(prompt, sched)); err != nil {
+			if err = s.putRow(ctx, row, set, p.TemplateVersion, ContentHash(prompt, "cron", sched)); err != nil {
 				return err
 			}
 			out = append(out, UpgradeResult{p.ID, UpgradeApplied})

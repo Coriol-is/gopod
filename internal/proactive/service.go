@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,6 +23,9 @@ var (
 	ErrUserModified = errors.New("proactive: the task was edited outside /proactive")
 	// ErrNotEnabled is returned when an operation needs an existing preset task.
 	ErrNotEnabled = errors.New("proactive: preset has no task")
+	// ErrTaskConflict means a task already holds the deterministic preset id but
+	// belongs to another folder or chat. It is never adopted or modified.
+	ErrTaskConflict = errors.New("proactive: a foreign task holds this preset's id")
 )
 
 // ReasonInsideQuiet is stored when quiet hours paused a preset.
@@ -44,9 +48,9 @@ type Config struct {
 }
 
 // Service enables, disables and reschedules presets as ordinary scheduled
-// tasks. Every mutating method takes scheduler.LockTasks, so it serializes
-// with the scheduler's snapshot, enqueue and advance, and runs in one store
-// transaction.
+// tasks. Every mutating method takes the task lock (scheduler.WithTaskLock, safe
+// under the IPC path that already holds it), so it serializes with the
+// scheduler's snapshot, enqueue and advance, and runs in one store transaction.
 type Service struct {
 	st     *store.Store
 	folder string
@@ -75,16 +79,18 @@ type storedSettings struct {
 	Reason string `json:"reason,omitempty"` // why gopod paused the task
 }
 
-func decodeSettings(row store.ProactivePreset, p Preset) storedSettings {
+func decodeSettings(row store.ProactivePreset, p Preset) (storedSettings, error) {
 	var s storedSettings
 	if row.Settings != "" {
-		_ = json.Unmarshal([]byte(row.Settings), &s)
+		if err := json.Unmarshal([]byte(row.Settings), &s); err != nil {
+			return storedSettings{}, fmt.Errorf("proactive: corrupt settings of %s: %w", p.ID, err)
+		}
 	}
 	if s.Freq == "" {
 		reason := s.Reason
 		s = storedSettings{Settings: p.DefaultSettings(), Reason: reason}
 	}
-	return s
+	return s, nil
 }
 
 func encodeSettings(s storedSettings) string {
@@ -96,9 +102,10 @@ func encodeSettings(s storedSettings) string {
 type taskState int
 
 const (
-	taskNone taskState = iota // never created or deleted
-	taskDone                  // finished or cancelled by IPC; row still present
-	taskLive                  // active or paused
+	taskNone    taskState = iota // never created or deleted
+	taskDone                     // finished or cancelled by IPC; row still present
+	taskLive                     // active or paused, ours
+	taskForeign                  // holds the id but belongs to another folder or chat
 )
 
 func (s *Service) lookupTask(ctx context.Context, p Preset) (store.TaskRecord, taskState, error) {
@@ -109,6 +116,9 @@ func (s *Service) lookupTask(ctx context.Context, p Preset) (store.TaskRecord, t
 	if err != nil {
 		return store.TaskRecord{}, taskNone, fmt.Errorf("proactive: loading task for %s: %w", p.ID, err)
 	}
+	if t.ChatFolder != s.folder || t.ChatJID != s.jid {
+		return t, taskForeign, nil
+	}
 	if t.Status == "done" {
 		return t, taskDone, nil
 	}
@@ -117,7 +127,7 @@ func (s *Service) lookupTask(ctx context.Context, p Preset) (store.TaskRecord, t
 
 // modified reports whether the live task differs from what gopod last wrote.
 func modified(row store.ProactivePreset, t store.TaskRecord) bool {
-	return row.AppliedHash != ContentHash(t.Prompt, t.ScheduleValue)
+	return row.AppliedHash != ContentHash(t.Prompt, t.ScheduleType, t.ScheduleValue)
 }
 
 func (s *Service) loadRow(ctx context.Context, id string) (store.ProactivePreset, error) {
@@ -132,63 +142,93 @@ func (s *Service) loadRow(ctx context.Context, id string) (store.ProactivePreset
 }
 
 // --- settings (timezone, working window, quiet hours, global pause) ---
+// An unset key means the default; a stored value that does not parse is an
+// error, never a silent fallback.
 
-func (s *Service) setting(ctx context.Context, key string) string {
+func (s *Service) setting(ctx context.Context, key string) (string, error) {
 	v, _, err := s.st.GetProactiveSetting(ctx, key)
-	if err != nil {
-		return ""
-	}
-	return v
+	return v, err
 }
 
 // Timezone returns the owner zone (DefaultTimezone when unset).
-func (s *Service) Timezone(ctx context.Context) string {
-	if v := s.setting(ctx, keyTZ); v != "" && ValidateTimezone(v) == nil {
-		return v
+func (s *Service) Timezone(ctx context.Context) (string, error) {
+	v, err := s.setting(ctx, keyTZ)
+	if err != nil || v == "" {
+		if err != nil {
+			return "", err
+		}
+		return DefaultTimezone, nil
 	}
-	return DefaultTimezone
+	if err = ValidateTimezone(v); err != nil {
+		return "", fmt.Errorf("proactive: stored timezone: %w", err)
+	}
+	return v, nil
 }
 
 // Window returns the working window (DefaultWindow when unset).
-func (s *Service) Window(ctx context.Context) Window {
-	var w Window
-	if _, err := fmt.Sscanf(s.setting(ctx, keyWindow), "%d-%d", &w.StartHour, &w.EndHour); err != nil || w.validate() != nil {
-		return DefaultWindow
+func (s *Service) Window(ctx context.Context) (Window, error) {
+	v, err := s.setting(ctx, keyWindow)
+	if err != nil || v == "" {
+		return DefaultWindow, err
 	}
-	return w
+	from, to, ok := strings.Cut(v, "-")
+	a, err1 := strconv.Atoi(from)
+	b, err2 := strconv.Atoi(to)
+	w := Window{StartHour: a, EndHour: b}
+	if !ok || err1 != nil || err2 != nil || w.validate() != nil {
+		return Window{}, fmt.Errorf("proactive: stored working window %q is invalid", v)
+	}
+	return w, nil
 }
 
 // Quiet returns the quiet window, or nil when quiet hours are off.
-func (s *Service) Quiet(ctx context.Context) *Quiet {
-	from, to, ok := strings.Cut(s.setting(ctx, keyQuiet), "-")
+func (s *Service) Quiet(ctx context.Context) (*Quiet, error) {
+	v, err := s.setting(ctx, keyQuiet)
+	if err != nil || v == "" {
+		return nil, err
+	}
+	from, to, ok := strings.Cut(v, "-")
 	if !ok {
-		return nil
+		return nil, fmt.Errorf("proactive: stored quiet window %q is invalid", v)
 	}
 	q, err := ParseQuiet(from, to)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("proactive: stored quiet window: %w", err)
 	}
-	return &q
+	return &q, nil
 }
 
-func (s *Service) env(ctx context.Context) Env {
-	return Env{TZ: s.Timezone(ctx), Window: s.Window(ctx), Quiet: s.Quiet(ctx)}
+func (s *Service) env(ctx context.Context) (Env, error) {
+	tz, err := s.Timezone(ctx)
+	if err != nil {
+		return Env{}, err
+	}
+	w, err := s.Window(ctx)
+	if err != nil {
+		return Env{}, err
+	}
+	q, err := s.Quiet(ctx)
+	if err != nil {
+		return Env{}, err
+	}
+	return Env{TZ: tz, Window: w, Quiet: q}, nil
 }
 
-func (s *Service) globalOff(ctx context.Context) ([]string, bool) {
+func (s *Service) globalOff(ctx context.Context) (ids []string, on bool, err error) {
 	v, ok, err := s.st.GetProactiveSetting(ctx, keyGlobalOff)
 	if err != nil || !ok {
-		return nil, false
+		return nil, false, err
 	}
-	var ids []string
-	_ = json.Unmarshal([]byte(v), &ids)
-	return ids, true
+	if err = json.Unmarshal([]byte(v), &ids); err != nil {
+		return nil, true, fmt.Errorf("proactive: corrupt global pause set: %w", err)
+	}
+	return ids, true, nil
 }
 
 // GloballyPaused reports whether the global pause is on.
-func (s *Service) GloballyPaused(ctx context.Context) bool {
-	_, on := s.globalOff(ctx)
-	return on
+func (s *Service) GloballyPaused(ctx context.Context) (bool, error) {
+	_, on, err := s.globalOff(ctx)
+	return on, err
 }
 
 // schedulerNext computes the next run for a task definition from now.
@@ -208,3 +248,7 @@ func (s *Service) renderTask(p Preset, set Settings, env Env) (prompt, schedule 
 	}
 	return p.Prompt(PromptInput{TZ: env.TZ, OwnerJID: s.jid, Settings: set}), schedule, nil
 }
+
+// blocked reports a render failure that means "no valid run time under the
+// current quiet hours" rather than a real error.
+func blocked(err error) bool { return errors.Is(err, ErrInsideQuiet) || errors.Is(err, ErrNoRunHours) }
