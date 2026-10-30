@@ -110,6 +110,12 @@ account/tool grants and Pi resource budgets. Conservative defaults and checkable
 acceptance are already in each spec; account/billing/credential decisions remain
 explicit when the relevant later feature is considered.
 
+## Follow-up: autonomy delta (2026-10-30)
+
+The [autonomy delta and priority note](../research/2026-10-30-codex-agent-autonomy-prioritization.md)
+covers the donor's proactive layer (reflection, digests, idle maintenance) that this map
+does not, with analysis specs A1-A6 and a ranked recommendation. Nothing in it is accepted.
+
 ## Source/evidence boundary
 
 Reviewed local donor checkout: rzaytsev/codex-agent at
