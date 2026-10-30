@@ -57,6 +57,12 @@ of the task/IPC path.
 `GOPOD_OUTBOX_ARTIFACTS` or `GOPOD_MANAGED_TASKS` (both have unmet gates: restore drill + capability issuer; task
 credential adapter + Pi Docker-inspect round trip), changing Telegram privacy/admin rights.
 
+## CP-003 PR C: runner-side capability issuer (branch `feat/cp003-capability-issuer`, 2026-10-30)
+`ipc.RunIssuer` issues a per-exec `GOPOD_ARTIFACT_CAP` capability (runner `ArtifactIssuer`, `Runner.SetArtifactIssuer`,
+`cmd/gopod.artifactIssuer`) only for interactive execs (`Run`, `RunStream`) of the owner's private chat, bound to the scope
+snapshot and thread, revoked when the exec finishes; nil when `GOPOD_OUTBOX_ARTIFACTS` or its gates are off, so nothing is
+issued by default. Open: scheduled silent turns (`runTaskSilently` -> `Run`) also get one. Next: PR D (agent instructions).
+
 ## CP-033 PR 2: `/proactive` command (branch `feat/cp033-command`, 2026-10-30)
 `internal/control/proactive*.go` registers `/proactive` (`PermOwnerOnly`; the Router refuses it in groups and for forged
 or stranger presses): overview, connector and preset screens, on/off, frequency, time-of-day and lead pickers, `tz`

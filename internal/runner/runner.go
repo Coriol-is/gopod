@@ -98,6 +98,9 @@ type Runner struct {
 	// caps mints the per-exec memory capability (CP-001). Nil = none.
 	caps CapabilityMinter
 
+	// artifacts issues the per-exec artifact delivery capability (CP-003). Nil = none.
+	artifacts ArtifactIssuer
+
 	// versionLogged records container ids whose agent CLI version has
 	// been logged, so Ensure logs it once per spawn, not once per turn.
 	versionLoggedMu sync.Mutex
@@ -349,7 +352,7 @@ func (r *Runner) Run(
 		releaseGate()
 		return "", err
 	}
-	res, err := r.execAgentWithCancel(ctx, id, chatFolder, thread, prov, cmd)
+	res, err := r.execAgentWithCancel(ctx, id, chatFolder, thread, prov, cmd, true)
 	releaseGate()
 	if announcesNewSession(prov, ref) {
 		var stderr string
@@ -572,7 +575,7 @@ func (r *Runner) startStream(
 		releaseGate()
 		return nil, err
 	}
-	env, release := r.agentExecEnv(chatFolder, conv.thread, prov)
+	env, release := r.agentExecEnv(chatFolder, conv.thread, prov, true)
 	if err := r.recordConversationRequest(ctx, chatFolder, conv.thread, prompt); err != nil {
 		release()
 		releaseGate()
@@ -850,7 +853,7 @@ func (r *Runner) RunFresh(
 	if err != nil {
 		return "", err
 	}
-	res, err := r.execAgentWithCancel(ctx, id, chatFolder, 0, prov, prov.RunFreshCmd(prompt))
+	res, err := r.execAgentWithCancel(ctx, id, chatFolder, 0, prov, prov.RunFreshCmd(prompt), false)
 	releaseGate()
 	if err != nil {
 		return "", err
@@ -866,14 +869,15 @@ func (r *Runner) RunFresh(
 // returns the classified error together with the result, so callers can
 // still read what the agent printed (a new conversation's session id).
 // thread is the conversation the memory capability is bound to (0 for
-// system runs).
-func (r *Runner) execAgent(ctx context.Context, containerID, chatFolder string, thread int, prov AgentProvider, cmd []string) (*ExecResult, error) {
+// system runs). interactive marks a turn the owner is waiting on, the only
+// kind that may receive an artifact delivery capability.
+func (r *Runner) execAgent(ctx context.Context, containerID, chatFolder string, thread int, prov AgentProvider, cmd []string, interactive bool) (*ExecResult, error) {
 	// Restore config from backup if needed.
 	if restoreCmd := prov.RestoreConfigCmd(); restoreCmd != nil {
 		r.ex.Exec(ctx, containerID, restoreCmd, nil)
 	}
 
-	env, release := r.agentExecEnv(chatFolder, thread, prov)
+	env, release := r.agentExecEnv(chatFolder, thread, prov, interactive)
 	defer release()
 	res, err := r.ex.Exec(ctx, containerID, cmd, env)
 	if err != nil {

@@ -85,7 +85,7 @@ whose MIME is not an image (recommended: yes, the transport already falls back t
 Open design choice for the owner: should the host default an image MIME to photo when presentation is empty?
 Recommendation: no; keep document as the default and let the instructions (PR D) say when to ask for a photo.
 
-### PR C. Runner-side per-run capability issuer
+### PR C. Runner-side per-run capability issuer (done: where the code differs from this text, the code won)
 
 The only large unknown-free-but-wide slice, so not attempted here. Existing pieces and what is missing:
 
@@ -116,6 +116,22 @@ The only large unknown-free-but-wide slice, so not attempted here. Existing piec
   should be allowed (the grant carries the thread, so a reply goes where the turn runs; likely yes);
   (c) whether the background/scheduled silent turn (`runTaskSilently`) should get a capability at all
   (recommendation: no, it has its own report path).
+
+**As built (PR C).** Differences from the design above, found by reading the code:
+- The issuer lives in `internal/ipc` (`RunIssuer`, `artifact_issuer.go`), not in `cmd/gopod`; `cmd/gopod.artifactIssuer`
+  only builds it, and returns nil (nothing issued) unless the *effective* `artifactIPC(...)` config is non-empty, so the
+  flag, a running dispatcher, the durable route and a private owner chat must all hold. It shares the watcher's
+  `*Capabilities`.
+- The runner interface is `IssueArtifact(folder, thread) (token, end)` with no context; the issuer bounds its own
+  snapshot with a 5 s timeout. Env name `GOPOD_ARTIFACT_CAP` (`runner.ArtifactCapabilityEnv`).
+- A system run (`RunFresh`, thread 0) is not distinguishable from the main thread by `thread`, so the exec chain gained
+  an `interactive` flag: `Run` and `RunStream` pass true, `RunFresh` false. Group providers return before any env is built.
+- TTL: no per-turn timeout exists in the queue, so the grant TTL is `MaxGrantTTL - 1 min` as a leak backstop; the real
+  revocation is the exec end (`EndRun`, with the registry's two-minute grace for a request written before the end).
+  Each exec has its own `RunRef`, so ending one exec does not revoke a concurrent one.
+- Unknown (a) is therefore answered by revocation at exec end, not by a TTL. Unknown (b): any thread of the owner chat
+  gets a capability bound to that thread. **Unknown (c) is open**: `runTaskSilently` calls `Runner.Run`, so a scheduled
+  silent turn in the owner chat also gets a capability. Excluding it needs a class on `Run` (not done; decide before PR D).
 
 ### PR D. Agent-facing instructions
 

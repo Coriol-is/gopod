@@ -29,11 +29,12 @@ const nodeOptionsEnv = "NODE_OPTIONS"
 // here rather than forwarded from the host (D012 does not apply). A
 // NODE_OPTIONS the container already has (forwarded through the env
 // allowlist) is merged, since the exec's value replaces the container's.
-func (r *Runner) agentExecEnv(chatFolder string, thread int, prov AgentProvider) ([]string, func()) {
+func (r *Runner) agentExecEnv(chatFolder string, thread int, prov AgentProvider, interactive bool) ([]string, func()) {
 	if group, ok := prov.(interface{ GroupExecEnv() []string }); ok {
 		return group.GroupExecEnv(), func() {}
 	}
 	env, release := r.agentEnv(chatFolder, thread)
+	env, release = r.withArtifactCapability(env, release, chatFolder, thread, interactive)
 	if r.nodeHeapMB <= 0 || prov.Name() != "claude" {
 		return env, release
 	}
