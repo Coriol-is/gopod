@@ -300,7 +300,7 @@ func renderTable(header []string, aligns []tableAlign, rows [][]string) string {
 	for r, row := range rows {
 		plainRows[r] = make([]string, len(row))
 		for c, cell := range row {
-			plainRows[r][c] = plainCell(cell)
+			plainRows[r][c] = strings.TrimSpace(plainCell(cell))
 			widths[c] = max(widths[c], displayWidth(plainRows[r][c]))
 		}
 	}
@@ -309,7 +309,10 @@ func renderTable(header []string, aligns []tableAlign, rows [][]string) string {
 		total += w
 	}
 	if total > tableMaxWidth && len(rows) > 0 {
-		return renderTableCards(plainHeader, plainRows)
+		// A table whose rows are all empty has no cards: draw it as <pre>.
+		if cards := renderTableCards(plainHeader, plainRows); cards != "" {
+			return cards
+		}
 	}
 
 	line := func(cells []string) string {
@@ -379,8 +382,8 @@ func renderTableCards(header []string, rows [][]string) string {
 // without headers: per row "<b>Header</b>: value" lines (the bare value
 // when the header is empty), blocks separated by a blank line.
 func renderTableLines(header []string, rows [][]string) string {
-	cards := make([]string, len(rows))
-	for r, row := range rows {
+	var cards []string
+	for _, row := range rows {
 		var lines []string
 		for c, cell := range row {
 			if cell == "" {
@@ -392,7 +395,9 @@ func renderTableLines(header []string, rows [][]string) string {
 			}
 			lines = append(lines, "<b>"+html.EscapeString(header[c])+"</b>: "+html.EscapeString(cell))
 		}
-		cards[r] = strings.Join(lines, "\n")
+		if len(lines) > 0 {
+			cards = append(cards, strings.Join(lines, "\n"))
+		}
 	}
 	return strings.Join(cards, "\n\n")
 }

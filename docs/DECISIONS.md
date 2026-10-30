@@ -1820,10 +1820,16 @@ show as plain pipe lines (valid HTML); repeating the header and separator per pa
 done. A link in a cell keeps its URL as `text (url)`. Cells follow GFM: an unescaped pipe splits even inside a code
 span, `\|` is a literal pipe; a quote, heading or list line ends a table. Native Rich Tables remain a separate spike.
 
-**Update 2026-10-30 (owner test on iOS Telegram).** A `<pre>` block does not scroll horizontally on the phone, it
-wraps, at roughly 45 characters per line (49 columns wrapped the last column, 66 was unreadable), so
-`tableMaxWidth` stays 38. Wide tables now render as compact cards instead of one line per column: the first column
-(or the first non-empty cell) is a bold title, followed by one wrapping line of `Header value` pairs joined by
-` · `. Empty cells are skipped; `—` and `<1` are kept; a row with no cells is dropped; headers are plain text.
-A single column, or a table without headers, keeps the earlier `<b>Header</b>: value` lines. No special case for
-total rows. `<b>%</b>` is emitted and sanitized correctly; a one-character bold header only looks unbolded.
+## D051 — Wide tables render as compact cards
+
+**Status:** accepted 2026-10-30. Supersedes the wide-table fallback of [D050](#d050--markdown-tables-render-as-aligned-monospace-wide-ones-as-row-cards); the rest of D050 stands.
+
+**Decision.** The owner measured on iOS Telegram that a `<pre>` block does not scroll horizontally, it wraps, at about
+45 characters per line (49 columns wrapped the last column, 66 was unreadable), so `tableMaxWidth` stays 38. A wider
+table with data rows becomes compact cards, one per row: the first column (or the first non-empty cell) as a bold
+title, then one wrapping line of `Header value` pairs joined by ` · ` (headers are plain text, an empty header gives
+the bare value). Empty cells are skipped; `—` and `<1` are kept (escaped); cell text is trimmed, so a blank title
+counts as empty; a row with no cell is dropped. Two columns use the same form. A single column, or a table without
+any header, keeps the D050 lines (`<b>Header</b>: value`, or the bare value), skipping empty rows. A wide table whose
+rows are all empty stays a `<pre>` block, like a header-only one. Total rows get no special treatment. `<b>%</b>` is
+emitted and sanitized correctly; a one-character bold header only looks unbolded.

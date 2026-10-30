@@ -174,6 +174,11 @@ func TestTableWidthFallbackChoice(t *testing.T) {
 		total int
 		cards bool
 	}{{37, false}, {38, false}, {39, true}, {60, true}} {
+		if tc.total == 39 {
+			if got, want := markdownToTelegramHTML("|"+strings.Repeat("x", 35)+"|b|\n|-|-|\n|v|w|"), "<b>v</b>\nb w"; got != want {
+				t.Errorf("width 39: got %q want %q", got, want)
+			}
+		}
 		md := "|" + strings.Repeat("x", tc.total-4) + "|b|\n|-|-|\n|v|w|"
 		got := markdownToTelegramHTML(md)
 		if isCards := !strings.Contains(got, "<pre>"); isCards != tc.cards {
@@ -366,5 +371,38 @@ func TestTableCellNULAndLinks(t *testing.T) {
 		if got != tc.want || strings.ContainsRune(got, 0) {
 			t.Errorf("%s:\ngot  %q\nwant %q", tc.name, got, tc.want)
 		}
+	}
+}
+
+func TestCompactCardsReview(t *testing.T) {
+	long := strings.Repeat("h", 40)
+	hdr := "| A | B | C | " + long + " |\n|-|-|-|-|\n"
+	tests := []struct{ name, md, want string }{
+		{"all-empty rows keep the table", "|A|" + long + "|\n|-|-|\n| | |\n| | |",
+			"<pre>A | " + long + "\n--+-" + strings.Repeat("-", 40) + "\n  |\n  |</pre>"},
+		{"one column empty row skipped", "| " + long + " |\n|-|\n| x |\n| |\n| y |",
+			"<b>" + long + "</b>: x\n\n<b>" + long + "</b>: y"},
+		{"whitespace title falls to next cell", hdr + "| ** ** | 1 | | |", "<b>1</b>"},
+		{"whitespace code title", hdr + "| ` ` | 1 | 2 | |", "<b>1</b>\nC 2"},
+		{"duplicate headers", "| A | A | " + long + " |\n|-|-|-|\n| t | 1 | 2 |", "<b>t</b>\nA 1 · " + long + " 2"},
+	}
+	for _, tc := range tests {
+		if got := markdownToTelegramHTML(tc.md); got != tc.want {
+			t.Errorf("%s:\ngot  %q\nwant %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestCompactCards500RowsChunk(t *testing.T) {
+	var sb strings.Builder
+	sb.WriteString("| Список | Голоса | % | Мандаты | Итог |\n|-|-|-|-|-|\n")
+	for i := 0; i < 500; i++ {
+		fmt.Fprintf(&sb, "| Список %d | %d 000 | %d,5 | %d | — |\n", i, i, i%100, i%9)
+	}
+	rendered := finalReplyHTML(strings.TrimSuffix(sb.String(), "\n"))
+	chunks := chunkHTML(rendered, 4000)
+	checkChunks(t, rendered, chunks, 4000)
+	if got := strings.Count(strings.Join(chunks, ""), "<b>Список "); got != 500 {
+		t.Errorf("titles across chunks: %d, want 500", got)
 	}
 }
