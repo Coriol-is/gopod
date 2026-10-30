@@ -1848,8 +1848,9 @@ of the part hash, so a retried request with a different presentation is a differ
 
 **Caption bound.** Telegram caps a caption at 1024 characters counted in UTF-16 units after entity parsing. The IPC
 request validator and the outbox publish validation (`store.CaptionUTF16Units`, `MaxUploadCaptionUnits`) now count those
-units, so a caption that Telegram would refuse (512+ emoji of 1024 runes) is rejected with `invalid_request` before the
-file is snapshotted instead of dropping the upload later. The 4096-byte store bound stays as a coarse outer limit
+units, so a caption that Telegram would refuse (513+ emoji, 1026+ units; 512 emoji = 1024 units is accepted) is rejected
+instead of dropping the upload later: the IPC route rejects with `invalid_request` before the snapshot; the store check is
+a second bound. The 4096-byte store bound stays as a coarse outer limit
 (1024 units never exceed 4096 bytes). This also fixes the same defect on the document path.
 
 **Consequences.** Nothing is observable while `GOPOD_OUTBOX_ARTIFACTS` is off, and every V1 request still ends in

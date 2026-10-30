@@ -17,6 +17,9 @@ func TestCaptionUTF16Units(t *testing.T) {
 		{"€", 1},          // euro sign, BMP
 		{"\U0001F600", 2}, // emoji: surrogate pair
 		{"a\U0001F600b", 4},
+		{"\U0001F468\u200D\U0001F469\u200D\U0001F467", 8}, // ZWJ family: 3 emoji + 2 joiners
+		{"e\u0301", 2}, // decomposed e + combining acute
+		{"\xff", 1},    // invalid byte counts as one unit
 	}
 	for _, c := range cases {
 		if got := CaptionUTF16Units(c.s); got != c.want {
