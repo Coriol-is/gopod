@@ -36,22 +36,6 @@ func TestConfirmedGroupLoginExplainsTheRealStepPrivatelyAndStaysNeutralInTheGrou
 	}
 }
 
-// The private confirmation is unchanged by D048: the group /login still asks
-// the owner in the private chat first and starts nothing in the group.
-func TestGroupLoginStillRequiresPrivateConfirmation(t *testing.T) {
-	b, fake := handoffFixture(t)
-	if !b.requestLoginHandoff(t.Context(), ownerGroupLogin()) {
-		t.Fatal("handoff not requested")
-	}
-	if len(sendsTo(fake, handoffGroup)) != 0 {
-		t.Fatal("group got output before confirmation")
-	}
-	sends := sendsTo(fake, streamChat)
-	if len(sends) != 1 || len(buttonsOf(t, sends[0])) != 2 {
-		t.Fatalf("private confirmation missing: %+v", sends)
-	}
-}
-
 func TestGroupLoginGuidanceDoesNotBlameTheAccountWhenGroupIsNotAdmitted(t *testing.T) {
 	b, fake := handoffFixture(t)
 	b.groupReason = func(context.Context, string) string { return "disabled by owner" }

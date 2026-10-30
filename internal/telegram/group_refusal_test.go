@@ -83,10 +83,11 @@ func TestGroupNonRefusalErrorKeepsOrdinaryReply(t *testing.T) {
 	}
 }
 
-// Refusal handling must neither bypass nor duplicate the private owner
-// confirmation that group /login requires.
-func TestGroupRefusalDoesNotBypassPrivateLoginConfirmation(t *testing.T) {
+// A refusal in the group must not start a login; the owner's group /login
+// only redirects privately (no prompt, no CLI).
+func TestGroupRefusalStartsNoLogin(t *testing.T) {
 	b, fake := handoffFixture(t)
+	b.groupReason = func(context.Context, string) string { return "" }
 	started := make(chan struct{}, 4)
 	b.loginRun = func(context.Context, *models.Message, int, store.RegisteredChat) bool {
 		started <- struct{}{}
@@ -94,24 +95,17 @@ func TestGroupRefusalDoesNotBypassPrivateLoginConfirmation(t *testing.T) {
 	}
 	b.replyError(t.Context(), groupItem(), runner.ErrNotLoggedIn)
 	b.replyError(t.Context(), groupItem(), runner.ErrSessionExpired)
-	if handoffToken(b) != "" || len(started) != 0 {
-		t.Fatal("refusal created a login handoff or started a login")
-	}
 	for _, c := range sendsTo(fake, handoffGroup) {
 		if c.Form["reply_markup"] != "" {
 			t.Fatal("group refusal offered buttons")
 		}
 	}
-	before := len(fake.callsTo("sendMessage"))
 	b.loginHandler(t.Context(), b.api, &models.Update{Message: ownerGroupLogin()})
 	if len(started) != 0 {
-		t.Fatal("login started before private confirmation")
-	}
-	if handoffToken(b) == "" || len(fake.callsTo("sendMessage")) != before+1 {
-		t.Fatal("owner /login in a group no longer asks once for private confirmation")
+		t.Fatal("group login started a CLI")
 	}
 	private := sendsTo(fake, streamChat)
-	if len(private) == 0 || !strings.Contains(private[len(private)-1].Form["text"], fmt.Sprint(handoffGroup)) {
-		t.Fatal("confirmation not sent to the owner's private chat")
+	if len(private) == 0 || strings.Contains(private[len(private)-1].Form["text"], "http") {
+		t.Fatal("owner redirect missing or leaks a URL")
 	}
 }

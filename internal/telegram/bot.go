@@ -205,10 +205,7 @@ type Bot struct {
 	// means handleLoginCode. Tests stub it.
 	loginCode func(ctx context.Context, chatID int64, code string)
 	// loginAuthCheck substitutes local auth verification in deterministic tests.
-	loginAuthCheck     func(context.Context, *loginSession) bool
-	loginHandoffMu     sync.Mutex
-	loginHandoffs      map[string]groupLoginRequest
-	loginHandoffRecent map[int64]time.Time
+	loginAuthCheck func(context.Context, *loginSession) bool
 }
 
 // allowedUpdates is the explicit getUpdates allowed_updates list. Before
@@ -287,7 +284,6 @@ func New(token string, deps Deps) (*Bot, error) {
 	b.api = api
 	b.registerHandlers(api)
 	b.registerCallbacks()
-	b.registerLoginHandoff()
 
 	return b, nil
 }
