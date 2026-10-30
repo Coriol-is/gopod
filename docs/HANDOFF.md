@@ -59,9 +59,11 @@ credential adapter + Pi Docker-inspect round trip), changing Telegram privacy/ad
 
 ## CP-003 PR C: runner-side capability issuer (branch `feat/cp003-capability-issuer`, 2026-10-30)
 `ipc.RunIssuer` issues a per-exec `GOPOD_ARTIFACT_CAP` capability (runner `ArtifactIssuer`, `Runner.SetArtifactIssuer`,
-`cmd/gopod.artifactIssuer`) only for interactive execs (`Run`, `RunStream`) of the owner's private chat, bound to the scope
-snapshot and thread, revoked when the exec finishes; nil when `GOPOD_OUTBOX_ARTIFACTS` or its gates are off, so nothing is
-issued by default. Open: scheduled silent turns (`runTaskSilently` -> `Run`) also get one. Next: PR D (agent instructions).
+`cmd/gopod.artifactIssuer`) for execs started through `Run` and `RunStream` in the owner's private chat (foreground turns
+and, by owner decision, scheduled silent turns, since `runTaskSilently` calls `Run`; not `RunFresh` system runs), bound to
+the scope snapshot and thread, revoked when the exec finishes; nil when `GOPOD_OUTBOX_ARTIFACTS` or its gates are off, so
+nothing is issued by default. The capability can only deliver owner-workspace files to the owner's own chat. A request file's
+mtime is not trusted: the watcher bounds it by the previous sweep. Next: PR D (agent instructions).
 
 ## CP-033 PR 2: `/proactive` command (branch `feat/cp033-command`, 2026-10-30)
 `internal/control/proactive*.go` registers `/proactive` (`PermOwnerOnly`; the Router refuses it in groups and for forged

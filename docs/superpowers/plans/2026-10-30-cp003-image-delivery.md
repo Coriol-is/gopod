@@ -130,8 +130,17 @@ The only large unknown-free-but-wide slice, so not attempted here. Existing piec
   revocation is the exec end (`EndRun`, with the registry's two-minute grace for a request written before the end).
   Each exec has its own `RunRef`, so ending one exec does not revoke a concurrent one.
 - Unknown (a) is therefore answered by revocation at exec end, not by a TTL. Unknown (b): any thread of the owner chat
-  gets a capability bound to that thread. **Unknown (c) is open**: `runTaskSilently` calls `Runner.Run`, so a scheduled
-  silent turn in the owner chat also gets a capability. Excluding it needs a class on `Run` (not done; decide before PR D).
+  gets a capability bound to that thread. Unknown (c), decided by the owner: **keep**. `runTaskSilently` calls
+  `Runner.Run`, so scheduled silent turns in the owner chat get a capability like foreground turns; there is no
+  restriction inside the owner scope, and the capability can only deliver owner-workspace files to the owner's own chat.
+  A test pins this. Only `RunFresh` system runs and group providers are excluded.
+- The request file's mtime is agent-controlled, so it is not passed to `ResolveAt` as is: the watcher uses
+  `max(mtime, start of the previous sweep)`, fixed at first observation (`writtenBound`). A file that appears after a
+  run ended is refused even with a backdated mtime, unless no sweep started between the run end and the file's
+  appearance (at most one poll interval of slack, needed so a last-action write-then-exit is not lost). On the very
+  first sweep of a process the mtime is used (capabilities do not survive a restart).
+- `SetArtifactIssuer` is atomic (the wiring runs after the queue workers start), and issuance is bounded by a timeout:
+  a stalled lookup yields no capability and a late result is revoked.
 
 ### PR D. Agent-facing instructions
 

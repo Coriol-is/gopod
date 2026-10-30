@@ -42,6 +42,7 @@ type RunIssuer struct {
 	Resolve  FolderResolver
 	Now      func() time.Time // nil uses time.Now
 	Log      *slog.Logger     // nil is silent
+	Timeout  time.Duration    // bound on one issuance; 0 uses issuerSnapshotTimeout
 
 	seq atomic.Uint64
 }
@@ -62,15 +63,52 @@ func ownerPrivateChat(jid string) bool {
 // IssueArtifact returns a capability for one exec of folder's conversation
 // `thread`, and the function that ends it. An empty token means none; end is
 // always safe to call.
+//
+// Issuance is bounded by Timeout: the folder lookup and the scope snapshot touch
+// the database, and an exec start must not wait on a wedged one. On timeout the
+// result is none (fail closed) and anything the late call issues is revoked.
 func (i *RunIssuer) IssueArtifact(folder string, thread int) (string, func()) {
-	if i == nil || i.Caps == nil || i.Scopes == nil || i.Resolve == nil || folder == "" || thread < 0 ||
+	if i == nil {
+		return "", noEnd
+	}
+	type issued struct {
+		tok string
+		end func()
+	}
+	ch := make(chan issued, 1)
+	go func() {
+		tok, end := i.issue(folder, thread)
+		ch <- issued{tok, end}
+	}()
+	limit := i.Timeout
+	if limit <= 0 {
+		limit = issuerSnapshotTimeout
+	}
+	timer := time.NewTimer(limit)
+	defer timer.Stop()
+	select {
+	case r := <-ch:
+		return r.tok, r.end
+	case <-timer.C:
+		i.warn("artifact capability not issued: timed out", context.DeadlineExceeded)
+		go func() { r := <-ch; r.end() }()
+		return "", noEnd
+	}
+}
+
+func (i *RunIssuer) issue(folder string, thread int) (string, func()) {
+	if i.Caps == nil || i.Scopes == nil || i.Resolve == nil || folder == "" || thread < 0 ||
 		!ownerPrivateChat(i.OwnerJID) || !filepath.IsAbs(i.ChatsDir) {
 		return "", noEnd
 	}
 	if jid, ok := i.Resolve(folder); !ok || jid != i.OwnerJID {
 		return "", noEnd
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), issuerSnapshotTimeout)
+	limit := i.Timeout
+	if limit <= 0 {
+		limit = issuerSnapshotTimeout
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), limit)
 	defer cancel()
 	dest, err := i.Scopes.SnapshotConversation(ctx, i.OwnerJID, thread, store.VisibilityConversation)
 	if err != nil {

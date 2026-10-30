@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Coriol-is/gopod/internal/runner/mountsec"
@@ -99,7 +100,7 @@ type Runner struct {
 	caps CapabilityMinter
 
 	// artifacts issues the per-exec artifact delivery capability (CP-003). Nil = none.
-	artifacts ArtifactIssuer
+	artifacts atomic.Pointer[artifactIssuerBox]
 
 	// versionLogged records container ids whose agent CLI version has
 	// been logged, so Ensure logs it once per spawn, not once per turn.
@@ -869,8 +870,11 @@ func (r *Runner) RunFresh(
 // returns the classified error together with the result, so callers can
 // still read what the agent printed (a new conversation's session id).
 // thread is the conversation the memory capability is bound to (0 for
-// system runs). interactive marks a turn the owner is waiting on, the only
-// kind that may receive an artifact delivery capability.
+// system runs). interactive is true for every turn that goes through Run or
+// RunStream, which includes the scheduled silent turns of the owner chat
+// (telegram.runTaskSilently calls Run), and false for system runs (RunFresh).
+// Only interactive execs may receive an artifact delivery capability; it can
+// deliver only files under the owner's own workspace to the owner's own chat.
 func (r *Runner) execAgent(ctx context.Context, containerID, chatFolder string, thread int, prov AgentProvider, cmd []string, interactive bool) (*ExecResult, error) {
 	// Restore config from backup if needed.
 	if restoreCmd := prov.RestoreConfigCmd(); restoreCmd != nil {

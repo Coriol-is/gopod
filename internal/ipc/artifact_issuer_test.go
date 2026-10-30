@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -13,13 +15,16 @@ import (
 
 // fakeScopes returns a fixed snapshot per JID and records the requests.
 type fakeScopes struct {
+	mu    sync.Mutex
 	byJID map[string]store.ConversationScope
 	err   error
 	asked []string
 }
 
 func (f *fakeScopes) SnapshotConversation(_ context.Context, jid string, thread int, v store.Visibility) (store.ConversationScope, error) {
+	f.mu.Lock()
 	f.asked = append(f.asked, jid)
+	f.mu.Unlock()
 	if f.err != nil {
 		return store.ConversationScope{}, f.err
 	}
@@ -187,6 +192,9 @@ func TestIssuerEndOfOneExecKeepsAnotherExecsCapability(t *testing.T) {
 	}
 	end1()
 	*f.now = f.now.Add(DefaultRevokeGrace + time.Second)
+	if _, err := f.caps.Resolve(tok1, "owner"); !errors.Is(err, ErrStaleCapability) {
+		t.Fatalf("the ended exec's capability still resolves after the grace: %v", err)
+	}
 	if _, err := f.caps.Resolve(tok2, "owner"); err != nil {
 		t.Fatalf("second exec lost its capability: %v", err)
 	}
@@ -200,4 +208,71 @@ func TestIssuerCapabilityExpiresAsABackstop(t *testing.T) {
 	if _, err := f.caps.Resolve(tok, "owner"); !errors.Is(err, ErrStaleCapability) {
 		t.Fatalf("expired capability resolved: %v", err)
 	}
+}
+
+// A stalled folder lookup (the database is wedged) must not stall the exec
+// start: issuance is bounded and fails closed, and a late result is revoked.
+func TestIssuerStalledResolverIsBoundedAndFailsClosed(t *testing.T) {
+	f := newIssuerFixture(t)
+	release := make(chan struct{})
+	var calls atomic.Int32
+	inner := f.iss.Resolve
+	f.iss.Resolve = func(folder string) (string, bool) {
+		calls.Add(1)
+		<-release
+		return inner(folder)
+	}
+	f.iss.Timeout = 50 * time.Millisecond
+	start := time.Now()
+	tok, end := f.iss.IssueArtifact("owner", 0)
+	if tok != "" || end == nil {
+		t.Fatalf("stalled resolver issued %q", tok)
+	}
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("issuance blocked for %v", d)
+	}
+	end()
+	// When the lookup finally returns, whatever it issued is revoked at once.
+	close(release)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		f.caps.mu.Lock()
+		live := 0
+		for _, st := range f.caps.byHash {
+			if !st.revoked {
+				live++
+			}
+		}
+		f.caps.mu.Unlock()
+		if live == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d capabilities issued after the timeout stay live", live)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// Concurrent issue/end across many execs; run with -race.
+func TestIssuerConcurrentIssueAndEnd(t *testing.T) {
+	f := newIssuerFixture(t)
+	var wg sync.WaitGroup
+	for i := 0; i < 16; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 20; j++ {
+				tok, end := f.iss.IssueArtifact("owner", j%3)
+				if tok == "" {
+					t.Error("no capability")
+					return
+				}
+				_, _ = f.caps.Resolve(tok, "owner")
+				end()
+				end()
+			}
+		}()
+	}
+	wg.Wait()
 }

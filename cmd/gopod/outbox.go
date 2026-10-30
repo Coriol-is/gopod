@@ -58,7 +58,9 @@ func openArtifactStore(cfg config.Config, st *store.Store) (ipc.ArtifactConfig, 
 		return ipc.ArtifactConfig{}, nil, fmt.Errorf("open artifact store: %w", err)
 	}
 	resolve := func(folder string) (string, bool) {
-		c, err := st.GetByFolder(context.Background(), folder)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		c, err := st.GetByFolder(ctx, folder)
 		if err != nil {
 			return "", false
 		}
@@ -179,7 +181,9 @@ func artifactIssuer(cfg config.Config, ac ipc.ArtifactConfig, st *store.Store, l
 		OwnerJID: fmt.Sprintf("tg:%d", cfg.OwnerChatID),
 		ChatsDir: cfg.ChatsDir,
 		Resolve: func(folder string) (string, bool) {
-			c, err := st.GetByFolder(context.Background(), folder)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			c, err := st.GetByFolder(ctx, folder)
 			if err != nil {
 				return "", false
 			}

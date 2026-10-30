@@ -16,17 +16,29 @@ type ArtifactIssuer interface {
 
 // SetArtifactIssuer wires the issuer. Nil (the default, and always while
 // GOPOD_OUTBOX_ARTIFACTS is off) means no exec gets a capability.
-func (r *Runner) SetArtifactIssuer(i ArtifactIssuer) { r.artifacts = i }
+//
+// It is safe to call while turns are running: the wiring in cmd/gopod happens
+// after the queue workers and the scheduler have started.
+func (r *Runner) SetArtifactIssuer(i ArtifactIssuer) {
+	if i == nil {
+		r.artifacts.Store(nil)
+		return
+	}
+	r.artifacts.Store(&artifactIssuerBox{i})
+}
+
+type artifactIssuerBox struct{ ArtifactIssuer }
 
 // withArtifactCapability adds the artifact capability to an interactive exec's
 // env and chains its revocation onto release, so one release after the streams
 // close ends every per-exec capability. Anything missing (no issuer, a system
 // run, a refused issue) leaves env and release untouched: fail closed.
 func (r *Runner) withArtifactCapability(env []string, release func(), folder string, thread int, interactive bool) ([]string, func()) {
-	if r.artifacts == nil || !interactive {
+	box := r.artifacts.Load()
+	if box == nil || !interactive {
 		return env, release
 	}
-	tok, end := r.artifacts.IssueArtifact(folder, thread)
+	tok, end := box.IssueArtifact(folder, thread)
 	if tok == "" {
 		if end != nil {
 			end()
