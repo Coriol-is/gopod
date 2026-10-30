@@ -23,7 +23,13 @@ func (fx *proactiveFx) writeOutcome(id, body string) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		fx.t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, id+".last"), []byte(body), 0o644); err != nil {
+	path := filepath.Join(dir, id+".last")
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		fx.t.Fatal(err)
+	}
+	// Default: written 40 s after the last run, as an agent finishing that run would.
+	mt := lastRunUTC.Add(40 * time.Second)
+	if err := os.Chtimes(path, mt, mt); err != nil {
 		fx.t.Fatal(err)
 	}
 }
@@ -125,5 +131,22 @@ func TestOutcomeNoteIsLabelledUntrustedAndShort(t *testing.T) {
 	}
 	if strings.Contains(line, strings.Repeat("a", 81)) {
 		t.Fatalf("note not capped at 80 characters: %q", line)
+	}
+}
+
+// The agent controls "at", the host controls the mtime: a forged future "at"
+// must not make an old file look like this run's, and the shown time is the host's.
+func TestForgedFutureTimeCannotFreshenAStaleFile(t *testing.T) {
+	fx := newProactiveFx(t)
+	fx.enable("gmail", "urgent", "on")
+	fx.ranAt("gmail.urgent", lastRunUTC)
+	fx.writeOutcome("gmail.urgent", `{"at":"2031-01-01T00:00:00Z","result":"sent","note":"forged"}`)
+	fx.touchOutcome("gmail.urgent", lastRunUTC.Add(-48*time.Hour))
+	if got := fx.run("gmail", "urgent").Text; !strings.Contains(got, "ran, outcome unknown") || strings.Contains(got, "forged") {
+		t.Fatalf("a forged time freshened a stale file:\n%s", got)
+	}
+	fx.touchOutcome("gmail.urgent", lastRunUTC.Add(2*time.Minute)) // 10:02 Belgrade
+	if got := fx.run("gmail", "urgent").Text; !strings.Contains(got, "(Fri 10:02)") || strings.Contains(got, "2031") {
+		t.Fatalf("shown time is not the file's:\n%s", got)
 	}
 }
