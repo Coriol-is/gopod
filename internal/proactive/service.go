@@ -31,6 +31,17 @@ var (
 // ReasonInsideQuiet is stored when quiet hours paused a preset.
 const ReasonInsideQuiet = "inside quiet hours"
 
+// ReasonNoRunHours is stored when quiet hours leave no hour of the working window.
+const ReasonNoRunHours = "no run time in the working window"
+
+// pauseReason names why a render failed with blocked(err).
+func pauseReason(err error) string {
+	if errors.Is(err, ErrNoRunHours) {
+		return ReasonNoRunHours
+	}
+	return ReasonInsideQuiet
+}
+
 // Setting keys in proactive_settings.
 const (
 	keyTZ        = "tz"

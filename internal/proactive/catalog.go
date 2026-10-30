@@ -198,3 +198,22 @@ func parseHHMM(s string) (int, error) {
 	}
 	return h*60 + m, nil
 }
+
+// TimeOptions lists the hourly times (HHMM) a fixed-time preset offers, from
+// its lowest to its highest allowed time, without those inside quiet hours
+// (section 8). Polling presets have no time of day and return nil.
+func (p Preset) TimeOptions(q *Quiet) []string {
+	if p.timeMin == "" {
+		return nil
+	}
+	lo, _ := parseHHMM(p.timeMin)
+	hi, _ := parseHHMM(p.timeMax)
+	var out []string
+	for m := (lo + 59) / 60 * 60; m <= hi; m += 60 {
+		if q != nil && q.Contains(m) {
+			continue
+		}
+		out = append(out, fmt.Sprintf("%02d00", m/60))
+	}
+	return out
+}

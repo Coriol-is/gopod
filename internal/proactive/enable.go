@@ -208,11 +208,14 @@ func (s *Service) Disable(ctx context.Context, id string) error {
 		if ts != taskLive {
 			return nil
 		}
-		if err = s.st.UpdateTaskStatus(ctx, task.ID, "paused", 0, task.LastRun); err != nil {
-			return err
-		}
 		row, err := s.loadRow(ctx, id)
 		if err != nil {
+			return err
+		}
+		if unmanaged(row) {
+			return fmt.Errorf("%w: %s exists but gopod did not create it; reset it to the template first", ErrUserModified, task.ID)
+		}
+		if err = s.st.UpdateTaskStatus(ctx, task.ID, "paused", 0, task.LastRun); err != nil {
 			return err
 		}
 		set, err := decodeSettings(row, p)
@@ -232,16 +235,32 @@ func (s *Service) Disable(ctx context.Context, id string) error {
 // prompt and schedule are rewritten; an edited task is refused with
 // ErrUserModified. A gopod write never counts as an owner edit.
 func (s *Service) Configure(ctx context.Context, id string, next Settings) error {
+	return s.UpdateSettings(ctx, id, func(cur *Settings) error { *cur = next; return nil })
+}
+
+// UpdateSettings is Configure as a read-modify-write: fn receives the stored
+// settings and changes them, all inside the task lock and one transaction, so
+// two quick changes of different fields cannot overwrite each other. An error
+// from fn, or settings the preset does not offer, changes nothing.
+func (s *Service) UpdateSettings(ctx context.Context, id string, fn func(*Settings) error) error {
 	p, ok := Lookup(id)
 	if !ok {
 		return ErrUnknownPreset
 	}
-	if err := p.ValidateSettings(next); err != nil {
-		return err
-	}
 	return s.inLockedTx(ctx, func(ctx context.Context) error {
 		row, err := s.loadRow(ctx, id)
 		if err != nil {
+			return err
+		}
+		cur, err := decodeSettings(row, p)
+		if err != nil {
+			return err
+		}
+		next := cur.Settings
+		if err = fn(&next); err != nil {
+			return err
+		}
+		if err = p.ValidateSettings(next); err != nil {
 			return err
 		}
 		task, ts, err := s.lookupTask(ctx, p)

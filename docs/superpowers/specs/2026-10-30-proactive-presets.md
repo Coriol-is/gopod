@@ -787,3 +787,29 @@ Where the code and this spec differ, the code wins. Differences found while impl
   and bumps the version, which exercises the upgrade path.
 - **Queue order verified.** A user message enqueued while a task runs in the same folder waits for the task, is
   never batched with a task, and does not cancel the task's context (`task_order_test.go`).
+
+## 19. Implementation notes (PR 2, `/proactive` command)
+
+- **Screens built:** overview, connector, preset, time picker, `tz`, `hours`, `quiet`, global `off|on`, `reset`. The
+  overview omits the provider-status line, the "Other connectors" row and "Check again" (probe and offers are PR 5 and
+  PR 6); the preset screen omits "Run now" (not in the PR 2 outline). `check`, `guide` and `offer` answer "not available yet".
+- **Connector status seam.** `ProactiveDeps.Connector` returns `unknown` (default), `ready` or `not connected`. `unknown`
+  asks a Yes before enabling, `ready` enables directly, `not connected` refuses even with a confirmation.
+- **`reset` verb.** `/proactive <connector> <preset> reset` (confirmed) is `ResetToTemplate`; the spec only named the
+  button. It is offered when the task was edited or the template is outdated.
+- **Time picker** lists hourly times of the preset's range minus quiet hours (`Preset.TimeOptions`); other minutes are typed.
+- **Runs per day** come from `proactive.RunsPerWorkingDay` (the renderer's own hour list), shown per week for Sunday and
+  Monday presets.
+- **Service resolution.** The command resolves the service from the registered owner chat on every call; with no owner
+  registration it answers "unavailable". `UpgradeTemplates` also runs when a preset screen opens (section 6.6).
+- **Language.** Replies are English, like the other control commands (`/trigger`, `/restart`); only the Telegram button
+  layer uses Russian.
+- **Review fixes.** `Service.UpdateSettings` is the locked read-modify-write behind every field press (two quick presses
+  on different fields both stick; `Configure` is built on it). `Disable` refuses an unmanaged task (`ErrUserModified`,
+  as `Enable` and `Configure` do). `ValidateTimezone` applies the shape allowlist `UTC` or
+  `^[A-Z][A-Za-z_]*(/[A-Za-z0-9_+-]+)+$` before `time.LoadLocation` (which reads host zoneinfo before the embedded
+  tzdata; the binary embeds it via `time/tzdata` in `internal/proactive/tz.go`). A pause because quiet hours leave no
+  hour of the working window now stores `ReasonNoRunHours` ("no run time in the working window"), separate from
+  `ReasonInsideQuiet`. `lead` on a preset without leads answers "has no reminder lead". Owner decisions: "Pause all"
+  needs no confirmation (reversible); `reset` keeps its confirmation; `UpgradeTemplates` on screen open stays; replies
+  stay English for now (language question is with the owner).

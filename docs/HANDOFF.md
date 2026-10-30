@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-10-30 (context-reset checkpoint)
+**Last updated:** 2026-10-30 (CP-033 PR 2 added)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -56,6 +56,17 @@ of the task/IPC path.
 **Not authorized without the owner:** account logins/refresh, paid fallbacks, T9 reboot, schedule changes, enabling
 `GOPOD_OUTBOX_ARTIFACTS` or `GOPOD_MANAGED_TASKS` (both have unmet gates: restore drill + capability issuer; task
 credential adapter + Pi Docker-inspect round trip), changing Telegram privacy/admin rights.
+
+## CP-033 PR 2: `/proactive` command (branch `feat/cp033-command`, 2026-10-30)
+`internal/control/proactive*.go` registers `/proactive` (`PermOwnerOnly`; the Router refuses it in groups and for forged
+or stranger presses): overview, connector and preset screens, on/off, frequency, time-of-day and lead pickers, `tz`
+picker + typed zone, `hours`, `quiet`, global `off|on`, `reset` (confirmed), stale values re-validated per press. Wiring is
+`cmd/gopod/proactive.go`: the service is resolved per call from the registered owner chat (no restart needed once the owner
+is registered) and `UpgradeTemplates` runs at startup. All presets stay off; no flag. Connector status is always
+`unknown` until the probe (PR 5), so On asks a Yes; `ProactiveDeps.Connector` is the seam PR 5 fills (`ready` enables
+directly, `not connected` refuses). Added to `internal/proactive`: `RunsPerWorkingDay` and `Preset.TimeOptions`.
+Not built (answer "not available yet"): `check`, `guide`, `offer`, "Run now", the overview's other-connectors row.
+Control replies are English like the other control commands. Live check is owner-run: send `/proactive` in the private chat.
 
 ## CP-033 PR 1: proactive core + store (branch `feat/cp033-core`, PR open, 2026-10-30)
 `internal/proactive` (catalog of six presets, cron renderer with working window, quiet hours and `CRON_TZ`, enable /
