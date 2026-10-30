@@ -758,6 +758,17 @@ Where the code and this spec differ, the code wins. Differences found while impl
   returns a `ResumeReport` (`Resumed`, `StillPaused`, `Skipped`). `Disable` during the pause removes the preset from
   the restore set. While paused, `rerender` rewrites paused tasks whenever they can still be rendered; a paused task
   that cannot be rendered under new quiet hours keeps its old text until `ResumeAll` re-renders it.
+- **Unmanaged tasks.** A live task under `preset-<id>` with no applied hash (no row written by gopod) was planted,
+  for example by an owner-folder agent over IPC. `Enable`, `Configure` and `ResumeAll` do not adopt it
+  (`ErrUserModified` / skipped); `SetTimezone` only lists it in `Kept`; `ResetToTemplate` is the owner's explicit way to
+  take it over. The IPC watcher reserves `preset-` ids for the owner folder targeting itself, so an agent cannot plant
+  a foreign-folder task that would block the preset with `ErrTaskConflict`.
+- **`next_run = -1` marker is invisible to agents.** `ipc.DescribeTask` reports it as 0 with no `nextRunAt`, and the
+  group receipt projection maps a negative `nextRun` to 0 instead of rejecting the receipt.
+- **`/tasks resume` during the global pause is allowed** (owner decision 2026-10-30; an explicit owner action, no
+  restrictions for the owner). The pause is "not a lock"; `ResumeAll` leaves such a task alone and lists it in `Skipped`.
+- **Reports on failure.** `SetTimezone`, `ResumeAll` and `UpgradeTemplates` return empty results with an error, since
+  the transaction rolled back.
 - **Errors are not swallowed.** `Timezone`, `Window`, `Quiet`, `GloballyPaused` and the per-preset settings return an
   error for a stored value that does not parse (unset still means the default), and the enclosing transaction fails.
 - **Locking.** The service uses `scheduler.WithTaskLock`, which honors the lock key the IPC path puts in its context,

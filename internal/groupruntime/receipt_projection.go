@@ -110,8 +110,8 @@ func sanitizeReceiptTask(task *receiptTask, scope store.ScopeRef) error {
 	default:
 		return ErrUnavailable
 	}
-	if task.NextRun < 0 {
-		return ErrUnavailable
+	if task.NextRun < 0 { // internal pause marker: unscheduled, not a reason to drop the receipt
+		task.NextRun = 0
 	}
 	if task.NextRun > 0 {
 		task.NextRunAt = time.UnixMilli(task.NextRun).UTC().Format(time.RFC3339)

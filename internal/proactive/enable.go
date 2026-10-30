@@ -128,6 +128,9 @@ func (s *Service) Enable(ctx context.Context, id string) error {
 		}
 		now := s.now().UnixMilli()
 
+		if ts == taskLive && unmanaged(row) {
+			return fmt.Errorf("%w: %s exists but gopod did not create it; reset it to the template first", ErrUserModified, task.ID)
+		}
 		if ts == taskLive && modified(row, task) {
 			// Owner-edited: reactivate the owner's definition as is. By design this
 			// skips the quiet-hours check: the owner's edit is the owner's decision
@@ -245,7 +248,7 @@ func (s *Service) Configure(ctx context.Context, id string, next Settings) error
 		if err != nil {
 			return err
 		}
-		if ts == taskLive && modified(row, task) {
+		if ts == taskLive && (unmanaged(row) || modified(row, task)) {
 			return ErrUserModified
 		}
 		env, err := s.env(ctx)

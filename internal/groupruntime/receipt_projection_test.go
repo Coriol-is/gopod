@@ -120,3 +120,17 @@ func TestGroupReceiptRetainsSafePromptAndDerivesTime(t *testing.T) {
 		}
 	}
 }
+
+// PauseAll leaves next_run = -1 on a paused preset task; one such task must not
+// turn a whole group receipt into operation_unavailable.
+func TestGroupReceiptMapsNegativeNextRunToUnscheduled(t *testing.T) {
+	scope := store.ScopeRef{JID: "tg:-2", Folder: "group-scope"}
+	raw := []byte(`{"status":"ok","result":{"tasks":[{"taskId":"paused","status":"paused","nextRun":-1},{"taskId":"digest","nextRun":1000}]}}`)
+	out, err := projectReceipt(raw, "tasks", strings.Repeat("a", 32)+".result.json", scope)
+	if err != nil {
+		t.Fatalf("receipt rejected: %v", err)
+	}
+	if strings.Contains(out, "-1") || !strings.Contains(out, "1970-01-01T00:00:01Z") {
+		t.Fatalf("projection = %s", out)
+	}
+}

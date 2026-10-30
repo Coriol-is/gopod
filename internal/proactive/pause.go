@@ -23,7 +23,8 @@ type ResumeReport struct {
 // PauseAll is the bulk pause: it remembers which presets are active, pauses
 // them with the pause marker, and refuses new Enable calls until ResumeAll,
 // even when nothing was active ("off means off"). It is not a lock: the owner
-// may still resume a task from /tasks, and Status reports the real task
+// may still resume a task from /tasks (an explicit owner action, allowed by
+// owner decision 2026-10-30), and Status reports the real task
 // state. Calling it while already paused keeps the saved set.
 func (s *Service) PauseAll(ctx context.Context) error {
 	return s.inLockedTx(ctx, func(ctx context.Context) error {
@@ -88,7 +89,7 @@ func (s *Service) ResumeAll(ctx context.Context) (ResumeReport, error) {
 			}
 			if modified(row, task) {
 				next, err := s.schedulerNext(task.ScheduleType, task.ScheduleValue)
-				if err != nil { // unusable owner definition: leave it paused, unmarked
+				if unmanaged(row) || err != nil { // planted or unusable definition: leave it paused, unmarked
 					if err = s.st.UpdateTaskStatus(ctx, task.ID, "paused", 0, task.LastRun); err != nil {
 						return err
 					}
@@ -135,7 +136,10 @@ func (s *Service) ResumeAll(ctx context.Context) (ResumeReport, error) {
 		}
 		return s.st.DeleteProactiveSetting(ctx, keyGlobalOff)
 	})
-	return rep, err
+	if err != nil {
+		return ResumeReport{}, err // the transaction rolled back: report nothing
+	}
+	return rep, nil
 }
 
 func (s *Service) saveGlobalSet(ctx context.Context, ids []string) error {

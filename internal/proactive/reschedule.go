@@ -32,7 +32,10 @@ func (s *Service) SetTimezone(ctx context.Context, tz string) (Report, error) {
 		rep, err = s.rerender(ctx, true)
 		return err
 	})
-	return rep, err
+	if err != nil {
+		return Report{}, err // rolled back: report nothing
+	}
+	return rep, nil
 }
 
 // SetWindow validates and stores the working window and re-renders pollers.
@@ -97,6 +100,12 @@ func (s *Service) rerender(ctx context.Context, tzChanged bool) (Report, error) 
 			return rep, err
 		}
 
+		if unmanaged(row) { // never ours: not rewritten, only reported
+			if tzChanged {
+				rep.Kept = append(rep.Kept, p.ID)
+			}
+			continue
+		}
 		if modified(row, task) {
 			// The owner's edit stands: no quiet-hours or window rules apply to it.
 			// A zone change moves only the CRON_TZ prefix of an edited cron; any

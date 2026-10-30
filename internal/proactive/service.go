@@ -130,6 +130,12 @@ func modified(row store.ProactivePreset, t store.TaskRecord) bool {
 	return row.AppliedHash != ContentHash(t.Prompt, t.ScheduleType, t.ScheduleValue)
 }
 
+// unmanaged reports a live task under a preset id that gopod never wrote (no
+// applied hash): it was planted, for example by an owner-folder agent over IPC,
+// and must not be adopted, reconfigured or resumed. ResetToTemplate is the
+// owner's explicit way to take it over.
+func unmanaged(row store.ProactivePreset) bool { return row.AppliedHash == "" }
+
 func (s *Service) loadRow(ctx context.Context, id string) (store.ProactivePreset, error) {
 	row, ok, err := s.st.GetProactivePreset(ctx, id)
 	if err != nil {

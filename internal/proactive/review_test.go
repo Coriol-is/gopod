@@ -502,3 +502,118 @@ func TestTypeOnlyEditIsDetectedAndKeepsItsType(t *testing.T) {
 		t.Fatalf("edited task rewritten: %+v", got)
 	}
 }
+
+// --- final review: unmanaged tasks, reports on failure ---
+
+// plantUnmanaged creates a live owner-folder task under a preset id with no
+// proactive_presets row, as an owner-folder agent could via IPC.
+func (f *fixture) plantUnmanaged(id string) {
+	f.t.Helper()
+	if _, err := f.st.CreateTask(context.Background(), store.TaskRecord{
+		ID: TaskID(id), ChatFolder: "owner", ChatJID: "tg:1", Prompt: "planted prompt",
+		ScheduleType: "cron", ScheduleValue: "* * * * *", NextRun: time.Now().Add(time.Minute).UnixMilli(), Status: "active",
+	}); err != nil {
+		f.t.Fatal(err)
+	}
+}
+
+func TestUnmanagedTaskUnderAPresetIDIsNotAdopted(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	f.plantUnmanaged("gmail.morning")
+	before := f.task("gmail.morning")
+	if err := f.svc.Enable(ctx, "gmail.morning"); !errors.Is(err, ErrUserModified) {
+		t.Fatalf("Enable adopted an unmanaged task: %v", err)
+	}
+	if err := f.svc.Configure(ctx, "gmail.morning", Settings{Freq: "weekdays", Time: "0900"}); !errors.Is(err, ErrUserModified) {
+		t.Fatalf("Configure over an unmanaged task: %v", err)
+	}
+	if f.task("gmail.morning") != before {
+		t.Fatal("unmanaged task was modified")
+	}
+	// The owner's way out is an explicit reset to the template.
+	if err := f.svc.ResetToTemplate(ctx, "gmail.morning"); err != nil {
+		t.Fatal(err)
+	}
+	if tk := f.task("gmail.morning"); tk.Prompt == "planted prompt" || tk.ScheduleValue != "CRON_TZ=Europe/Belgrade 0 8 * * *" {
+		t.Fatalf("reset did not replace it: %+v", tk)
+	}
+	if s := f.status("gmail.morning"); s.Modified {
+		t.Fatalf("still modified after reset: %+v", s)
+	}
+}
+
+func TestResumeAllDoesNotActivateAnUnmanagedTask(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	f.enable("gmail.morning")
+	if err := f.svc.PauseAll(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// Row lost (or never written) while the task carries the pause marker.
+	if err := f.st.PutProactivePreset(ctx, store.ProactivePreset{PresetID: "gmail.morning", TaskID: TaskID("gmail.morning")}); err != nil {
+		t.Fatal(err)
+	}
+	rep := f.resume()
+	if f.task("gmail.morning").Status != "paused" || len(rep.Skipped) != 1 {
+		t.Fatalf("unmanaged task resumed: %+v %+v", f.task("gmail.morning"), rep)
+	}
+}
+
+func TestFailedResumeAndTimezoneReturnEmptyReports(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	f.enable("gmail.morning") // processed first
+	f.enable("cal.weekly")    // processed later; its settings are corrupted below
+	row, _, _ := f.st.GetProactivePreset(ctx, "cal.weekly")
+	row.Settings = "{not json"
+	if err := f.st.PutProactivePreset(ctx, row); err != nil {
+		t.Fatal(err)
+	}
+	rep, err := f.svc.SetTimezone(ctx, "Asia/Tokyo")
+	if err == nil || len(rep.Rescheduled)+len(rep.Kept)+len(rep.Paused) != 0 {
+		t.Fatalf("failed SetTimezone reported changes: %+v err=%v", rep, err)
+	}
+
+	g := newFixture(t)
+	g.enable("gmail.morning")
+	g.enable("cal.weekly")
+	if err := g.svc.PauseAll(ctx); err != nil {
+		t.Fatal(err)
+	}
+	row, _, _ = g.st.GetProactivePreset(ctx, "cal.weekly")
+	row.Settings = "{not json"
+	if err := g.st.PutProactivePreset(ctx, row); err != nil {
+		t.Fatal(err)
+	}
+	rr, err := g.svc.ResumeAll(ctx)
+	if err == nil || len(rr.Resumed)+len(rr.StillPaused)+len(rr.Skipped) != 0 {
+		t.Fatalf("failed ResumeAll reported changes: %+v err=%v", rr, err)
+	}
+	if g.task("gmail.morning").Status != "paused" {
+		t.Fatal("the failed ResumeAll was not rolled back")
+	}
+}
+
+// Owner decision: /tasks resume during the global pause is an explicit owner
+// action and is allowed; ResumeAll then leaves it alone.
+func TestOwnerResumeDuringPauseIsAllowedAndLeftAlone(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	f.enable("gmail.morning")
+	if err := f.svc.PauseAll(ctx); err != nil {
+		t.Fatal(err)
+	}
+	tk := f.task("gmail.morning")
+	next := time.Now().Add(time.Hour).UnixMilli()
+	if err := f.st.UpdateTaskStatus(ctx, tk.ID, "active", next, tk.LastRun); err != nil {
+		t.Fatal(err)
+	}
+	rep := f.resume()
+	if got := f.task("gmail.morning"); got.Status != "active" || got.NextRun != next {
+		t.Fatalf("owner's resume was changed: %+v", got)
+	}
+	if len(rep.Skipped) != 1 {
+		t.Fatalf("report = %+v", rep)
+	}
+}

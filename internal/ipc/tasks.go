@@ -64,8 +64,9 @@ func (w *Watcher) processTaskFile(ctx context.Context, folder, path string) (com
 	}
 	// preset-<id> task ids belong to the built-in proactive presets (CP-033), which
 	// adopt a task found under their id. Only the owner folder may choose one.
-	if p.Op == "schedule" && strings.HasPrefix(p.TaskID, "preset-") && folder != w.cfg.OwnerFolder {
-		return fail(&errUnauthorized{reason: "task ids starting with preset- are reserved"})
+	if p.Op == "schedule" && strings.HasPrefix(p.TaskID, "preset-") &&
+		(folder != w.cfg.OwnerFolder || (p.TargetChatFolder != "" && p.TargetChatFolder != w.cfg.OwnerFolder)) {
+		return fail(&errUnauthorized{reason: "task ids starting with preset- are reserved for the owner folder"})
 	}
 	targetJID := ""
 	if p.Op == "schedule" || p.Op == "list" {

@@ -73,5 +73,8 @@ func (s *Service) UpgradeTemplates(ctx context.Context) ([]UpgradeResult, error)
 		}
 		return nil
 	})
-	return append([]UpgradeResult(nil), out...), err
+	if err != nil {
+		return nil, err
+	}
+	return append([]UpgradeResult(nil), out...), nil
 }
