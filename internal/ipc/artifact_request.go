@@ -22,7 +22,7 @@ import (
 const (
 	maxArtifactText        = 48 << 10
 	maxArtifactFiles       = 4
-	maxCaptionRunes        = 1024
+	maxCaptionUnits        = store.MaxUploadCaptionUnits // UTF-16 units, Telegram's count
 	maxFilenameBytes       = 120
 	maxMIMEBytes           = 127
 	maxRequestIDBytes      = 64
@@ -134,7 +134,7 @@ func parseArtifactRequest(raw []byte) (artifactRequest, error) {
 		if f.Mime != "" && (len(f.Mime) > maxMIMEBytes || !mimePattern.MatchString(f.Mime)) {
 			return req, reject(codeInvalidRequest)
 		}
-		if !utf8.ValidString(f.Caption) || utf8.RuneCountInString(f.Caption) > maxCaptionRunes || !utf8.ValidString(f.Filename) || len(f.Filename) > 4*maxFilenameBytes {
+		if !utf8.ValidString(f.Caption) || store.CaptionUTF16Units(f.Caption) > maxCaptionUnits || !utf8.ValidString(f.Filename) || len(f.Filename) > 4*maxFilenameBytes {
 			return req, reject(codeInvalidRequest)
 		}
 		switch f.Presentation {
@@ -197,7 +197,12 @@ func artifactParts(req artifactRequest, artifactIDs []string) ([]store.DeliveryP
 		parts = splitText(req.Text)
 	}
 	for i, f := range req.Files {
-		parts = append(parts, store.DeliveryPart{Kind: store.PartUpload, ArtifactRef: store.ArtifactRef(artifactIDs[i]), Payload: []byte(f.Caption)})
+		part := store.DeliveryPart{Kind: store.PartUpload, ArtifactRef: store.ArtifactRef(artifactIDs[i]), Payload: []byte(f.Caption)}
+		if f.Presentation == "photo" {
+			// A hint: the transport sends a document when the file cannot be a photo.
+			part.ParseMode = store.UploadPresentationPhoto
+		}
+		parts = append(parts, part)
 	}
 	if len(parts) == 0 || len(parts) > store.MaxDeliveryParts {
 		return nil, reject(codeTooManyParts)

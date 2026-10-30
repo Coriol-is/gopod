@@ -294,6 +294,9 @@ func TestArtifacts_StrictSchema(t *testing.T) {
 		}), "invalid_request"},
 		{"bad mime", mut(func(m map[string]any) { file(m)["mime"] = "not a mime" }), "invalid_request"},
 		{"bad presentation", mut(func(m map[string]any) { file(m)["presentation"] = "video" }), "invalid_request"},
+		{"presentation voice", mut(func(m map[string]any) { file(m)["presentation"] = "voice" }), "invalid_request"},
+		{"presentation Photo", mut(func(m map[string]any) { file(m)["presentation"] = "Photo" }), "invalid_request"},
+		{"presentation  photo", mut(func(m map[string]any) { file(m)["presentation"] = " photo" }), "invalid_request"},
 		{"long caption", mut(func(m map[string]any) { file(m)["caption"] = strings.Repeat("x", 1025) }), "invalid_request"},
 		{"huge text", mut(func(m map[string]any) { m["text"] = strings.Repeat("x", 49<<10) }), "invalid_request"},
 	}

@@ -75,7 +75,7 @@ Code only, flag untouched.
   live API currently enforces exactly these for every client; the fallback on explicit refusal is the safety net.
   WebP and GIF are deliberately sent as documents (stdlib decoders only, no new dependency).
 
-### PR B. Request presentation reaches the part
+### PR B. Request presentation reaches the part (done: D052)
 
 Small. `artifactParts` maps `presentation: "photo"` to `UploadPresentationPhoto`; "document" and empty stay
 empty. Replace `TestAgentUploadPartsNeverCarryAPresentation` with: photo maps to the photo marker, voice
@@ -185,7 +185,7 @@ Not needed for a first image, which travels the IPC path. Remaining from the del
 5. **Architecture check**: the Pi is arm64 (64-bit `int`). Run the transport tests under `GOARCH=386` (or
    `arm`) if any 32-bit target is ever built; the dimension and chunk-length checks are written to avoid
    overflow but only a 64-bit run is exercised in CI.
-6. **Caption-limit fix before PR B** (see "Known defect: caption limits" below). A 1024-emoji caption is
+6. **Caption-limit fix before PR B** (done in PR B, D052; see "Known defect: caption limits" below). A 1024-emoji caption is
    accepted by our validators and refused by Telegram, so a photo or document request can be dropped.
 7. Review that turning the flag on also activates PR 5 behavior (prepared code documents and prepared
    voice with a billed backend) because they share the flag. Accept that explicitly or split the flag.

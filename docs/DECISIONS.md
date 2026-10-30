@@ -1833,3 +1833,26 @@ counts as empty; a row with no cell is dropped. Two columns use the same form. A
 any header, keeps the D050 lines (`<b>Header</b>: value`, or the bare value), skipping empty rows. A wide table whose
 rows are all empty stays a `<pre>` block, like a header-only one. Total rows get no special treatment. `<b>%</b>` is
 emitted and sanitized correctly; a one-character bold header only looks unbolded.
+
+## D052 — An agent may request a photo presentation; captions are bounded in UTF-16 units
+
+**Status:** accepted 2026-10-30. Supersedes the sentence of [D039](#d039--immutable-artifact-snapshots-reserve-first-copy-outside-sql-publish-with-references) "`photo` presentation and MIME are hints; uploads are always documents". The rest of D039 stands, including that the agent cannot select the voice presentation.
+
+**Decision.** A V1 request file with `presentation: "photo"` becomes an upload part carrying the store's photo marker
+(`store.UploadPresentationPhoto`), which the transport (`internal/telegram/outbox_photo.go`) treats as a hint: it calls
+`sendPhoto` only for a PNG/JPEG within Telegram's limits and otherwise, or after an explicit Telegram refusal, sends the
+same bytes as a document. `document` and an empty value stay documents. The host never infers a photo from an image MIME
+or extension, and an agent MIME claim never selects any presentation; the voice marker stays host-only. The marker is part
+of the part hash, so a retried request with a different presentation is a different plan. The hint is applied to any file
+(a non-image falls back to a document), so the request cannot widen what an agent may send.
+
+**Caption bound.** Telegram caps a caption at 1024 characters counted in UTF-16 units after entity parsing. The IPC
+request validator and the outbox publish validation (`store.CaptionUTF16Units`, `MaxUploadCaptionUnits`) now count those
+units, so a caption that Telegram would refuse (513+ emoji, 1026+ units; 512 emoji = 1024 units is accepted) is rejected
+instead of dropping the upload later: the IPC route rejects with `invalid_request` before the snapshot; the store check is
+a second bound. The 4096-byte store bound stays as a coarse outer limit
+(1024 units never exceed 4096 bytes). This also fixes the same defect on the document path.
+
+**Consequences.** Nothing is observable while `GOPOD_OUTBOX_ARTIFACTS` is off, and every V1 request still ends in
+`stale_capability` until the runner capability issuer lands. Rolling back to a binary without the photo marker refuses
+a stored photo part as `invalid_presentation`; revert only with the flag off.
