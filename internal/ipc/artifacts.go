@@ -130,7 +130,8 @@ func (w *Watcher) processArtifactRequest(ctx context.Context, folder, filePath s
 		code, _ := errCode(err)
 		return w.rejectDurable(ctx, src, folder, filePath, id, code)
 	}
-	written, _ := w.requestModTime(folder, filePath)
+	mtime, _ := w.requestModTime(folder, filePath)
+	written := w.writtenBound(filePath, mtime)
 	grant, err := a.Caps.ResolveAt(req.Capability, folder, written)
 	if err != nil {
 		return w.rejectDurable(ctx, src, folder, filePath, id, codeStaleCapability)
@@ -437,4 +438,34 @@ func (w *Watcher) maybeReconcileArtifacts(ctx context.Context) {
 	if rep != (ReconcileReport{}) {
 		w.log.Info("ipc: artifact reconcile", slog.Any("report", rep))
 	}
+}
+
+// beginSweep records the start of a watcher sweep on the capability clock.
+func (w *Watcher) beginSweep() {
+	if w.cfg.Artifacts.Caps == nil {
+		return
+	}
+	w.prevSweep, w.curSweep = w.curSweep, w.cfg.Artifacts.Caps.now()
+}
+
+// writtenBound is the time handed to Capabilities.ResolveAt for a request file.
+// The file's mtime is chosen by the agent, so a backdated mtime must not make a
+// file that appeared after the run ended look like it was written before. The
+// watcher has proof of its own: a file first observed in sweep N was not in the
+// channel when sweep N-1 started, so it appeared no earlier than that. The
+// bound is max(mtime, start of the previous sweep), fixed when the file is first
+// observed. What remains is at most one poll interval of slack, which is what
+// lets an agent write its last request and exit before the next poll. On the
+// very first sweep of a process there is no previous sweep and the mtime is used;
+// capabilities do not survive a restart, so none predates it.
+func (w *Watcher) writtenBound(path string, mtime time.Time) time.Time {
+	floor, seen := w.writeFloor[path]
+	if !seen {
+		floor = w.prevSweep
+		w.writeFloor[path] = floor
+	}
+	if mtime.After(floor) {
+		return mtime
+	}
+	return floor
 }

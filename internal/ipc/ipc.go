@@ -88,6 +88,7 @@ func New(cfg Config, msgs MessageSink, tasks TaskSink, log *slog.Logger, resolve
 		log:              log,
 		resolve:          resolve,
 		retries:          make(map[string]retryEntry),
+		writeFloor:       make(map[string]time.Time),
 		terminalMessages: make(map[string]messageOutcome),
 	}
 }
@@ -100,14 +101,18 @@ type retryEntry struct {
 // Watcher walks data/ipc/*/messages and data/ipc/*/tasks every Tick
 // and dispatches what it finds.
 type Watcher struct {
-	cfg              Config
-	msgs             MessageSink
-	tasks            TaskSink
-	log              *slog.Logger
-	resolve          FolderResolver
-	retries          map[string]retryEntry
-	terminalMessages map[string]messageOutcome
-	receiptStates    map[string]string // folder+key -> delivery state last written
+	cfg     Config
+	msgs    MessageSink
+	tasks   TaskSink
+	log     *slog.Logger
+	resolve FolderResolver
+	retries map[string]retryEntry
+	// writeFloor and the sweep times bound when a V1 request file appeared (see
+	// writtenBound): the file's mtime is agent-controlled and is never trusted alone.
+	writeFloor          map[string]time.Time
+	prevSweep, curSweep time.Time
+	terminalMessages    map[string]messageOutcome
+	receiptStates       map[string]string // folder+key -> delivery state last written
 
 	lastArtifactReconcile time.Time
 	artifactPreps         int // file-bearing requests prepared in this folder pass

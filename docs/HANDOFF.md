@@ -67,6 +67,20 @@ ones show "Reset to template"). No provider or connector was run. **Owner-run li
 (templates per provider, the guide, a scheduled run creating a `once` task through IPC). Spec section 20 lists the
 differences and what PR 4 needs. Next: PR 4 (`cal.reminder` one-shot lifecycle).
 
+## CP-003 PR C: runner-side capability issuer (branch `feat/cp003-capability-issuer`, 2026-10-30)
+`ipc.RunIssuer` issues a per-exec `GOPOD_ARTIFACT_CAP` capability (runner `ArtifactIssuer`, `Runner.SetArtifactIssuer`,
+`cmd/gopod.artifactIssuer`) for execs started through `Run` and `RunStream` in the owner's private chat (foreground turns
+and, by owner decision, scheduled silent turns, since `runTaskSilently` calls `Run`; not `RunFresh` system runs), bound to
+the scope snapshot and thread, revoked when the exec finishes; nil when `GOPOD_OUTBOX_ARTIFACTS` or its gates are off, so
+nothing is issued by default. The capability can only deliver owner-workspace files to the owner's own chat. A request file's
+mtime is not trusted: the watcher bounds it by the previous sweep. Next: PR D (agent instructions).
+
+## CP-003 PR B: photo presentation + caption units (branch `feat/cp003-photo-presentation`, 2026-10-30)
+`artifactParts` maps request `presentation: "photo"` to `store.UploadPresentationPhoto` (D052, supersedes D039's "always
+documents"); IPC and `validatePublish` count captions in UTF-16 units (limit 1024, `store.CaptionUTF16Units`), fixing the
+emoji-caption drop for photos and documents. Flag `GOPOD_OUTBOX_ARTIFACTS` stays off, defaults unchanged. Next: PR C
+(capability issuer), then D (agent instructions); E (foreground cutover) is separate.
+
 ## CP-033 PR 2: `/proactive` command (branch `feat/cp033-command`, 2026-10-30)
 `internal/control/proactive*.go` registers `/proactive` (`PermOwnerOnly`; the Router refuses it in groups and for forged
 or stranger presses): overview, connector and preset screens, on/off, frequency, time-of-day and lead pickers, `tz`

@@ -75,7 +75,7 @@ Code only, flag untouched.
   live API currently enforces exactly these for every client; the fallback on explicit refusal is the safety net.
   WebP and GIF are deliberately sent as documents (stdlib decoders only, no new dependency).
 
-### PR B. Request presentation reaches the part
+### PR B. Request presentation reaches the part (done: D052)
 
 Small. `artifactParts` maps `presentation: "photo"` to `UploadPresentationPhoto`; "document" and empty stay
 empty. Replace `TestAgentUploadPartsNeverCarryAPresentation` with: photo maps to the photo marker, voice
@@ -85,7 +85,7 @@ whose MIME is not an image (recommended: yes, the transport already falls back t
 Open design choice for the owner: should the host default an image MIME to photo when presentation is empty?
 Recommendation: no; keep document as the default and let the instructions (PR D) say when to ask for a photo.
 
-### PR C. Runner-side per-run capability issuer
+### PR C. Runner-side per-run capability issuer (done: where the code differs from this text, the code won)
 
 The only large unknown-free-but-wide slice, so not attempted here. Existing pieces and what is missing:
 
@@ -116,6 +116,31 @@ The only large unknown-free-but-wide slice, so not attempted here. Existing piec
   should be allowed (the grant carries the thread, so a reply goes where the turn runs; likely yes);
   (c) whether the background/scheduled silent turn (`runTaskSilently`) should get a capability at all
   (recommendation: no, it has its own report path).
+
+**As built (PR C).** Differences from the design above, found by reading the code:
+- The issuer lives in `internal/ipc` (`RunIssuer`, `artifact_issuer.go`), not in `cmd/gopod`; `cmd/gopod.artifactIssuer`
+  only builds it, and returns nil (nothing issued) unless the *effective* `artifactIPC(...)` config is non-empty, so the
+  flag, a running dispatcher, the durable route and a private owner chat must all hold. It shares the watcher's
+  `*Capabilities`.
+- The runner interface is `IssueArtifact(folder, thread) (token, end)` with no context; the issuer bounds its own
+  snapshot with a 5 s timeout. Env name `GOPOD_ARTIFACT_CAP` (`runner.ArtifactCapabilityEnv`).
+- A system run (`RunFresh`, thread 0) is not distinguishable from the main thread by `thread`, so the exec chain gained
+  an `interactive` flag: `Run` and `RunStream` pass true, `RunFresh` false. Group providers return before any env is built.
+- TTL: no per-turn timeout exists in the queue, so the grant TTL is `MaxGrantTTL - 1 min` as a leak backstop; the real
+  revocation is the exec end (`EndRun`, with the registry's two-minute grace for a request written before the end).
+  Each exec has its own `RunRef`, so ending one exec does not revoke a concurrent one.
+- Unknown (a) is therefore answered by revocation at exec end, not by a TTL. Unknown (b): any thread of the owner chat
+  gets a capability bound to that thread. Unknown (c), decided by the owner: **keep**. `runTaskSilently` calls
+  `Runner.Run`, so scheduled silent turns in the owner chat get a capability like foreground turns; there is no
+  restriction inside the owner scope, and the capability can only deliver owner-workspace files to the owner's own chat.
+  A test pins this. Only `RunFresh` system runs and group providers are excluded.
+- The request file's mtime is agent-controlled, so it is not passed to `ResolveAt` as is: the watcher uses
+  `max(mtime, start of the previous sweep)`, fixed at first observation (`writtenBound`). A file that appears after a
+  run ended is refused even with a backdated mtime, unless no sweep started between the run end and the file's
+  appearance (at most one poll interval of slack, needed so a last-action write-then-exit is not lost). On the very
+  first sweep of a process the mtime is used (capabilities do not survive a restart).
+- `SetArtifactIssuer` is atomic (the wiring runs after the queue workers start), and issuance is bounded by a timeout:
+  a stalled lookup yields no capability and a late result is revoked.
 
 ### PR D. Agent-facing instructions
 
@@ -160,7 +185,7 @@ Not needed for a first image, which travels the IPC path. Remaining from the del
 5. **Architecture check**: the Pi is arm64 (64-bit `int`). Run the transport tests under `GOARCH=386` (or
    `arm`) if any 32-bit target is ever built; the dimension and chunk-length checks are written to avoid
    overflow but only a 64-bit run is exercised in CI.
-6. **Caption-limit fix before PR B** (see "Known defect: caption limits" below). A 1024-emoji caption is
+6. **Caption-limit fix before PR B** (done in PR B, D052; see "Known defect: caption limits" below). A 1024-emoji caption is
    accepted by our validators and refused by Telegram, so a photo or document request can be dropped.
 7. Review that turning the flag on also activates PR 5 behavior (prepared code documents and prepared
    voice with a billed backend) because they share the flag. Accept that explicitly or split the flag.

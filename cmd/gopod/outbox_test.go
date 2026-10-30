@@ -183,3 +183,67 @@ func TestMaintainGenerationsPurgesFinishedRowsAndReconciles(t *testing.T) {
 	cancel()
 	<-done
 }
+
+func TestArtifactIssuerNeedsEveryGateAndSharesTheWatcherRegistry(t *testing.T) {
+	dir := t.TempDir()
+	if r, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = r
+	}
+	st, err := store.Open(context.Background(), filepath.Join(dir, "s.sqlite"), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	chats := filepath.Join(dir, "chats")
+	for _, f := range []string{"owner", "friend"} {
+		if err := os.MkdirAll(filepath.Join(chats, f), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for jid, folder := range map[string]string{"tg:42": "owner", "tg:7": "friend"} {
+		if err := st.RegisterChat(t.Context(), store.RegisteredChat{JID: jid, Folder: folder, AddedAt: 1, IsOwner: folder == "owner"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfg := config.Config{DataDir: dir, ChatsDir: chats, OwnerChatID: 42}
+	ac, blobs, err := openArtifactStore(cfg, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer blobs.Close()
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	open := artifactIPC(durableIPC(true, true, st, "owner", 42), ac)
+	iss := artifactIssuer(cfg, open, st, log)
+	if iss == nil {
+		t.Fatal("no issuer with every gate open")
+	}
+	tok, end := iss.IssueArtifact("owner", 0)
+	if tok == "" {
+		t.Fatal("owner chat got nothing")
+	}
+	if _, err := open.Caps.Resolve(tok, "owner"); err != nil {
+		t.Fatalf("the watcher's registry does not know the token: %v", err)
+	}
+	end()
+	if tok, _ := iss.IssueArtifact("friend", 0); tok != "" {
+		t.Fatal("a non-owner chat got a capability")
+	}
+
+	closed := map[string]ipc.ArtifactConfig{
+		"flag off or durable route off": artifactIPC(durableIPC(false, true, st, "owner", 42), ac),
+		"dispatcher stopped":            artifactIPC(durableIPC(true, false, st, "owner", 42), ac),
+		"nothing opened":                {},
+	}
+	for name, got := range closed {
+		if artifactIssuer(cfg, got, st, log) != nil {
+			t.Errorf("%s: issuer built", name)
+		}
+	}
+	if artifactIssuer(config.Config{DataDir: dir, ChatsDir: chats}, open, st, log) != nil {
+		t.Error("issuer built without an owner chat")
+	}
+	if artifactIssuer(config.Config{DataDir: dir, ChatsDir: chats, OwnerChatID: -100}, open, st, log) != nil {
+		t.Error("issuer built for a group owner id")
+	}
+}
