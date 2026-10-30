@@ -237,6 +237,17 @@ read tool and one write tool of a throwaway connector or a local fake MCP server
 the fake server is blocked by default, (d) a `PreToolUse` hook fires under the bypass flag.
 A local fake MCP server needs no Google account.
 
+### 9.1 Owner observation, 2026-10-30
+
+The owner checked on a running agent (which one is not recorded) and confirmed that it reaches
+Gmail through the provider's Gmail connector for Codex and Claude. So connectors **do** load in
+a headless CLI on a subscription login; the "loads in `-p`" unknown in the table above is
+answered yes for the observed setup. The exact tool names and the app id are still not
+recorded, and this says nothing about restriction: the conclusions above stand. What changes:
+the connector route is a real option, not a hypothetical, and the live check below is the one
+remaining gate before a read-only connector configuration can be trusted. The host-side Gmail
+API (section 10) remains the fallback if that check fails for a provider.
+
 ## 10. Fallback when connectors cannot be restricted: host-side Gmail and Calendar
 
 Owner request 2026-10-30. Own OAuth application, read-only scopes (`gmail.readonly`,
