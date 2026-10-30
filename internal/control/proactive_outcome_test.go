@@ -83,3 +83,47 @@ func TestPresetScreenTreatsTheOutcomeNoteAsUntrusted(t *testing.T) {
 		}
 	}
 }
+
+func (fx *proactiveFx) touchOutcome(id string, at time.Time) {
+	fx.t.Helper()
+	if err := os.Chtimes(filepath.Join(fx.chatDir, "proactive", id+".last"), at, at); err != nil {
+		fx.t.Fatal(err)
+	}
+}
+
+// A file with no "at" cannot be dated by its content, so its modification time
+// decides whether it belongs to the last run.
+func TestOutcomeWithoutATimeIsDatedByTheFileMtime(t *testing.T) {
+	fx := newProactiveFx(t)
+	fx.enable("gmail", "urgent", "on")
+	fx.ranAt("gmail.urgent", lastRunUTC)
+	fx.writeOutcome("gmail.urgent", `{"result":"sent","note":"left over"}`)
+
+	fx.touchOutcome("gmail.urgent", lastRunUTC.Add(-48*time.Hour))
+	if got := fx.run("gmail", "urgent").Text; !strings.Contains(got, "Last outcome: ran, outcome unknown") || strings.Contains(got, "left over") {
+		t.Fatalf("a stale undated file was trusted:\n%s", got)
+	}
+	fx.touchOutcome("gmail.urgent", lastRunUTC.Add(40*time.Second))
+	if got := fx.run("gmail", "urgent").Text; !strings.Contains(got, "sent a message") || !strings.Contains(got, "left over") {
+		t.Fatalf("a fresh undated file was not shown:\n%s", got)
+	}
+}
+
+func TestOutcomeNoteIsLabelledUntrustedAndShort(t *testing.T) {
+	fx := newProactiveFx(t)
+	fx.enable("gmail", "urgent", "on")
+	fx.ranAt("gmail.urgent", lastRunUTC)
+	fx.writeOutcome("gmail.urgent", `{"at":"2026-10-30T09:00:40Z","result":"sent","note":"`+strings.Repeat("a", 110)+`"}`)
+	var line string
+	for _, l := range strings.Split(fx.run("gmail", "urgent").Text, "\n") {
+		if strings.HasPrefix(l, "Last outcome") {
+			line = l
+		}
+	}
+	if !strings.Contains(line, "(agent note, untrusted)") {
+		t.Fatalf("note not labelled: %q", line)
+	}
+	if strings.Contains(line, strings.Repeat("a", 81)) {
+		t.Fatalf("note not capped at 80 characters: %q", line)
+	}
+}

@@ -319,8 +319,16 @@ func (h proactiveHandler) outcomeLine(ctx context.Context, p proactive.Preset, l
 			}
 		}
 	}
-	if known && !o.At.IsZero() && lastRun > 0 && o.At.Before(time.UnixMilli(lastRun).Add(-time.Minute)) {
-		known = false // written by an earlier run; this run left none
+	if known && lastRun > 0 {
+		// Written by an earlier run if it is older than this one. The agent's own
+		// "at" is used when present; otherwise the file's modification time.
+		when := o.At
+		if when.IsZero() {
+			when = o.Modified
+		}
+		if !when.IsZero() && when.Before(time.UnixMilli(lastRun).Add(-time.Minute)) {
+			known = false
+		}
 	}
 	if known && o.Result == proactive.OutcomeUnknown {
 		known = false
@@ -347,8 +355,8 @@ func (h proactiveHandler) outcomeLine(ctx context.Context, p proactive.Preset, l
 		at = o.At
 	}
 	out := fmt.Sprintf("Last outcome: %s (%s)", what, at.In(loc).Format("Mon 15:04"))
-	if note := noMarkup(o.Note); note != "" {
-		out += " · `" + note + "`"
+	if note := shortNote(noMarkup(o.Note)); note != "" {
+		out += " · (agent note, untrusted) `" + note + "`"
 	}
 	return out
 }
@@ -361,4 +369,14 @@ func noMarkup(s string) string {
 		}
 		return r
 	}, s)
+}
+
+// shortNote caps the agent's note for the screen; the file may carry up to 120
+// characters but the owner sees a short single line.
+func shortNote(s string) string {
+	const max = 80
+	if r := []rune(s); len(r) > max {
+		return string(r[:max]) + "…"
+	}
+	return s
 }
