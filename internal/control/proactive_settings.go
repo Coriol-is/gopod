@@ -72,11 +72,14 @@ func (h proactiveHandler) tzPicker(ctx context.Context, svc *proactive.Service, 
 	}
 	text := fmt.Sprintf("**Timezone**\nNow: `%s`%s\nPresets run in this zone.\nAnother zone: /proactive tz <IANA name>, for example /proactive tz Asia/Tbilisi", cur, offset)
 	var rows [][]Button
-	for i := 0; i < len(tzChoices); i += 2 {
-		var row []Button
-		for _, z := range tzChoices[i : i+2] {
-			row = append(row, presetButton(z, mark(z == cur), "tz", z))
+	var row []Button
+	for _, z := range tzChoices {
+		row = append(row, presetButton(z, mark(z == cur), "tz", z))
+		if len(row) == 2 {
+			rows, row = append(rows, row), nil
 		}
+	}
+	if len(row) > 0 {
 		rows = append(rows, row)
 	}
 	rows = append(rows, []Button{backToOverview})
@@ -209,21 +212,25 @@ func (h proactiveHandler) quietPicker(ctx context.Context, svc *proactive.Servic
 	return withNotice(Response{Text: text, Buttons: h.rangeRows("quiet", quietChoices, cur)}, notice, code), nil
 }
 
-// pausedByQuiet names the presets that quiet hours or the window left without
-// a run time, as a sentence to append to a notice ("" when none).
+// pausedByQuiet names the presets that quiet hours or the working window left
+// without a run time, grouped by the reason stored when they were paused, as a
+// sentence to append to a notice ("" when none).
 func (h proactiveHandler) pausedByQuiet(ctx context.Context, svc *proactive.Service) string {
 	list, err := svc.List(ctx)
 	if err != nil {
 		return ""
 	}
-	var ids []string
-	for _, st := range list {
-		if st.State == proactive.StatePaused && st.PausedReason == proactive.ReasonInsideQuiet {
-			ids = append(ids, st.Preset.ID)
+	var out string
+	for _, reason := range []string{proactive.ReasonInsideQuiet, proactive.ReasonNoRunHours} {
+		var ids []string
+		for _, st := range list {
+			if st.State == proactive.StatePaused && st.PausedReason == reason {
+				ids = append(ids, st.Preset.ID)
+			}
+		}
+		if len(ids) > 0 {
+			out += " Paused (" + reason + "): " + titles(ids) + "."
 		}
 	}
-	if len(ids) == 0 {
-		return ""
-	}
-	return " Paused (inside quiet hours): " + titles(ids) + "."
+	return out
 }

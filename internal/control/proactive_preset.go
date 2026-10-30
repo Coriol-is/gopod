@@ -2,6 +2,7 @@ package control
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -41,6 +42,8 @@ func (h proactiveHandler) preset(ctx context.Context, svc *proactive.Service, cm
 	}
 	return screen(fmt.Sprintf("Unknown option %q.\n%s", plain(verb), proactiveUsage), 1)
 }
+
+var errInvalidSetting = errors.New("invalid setting")
 
 type screenFn func(notice string, code int) (Response, error)
 
@@ -87,28 +90,38 @@ func (h proactiveHandler) reset(ctx context.Context, svc *proactive.Service, cmd
 }
 
 // configure changes one setting of a preset (on or off: the choice is stored).
+// The read-modify-write happens inside the service's lock, so two quick presses
+// on different fields cannot overwrite each other.
 func (h proactiveHandler) configure(ctx context.Context, svc *proactive.Service, p proactive.Preset, field, value string, screen screenFn) (Response, error) {
-	st, err := svc.Status(ctx, p.ID)
-	if err != nil {
-		return fail(err)
+	if field == "lead" && len(p.Leads()) == 0 {
+		return screen(p.Title+" has no reminder lead.", 1)
 	}
-	next := st.Settings
-	switch field {
-	case "freq":
-		next.Freq = value
-	case "time":
-		next.Time = value
-	case "lead":
+	lead := 0
+	if field == "lead" {
 		n, ok := atoi(value)
 		if !ok {
 			return screen(fmt.Sprintf("%q is not a number of minutes.", plain(value)), 1)
 		}
-		next.Lead = n
+		lead = n
 	}
-	if err = p.ValidateSettings(next); err != nil {
+	err := svc.UpdateSettings(ctx, p.ID, func(s *proactive.Settings) error {
+		switch field {
+		case "freq":
+			s.Freq = value
+		case "time":
+			s.Time = value
+		case "lead":
+			s.Lead = lead
+		}
+		if p.ValidateSettings(*s) != nil {
+			return errInvalidSetting // nothing is written
+		}
+		return nil
+	})
+	if errors.Is(err, errInvalidSetting) {
 		return screen(invalidValue(p, field, value), 1)
 	}
-	return h.apply(svc.Configure(ctx, p.ID, next), "Updated.", screen)
+	return h.apply(err, "Updated.", screen)
 }
 
 func invalidValue(p proactive.Preset, field, value string) string {
@@ -116,7 +129,11 @@ func invalidValue(p proactive.Preset, field, value string) string {
 	case "freq":
 		return fmt.Sprintf("%q is not offered here. Use: %s.", plain(value), strings.Join(p.Freqs(), ", "))
 	case "lead":
-		return fmt.Sprintf("Lead %q is not offered. Use: %v minutes.", plain(value), p.Leads())
+		var ls []string
+		for _, l := range p.Leads() {
+			ls = append(ls, fmt.Sprint(l))
+		}
+		return fmt.Sprintf("Lead %q is not offered. Use: %s minutes.", plain(value), strings.Join(ls, ", "))
 	}
 	opts := p.TimeOptions(nil)
 	if len(opts) == 0 {

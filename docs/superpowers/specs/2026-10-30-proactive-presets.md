@@ -804,3 +804,12 @@ Where the code and this spec differ, the code wins. Differences found while impl
   registration it answers "unavailable". `UpgradeTemplates` also runs when a preset screen opens (section 6.6).
 - **Language.** Replies are English, like the other control commands (`/trigger`, `/restart`); only the Telegram button
   layer uses Russian.
+- **Review fixes.** `Service.UpdateSettings` is the locked read-modify-write behind every field press (two quick presses
+  on different fields both stick; `Configure` is built on it). `Disable` refuses an unmanaged task (`ErrUserModified`,
+  as `Enable` and `Configure` do). `ValidateTimezone` applies the shape allowlist `UTC` or
+  `^[A-Z][A-Za-z_]*(/[A-Za-z0-9_+-]+)+$` before `time.LoadLocation` (which reads host zoneinfo before the embedded
+  tzdata; the binary embeds it via `time/tzdata` in `internal/proactive/tz.go`). A pause because quiet hours leave no
+  hour of the working window now stores `ReasonNoRunHours` ("no run time in the working window"), separate from
+  `ReasonInsideQuiet`. `lead` on a preset without leads answers "has no reminder lead". Owner decisions: "Pause all"
+  needs no confirmation (reversible); `reset` keeps its confirmation; `UpgradeTemplates` on screen open stays; replies
+  stay English for now (language question is with the owner).

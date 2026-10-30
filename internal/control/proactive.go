@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Coriol-is/gopod/internal/proactive"
 )
@@ -178,7 +179,11 @@ func plain(s string) string {
 		return r
 	}, s)
 	if len(s) > 40 {
-		s = s[:40] + "…"
+		cut := 40
+		for cut > 0 && !utf8.RuneStart(s[cut]) { // never split a rune
+			cut--
+		}
+		s = s[:cut] + "…"
 	}
 	return s
 }

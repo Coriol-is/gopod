@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Coriol-is/gopod/internal/proactive"
 	"github.com/Coriol-is/gopod/internal/store"
@@ -613,5 +614,73 @@ func TestProactiveNoButtonArgContainsAColonAndEveryButtonRuns(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestProactiveLeadOnAPresetWithoutLeadsIsRejectedClearly(t *testing.T) {
+	fx := newProactiveFx(t)
+	for _, v := range []string{"10", "0", "x"} {
+		resp := fx.run("gmail", "morning", "lead", v)
+		if resp.Code != 1 || !strings.Contains(resp.Text, "has no reminder lead") || strings.Contains(resp.Text, "[]") {
+			t.Errorf("lead %s: %+v", v, resp)
+		}
+	}
+	bad := fx.run("calendar", "reminder", "lead", "20")
+	if !strings.Contains(bad.Text, "10, 15, 30, 60") || strings.Contains(bad.Text, "[") {
+		t.Fatalf("allowed leads must be listed plainly: %s", bad.Text)
+	}
+}
+
+func TestProactiveOffOnAnUnmanagedTaskIsRefusedClearly(t *testing.T) {
+	fx := newProactiveFx(t)
+	if _, err := fx.st.CreateTask(t.Context(), store.TaskRecord{
+		ID: proactive.TaskID("gmail.morning"), ChatFolder: "owner", ChatJID: "tg:100", Prompt: "planted",
+		ScheduleType: "cron", ScheduleValue: "0 9 * * *", NextRun: time.Now().Add(time.Hour).UnixMilli(), Status: "active",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	resp := fx.run("gmail", "morning", "off")
+	if resp.Code != 1 || !strings.Contains(resp.Text, "Reset to template") || fx.task("gmail.morning").Status != "active" {
+		t.Fatalf("%+v", resp)
+	}
+}
+
+func TestProactiveConcurrentPressesOnDifferentFieldsAreBothKept(t *testing.T) {
+	fx := newProactiveFx(t)
+	fx.enable("gmail", "morning", "on")
+	done := make(chan struct{}, 2)
+	go func() { fx.run("gmail", "morning", "freq", "weekdays"); done <- struct{}{} }()
+	go func() { fx.run("gmail", "morning", "time", "0900"); done <- struct{}{} }()
+	<-done
+	<-done
+	if got := fx.task("gmail.morning").ScheduleValue; got != "CRON_TZ=Europe/Belgrade 0 9 * * 1-5" {
+		t.Fatalf("an update was lost: %q", got)
+	}
+}
+
+func TestProactivePlainCutsOnARuneBoundary(t *testing.T) {
+	got := plain(strings.Repeat("€", 20)) // 3 bytes each: byte 40 is inside a rune
+	if !utf8.ValidString(got) {
+		t.Fatalf("split a rune: %q", got)
+	}
+	if plain("a`b*c_d") != "abcd" {
+		t.Fatal("markdown characters must be dropped")
+	}
+}
+
+func TestProactiveTimezonePickerRowsCoverEveryChoiceEvenWhenOdd(t *testing.T) {
+	saved := tzChoices
+	t.Cleanup(func() { tzChoices = saved })
+	tzChoices = []string{"Europe/Berlin", "Asia/Tokyo", "Asia/Tbilisi"}
+	fx := newProactiveFx(t) // must not panic with an odd list
+	findButton(t, fx.run("tz"), "Tbilisi")
+}
+
+func TestProactiveWindowWithNoRunHoursIsNotCalledQuietHours(t *testing.T) {
+	fx := newProactiveFx(t)
+	fx.enable("gmail", "urgent", "on")
+	resp := fx.run("quiet", "0800-2000")
+	if !strings.Contains(resp.Text, "no run time in the working window") || strings.Contains(resp.Text, "Paused (inside quiet hours)") {
+		t.Fatalf("wording: %s", resp.Text)
 	}
 }
