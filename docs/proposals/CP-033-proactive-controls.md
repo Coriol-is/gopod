@@ -48,6 +48,18 @@ provider's own account; gopod never performs the sign-in or stores the Google to
 for a connector that is not ready stay off and say why. Exact link targets, plugin names and
 the CLI commands are verified in the spec, not taken from this paragraph.
 
+**Other connectors, configured by the agent.** Connectors outside the preset catalog are not
+shipped as presets. The gateway probes periodically (at most hourly, and on "check again") with
+commands that need no model call (`claude mcp list`, `codex plugin list --json` inside the
+container), keeps the last seen set, and when a connector or plugin appears it sends the owner a
+private message offering to set up recurring actions. If the owner agrees, the gateway hands the
+agent a ready-made request in dialog and the agent creates the recurring task through the existing
+scheduling (CP-015), so it appears in `/tasks`. A declined offer is remembered and not repeated;
+a connector that disappears is marked unavailable and its tasks are paused. Observed 2026-10-30
+on the owner's machine: Claude lists connectors by name and health; Codex lists plugins with
+installed/enabled flags (including `gmail@`, `google-calendar@`, `google-drive@`, `slack@`) and
+its `mcp list` shows only local servers; container behavior is verified in the spec.
+
 ## Out of scope
 Restricting what a preset may do in the owner's own chat; new connectors beyond Gmail and Calendar
 catalog (Gmail and Calendar); performing connector sign-in or consent for the owner (only the setup guide is in scope); autonomous reflection
@@ -69,6 +81,9 @@ later upgrade of the built-in template.
 - Quiet hours delay `proactive`-flagged notifications and do not delay ordinary replies or
   explicit reminders.
 - A preset whose connector is not connected is shown as unavailable and is not scheduled.
+- A connector newly connected in the provider's account is noticed within the probe interval,
+  the owner gets one offer, accepting it ends with a task created by the agent and visible in
+  `/tasks`, and declining it is remembered.
 - For each provider, a connector that is not ready is reported with its reason and a setup guide;
   after the owner connects it in the provider's account, "check again" reports it ready without
   a restart. The guide contains no credential, and gopod performs no provider sign-in.
