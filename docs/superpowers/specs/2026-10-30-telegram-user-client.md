@@ -120,7 +120,7 @@ container/skills/telegram-account/    agent guide (SKILL.md) + embedded guide fo
 ```
 DB access stays in `internal/store` (CLAUDE.md "Code"); no raw `database/sql` elsewhere.
 
-### 4.2 ADR D052 (proposed, to be added in PR 1): the user session is an encrypted file under `data/`
+### 4.2 ADR D053 (proposed, to be added in PR 1): the user session is an encrypted file under `data/`
 
 D012 forbids gopod from writing secret files. The session is an MTProto auth key: whoever holds it is the account.
 Persisting it is unavoidable (otherwise a QR login after every restart). Decision to propose:
@@ -485,7 +485,7 @@ Production, the Pi and any real account are not touched by saving this spec.
    from the real account, and an account restriction (section 9) is possible.
 2. **Which operations beyond the table** (join channels, contacts, drafts, polls, reactions on others' messages) are
    wanted in version 2? They are `admin` and not built.
-3. **Session encryption key** in `GOPOD_TG_SESSION_KEY` (ADR D052): acceptable, or prefer re-login after each restart
+3. **Session encryption key** in `GOPOD_TG_SESSION_KEY` (ADR D053): acceptable, or prefer re-login after each restart
    and no file?
 4. **Which account.** Must the connected account always be the owner's own (default, enforced), or may a second
    account be attached (`--allow-other-account` on the terminal)?
@@ -496,7 +496,7 @@ Production, the Pi and any real account are not touched by saving this spec.
 
 ## 17. Implementation outline (small PRs, tests first, no deploy)
 
-1. **ADR and plumbing.** D052, `internal/tgaccount` skeleton, `go.mod` (gotd/td, `rsc.io/qr` direct) with a license
+1. **ADR and plumbing.** D053, `internal/tgaccount` skeleton, `go.mod` (gotd/td, `rsc.io/qr` direct) with a license
    review, config flag and env names, encrypted session storage and tests, backup `notCovered` entry and parity test,
    protected-root and mount-deny additions. No behavior without the flag.
 2. **Login.** QR flow through the bot (`sendPrivateLoginPhoto`), password step through the CLI/control socket,
