@@ -6,100 +6,54 @@ Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
 [ACCEPTANCE](ACCEPTANCE.md) for pending real-client verification.
 
-## START HERE — checkpoint 2026-10-30 (written before a Claude context reset)
-**State.** `main` = `c5b976e`, no open PRs, no extra worktrees, no unmerged local branches. The Pi (192.168.1.128,
-`ssh spaceinvaderz@192.168.1.128`; Tailscale name `rpi4` may be offline; needs the 1Password SSH agent unlocked) runs
-`c5b976e`. Flags on: `GOPOD_OUTBOX_DISPATCHER`, `GOPOD_OUTBOX_IPC` (owner chat). Off: artifacts, managed tasks.
-Last backup before deploy: `20261029T235150Z-db-480ab40a` (online `gopod backup create`, verified); rollback tag
-`gopod-gopod:rollback-pre-trigger-picker` (older tags `rollback-pre-*` also exist).
+## START HERE — checkpoint 2026-10-30 (afternoon)
+**State.** `main` = `630aa4e`; one open PR: #108 (Go Telegram user-account connector spec, read and write, CP-028). The Pi
+(192.168.1.128, `ssh spaceinvaderz@192.168.1.128`; needs the 1Password SSH agent unlocked) runs `630aa4e`, deployed
+2026-10-30 13:07 UTC. Flags on: `GOPOD_OUTBOX_DISPATCHER`, `GOPOD_OUTBOX_IPC` (owner chat). Off: artifacts, managed tasks.
+Backup before this deploy: `20261030T130648Z-db-e71c345b` (verified); rollback tag `gopod-gopod:rollback-pre-proactive`.
 
-**Shipped today (all merged and deployed):** CP-002 PR1-5 and rich formatting (D045), CP-004 PR1-3, CP-007 backup
-foundation, `/restart` (D046), default group admission (D047: registered groups run without a config entry;
-auto-prepare; legacy group `tg:-1003850302017` prepared as epoch e2), Codex tree-budget fix, group triggers +
-owner-in-group identity (D048), `/trigger` picker buttons, picker-first convention (CLAUDE.md "Commands with
-parameters"). Owner verified live: `/trigger`, `/provider`, group replies on Claude (new + resume).
+**Shipped and deployed since the morning checkpoint:** group `/login` redirect without the confirmation (D049); Markdown
+tables as aligned blocks or compact cards (D050, D051; measured on the owner's phone: `<pre>` wraps at about 45 characters,
+no horizontal scroll); CP-033 PR 1-3 (preset core and store, owner-only `/proactive` with pickers and timezone choice, final
+templates, outcome display, integrations guide for agents; five presets: Gmail morning/urgent/evening, Calendar
+agenda/weekly; `cal.reminder` unavailable until PR 4; all presets off by default); CP-003 PR A-C (photo transport with
+document fallback, `photo` presentation and UTF-16 caption limit D052, per-run `GOPOD_ARTIFACT_CAP` issuer; flag still off).
+Docs merged: autonomy delta note, skills/plugins mechanisms note, CP-033 spec, CP-034 (accepted).
 
-**How to deploy (what worked):** fast-forward `~/gopod` on the Pi (`git fetch && git merge --ff-only origin/main`),
-`docker tag gopod-gopod:latest gopod-gopod:rollback-pre-<topic>`, `docker compose build --build-arg VERSION=<sha> gopod`,
-backup with `gp backup create` + `gp backup verify <id>` where `gp() { docker compose run --rm --no-deps -v
-$HOME/gopod-backups:/backups -e GOPOD_BACKUP_DIR=/backups gopod "$@"; }` (define it as a FUNCTION: the remote shell is
-zsh and a `$GP` variable does not word-split), then `docker compose up -d --no-build gopod`, check `docker logs`.
-Push from the Mac over HTTPS when SSH is down: `git -c credential.helper= -c credential.helper='!gh auth git-credential'
-push https://github.com/Coriol-is/gopod.git <branch>:<branch>`. Flow: worktree -> PR -> independent review agent ->
-CI -> `gh pr merge --squash --admin --delete-branch` (ruleset needs one approval; admin path is the working one).
+**Owner acceptance 2026-10-30:** `/proactive` settings work; preliminary acceptance of P01-P03 passed; the first real
+digests are awaited (not yet seen). The P03 result (scheduled run creating a `once` task through IPC) is not recorded: PR 4
+needs it.
 
-**Owner decisions (answered 2026-10-30):**
-1. Task credential adapter: **deferred** (owner, 2026-10-30). The recommendation stays B2 (task-only auth dir with the
-   access token only) with the spec's recommended answers: [spec](superpowers/specs/2026-10-29-task-role-credential-adapter.md).
-   Not built; `GOPOD_MANAGED_TASKS` stays off, so recurring work (including the CP-033 Gmail and Calendar presets) runs on the
-   existing scheduler path in the owner's main session. Revisit when isolated task sessions (CP-004/CP-021) are needed.
-2. [Agent buttons and hooks](superpowers/specs/2026-10-29-agent-buttons-and-hooks.md): still open (5 questions).
-3. Group `/login` prompt: dropped (branch `feat/group-login-no-prompt`): the owner's group `/login` now sends the real
-   step privately and a neutral line to the group; the private confirmation, token maps and `login.group.confirm`
-   are removed.
-4. Agent reading group chat history: not now.
-5. The four merged remote branches were deleted on GitHub.
+**Owner decisions taken today (do not re-ask):** task credential adapter deferred (recurring work runs on the existing
+scheduler path in the main session); nothing is restricted in the owner's private chat and sessions (see memory
+`feedback-owner-scope-no-restrictions`); connectors (Gmail, Calendar) allowed in the private chat; CP-034 plugin/skill install
+from the private chat only, official sources, auto-update on, not in groups; CP-033 first set Gmail + Calendar, conservative
+quota (`gmail.urgent` hourly), Europe/Belgrade default timezone with a picker, quiet hours mean "do not run", `/proactive` in
+English, owner-edited preset tasks are not subject to quiet hours; Telegram user-account connector: Go port (gotd/td), read AND
+write, private chat only, never in groups.
 
-**Decisions already taken by the owner (do not re-ask):** groups keep trigger `all` (new groups `mention`); CI is not
-mandatory (no branch protection); thread-targeted sends only for threads in the private chat; stickers are context
-only; reactions are readable on request (CP-032, not built); lower paranoia for the owner's own actions but keep the
-boundary against group members; keep the private-chat approve mechanism; commands with set-valued parameters use
-picker buttons.
+**Open owner questions:** the seven questions in `docs/superpowers/specs/2026-10-30-telegram-user-client.md` section 16
+(recommendations: confirm-by-default for send/edit/delete with the taint rule, admin class later, encrypted session file keyed
+from `GOPOD_TG_SESSION_KEY`, own account only, own my.telegram.org app, keep budgets 20/h 100/day, keep media 7 days/1 GiB/50
+MiB); whether to split `GOPOD_OUTBOX_ARTIFACTS` from the code-document and voice parts of CP-003 PR 5 before enabling it; the
+CP-007 restore drill and backup coverage of artifacts before the Pi flag change.
 
-**Next candidates (in order):** (a) live two-turn Codex canary in the group (owner already switched provider; check
-logs), (b) answers to the two spec question sets -> implement buttons phase B0/B1 or the task credential adapter,
-(c) CP-002 PR6-8 (foreground freeze/streaming ownership, protected challenges, staged release), CP-004 PR4-5,
-(d) stickers P2/P3, thread awareness (private chat), CP-032 reaction reading, (e) group-triggers follow-ups, (f)
-live acceptance A08-A11/A18/A20 in Telegram (owner), freefeed digest 09:00 Belgrade is the first unattended check
-of the task/IPC path.
+**Next candidates (in order):** (a) watch the first digests and record P01-P03 outcomes in ACCEPTANCE; (b) CP-033 PR 4
+(one-shot reminders for `cal.reminder`; blocked on P03), PR 5 (connector probe), PR 6 (discovery and offers), PR 7 (docs);
+(c) CP-003 PR D (agent instructions for image delivery) and PR E (foreground cutover), then the Pi gates; (d) CP-034
+spec and implementation; (e) Telegram user client implementation after the owner accepts the spec (7 PRs); (f) older items
+still open: group trigger follow-ups, stickers, thread awareness, CP-032 reactions, CP-002 PR 6-8, CP-004 PR 4-5.
+
+**How to deploy (what worked, repeated 3 times today):** on the Pi `cd ~/gopod && git fetch && git merge --ff-only
+origin/main`, `docker tag gopod-gopod:latest gopod-gopod:rollback-pre-<topic>`, `docker compose build --build-arg
+VERSION=<sha> gopod`, backup with `gp backup create` + `gp backup verify <id>` where `gp() { docker compose run --rm --no-deps
+-v $HOME/gopod-backups:/backups -e GOPOD_BACKUP_DIR=/backups gopod "$@"; }`, then `docker compose up -d --no-build gopod` and
+check `docker logs`. Push and merge from the Mac over HTTPS with the gh credential helper when SSH is down; flow: worktree ->
+PR -> independent review agent -> fixes -> CI -> `gh pr merge --squash --admin --delete-branch`.
 
 **Not authorized without the owner:** account logins/refresh, paid fallbacks, T9 reboot, schedule changes, enabling
-`GOPOD_OUTBOX_ARTIFACTS` or `GOPOD_MANAGED_TASKS` (both have unmet gates: restore drill + capability issuer; task
-credential adapter + Pi Docker-inspect round trip), changing Telegram privacy/admin rights.
-
-## CP-033 PR 3: templates, outcome display, agent guide (branch `feat/cp033-templates`, 2026-10-30)
-Final prompts of the six presets at `TemplateVersion` 3 (`internal/proactive/catalog.go`: connector-generic wording, three
-fixed paragraphs, silent-when-empty; `cal.reminder` is unavailable until PR 4 adds the one-shot lifecycle: Enable refuses it, the panel says so). The
-preset screen shows the last outcome from the agent's `<chat dir>/proactive/<id>.last` (`proactive.ReadOutcome` through an `os.Root`, no symlinks, non-blocking open; sanitized, labelled untrusted; `ProactiveDeps.ChatDir`). `INTEGRATIONS.md` is seeded into the owner workspace (`chattmpl`), `IntegrationsPolicy`
-is in the system prompt of owner turns for both providers (conditional on the file existing; not in groups or task runs), plus the pointer skill
-`container/skills/integrations`. Existing preset tasks pick up v3 through `UpgradeTemplates` (untouched tasks only; edited
-ones show "Reset to template"). No provider or connector was run. **Owner-run live checks:** ACCEPTANCE rows P01 to P03
-(templates per provider, the guide, a scheduled run creating a `once` task through IPC). Spec section 20 lists the
-differences and what PR 4 needs. Next: PR 4 (`cal.reminder` one-shot lifecycle).
-
-## CP-003 PR C: runner-side capability issuer (branch `feat/cp003-capability-issuer`, 2026-10-30)
-`ipc.RunIssuer` issues a per-exec `GOPOD_ARTIFACT_CAP` capability (runner `ArtifactIssuer`, `Runner.SetArtifactIssuer`,
-`cmd/gopod.artifactIssuer`) for execs started through `Run` and `RunStream` in the owner's private chat (foreground turns
-and, by owner decision, scheduled silent turns, since `runTaskSilently` calls `Run`; not `RunFresh` system runs), bound to
-the scope snapshot and thread, revoked when the exec finishes; nil when `GOPOD_OUTBOX_ARTIFACTS` or its gates are off, so
-nothing is issued by default. The capability can only deliver owner-workspace files to the owner's own chat. A request file's
-mtime is not trusted: the watcher bounds it by the previous sweep. Next: PR D (agent instructions).
-
-## CP-003 PR B: photo presentation + caption units (branch `feat/cp003-photo-presentation`, 2026-10-30)
-`artifactParts` maps request `presentation: "photo"` to `store.UploadPresentationPhoto` (D052, supersedes D039's "always
-documents"); IPC and `validatePublish` count captions in UTF-16 units (limit 1024, `store.CaptionUTF16Units`), fixing the
-emoji-caption drop for photos and documents. Flag `GOPOD_OUTBOX_ARTIFACTS` stays off, defaults unchanged. Next: PR C
-(capability issuer), then D (agent instructions); E (foreground cutover) is separate.
-
-## CP-033 PR 2: `/proactive` command (branch `feat/cp033-command`, 2026-10-30)
-`internal/control/proactive*.go` registers `/proactive` (`PermOwnerOnly`; the Router refuses it in groups and for forged
-or stranger presses): overview, connector and preset screens, on/off, frequency, time-of-day and lead pickers, `tz`
-picker + typed zone, `hours`, `quiet`, global `off|on`, `reset` (confirmed), stale values re-validated per press. Wiring is
-`cmd/gopod/proactive.go`: the service is resolved per call from the registered owner chat (no restart needed once the owner
-is registered) and `UpgradeTemplates` runs at startup. All presets stay off; no flag. Connector status is always
-`unknown` until the probe (PR 5), so On asks a Yes; `ProactiveDeps.Connector` is the seam PR 5 fills (`ready` enables
-directly, `not connected` refuses). Added to `internal/proactive`: `RunsPerWorkingDay` and `Preset.TimeOptions`.
-Not built (answer "not available yet"): `check`, `guide`, `offer`, "Run now", the overview's other-connectors row.
-Control replies are English like the other control commands. Live check is owner-run: send `/proactive` in the private chat.
-
-## CP-033 PR 1: proactive core + store (branch `feat/cp033-core`, PR open, 2026-10-30)
-`internal/proactive` (catalog of six presets, cron renderer with working window, quiet hours and `CRON_TZ`, enable /
-disable / configure / global pause, applied-hash edit detection, template upgrade, one-shot id helpers) and the side
-tables `proactive_presets` / `proactive_settings` in `internal/store` (+ `InTaskTx`). Nothing calls it from production
-wiring: no command, no flag, behaviour unchanged. Differences from the spec are in its section 18. Next is PR 2
-(`/proactive` command and timezone picker): it needs `Service.List/Status/Enable/Disable/Configure/SetTimezone/
-SetWindow/SetQuiet/PauseAll/ResumeAll/ResetToTemplate/UpgradeTemplates` and the `ErrInsideQuiet`, `ErrNoRunHours`,
-`ErrUserModified`, `ErrGloballyPaused`, `ErrTaskConflict` sentinels (getters `Timezone/Window/Quiet/GloballyPaused` return errors; `ResumeAll` returns a `ResumeReport`); the connector-ready gate is the caller's.
+`GOPOD_OUTBOX_ARTIFACTS` or `GOPOD_MANAGED_TASKS`, changing Telegram privacy/admin rights, live runs against the owner's Gmail
+or Calendar (owner-run acceptance).
 
 ## Latest design request (2026-10-29)
 - CP-032 [reaction-reading specification](superpowers/specs/2026-10-29-telegram-reaction-reading.md): group emoji/custom-ID events, durable admission, exact message/topic mapping and no-admin/unavailable diagnostics. Private native reactions are transport-blocked; no account-reader workaround is authorized. Design only; no source or runtime flags changed.
