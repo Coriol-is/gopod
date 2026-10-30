@@ -179,7 +179,7 @@ func New(
 
 // ensure is Ensure, or the test seam ensureFn.
 func (r *Runner) ensure(ctx context.Context, chatFolder string, tier Tier, allowlist *mountsec.Allowlist) (string, error) {
-	if err := r.authorizeProfile(ctx, chatFolder); err != nil {
+	if err := r.authorizeOwner(ctx, chatFolder); err != nil {
 		return "", err
 	}
 	tier = TierOwner
@@ -211,10 +211,7 @@ func (r *Runner) Ensure(
 }
 
 func (r *Runner) ensureContainer(ctx context.Context, chatFolder string, tier Tier, allowlist *mountsec.Allowlist, reconcile, slotHeld bool) (string, error) {
-	if _, group := r.groupRegistration(ctx, chatFolder); group {
-		return "", ErrProfileUnavailable
-	}
-	if err := r.authorizeProfile(ctx, chatFolder); err != nil {
+	if err := r.authorizeOwner(ctx, chatFolder); err != nil {
 		return "", err
 	}
 	tier = TierOwner
@@ -237,7 +234,7 @@ func (r *Runner) ensureContainer(ctx context.Context, chatFolder string, tier Ti
 	}
 	r.lockChat(chatFolder)
 	defer r.unlockChat(chatFolder)
-	if err := r.authorizeProfile(ctx, chatFolder); err != nil {
+	if err := r.authorizeOwner(ctx, chatFolder); err != nil {
 		return "", err
 	}
 
@@ -295,7 +292,12 @@ func (r *Runner) Run(
 	allowlist *mountsec.Allowlist,
 	prompt string,
 ) (reply string, retErr error) {
-	_, group := r.groupRegistration(ctx, chatFolder)
+	_, group, lookupErr := r.groupRegistration(ctx, chatFolder)
+	if lookupErr != nil {
+		return "", lookupErr
+	}
+	ctx, cancelTurn := groupTurnContext(ctx, group)
+	defer cancelTurn()
 	defer func() {
 		if group {
 			reply = redactGroupCapabilities(reply)
@@ -441,7 +443,16 @@ func (r *Runner) RunStream(
 	allowlist *mountsec.Allowlist,
 	prompt string,
 ) (stream *AgentStream, retErr error) {
-	_, group := r.groupRegistration(ctx, chatFolder)
+	_, group, lookupErr := r.groupRegistration(ctx, chatFolder)
+	if lookupErr != nil {
+		return nil, lookupErr
+	}
+	ctx, cancelTurn := groupTurnContext(ctx, group)
+	defer func() {
+		if retErr != nil {
+			cancelTurn()
+		}
+	}()
 	defer func() {
 		if group {
 			retErr = groupPublicError(retErr)
@@ -469,7 +480,7 @@ func (r *Runner) RunStream(
 	}
 	group = group || restrictedGroupProvider(prov)
 	originalRelease := releaseSlot
-	releaseSlot = func() { releaseRuntime(); originalRelease() }
+	releaseSlot = func() { cancelTurn(); releaseRuntime(); originalRelease() }
 	r.touch(chatFolder)
 
 	// Build memory context (same as Run).
@@ -625,8 +636,9 @@ func (r *Runner) startStream(
 
 		// After a cancel nobody may be reading Chunks any more; drop
 		// the tail instead of blocking the goroutine forever.
+		validateOutput := outputValidator(ctx, prov, time.Now)
 		emit := func(s string) {
-			if validateExecution(ctx, prov) != nil {
+			if validateOutput() != nil {
 				return
 			}
 			select {
@@ -643,7 +655,7 @@ func (r *Runner) startStream(
 				emit(s)
 			}
 		}
-		fullOut, authOut, stderr := r.readAgentOutput(ctx, handle, ss, send, progress, group)
+		fullOut, authOut, stderr := r.readAgentOutput(ctx, handle, ss, send, progress, group, validateOutput)
 		if group {
 			if tail := filter.Flush(); tail != "" {
 				emit(tail)
@@ -705,6 +717,10 @@ func (r *Runner) startStream(
 			}
 		}
 
+		if err := validateOutput(); err != nil {
+			result <- RunResult{Err: outwardProviderError(prov, err)}
+			return
+		}
 		if err := validateExecution(ctx, prov); err != nil {
 			result <- RunResult{Err: outwardProviderError(prov, err)}
 			return
@@ -750,12 +766,15 @@ func (r *Runner) structuredStreamer(prov AgentProvider) StructuredStreamer {
 // stderr. For structured runs that text is the reply only (result or
 // final agent text), never tool results or the raw transcript: a file
 // the agent read may well say "not logged in".
-func (r *Runner) readAgentOutput(ctx context.Context, handle *StreamHandle, ss StructuredStreamer, send func(string), progress chan<- ProgressEvent, group bool) (reply, authText, stderr string) {
+func (r *Runner) readAgentOutput(ctx context.Context, handle *StreamHandle, ss StructuredStreamer, send func(string), progress chan<- ProgressEvent, group bool, validateOutput func() error) (reply, authText, stderr string) {
 	if ss == nil {
 		out, errOut := readExecStream(handle.Stdout, handle.Stderr, send)
 		return out, out, errOut
 	}
 	onTool := func(ev ProgressEvent) {
+		if validateOutput() != nil {
+			return
+		}
 		if group {
 			ev.Tool = redactGroupCapabilities(ev.Tool)
 			ev.Detail = redactGroupCapabilities(ev.Detail)
@@ -795,11 +814,12 @@ func (r *Runner) SetProgress(on bool) { r.progress = on }
 func readExecStream(stdout, stderr io.Reader, onChunk func(string)) (string, string) {
 	stderrCh := make(chan string, 1)
 	go func() {
-		b, _ := io.ReadAll(stderr)
-		stderrCh <- string(b)
+		var b boundedBuffer
+		_, _ = io.Copy(&b, stderr)
+		stderrCh <- b.String()
 	}()
 
-	var full strings.Builder
+	var full boundedBuffer
 	buf := make([]byte, 4096)
 	for {
 		n, readErr := stdout.Read(buf)
@@ -824,7 +844,10 @@ func (r *Runner) RunFresh(
 	allowlist *mountsec.Allowlist,
 	prompt string,
 ) (reply string, retErr error) {
-	_, group := r.groupRegistration(ctx, chatFolder)
+	_, group, lookupErr := r.groupRegistration(ctx, chatFolder)
+	if lookupErr != nil {
+		return "", lookupErr
+	}
 	defer func() {
 		if group {
 			reply = redactGroupCapabilities(reply)
@@ -1119,7 +1142,11 @@ func (r *Runner) CompactSession(ctx context.Context, chatFolder string, thread i
 	if err := r.authorizeProfile(ctx, chatFolder); err != nil {
 		return "", err
 	}
-	if _, group := r.groupRegistration(ctx, chatFolder); group {
+	_, group, lookupErr := r.groupRegistration(ctx, chatFolder)
+	if lookupErr != nil {
+		return "", lookupErr
+	}
+	if group {
 		return "", ErrGroupMaintenanceUnavailable
 	}
 	if r.compactFn == nil {
