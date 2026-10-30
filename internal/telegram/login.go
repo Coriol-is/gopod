@@ -2,7 +2,6 @@ package telegram
 
 import (
 	"context"
-	"errors"
 	"io"
 	"log/slog"
 	"strings"
@@ -231,10 +230,10 @@ func (b *Bot) loginFailed(ctx context.Context, chatID int64, thread int, folder,
 // runLogin starts the agent's login exec and stores the session.
 // Reports whether a session was stored (it then owns the chat's slot).
 func (b *Bot) runLogin(ctx context.Context, m *models.Message, thread int, rc store.RegisteredChat) bool {
-	return b.runLoginTarget(ctx, m, thread, rc, false)
+	return b.runLoginTarget(ctx, m, thread, rc)
 }
-func (b *Bot) runLoginTarget(ctx context.Context, m *models.Message, thread int, rc store.RegisteredChat, confirmedGroup bool) bool {
-	if !privateLoginMessage(m) || (!confirmedGroup && rc.JID != buildChatJID(m.Chat.ID)) || (confirmedGroup && (m.Chat.ID != b.ownerChatID || userID(m.From) != b.ownerChatID || rc.IsOwner || rc.Folder == "owner")) {
+func (b *Bot) runLoginTarget(ctx context.Context, m *models.Message, thread int, rc store.RegisteredChat) bool {
+	if !privateLoginMessage(m) || rc.JID != buildChatJID(m.Chat.ID) {
 		if m != nil {
 			b.cancelUnsafeLogin(m.Chat.ID)
 		}
@@ -247,16 +246,12 @@ func (b *Bot) runLoginTarget(ctx context.Context, m *models.Message, thread int,
 	}
 
 	tier := runner.TierRegistered
-	if rc.IsOwner && !confirmedGroup {
+	if rc.IsOwner {
 		tier = runner.TierOwner
 	}
 
 	// Ensure container is running.
 	containerID, err := b.runner.Ensure(ctx, rc.Folder, tier, b.allowlist)
-	if err != nil && confirmedGroup && errors.Is(err, runner.ErrProfileUnavailable) {
-		b.groupLoginGuidance(ctx, m.Chat.ID, thread, rc)
-		return false
-	}
 	if err != nil {
 		b.loginFailed(ctx, m.Chat.ID, thread, rc.Folder, "ensure container", err)
 		return false

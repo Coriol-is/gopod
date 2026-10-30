@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/Coriol-is/gopod/internal/store"
@@ -11,9 +12,12 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
-// A group /login from the owner starts nothing in the group: groups have no
-// sign-in of their own (D048), so the owner gets the real step privately and
-// the group a neutral line.
+const groupLoginRedirectCooldown = 30 * time.Second
+
+// A group /login from the owner starts no sign-in: groups have none of their
+// own (D048, D049), so the owner gets the real step privately and the group one
+// neutral line. A command addressed to another bot is ignored, and repeats in
+// the same group are rate limited so the group is not spammed.
 func (b *Bot) requestLoginHandoff(ctx context.Context, m *models.Message) bool {
 	if m == nil {
 		return false
@@ -22,11 +26,35 @@ func (b *Bot) requestLoginHandoff(ctx context.Context, m *models.Message) bool {
 	if (m.Chat.Type != models.ChatTypeGroup && m.Chat.Type != models.ChatTypeSupergroup) || m.Chat.ID >= 0 || b.ownerChatID <= 0 || userID(m.From) != b.ownerChatID || m.From.IsBot || b.api == nil {
 		return false
 	}
+	if target := commandTarget(strings.TrimSpace(messageText(m))); target != "" && !strings.EqualFold(target, b.botUsername()) {
+		return false
+	}
 	rc, ok := b.groupLoginTarget(ctx, m.Chat.ID)
-	if !ok {
+	if !ok || !b.allowLoginRedirect(m.Chat.ID) {
 		return false
 	}
 	b.groupLoginGuidance(ctx, b.ownerChatID, 0, rc)
+	return true
+}
+
+// allowLoginRedirect admits one redirect per group per cooldown; the map is
+// pruned on every call, so it holds only groups seen within the cooldown.
+func (b *Bot) allowLoginRedirect(chatID int64) bool {
+	now := b.clock()
+	b.loginRedirectMu.Lock()
+	defer b.loginRedirectMu.Unlock()
+	if b.loginRedirectLast == nil {
+		b.loginRedirectLast = make(map[int64]time.Time)
+	}
+	for chat, last := range b.loginRedirectLast {
+		if now.Sub(last) >= groupLoginRedirectCooldown {
+			delete(b.loginRedirectLast, chat)
+		}
+	}
+	if _, recent := b.loginRedirectLast[chatID]; recent {
+		return false
+	}
+	b.loginRedirectLast[chatID] = now
 	return true
 }
 

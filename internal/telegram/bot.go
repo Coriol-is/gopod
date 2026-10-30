@@ -206,6 +206,9 @@ type Bot struct {
 	loginCode func(ctx context.Context, chatID int64, code string)
 	// loginAuthCheck substitutes local auth verification in deterministic tests.
 	loginAuthCheck func(context.Context, *loginSession) bool
+	// loginRedirectLast rate limits the owner /login redirect per group.
+	loginRedirectMu   sync.Mutex
+	loginRedirectLast map[int64]time.Time
 }
 
 // allowedUpdates is the explicit getUpdates allowed_updates list. Before

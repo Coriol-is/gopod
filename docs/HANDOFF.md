@@ -67,8 +67,7 @@ credential adapter + Pi Docker-inspect round trip), changing Telegram privacy/ad
   group sign-in guidance (`telegram/group_login_guidance.go`), per-turn host line `[gopod group: ...]`.
 - Production impact: none to configure. The existing group has no row and keeps `all`; owner sends
   `/trigger mention` (or another mode) in the group to change it. New groups start at `mention`.
-- Open: the owner private confirmation prompt of group `/login` is still shown before the guidance (kept
-  unchanged on purpose); dropping that now pointless step is an owner decision. An album answers only if its
+- The private confirmation prompt of group `/login` was removed by D049 (owner decision 2026-10-30). An album answers only if its
   first message qualifies. Existing workspaces keep their seeded instruction files; the per-turn line carries
   the mode for them.
 

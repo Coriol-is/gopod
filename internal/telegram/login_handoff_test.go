@@ -62,3 +62,29 @@ func TestGroupLoginIgnoresNonOwnerAndUnregisteredGroups(t *testing.T) {
 		t.Fatalf("unexpected sends: %d", n)
 	}
 }
+
+func TestGroupLoginRedirectIsRateLimitedPerGroup(t *testing.T) {
+	b, fake := handoffFixture(t)
+	b.groupReason = func(context.Context, string) string { return "" }
+	if !b.requestLoginHandoff(t.Context(), ownerGroupLogin()) {
+		t.Fatal("first redirect refused")
+	}
+	if b.requestLoginHandoff(t.Context(), ownerGroupLogin()) {
+		t.Fatal("repeat inside the cooldown was not limited")
+	}
+	if n := len(sendsTo(fake, handoffGroup)); n != 1 {
+		t.Fatalf("group got %d lines", n)
+	}
+}
+
+func TestGroupLoginAddressedToAnotherBotIsIgnored(t *testing.T) {
+	b, fake := handoffFixture(t)
+	m := ownerGroupLogin()
+	m.Text = "/login@SomeOtherBot"
+	if b.requestLoginHandoff(t.Context(), m) {
+		t.Fatal("command for another bot handled")
+	}
+	if n := len(fake.callsTo("sendMessage")); n != 0 {
+		t.Fatalf("unexpected sends: %d", n)
+	}
+}
