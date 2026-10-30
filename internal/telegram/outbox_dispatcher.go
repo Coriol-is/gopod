@@ -293,7 +293,7 @@ func (d *OutboxDispatcher) execute(attemptCtx context.Context, c store.OutboxCla
 	req := SendRequest{
 		Kind: c.Part.Kind, ChatID: chatID, Thread: c.Conversation.ThreadID,
 		Text: string(c.Part.Payload), ParseMode: c.Part.ParseMode, ReplyMarkup: c.Part.ReplyMarkup,
-		TargetMessageID: c.Part.TargetMessageID, ArtifactRef: c.Part.ArtifactRef,
+		TargetMessageID: c.Part.TargetMessageID, ArtifactRef: c.Part.ArtifactRef, PartID: c.PartID, AttemptID: c.AttemptID,
 		NamespaceID: c.Conversation.Scope.NamespaceID, NamespaceEpoch: c.Conversation.Scope.NamespaceEpoch,
 	}
 	out := d.attempt(attemptCtx, req)

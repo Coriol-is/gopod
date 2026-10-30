@@ -266,6 +266,8 @@ credential adapter + Pi Docker-inspect round trip), changing Telegram privacy/ad
   uncertain deliveries via a superseding delivery, artifact opener (PR 4).
 
 ## Current state
+Markdown tables in replies render as an aligned `<pre>` block, or row cards when wider than 38 columns (D050, `internal/telegram/table.go`).
+
 Core Telegram assistant, Docker runtime, Claude/Codex native sessions,
 conversation-scoped history, memory, voice, scheduler and filesystem IPC are
 implemented. No other runtime, channel, guest agent or bot-to-bot peer is enabled.
