@@ -195,3 +195,23 @@ func TestReadOutcomeReportsTheFileModificationTime(t *testing.T) {
 		t.Fatalf("Modified = %v, %v", o.Modified, err)
 	}
 }
+
+// Only the six preset ids name a file, so a custom task's own outcome file
+// (custom-<taskId>.last) can never be shown as, or overwrite, a preset's.
+func TestReadOutcomeReadsOnlyPresetIDs(t *testing.T) {
+	chat := t.TempDir()
+	pd := filepath.Join(chat, "proactive")
+	if err := os.MkdirAll(pd, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"custom-gmail.urgent.last", "evil.last"} {
+		if err := os.WriteFile(filepath.Join(pd, name), []byte(`{"result":"sent"}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, id := range []string{"custom-gmail.urgent", "evil", "gmail.urgent.last", "preset-gmail.urgent", ""} {
+		if _, err := ReadOutcome(chat, id); err == nil || errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("%q: err = %v, want a not-a-preset error", id, err)
+		}
+	}
+}

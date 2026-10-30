@@ -59,9 +59,8 @@ credential adapter + Pi Docker-inspect round trip), changing Telegram privacy/ad
 
 ## CP-033 PR 3: templates, outcome display, agent guide (branch `feat/cp033-templates`, 2026-10-30)
 Final prompts of the six presets at `TemplateVersion` 2 (`internal/proactive/catalog.go`: connector-generic wording, three
-fixed paragraphs, silent-when-empty; `cal.reminder` is the poll half only, send-now case, one-shot creation is PR 4). The
-preset screen shows the last outcome from the agent's `<chat dir>/proactive/<id>.last` (`proactive.ReadOutcome`, sanitized,
-untrusted; `ProactiveDeps.ChatDir`). `INTEGRATIONS.md` is seeded into the owner workspace (`chattmpl`), `IntegrationsPolicy`
+fixed paragraphs, silent-when-empty; `cal.reminder` is unavailable until PR 4 adds the one-shot lifecycle: Enable refuses it, the panel says so). The
+preset screen shows the last outcome from the agent's `<chat dir>/proactive/<id>.last` (`proactive.ReadOutcome` through an `os.Root`, no symlinks, non-blocking open; sanitized, labelled untrusted; `ProactiveDeps.ChatDir`). `INTEGRATIONS.md` is seeded into the owner workspace (`chattmpl`), `IntegrationsPolicy`
 is in the system prompt for both providers (conditional on the file existing), plus the pointer skill
 `container/skills/integrations`. Existing preset tasks pick up v2 through `UpgradeTemplates` (untouched tasks only; edited
 ones show "Reset to template"). No provider or connector was run. **Owner-run live checks:** ACCEPTANCE rows P01 to P03

@@ -266,6 +266,9 @@ func TestIntegrationsGuideCoversTheOutline(t *testing.T) {
 		"untrusted data",
 		"/workspace/chat/proactive/",
 		"runs per day",
+		"/workspace/chat/proactive/custom-<taskId>.last",
+		"must not equal or start with `preset-`",
+		"must not be one of the preset ids",
 		"/proactive guide",
 		"/tasks",
 		"never create anything without a yes",
@@ -275,9 +278,9 @@ func TestIntegrationsGuideCoversTheOutline(t *testing.T) {
 			t.Errorf("guide lacks %q", want)
 		}
 	}
-	for _, bad := range []string{"mcp__", "claude_ai", "openai-curated"} {
+	for _, bad := range []string{"mcp__", "claude_ai", "openai-curated", "proactive/<taskId>.last"} {
 		if strings.Contains(guide, bad) {
-			t.Errorf("guide names a provider-specific tool %q", bad)
+			t.Errorf("guide has %q", bad)
 		}
 	}
 }
