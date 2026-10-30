@@ -36,6 +36,9 @@ func (s *Service) UpgradeTemplates(ctx context.Context) ([]UpgradeResult, error)
 			return err
 		}
 		for _, p := range Catalog() {
+			if _, off := p.Unavailable(); off {
+				continue // left exactly as it is until the preset becomes available
+			}
 			row, err := s.loadRow(ctx, p.ID)
 			if err != nil {
 				return err

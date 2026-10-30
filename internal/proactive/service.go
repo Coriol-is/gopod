@@ -21,6 +21,8 @@ var (
 	// ErrUserModified means the task was edited outside gopod (/tasks or IPC);
 	// gopod will not overwrite it except through ResetToTemplate.
 	ErrUserModified = errors.New("proactive: the task was edited outside /proactive")
+	// ErrPresetUnavailable is returned when a preset cannot be switched on yet.
+	ErrPresetUnavailable = errors.New("proactive: preset is not available yet")
 	// ErrNotEnabled is returned when an operation needs an existing preset task.
 	ErrNotEnabled = errors.New("proactive: preset has no task")
 	// ErrTaskConflict means a task already holds the deterministic preset id but

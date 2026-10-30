@@ -100,6 +100,9 @@ func (s *Service) Enable(ctx context.Context, id string) error {
 	if !ok {
 		return ErrUnknownPreset
 	}
+	if reason, off := p.Unavailable(); off {
+		return fmt.Errorf("%w: %s", ErrPresetUnavailable, reason)
+	}
 	return s.inLockedTx(ctx, func(ctx context.Context) error {
 		if on, err := s.GloballyPaused(ctx); err != nil {
 			return err

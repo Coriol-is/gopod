@@ -32,7 +32,13 @@ type Preset struct {
 	polling     bool  // runs on an interval inside the working window
 	pollMinutes int   // poll interval for the lookahead part of cal.reminder
 	body        string
+	// unavailable is non-empty while the preset cannot work as designed; Enable
+	// refuses it and the panel shows the reason.
+	unavailable string
 }
+
+// Unavailable reports whether the preset cannot be switched on yet, and why.
+func (p Preset) Unavailable() (reason string, off bool) { return p.unavailable, p.unavailable != "" }
 
 // Polling reports whether the preset is tied to the working window.
 func (p Preset) Polling() bool { return p.polling }
@@ -154,7 +160,11 @@ var catalog = []Preset{
 		ID: "cal.reminder", Title: "meeting reminders", TemplateVersion: 2,
 		freqs: []string{"30m"}, defaultSet: Settings{Freq: "30m", Lead: 10},
 		leads: []int{10, 15, 30, 60}, polling: true, pollMinutes: 30,
-		body: calAccess + " This is the lookahead poll of the meeting reminder preset. List events that start within the next {{lookahead}} minutes ({{tz}}), skipping all-day events and events I declined. The reminder lead is {{lead}} minutes. Keep the events you have already handled in /workspace/chat/proactive/cal.reminder.state.json as {\"handled\":[{\"event\":\"<id>\",\"start\":\"<RFC3339>\",\"lead\":{{lead}}}]} and drop entries whose start is more than 2 days old. For each event not yet handled: if start minus {{lead}} minutes has already passed and the event has not started, send one reminder now (title, start time in {{tz}}, place or link, one line) and record the event as handled. If that moment is still in the future, do nothing for it yet and do not record it: scheduling timed reminders is added in a later version of this template, and until then only the send-now case is handled. If no event needs a reminder, write result empty and send nothing.",
+		// A 30-minute poll that only sends when the lead has already passed misses
+		// many meetings (section 7.2), so the preset stays off until PR 4 adds the
+		// one-shot lifecycle. The template and tests stay for PR 4 to replace.
+		unavailable: "timed reminders arrive in a later update",
+		body:        calAccess + " This is the lookahead poll of the meeting reminder preset. List events that start within the next {{lookahead}} minutes ({{tz}}), skipping all-day events and events I declined. The reminder lead is {{lead}} minutes. Keep the events you have already handled in /workspace/chat/proactive/cal.reminder.state.json as {\"handled\":[{\"event\":\"<id>\",\"start\":\"<RFC3339>\",\"lead\":{{lead}}}]} and drop entries whose start is more than 2 days old. For each event not yet handled: if start minus {{lead}} minutes has already passed and the event has not started, send one reminder now (title, start time in {{tz}}, place or link, one line) and record the event as handled. If that moment is still in the future, do nothing for it yet and do not record it: scheduling timed reminders is added in a later version of this template, and until then only the send-now case is handled. If no event needs a reminder, write result empty and send nothing.",
 	},
 	{
 		ID: "cal.weekly", Title: "week ahead", TemplateVersion: 2,

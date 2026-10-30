@@ -159,6 +159,8 @@ func proactiveFailure(err error) (string, bool) {
 		return "All presets are paused (/proactive off). Send /proactive on first.", true
 	case errors.Is(err, proactive.ErrTaskConflict):
 		return "A task of another chat already holds this preset's id; it was left alone.", true
+	case errors.Is(err, proactive.ErrPresetUnavailable):
+		return "This preset is not available yet: timed reminders arrive in a later update.", true
 	case errors.Is(err, proactive.ErrNotEnabled):
 		return "The preset is off. Turn it on first.", true
 	}

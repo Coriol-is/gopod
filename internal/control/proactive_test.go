@@ -378,14 +378,11 @@ func TestProactiveTimePickerHidesQuietHoursAndSetsTheTime(t *testing.T) {
 }
 
 func TestProactiveLeadForReminderOnly(t *testing.T) {
+	// cal.reminder is unavailable until PR 4, so its lead logic is covered in
+	// internal/proactive; here a lead on an available preset is refused.
 	fx := newProactiveFx(t)
-	fx.enable("calendar", "reminder", "on")
-	resp := fx.press(fx.run("calendar", "reminder"), "30")
-	if !strings.Contains(fx.task("cal.reminder").Prompt, "30 minutes") || !strings.Contains(resp.Text, "30") {
-		t.Fatalf("lead not applied: %s", fx.task("cal.reminder").Prompt)
-	}
-	if fx.run("calendar", "reminder", "lead", "20").Code != 1 {
-		t.Fatal("lead 20 is not offered")
+	if resp := fx.run("calendar", "weekly", "lead", "30"); resp.Code != 1 || !strings.Contains(resp.Text, "has no reminder lead") {
+		t.Fatalf("lead on a preset without leads: %+v", resp)
 	}
 }
 
@@ -597,7 +594,6 @@ func TestProactiveNotYetBuiltSubcommandsSayTheyAreNotAvailable(t *testing.T) {
 
 func TestProactiveNoButtonArgContainsAColonAndEveryButtonRuns(t *testing.T) {
 	fx := newProactiveFx(t)
-	fx.enable("calendar", "reminder", "on")
 	screens := []Response{fx.run(), fx.run("gmail"), fx.run("calendar"), fx.run("gmail", "urgent"), fx.run("gmail", "morning"),
 		fx.run("calendar", "reminder"), fx.run("gmail", "morning", "time"), fx.run("tz"), fx.run("hours"), fx.run("quiet")}
 	for _, s := range screens {
@@ -627,10 +623,6 @@ func TestProactiveLeadOnAPresetWithoutLeadsIsRejectedClearly(t *testing.T) {
 		if resp.Code != 1 || !strings.Contains(resp.Text, "has no reminder lead") || strings.Contains(resp.Text, "[]") {
 			t.Errorf("lead %s: %+v", v, resp)
 		}
-	}
-	bad := fx.run("calendar", "reminder", "lead", "20")
-	if !strings.Contains(bad.Text, "10, 15, 30, 60") || strings.Contains(bad.Text, "[") {
-		t.Fatalf("allowed leads must be listed plainly: %s", bad.Text)
 	}
 }
 

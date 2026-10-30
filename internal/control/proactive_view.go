@@ -133,7 +133,11 @@ func (h proactiveHandler) connectorScreen(ctx context.Context, svc *proactive.Se
 		if st.Preset.Connector() != key {
 			continue
 		}
-		fmt.Fprintf(&sb, "• %s — %s — %s, %s\n", st.Preset.Title, stateText(st), scheduleText(st.Preset, st.Settings, env), runsText(st.Preset, st.Settings, env))
+		if reason, off := st.Preset.Unavailable(); off {
+			fmt.Fprintf(&sb, "• %s — not available yet (%s)\n", st.Preset.Title, reason)
+		} else {
+			fmt.Fprintf(&sb, "• %s — %s — %s, %s\n", st.Preset.Title, stateText(st), scheduleText(st.Preset, st.Settings, env), runsText(st.Preset, st.Settings, env))
+		}
 		tok := presetToken(st.Preset)
 		row = append(row, Button{Label: strings.ToUpper(tok[:1]) + tok[1:], Command: "proactive", Args: []string{connectorWord(key), tok}})
 	}
@@ -170,6 +174,10 @@ func (h proactiveHandler) presetScreen(ctx context.Context, svc *proactive.Servi
 	tok, word := presetToken(p), connectorWord(p.Connector())
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "**%s · %s**\n", connectorTitle(p.Connector()), p.Title)
+	if reason, off := p.Unavailable(); off && st.State == proactive.StateOff {
+		fmt.Fprintf(&sb, "Not available yet: %s.\n", reason)
+		return withNotice(Response{Text: sb.String(), Buttons: [][]Button{{{Label: "‹ Back", Command: "proactive", Args: []string{word}}}}}, notice, code), nil
+	}
 	fmt.Fprintf(&sb, "State: %s\n", stateText(st))
 	fmt.Fprintf(&sb, "Schedule: %s\n%s\n", scheduleText(p, st.Settings, env), runsText(p, st.Settings, env))
 	if p.ID == "cal.reminder" {
