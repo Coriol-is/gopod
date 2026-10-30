@@ -255,7 +255,10 @@ func (s *Store) applySchema(ctx context.Context) error {
 	if err := s.applyGroupTriggerSchema(ctx); err != nil {
 		return err
 	}
-	return s.applyTaskSchema(ctx)
+	if err := s.applyTaskSchema(ctx); err != nil {
+		return err
+	}
+	return s.applyProactiveSchema(ctx)
 }
 
 func isDuplicateColumn(err error) bool {

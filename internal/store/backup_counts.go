@@ -27,6 +27,9 @@ var rowCountSQL = map[string]string{
 	"task_occurrences":   "SELECT count(*) FROM task_occurrences",
 	"task_verifications": "SELECT count(*) FROM task_verifications",
 	"ipc_task_requests":  "SELECT count(*) FROM ipc_task_requests",
+	// proactive presets (CP-033)
+	"proactive_presets":  "SELECT count(*) FROM proactive_presets",
+	"proactive_settings": "SELECT count(*) FROM proactive_settings",
 	// memory
 	"memories": "SELECT count(*) FROM memories",
 	// delivery and outbox
