@@ -1,6 +1,6 @@
 # Built-in recurring presets for Gmail and Google Calendar (`/proactive`)
 
-Date: 2026-10-30. CP-033. Status: **design, owner decisions of 2026-10-30 applied (section 16)**; no code, flag or runtime change.
+Date: 2026-10-30. CP-033. Status: **design, owner decisions of 2026-10-30 applied (section 16); PR 1 (core + store) implemented, see section 18**; no flag or runtime change, nothing calls the package from production wiring yet.
 Source baseline: `origin/main` at `f3095fe`. Proposal: [CP-033](../../proposals/CP-033-proactive-controls.md).
 Related: [mechanisms note](../../research/2026-10-30-skills-and-plugins-mechanisms.md),
 [autonomy note](../../research/2026-10-30-codex-agent-autonomy-prioritization.md),
@@ -67,7 +67,7 @@ Non-goals
   comment), and shares the provider session with foreground chat; scheduled jobs "use main's
   session" ([HANDOFF](../../HANDOFF.md)). The queue orders per folder and never coalesces a task
   with a user message (`internal/queue/queue.go:550-556`); I found no preemption of a running task by
-  a user message, **TO VERIFY** in the PR 1 tests.
+  a user message; **verified in PR 1** by `internal/queue/task_order_test.go` (section 18).
 - **Store.** `scheduled_tasks` columns are `id, chat_folder, chat_jid, prompt, schedule_type,
   schedule_value, next_run, last_run, status, created_at` plus the additive CP-004 columns
   (`internal/store/tasks.go:14-25`, `schema_tasks.go:23-48`). Legacy rows must keep the legacy shape
@@ -719,3 +719,39 @@ offer is replied to (PR 6 verifies), and the exact claude.ai and ChatGPT setup p
    turn, disappearance handling.
 7. **Docs and acceptance.** ADR (next free D number), HANDOFF and ROADMAP rows, ACCEPTANCE rows for the
    live checks, CP-033 moves to `in-progress` at PR 1 and `done` after PR 7 and owner acceptance.
+
+## 18. Implementation notes (PR 1, `internal/proactive` core + store)
+
+Where the code and this spec differ, the code wins. Differences found while implementing PR 1:
+
+- **Backup registry.** Section 4 says nothing needs a new backup target. The snapshot covers the whole file, but
+  `internal/store/backup_counts.go` (`rowCountSQL`) lists every table and a parity test fails for an unlisted one;
+  the two new tables are added there.
+- **Tables.** PR 1 creates only `proactive_presets` and `proactive_settings`. `integration_state` and
+  `integration_offers` (section 4) are created by PR 5 and PR 6, which are their first users. Settings keys in use:
+  `tz`, `window` (`09-19`), `quiet` (`2200-0800`), `global_off` (JSON id list; the key's presence is the pause flag).
+  `baseline` and `enabled` come with the probe and offer PRs.
+- **Done row blocks the deterministic id.** Section 6.5 says "enabling again creates a fresh task" after an IPC
+  `cancel` and treats a primary-key conflict as success. An IPC `cancel` leaves a `done` row under
+  `preset-<id>`, so a plain create would fail on the primary key. `Enable` deletes the finished row first
+  (`DeleteTask`) and creates a fresh one; `/tasks cancel` already removed the row.
+- **`user_modified` is derived, not stored.** It is `sha256(prompt, 0x00, schedule_value) != applied_hash`
+  (the 0x00 separator replaces `|` so two fields cannot slide into each other). `Status.Modified` and
+  `Status.TemplateOutdated` are computed on read.
+- **Edited tasks.** `Configure` on an owner-edited task returns `ErrUserModified` (the spec only said a gopod write
+  recomputes the hash); `ResetToTemplate` is the way back. `Enable` of an edited paused task reactivates it with the
+  owner's definition untouched. `SetTimezone` on an edited task leaves its prompt and cron fields and swaps only the
+  `CRON_TZ` prefix, and lists it in `Report.Kept`; window and quiet changes do not touch it.
+- **Global pause.** `Enable` during the pause returns `ErrGloballyPaused` (spec silent). `Disable` during the pause
+  removes the preset from the restore set, so `ResumeAll` never undoes an explicit off.
+- **Quiet hours.** A polling hour is dropped when any minute of it is quiet (`22:00-09:30` removes hour 09).
+  A preset paused by quiet hours stores `reason` in its settings JSON and does not resume by itself when quiet hours
+  are cleared; the owner enables it again. Quiet and window are whole-hour for polling; fixed times use minutes.
+- **`cal.reminder`.** PR 1 renders only the poll task (cron `*/30` in the window, lead and lookahead written into the
+  prompt) and ships the id, prefix and marker helpers. Deleting pending one-shots on disable, global pause or lead
+  change, the state file, and the sweep are PR 4; until then `Disable` and `PauseAll` touch only the poll task.
+- **Prompt text.** The six bodies and the three fixed paragraphs are in the catalog at `TemplateVersion` 1 so the hash
+  and upgrade logic have real input; PR 3 owns the final wording (including the `cal.reminder` poll and one-shot text)
+  and bumps the version, which exercises the upgrade path.
+- **Queue order verified.** A user message enqueued while a task runs in the same folder waits for the task, is
+  never batched with a task, and does not cancel the task's context (`task_order_test.go`).

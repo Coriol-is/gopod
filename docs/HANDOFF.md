@@ -57,6 +57,15 @@ of the task/IPC path.
 `GOPOD_OUTBOX_ARTIFACTS` or `GOPOD_MANAGED_TASKS` (both have unmet gates: restore drill + capability issuer; task
 credential adapter + Pi Docker-inspect round trip), changing Telegram privacy/admin rights.
 
+## CP-033 PR 1: proactive core + store (branch `feat/cp033-core`, PR open, 2026-10-30)
+`internal/proactive` (catalog of six presets, cron renderer with working window, quiet hours and `CRON_TZ`, enable /
+disable / configure / global pause, applied-hash edit detection, template upgrade, one-shot id helpers) and the side
+tables `proactive_presets` / `proactive_settings` in `internal/store` (+ `InTaskTx`). Nothing calls it from production
+wiring: no command, no flag, behaviour unchanged. Differences from the spec are in its section 18. Next is PR 2
+(`/proactive` command and timezone picker): it needs `Service.List/Status/Enable/Disable/Configure/SetTimezone/
+SetWindow/SetQuiet/PauseAll/ResumeAll/ResetToTemplate/UpgradeTemplates` and the `ErrInsideQuiet`, `ErrNoRunHours`,
+`ErrUserModified`, `ErrGloballyPaused` sentinels; the connector-ready gate is the caller's.
+
 ## Latest design request (2026-10-29)
 - CP-032 [reaction-reading specification](superpowers/specs/2026-10-29-telegram-reaction-reading.md): group emoji/custom-ID events, durable admission, exact message/topic mapping and no-admin/unavailable diagnostics. Private native reactions are transport-blocked; no account-reader workaround is authorized. Design only; no source or runtime flags changed.
 - Task-role credential adapter [design spec](superpowers/specs/2026-10-29-task-role-credential-adapter.md): why `GOPOD_MANAGED_TASKS=1` denies every task, options A-D, recommendation (access-token-only task auth copy), live gates and 5 owner questions. Design only; no source or flags changed.
