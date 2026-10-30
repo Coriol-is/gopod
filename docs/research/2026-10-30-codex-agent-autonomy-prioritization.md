@@ -133,7 +133,7 @@ needs first. Rank is my recommendation, not an approval.
 | 2 | CP-022 model-free reminders and schedule policy | H (zero quota, reliable) | M | L | CP-004 admission truth | Take. Cheapest autonomy win. |
 | 3 | CP-006 quiet hours and idle-only maintenance | H (prerequisite for anything proactive) | S-M | L | CP-002 outbox (merged) | Take before any proactive turn. |
 | 4 | A1, A2, A4 (analysis only) | M | S | L | none | Do now; they decide item 5. |
-| 5 | **New candidate: proactive digest framework** ([CP-033](../proposals/CP-033-proactive-controls.md), controls only) | M-H | M | M | items 1-3, A2-A5 | Take as proposal-only digests, see below. Mail/calendar via connectors in the private chat is allowed. |
+| 5 | **New candidate: proactive digest framework** ([CP-033](../proposals/CP-033-proactive-controls.md), controls over provider connectors and proactive actions only) | M-H | M | M | items 1-3, A2-A5 | Take as proposal-only digests, see below. Mail/calendar via connectors in the private chat is allowed. |
 | 6 | CP-021 task outcomes and checkpoints | M | M | L | CP-004 | Take after item 1. |
 | 7 | CP-007 timer and restore drill | M | M | L | owner approval for Pi work | Continue as planned. |
 | 8 | CP-023 research dossiers | M | L | M | CP-004, CP-003 | Later. |
@@ -153,8 +153,8 @@ needs first. Rank is my recommendation, not an approval.
   explicit reminders bypass quiet hours, digests do not.
 - Read-only role, owner chat only, never a group; one stated cost cap and an automatic skip when
   quota is low (the 20/10/5 percent rules).
-- The first target is the existing freefeed digest moved onto the same framework, so no new
-  data source is needed to prove it.
+- The existing freefeed digest is not moved (owner decision 2026-10-30). CP-033 is limited to
+  controlling provider connectors and the proactive actions that use them.
 - Mail and calendar are the second step through connectors in the private chat. They must be
   read-only for proactive turns. CP-027 does **not** cover this: it governs only brokered
   actions whose credentials the host holds (spec: "Full-access personal shells/native
@@ -195,7 +195,7 @@ needs first. Rank is my recommendation, not an approval.
 1. Do you want proactive messages at all (A2), and which categories: tasks/repos, calendar,
    mail, project status? (Mail and calendar through connectors are allowed in the private
    chat; which connectors are actually enabled on your account?)
-2. Is the freefeed digest the right first workload to move onto a digest framework?
+2. (Answered 2026-10-30: the freefeed digest stays as is; CP-033 covers connector and proactive-action controls only.)
 3. May A1 read the production store and logs (counts only, via the existing read-only
    diagnostics), or should it use only repo evidence?
 4. CP-033 now exists as `proposed` and covers only the owner controls; the digest/reflection behaviors stay uncreated until A2 gives a yes.
