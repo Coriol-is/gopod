@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-10-30 (CP-033 PR 2 added)
+**Last updated:** 2026-10-30 (CP-033 PR 3 added)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -56,6 +56,16 @@ of the task/IPC path.
 **Not authorized without the owner:** account logins/refresh, paid fallbacks, T9 reboot, schedule changes, enabling
 `GOPOD_OUTBOX_ARTIFACTS` or `GOPOD_MANAGED_TASKS` (both have unmet gates: restore drill + capability issuer; task
 credential adapter + Pi Docker-inspect round trip), changing Telegram privacy/admin rights.
+
+## CP-033 PR 3: templates, outcome display, agent guide (branch `feat/cp033-templates`, 2026-10-30)
+Final prompts of the six presets at `TemplateVersion` 3 (`internal/proactive/catalog.go`: connector-generic wording, three
+fixed paragraphs, silent-when-empty; `cal.reminder` is unavailable until PR 4 adds the one-shot lifecycle: Enable refuses it, the panel says so). The
+preset screen shows the last outcome from the agent's `<chat dir>/proactive/<id>.last` (`proactive.ReadOutcome` through an `os.Root`, no symlinks, non-blocking open; sanitized, labelled untrusted; `ProactiveDeps.ChatDir`). `INTEGRATIONS.md` is seeded into the owner workspace (`chattmpl`), `IntegrationsPolicy`
+is in the system prompt of owner turns for both providers (conditional on the file existing; not in groups or task runs), plus the pointer skill
+`container/skills/integrations`. Existing preset tasks pick up v3 through `UpgradeTemplates` (untouched tasks only; edited
+ones show "Reset to template"). No provider or connector was run. **Owner-run live checks:** ACCEPTANCE rows P01 to P03
+(templates per provider, the guide, a scheduled run creating a `once` task through IPC). Spec section 20 lists the
+differences and what PR 4 needs. Next: PR 4 (`cal.reminder` one-shot lifecycle).
 
 ## CP-003 PR C: runner-side capability issuer (branch `feat/cp003-capability-issuer`, 2026-10-30)
 `ipc.RunIssuer` issues a per-exec `GOPOD_ARTIFACT_CAP` capability (runner `ArtifactIssuer`, `Runner.SetArtifactIssuer`,

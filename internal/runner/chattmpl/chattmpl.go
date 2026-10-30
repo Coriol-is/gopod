@@ -1,5 +1,6 @@
 // Package chattmpl seeds new gopod chat workspaces with default
-// CLAUDE.md, AGENTS.md (same content, for Codex), SCHEDULING.md and MEMORY.md files
+// CLAUDE.md, AGENTS.md (same content, for Codex), SCHEDULING.md, INTEGRATIONS.md
+// (owner only) and MEMORY.md files
 // so the agent wakes up with identity,
 // a workspace map, and memory format hints instead of an empty
 // directory.
@@ -34,6 +35,9 @@ var claudeTmplSrc string
 //go:embed SCHEDULING.md.tmpl
 var schedulingTmplSrc string
 
+//go:embed INTEGRATIONS.md.tmpl
+var integrationsTmplSrc string
+
 //go:embed MEMORY.md.tmpl
 var memoryTmplSrc string
 
@@ -53,7 +57,8 @@ type Vars struct {
 	Date string
 }
 
-// Seed writes CLAUDE.md, AGENTS.md, SCHEDULING.md and memory/MEMORY.md if they do
+// Seed writes CLAUDE.md, AGENTS.md, SCHEDULING.md, INTEGRATIONS.md (owner only)
+// and memory/MEMORY.md if they do
 // not already exist. Idempotent. Returns the list of files actually
 // created (empty when both already existed).
 //
@@ -91,6 +96,17 @@ func Seed(chatDir, memoryDir string, vars Vars) ([]string, error) {
 		return created, err
 	} else if wrote {
 		created = append(created, schedulingPath)
+	}
+
+	// The integrations guide (CP-033) is for the owner workspace only: the
+	// connectors belong to the owner's account, never to a group.
+	if vars.IsOwner {
+		integrationsPath := filepath.Join(chatDir, "INTEGRATIONS.md")
+		if wrote, err := writeIfMissing(integrationsPath, integrationsTmplSrc, vars); err != nil {
+			return created, err
+		} else if wrote {
+			created = append(created, integrationsPath)
+		}
 	}
 
 	memoryPath := filepath.Join(memoryDir, "MEMORY.md")

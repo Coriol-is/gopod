@@ -288,6 +288,7 @@ func TestConfigureRewritesScheduleAndRehashes(t *testing.T) {
 }
 
 func TestCalReminderLeadIsWrittenIntoThePollPrompt(t *testing.T) {
+	makeAvailable(t, "cal.reminder")
 	f := newFixture(t)
 	f.enable("cal.reminder")
 	if !strings.Contains(f.task("cal.reminder").Prompt, "10 minutes") {

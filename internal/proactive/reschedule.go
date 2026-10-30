@@ -95,6 +95,9 @@ func (s *Service) rerender(ctx context.Context, tzChanged bool) (Report, error) 
 		if ts != taskLive {
 			continue
 		}
+		if _, off := p.Unavailable(); off {
+			continue // not rendered under a new zone, window or quiet hours
+		}
 		set, err := decodeSettings(row, p)
 		if err != nil {
 			return rep, err

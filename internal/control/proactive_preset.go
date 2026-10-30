@@ -21,6 +21,9 @@ func (h proactiveHandler) preset(ctx context.Context, svc *proactive.Service, cm
 		return screen("", 0)
 	}
 	verb, vals := rest[0], rest[1:]
+	if reason, off := p.Unavailable(); off && verb != "off" {
+		return screen("This preset is not available yet: "+reason+".", 1)
+	}
 	if (verb == "on" || verb == "off" || verb == "reset") && len(vals) != 0 {
 		return screen(proactiveUsage, 1)
 	}
