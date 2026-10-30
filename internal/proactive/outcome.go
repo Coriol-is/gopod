@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"strings"
-	"syscall"
 	"time"
 	"unicode"
 )
@@ -89,17 +88,30 @@ func sanitizeNote(s string) string {
 
 // ReadOutcome reads the outcome file of a catalog preset from the host side of
 // the chat workspace (chatDir is the folder mounted at /workspace/chat). The
-// folder is writable by the agent, which may have read hostile mail, so:
+// folder is writable by an agent that may have read hostile mail. What is
+// enforced:
 //
-//   - the lookup runs inside an os.Root, which refuses any path component (the
-//     proactive directory included) that is a symlink leaving chatDir;
-//   - symlinks are refused outright, even inside the workspace;
-//   - the file is opened non-blocking and its type is checked on the opened
-//     descriptor, so a FIFO or device swapped in after the check cannot hang
-//     the caller or leak data.
+//   - the lookup runs in an os.Root over chatDir, so no path component can
+//     leave it;
+//   - "proactive" and the file are checked with Lstat: symlinks are refused
+//     even when they stay inside the workspace;
+//   - the open uses O_NOFOLLOW, O_NOCTTY and O_NONBLOCK (as far as the
+//     platform has them), so a symlink or FIFO swapped in after the check is
+//     not followed and cannot block;
+//   - the opened descriptor is then checked: it must be a regular file, the
+//     same file the path names now (os.SameFile against a fresh Lstat), and
+//     have a single hard link. os.Root alone does not stop opening a device
+//     node or following a symlink inside the root, hence these checks;
+//   - the read is capped at 4 KiB.
 //
 // A missing file returns an error wrapping fs.ErrNotExist.
 func ReadOutcome(chatDir, presetID string) (Outcome, error) {
+	return readOutcome(chatDir, presetID, nil)
+}
+
+// readOutcome is ReadOutcome with a hook that runs between the type check and
+// the open, so tests can swap the file there; production passes nil.
+func readOutcome(chatDir, presetID string, beforeOpen func()) (Outcome, error) {
 	if _, ok := Lookup(presetID); !ok {
 		return Outcome{}, fmt.Errorf("outcome: %q is not a preset", presetID)
 	}
@@ -123,10 +135,10 @@ func ReadOutcome(chatDir, presetID string) (Outcome, error) {
 	if !info.Mode().IsRegular() {
 		return Outcome{}, fmt.Errorf("outcome: %s is not a regular file", presetID)
 	}
-	if beforeOpenHook != nil {
-		beforeOpenHook()
+	if beforeOpen != nil {
+		beforeOpen()
 	}
-	f, err := root.OpenFile(name, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	f, err := root.OpenFile(name, openFlags, 0)
 	if err != nil {
 		return Outcome{}, fmt.Errorf("outcome: %w", err)
 	}
@@ -137,6 +149,12 @@ func ReadOutcome(chatDir, presetID string) (Outcome, error) {
 	}
 	if !fi.Mode().IsRegular() {
 		return Outcome{}, fmt.Errorf("outcome: %s is not a regular file", presetID)
+	}
+	if lst, lerr := root.Lstat(name); lerr != nil || !lst.Mode().IsRegular() || !os.SameFile(fi, lst) {
+		return Outcome{}, fmt.Errorf("outcome: %s changed while it was being opened", presetID)
+	}
+	if hasExtraLinks(fi) {
+		return Outcome{}, fmt.Errorf("outcome: %s is a hard link", presetID)
 	}
 	data, err := io.ReadAll(io.LimitReader(f, outcomeMaxBytes+1))
 	if err != nil {
@@ -149,6 +167,3 @@ func ReadOutcome(chatDir, presetID string) (Outcome, error) {
 	o.Modified = fi.ModTime()
 	return o, nil
 }
-
-// beforeOpenHook runs between the type check and the open; tests swap the file there.
-var beforeOpenHook func()
