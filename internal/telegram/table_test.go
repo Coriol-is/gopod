@@ -2,6 +2,8 @@ package telegram
 
 import (
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -29,7 +31,7 @@ func TestTableAlignmentAndCells(t *testing.T) {
 		{"pipe in code", "|a|b|\n|-|-|\n|`x|y`|z|", "<pre>a   | b\n----+--\nx|y | z</pre>"},
 		{"inline markup stripped", "|**a**|b|\n|-|-|\n|[l](http://x.y)|*i* ~~s~~|", "<pre>a | b\n--+----\nl | i s</pre>"},
 		{"escaped html", "|a|b|\n|-|-|\n|<x>|&|", "<pre>a   | b\n----+--\n&lt;x&gt; | &amp;</pre>"},
-		{"ragged padded and cut", "|a|b|\n|-|-|\n|1|\n|1|2|3|", "<pre>a | b\n--+--\n1 |\n1 | 2</pre>"},
+		{"ragged padded", "|a|b|\n|-|-|\n|1|\n|1|2|", "<pre>a | b\n--+--\n1 |\n1 | 2</pre>"},
 		{"no outer pipes", "a | b\n- | -\n1 | 2", "<pre>a | b\n--+--\n1 | 2</pre>"},
 		{"cjk width 2", "|名|b|\n|-|-|\n|ab|c|", "<pre>名 | b\n---+--\nab | c</pre>"},
 		{"emoji width 2", "|a|b|\n|-|-|\n|✅|c|", "<pre>a  | b\n---+--\n✅ | c</pre>"},
@@ -49,10 +51,75 @@ func TestNotATable(t *testing.T) {
 		"no separator":        "| a | b |\n| c | d |",
 		"separator mismatch":  "| a | b |\n|---|\n| c | d |",
 		"bad separator":       "| a | b |\n| x | y |\n| c | d |",
+		"pipe then rule":      "Done |\n---",
+		"escapes still apply": "a < b | c & d",
 	} {
-		if got := markdownToTelegramHTML(md); strings.Contains(got, "<pre>") {
-			t.Errorf("%s became a table: %q", name, got)
+		want := strings.NewReplacer("&", "&amp;", "<", "&lt;").Replace(md)
+		if got := markdownToTelegramHTML(md); got != want {
+			t.Errorf("%s:\ngot  %q\nwant %q", name, got, want)
 		}
+	}
+}
+
+func TestTableMoreCases(t *testing.T) {
+	long := strings.Repeat("x", 40)
+	tests := []struct{ name, md, want string }{
+		{"escaped pipe in code span", "|a|b|\n|-|-|\n|`x\\|y`|z|", "<pre>a   | b\n----+--\nx|y | z</pre>"},
+		{"code contents verbatim", "|a|b|\n|-|-|\n|`a*b*c`|`__init__.py`|",
+			"<pre>a     | b\n------+------------\na*b*c | __init__.py</pre>"},
+		{"overflow row ends the table", "|a|\n|-|\n|x|\nNote: a | b", "<pre>a\n-\nx</pre>\nNote: a | b"},
+		{"overflow row is not swallowed", "|a|\n|-|\n|x|y|", "<pre>a\n-</pre>\n|x|y|"},
+		{"escaped header in pre", "|<a>|&b|\n|-|-|\n|1|2|", "<pre>&lt;a&gt; | &amp;b\n----+---\n1   | 2</pre>"},
+		{"escaped header in cards", "|<h>|&" + long + "|\n|-|-|\n|v|w|", "<b>&lt;h&gt;</b>: v\n<b>&amp;" + long + "</b>: w"},
+		{"after a paragraph", "Intro line\n| a | b |\n|---|---|\n| 1 | 2 |", "Intro line\n<pre>a | b\n--+--\n1 | 2</pre>"},
+	}
+	for _, tc := range tests {
+		if got := markdownToTelegramHTML(tc.md); got != tc.want {
+			t.Errorf("%s:\ngot  %q\nwant %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestTableCardsEmptyHeader(t *testing.T) {
+	got := renderTable([]string{"", strings.Repeat("x", 40)}, []tableAlign{alignLeft, alignLeft}, [][]string{{"v", "w"}})
+	if want := "v\n<b>" + strings.Repeat("x", 40) + "</b>: w"; got != want {
+		t.Errorf("got %q want %q", got, want)
+	}
+}
+
+func TestDisplayWidth(t *testing.T) {
+	for name, tc := range map[string]struct {
+		s    string
+		want int
+	}{
+		"latin":         {"abc", 3},
+		"cyrillic":      {"Что", 3},
+		"cjk":           {"名前", 4},
+		"check mark":    {"\u2705", 2},
+		"green circle":  {"\U0001F7E2", 2},
+		"alarm clock":   {"\u23F0", 2},
+		"hourglass":     {"\u23F3", 2},
+		"squared CL":    {"\U0001F191", 2},
+		"skin tone":     {"\U0001F44D\U0001F3FD", 2},
+		"zwj family":    {"\U0001F468\u200D\U0001F469\u200D\U0001F467", 2},
+		"heart vs16":    {"\u2764\uFE0F", 2},
+		"heart text":    {"\u2764", 1},
+		"combining":     {"e\u0301", 1},
+		"emoji in text": {"a\U0001F44Db", 4},
+	} {
+		if got := displayWidth(tc.s); got != tc.want {
+			t.Errorf("%s: width %d want %d", name, got, tc.want)
+		}
+	}
+}
+
+func TestTableThroughPrepareIPCText(t *testing.T) {
+	parts, err := PrepareIPCText("| a | b |\n|---|---|\n| 1 | 2 |", "markdown")
+	if err != nil || len(parts) != 1 {
+		t.Fatalf("parts %d err %v", len(parts), err)
+	}
+	if got, want := string(parts[0].Payload), "<pre>a | b\n--+--\n1 | 2</pre>"; got != want {
+		t.Errorf("got %q want %q", got, want)
 	}
 }
 
@@ -65,26 +132,19 @@ func TestTableInsideFenceUntouched(t *testing.T) {
 }
 
 func TestTableWidthFallbackChoice(t *testing.T) {
-	tests := []struct {
-		name  string
-		w     int // width of the first column; the second is 1 wide, joined by " | "
-		rows  int
+	// The first column is w wide, the second 1, joined by " | ": total w+4.
+	for _, tc := range []struct {
+		total int
 		cards bool
-	}{
-		{"exactly at the limit", tableMaxWidth - 4, 1, false},
-		{"one over the limit", tableMaxWidth - 3, 1, true},
-		{"over the limit without rows stays pre", tableMaxWidth - 3, 0, false},
-	}
-	for _, tc := range tests {
-		header := []string{strings.Repeat("x", tc.w), "b"}
-		var rows [][]string
-		for i := 0; i < tc.rows; i++ {
-			rows = append(rows, []string{"v", "w"})
-		}
-		got := renderTable(header, []tableAlign{alignLeft, alignLeft}, rows)
+	}{{37, false}, {38, false}, {39, true}, {60, true}} {
+		md := "|" + strings.Repeat("x", tc.total-4) + "|b|\n|-|-|\n|v|w|"
+		got := markdownToTelegramHTML(md)
 		if isCards := !strings.Contains(got, "<pre>"); isCards != tc.cards {
-			t.Errorf("%s: cards=%v want %v: %q", tc.name, isCards, tc.cards, got)
+			t.Errorf("width %d: cards=%v want %v: %q", tc.total, isCards, tc.cards, got)
 		}
+	}
+	if got := markdownToTelegramHTML("|" + strings.Repeat("x", 56) + "|b|\n|-|-|"); !strings.HasPrefix(got, "<pre>") {
+		t.Errorf("wide header-only table should stay <pre>: %q", got)
 	}
 }
 
@@ -110,15 +170,32 @@ func TestLongTableChunksStayValid(t *testing.T) {
 		t.Fatalf("want several chunks, got %d", len(chunks))
 	}
 	checkChunks(t, rendered, chunks, 4000)
+	rowRe := regexp.MustCompile(`^Платёж (\d+) +\| +(\d+),50$`)
+	next := 0
 	for i, c := range chunks {
 		if !strings.HasPrefix(c, "<pre>") || !strings.HasSuffix(c, "</pre>") {
-			t.Errorf("chunk %d not wrapped in <pre>: %.40q ... %.40q", i, c, c[max(0, len(c)-40):])
+			t.Errorf("chunk %d not wrapped in <pre>", i)
 		}
-		for _, line := range strings.Split(strings.TrimSuffix(strings.TrimPrefix(c, "<pre>"), "</pre>"), "\n") {
-			if i > 0 && strings.Count(line, "|") != 1 && line != "" {
-				t.Errorf("chunk %d has a cut row: %q", i, line)
+		lines := strings.Split(strings.TrimSuffix(strings.TrimPrefix(c, "<pre>"), "</pre>"), "\n")
+		if i == 0 {
+			lines = lines[2:] // header and rule
+		}
+		for _, line := range lines {
+			if line == "" { // a cut after a newline leaves one before </pre>
+				continue
 			}
+			m := rowRe.FindStringSubmatch(line)
+			if m == nil {
+				t.Fatalf("chunk %d has a malformed or cut row: %q", i, line)
+			}
+			if m[1] != strconv.Itoa(next) || m[2] != strconv.Itoa(next*7) {
+				t.Fatalf("row out of order or altered: %q, want index %d", line, next)
+			}
+			next++
 		}
+	}
+	if next != 400 {
+		t.Errorf("got %d rows across chunks, want 400", next)
 	}
 	// Command paging: pages hold whole lines and every page renders.
 	for i, p := range splitPages(md, pageFits) {

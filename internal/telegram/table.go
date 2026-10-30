@@ -24,15 +24,15 @@ var tableSepCellRe = regexp.MustCompile(`^:?-+:?$`)
 
 // parseTable reads a GFM table starting at lines[start]: a header line
 // with a pipe, a separator line with as many dash cells, then zero or more
-// pipe rows. It returns the header, alignments, data rows (each padded or
-// cut to the header width) and the index of the last line consumed.
+// pipe rows. It returns the header, alignments, data rows (each padded to the
+// header width; a line with more cells ends the table) and the index of the last line consumed.
 func parseTable(lines []string, start int) (header []string, aligns []tableAlign, rows [][]string, end int, ok bool) {
 	if start+1 >= len(lines) || !strings.Contains(lines[start], "|") || isFence(lines[start]) {
 		return nil, nil, nil, 0, false
 	}
 	header = splitTableRow(lines[start])
 	sep := splitTableRow(lines[start+1])
-	if len(header) == 0 || len(sep) != len(header) {
+	if !strings.Contains(lines[start+1], "|") || len(header) == 0 || len(sep) != len(header) {
 		return nil, nil, nil, 0, false
 	}
 	for _, c := range sep {
@@ -52,10 +52,16 @@ func parseTable(lines []string, start int) (header []string, aligns []tableAlign
 	for end+1 < len(lines) && strings.Contains(lines[end+1], "|") && !isFence(lines[end+1]) {
 		end++
 		row := splitTableRow(lines[end])
+		if len(row) > len(header) {
+			// More cells than the header: not a row of this table. Leave
+			// the line as text rather than drop its extra cells.
+			end--
+			break
+		}
 		for len(row) < len(header) {
 			row = append(row, "")
 		}
-		rows = append(rows, row[:len(header)])
+		rows = append(rows, row)
 	}
 	return header, aligns, rows, end, true
 }
@@ -73,7 +79,7 @@ func splitTableRow(line string) []string {
 			i += 2
 		case c == '`':
 			if j := strings.IndexByte(line[i+1:], '`'); j >= 0 {
-				cur.WriteString(line[i : i+j+2])
+				cur.WriteString(strings.ReplaceAll(line[i:i+j+2], `\|`, "|"))
 				i += j + 2
 			} else {
 				cur.WriteByte(c)
@@ -107,29 +113,51 @@ var (
 	cellCodeRe   = regexp.MustCompile("`([^`]*)`")
 )
 
-// plainCell strips inline markdown from a cell, leaving plain text.
+// plainCell strips inline markdown from a cell, leaving plain text. Code
+// spans are cut out first so their contents stay verbatim.
 func plainCell(s string) string {
+	m := cellCodeRe.FindStringSubmatchIndex(s)
+	if m == nil {
+		return plainEmphasis(s)
+	}
+	return plainEmphasis(s[:m[0]]) + s[m[2]:m[3]] + plainCell(s[m[1]:])
+}
+
+func plainEmphasis(s string) string {
 	s = cellLinkRe.ReplaceAllString(s, "$1")
 	s = cellBoldRe.ReplaceAllString(s, "$1$2")
 	s = cellStrikeRe.ReplaceAllString(s, "$1")
-	s = cellItalicRe.ReplaceAllString(s, "$1")
-	return cellCodeRe.ReplaceAllString(s, "$1")
+	return cellItalicRe.ReplaceAllString(s, "$1")
 }
 
 // displayWidth is the terminal column width of s: CJK and emoji count 2,
 // combining marks, joiners and variation selectors 0, the rest 1.
 func displayWidth(s string) int {
-	w := 0
+	w, last := 0, 0 // last is the width of the most recent glyph
+	joined := false // the previous rune was a ZWJ: the next one joins its glyph
 	for _, r := range s {
-		w += runeWidth(r)
+		switch {
+		case r == 0x200D:
+			joined = true
+		case r == 0xFE0F: // emoji presentation: a narrow base becomes wide
+			if last == 1 {
+				w++
+				last = 2
+			}
+		case r >= 0x1F3FB && r <= 0x1F3FF, // skin-tone modifiers
+			unicode.Is(unicode.Mn, r):
+		case joined:
+			joined = false
+		default:
+			last = runeWidth(r)
+			w += last
+		}
 	}
 	return w
 }
 
 func runeWidth(r rune) int {
 	switch {
-	case r == 0x200D || (r >= 0xFE00 && r <= 0xFE0F) || unicode.Is(unicode.Mn, r):
-		return 0
 	case r >= 0x1100 && r <= 0x115F,
 		r >= 0x2E80 && r <= 0xA4CF,
 		r >= 0xAC00 && r <= 0xD7A3,
@@ -140,6 +168,8 @@ func runeWidth(r rune) int {
 		r >= 0x1F300 && r <= 0x1F64F,
 		r >= 0x1F680 && r <= 0x1F6FF,
 		r >= 0x1F900 && r <= 0x1F9FF,
+		r >= 0x1F7E0 && r <= 0x1F7EB,
+		r >= 0x1F191 && r <= 0x1F19A,
 		r >= 0x1FA70 && r <= 0x1FAFF,
 		r >= 0x20000 && r <= 0x3FFFD:
 		return 2
@@ -153,7 +183,7 @@ func runeWidth(r rune) int {
 // wideSymbols are BMP emoji presented two columns wide.
 var wideSymbols = func() map[rune]bool {
 	m := map[rune]bool{}
-	for _, r := range []rune{0x231A, 0x231B, 0x2614, 0x2615, 0x267F, 0x2693, 0x26A1, 0x26CE, 0x26D4, 0x26EA,
+	for _, r := range []rune{0x231A, 0x231B, 0x23F0, 0x23F3, 0x2614, 0x2615, 0x267F, 0x2693, 0x26A1, 0x26CE, 0x26D4, 0x26EA,
 		0x26F5, 0x26FA, 0x26FD, 0x2705, 0x2728, 0x274C, 0x274E, 0x2757, 0x27B0, 0x27BF, 0x2B50, 0x2B55} {
 		m[r] = true
 	}
@@ -232,6 +262,10 @@ func renderTableCards(header []string, rows [][]string) string {
 		var lines []string
 		for c, cell := range row {
 			if cell == "" {
+				continue
+			}
+			if header[c] == "" {
+				lines = append(lines, html.EscapeString(cell))
 				continue
 			}
 			lines = append(lines, "<b>"+html.EscapeString(header[c])+"</b>: "+html.EscapeString(cell))
