@@ -450,6 +450,12 @@ func run() error {
 	}
 	control.RegisterTaskCommands(router, st, chatFolderLookup, taskPromptFn)
 
+	// /proactive (CP-033): owner-only recurring Gmail and Calendar presets. Every
+	// preset is off until the owner turns it on, so this changes nothing by itself.
+	proactiveSvc := proactiveService(st, cfg.OwnerChatID)
+	control.RegisterProactiveCommand(router, control.ProactiveDeps{Service: proactiveSvc, Log: ctlLog})
+	upgradeProactiveTemplates(ctx, ctlLog, proactiveSvc)
+
 	var fallbackSwitch control.ProviderFallbackSwitchFunc
 	// /provider command — per-chat agent provider switching.
 	if agentRunner != nil {
