@@ -101,12 +101,7 @@ func Render(p Preset, s Settings, env Env) (string, error) {
 		if err := env.Window.validate(); err != nil {
 			return "", err
 		}
-		var hours []int
-		for h := env.Window.StartHour; h < env.Window.EndHour; h++ {
-			if env.Quiet == nil || !env.Quiet.overlapsHour(h) {
-				hours = append(hours, h)
-			}
-		}
+		hours := pollHours(env)
 		if len(hours) == 0 {
 			return "", ErrNoRunHours
 		}
@@ -141,4 +136,15 @@ func hourRanges(hours []int) string {
 		i = j + 1
 	}
 	return strings.Join(parts, ",")
+}
+
+// pollHours lists the working-window hours left after quiet hours.
+func pollHours(env Env) []int {
+	var hours []int
+	for h := env.Window.StartHour; h < env.Window.EndHour; h++ {
+		if env.Quiet == nil || !env.Quiet.overlapsHour(h) {
+			hours = append(hours, h)
+		}
+	}
+	return hours
 }
