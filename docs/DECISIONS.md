@@ -1819,3 +1819,11 @@ long table splits into valid chunks on row boundaries.
 show as plain pipe lines (valid HTML); repeating the header and separator per page is a possible follow-up, not
 done. A link in a cell keeps its URL as `text (url)`. Cells follow GFM: an unescaped pipe splits even inside a code
 span, `\|` is a literal pipe; a quote, heading or list line ends a table. Native Rich Tables remain a separate spike.
+
+**Update 2026-10-30 (owner test on iOS Telegram).** A `<pre>` block does not scroll horizontally on the phone, it
+wraps, at roughly 45 characters per line (49 columns wrapped the last column, 66 was unreadable), so
+`tableMaxWidth` stays 38. Wide tables now render as compact cards instead of one line per column: the first column
+(or the first non-empty cell) is a bold title, followed by one wrapping line of `Header value` pairs joined by
+` · `. Empty cells are skipped; `—` and `<1` are kept; a row with no cells is dropped; headers are plain text.
+A single column, or a table without headers, keeps the earlier `<b>Header</b>: value` lines. No special case for
+total rows. `<b>%</b>` is emitted and sanitized correctly; a one-character bold header only looks unbolded.

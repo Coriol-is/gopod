@@ -69,7 +69,7 @@ func TestTableMoreCases(t *testing.T) {
 		{"overflow row ends the table", "|a|\n|-|\n|x|\nNote: a | b", "<pre>a\n-\nx</pre>\nNote: a | b"},
 		{"overflow row is not swallowed", "|a|\n|-|\n|x|y|", "<pre>a\n-</pre>\n|x|y|"},
 		{"escaped header in pre", "|<a>|&b|\n|-|-|\n|1|2|", "<pre>&lt;a&gt; | &amp;b\n----+---\n1   | 2</pre>"},
-		{"escaped header in cards", "|<h>|&" + long + "|\n|-|-|\n|v|w|", "<b>&lt;h&gt;</b>: v\n<b>&amp;" + long + "</b>: w"},
+		{"escaped header in cards", "|<h>|&" + long + "|\n|-|-|\n|v|w|", "<b>v</b>\n&amp;" + long + " w"},
 		{"after a paragraph", "Intro line\n| a | b |\n|---|---|\n| 1 | 2 |", "Intro line\n<pre>a | b\n--+--\n1 | 2</pre>"},
 	}
 	for _, tc := range tests {
@@ -93,7 +93,7 @@ func TestTableReviewRound2(t *testing.T) {
 		{"trailing empty cell", "|a|b|\n|-|-|\n|1|2| |", "<pre>a | b\n--+--\n1 | 2</pre>"},
 		{"overflow line is not a header", "|a|\n|-|\n|x|y|\n|-|-|\n|1|2|", "<pre>a\n-</pre>\n|x|y|\n|-|-|\n|1|2|"},
 		{"tab expanded", "|a|\n|-|\n|x\ty|", "<pre>a\n------\nx    y</pre>"},
-		{"whitespace header cards", "|__ __|" + long + "|\n|-|-|\n|v|w|", "v\n<b>" + long + "</b>: w"},
+		{"whitespace header cards", "|__ __|" + long + "|\n|-|-|\n|v|w|", "<b>v</b>\n" + long + " w"},
 	}
 	for _, tc := range tests {
 		if got := markdownToTelegramHTML(tc.md); got != tc.want {
@@ -119,7 +119,7 @@ func TestDisplayWidthRound2(t *testing.T) {
 
 func TestTableCardsEmptyHeader(t *testing.T) {
 	got := renderTable([]string{"", strings.Repeat("x", 40)}, []tableAlign{alignLeft, alignLeft}, [][]string{{"v", "w"}})
-	if want := "v\n<b>" + strings.Repeat("x", 40) + "</b>: w"; got != want {
+	if want := "<b>v</b>\n" + strings.Repeat("x", 40) + " w"; got != want {
 		t.Errorf("got %q want %q", got, want)
 	}
 }
@@ -187,10 +187,118 @@ func TestTableWidthFallbackChoice(t *testing.T) {
 
 func TestTableWideBecomesCards(t *testing.T) {
 	md := "| Что | Сумма, RSD | Получатель / позив на број |\n|---|---:|---|\n| Аренда | 19 687,20 | ООО «Ромашка» / 97 123 |\n| Кофе | 350 | |"
-	want := "<b>Что</b>: Аренда\n<b>Сумма, RSD</b>: 19 687,20\n<b>Получатель / позив на број</b>: ООО «Ромашка» / 97 123" +
-		"\n\n<b>Что</b>: Кофе\n<b>Сумма, RSD</b>: 350"
+	want := "<b>Аренда</b>\nСумма, RSD 19 687,20 · Получатель / позив на број ООО «Ромашка» / 97 123" +
+		"\n\n<b>Кофе</b>\nСумма, RSD 350"
 	if got := finalReplyHTML(md); got != want {
 		t.Errorf("got  %q\nwant %q", got, want)
+	}
+}
+
+const ownerTable = `| Список | Голоса | % | Было 26.10 | Мандаты |
+|---|---:|---:|---:|---:|
+| Студенческий список | 2 349 689 | 53,04 | 52,54 | 141 |
+| Список «Единство» | 1 012 345 | 22,85 | 23,10 | 60 |
+| Зелёные | 410 000 | 9,26 | 8,90 | 24 |
+| Левый блок | 250 111 | 5,65 | 6,01 | 15 |
+| Независимые | 150 000 | 3,39 | 3,12 | 9 |
+| Малые партии | 120 000 | <1 | — | 0 |
+| Прочие | 80 000 | 1,81 | 2,00 | 0 |
+| Против всех | 55 321 | 1,25 | 1,30 | 0 |
+| Итого | 4 427 466 | 100 | | 249 |`
+
+func TestTableCompactCardsOwnerExample(t *testing.T) {
+	want := `<b>Студенческий список</b>
+Голоса 2 349 689 · % 53,04 · Было 26.10 52,54 · Мандаты 141
+
+<b>Список «Единство»</b>
+Голоса 1 012 345 · % 22,85 · Было 26.10 23,10 · Мандаты 60
+
+<b>Зелёные</b>
+Голоса 410 000 · % 9,26 · Было 26.10 8,90 · Мандаты 24
+
+<b>Левый блок</b>
+Голоса 250 111 · % 5,65 · Было 26.10 6,01 · Мандаты 15
+
+<b>Независимые</b>
+Голоса 150 000 · % 3,39 · Было 26.10 3,12 · Мандаты 9
+
+<b>Малые партии</b>
+Голоса 120 000 · % &lt;1 · Было 26.10 — · Мандаты 0
+
+<b>Прочие</b>
+Голоса 80 000 · % 1,81 · Было 26.10 2,00 · Мандаты 0
+
+<b>Против всех</b>
+Голоса 55 321 · % 1,25 · Было 26.10 1,30 · Мандаты 0
+
+<b>Итого</b>
+Голоса 4 427 466 · % 100 · Мандаты 249`
+	if got := finalReplyHTML(ownerTable); got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestTableCompactCardRules(t *testing.T) {
+	long := strings.Repeat("h", 40)
+	hdr := "| A | B | C | " + long + " |\n|-|-|-|-|\n"
+	tests := []struct{ name, md, want string }{
+		{"empty first cell uses first non-empty", hdr + "| | t | 6 | |", "<b>t</b>\nC 6"},
+		{"title only", hdr + "| T | | | |", "<b>T</b>"},
+		{"all-empty row dropped", hdr + "| T | 1 | | |\n| | | | |\n| U | 2 | | |", "<b>T</b>\nB 1\n\n<b>U</b>\nB 2"},
+		{"dash and escaped kept", hdr + "| T | — | <1 | a&b |", "<b>T</b>\nB — · C &lt;1 · " + long + " a&amp;b"},
+		{"title escaped", hdr + "| <T> | 1 | | |", "<b>&lt;T&gt;</b>\nB 1"},
+		{"empty header gives bare value", "| A | | C | " + long + " |\n|-|-|-|-|\n| T | 1 | 2 | |", "<b>T</b>\n1 · C 2"},
+		{"code span and link", hdr + "| T | `x_y` | [l](http://u) | |", "<b>T</b>\nB x_y · C l (http://u)"},
+		{"two columns", "| " + long + " | B |\n|-|-|\n| T | 1 |", "<b>T</b>\nB 1"},
+	}
+	for _, tc := range tests {
+		if got := markdownToTelegramHTML(tc.md); got != tc.want {
+			t.Errorf("%s:\ngot  %q\nwant %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestTableWideOneColumnOrNoHeadersKeepsSimpleForm(t *testing.T) {
+	long := strings.Repeat("h", 40)
+	tests := []struct{ name, md, want string }{
+		{"one column", "| " + long + " |\n|-|\n| a |\n| b |", "<b>" + long + "</b>: a\n\n<b>" + long + "</b>: b"},
+		{"no headers", "| | |\n|-|-|\n| " + long + " | y |\n| b | |", long + "\ny\n\nb"},
+	}
+	for _, tc := range tests {
+		if got := markdownToTelegramHTML(tc.md); got != tc.want {
+			t.Errorf("%s:\ngot  %q\nwant %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestCompactCardsChunkAndIPC(t *testing.T) {
+	var sb strings.Builder
+	sb.WriteString(strings.Split(ownerTable, "\n")[0] + "\n" + strings.Split(ownerTable, "\n")[1] + "\n")
+	for i := 0; i < 300; i++ {
+		fmt.Fprintf(&sb, "| Список %d | %d 000 | %d,5 | — | %d |\n", i, i, i%100, i%9)
+	}
+	md := strings.TrimSuffix(sb.String(), "\n")
+	rendered := finalReplyHTML(md)
+	chunks := chunkHTML(rendered, 4000)
+	if len(chunks) < 2 {
+		t.Fatalf("want several chunks, got %d", len(chunks))
+	}
+	checkChunks(t, rendered, chunks, 4000)
+	parts, err := PrepareIPCText(ownerTable, "markdown")
+	if err != nil || len(parts) != 1 {
+		t.Fatalf("parts %d err %v", len(parts), err)
+	}
+	if got := string(parts[0].Payload); got != finalReplyHTML(ownerTable) {
+		t.Errorf("IPC payload differs from the rendered cards: %q", got)
+	}
+}
+
+// A one-character header such as "%" is emitted as a well-formed <b>%</b>
+// and survives the sanitizer; it only looks unbolded because the glyph is thin.
+func TestBoldPercentSurvivesSanitizer(t *testing.T) {
+	got, ok := sanitizeTelegramHTML("<b>%</b>: 53")
+	if !ok || got != "<b>%</b>: 53" {
+		t.Errorf("got %q ok=%v", got, ok)
 	}
 }
 
@@ -250,7 +358,7 @@ func TestTableCellNULAndLinks(t *testing.T) {
 	tests := []struct{ name, md, want string }{
 		{"nul next to code", "|a|b|\n|-|-|\n|\x000\x00 `c`|z|", "<pre>a   | b\n----+--\n0 c | z</pre>"},
 		{"link keeps url in pre", "|a|b|\n|-|-|\n|[t](http://u/?a=1&b=2)|z|", "<pre>a                     | b\n----------------------+--\nt (http://u/?a=1&amp;b=2) | z</pre>"},
-		{"link keeps url in cards", "|a|" + long + "|\n|-|-|\n|[t](http://u)|z|", "<b>a</b>: t (http://u)\n<b>" + long + "</b>: z"},
+		{"link keeps url in cards", "|a|" + long + "|\n|-|-|\n|[t](http://u)|z|", "<b>t (http://u)</b>\n" + long + " z"},
 		{"empty-ish link text", "|a|b|\n|-|-|\n|[ ](http://u)|z|", "<pre>a          | b\n-----------+--\n(http://u) | z</pre>"},
 	}
 	for _, tc := range tests {

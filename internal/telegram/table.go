@@ -330,9 +330,55 @@ func renderTable(header []string, aligns []tableAlign, rows [][]string) string {
 	return "<pre>" + html.EscapeString(strings.Join(out, "\n")) + "</pre>"
 }
 
-// renderTableCards is the lossless wide-table fallback: per data row a
-// block of "<b>Header</b>: value" lines, blocks separated by a blank line.
+// renderTableCards is the wide-table fallback. With two or more columns and
+// at least one header each data row becomes a compact card: the first
+// column (or the first non-empty cell) as a bold title, then one wrapping
+// line of "Header value" pairs joined by " · ". Empty cells are skipped,
+// anything else (—, <1) is kept. Rows with no cell at all are dropped.
 func renderTableCards(header []string, rows [][]string) string {
+	hasHeader := false
+	for _, h := range header {
+		hasHeader = hasHeader || h != ""
+	}
+	if len(header) < 2 || !hasHeader {
+		return renderTableLines(header, rows)
+	}
+	var cards []string
+	for _, row := range rows {
+		title := -1
+		for c, cell := range row {
+			if cell != "" {
+				title = c
+				break
+			}
+		}
+		if title < 0 {
+			continue
+		}
+		var pairs []string
+		for c, cell := range row {
+			if cell == "" || c == title {
+				continue
+			}
+			pair := html.EscapeString(cell)
+			if header[c] != "" {
+				pair = html.EscapeString(header[c]) + " " + pair
+			}
+			pairs = append(pairs, pair)
+		}
+		card := "<b>" + html.EscapeString(row[title]) + "</b>"
+		if len(pairs) > 0 {
+			card += "\n" + strings.Join(pairs, " · ")
+		}
+		cards = append(cards, card)
+	}
+	return strings.Join(cards, "\n\n")
+}
+
+// renderTableLines is the simple form for a single column or a table
+// without headers: per row "<b>Header</b>: value" lines (the bare value
+// when the header is empty), blocks separated by a blank line.
+func renderTableLines(header []string, rows [][]string) string {
 	cards := make([]string, len(rows))
 	for r, row := range rows {
 		var lines []string
