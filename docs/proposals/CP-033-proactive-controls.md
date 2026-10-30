@@ -8,7 +8,7 @@
 | Size | M |
 | Touches | `internal/control` (new `/proactive` command), `internal/store` (preset marker on scheduled tasks), `internal/scheduler`, `internal/telegram` (picker buttons) |
 | Depends on | existing scheduled tasks (CP-015) and `/tasks`; CP-006 and CP-002 for quiet-hour delivery of proactive messages |
-| Spec | `—` until accepted |
+| Spec | [Proactive presets](../superpowers/specs/2026-10-30-proactive-presets.md) |
 
 ## Problem
 Today the owner gets recurring connector work (a morning mail summary, a daily agenda) only by
