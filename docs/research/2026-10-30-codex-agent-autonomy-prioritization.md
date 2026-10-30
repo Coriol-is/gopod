@@ -207,10 +207,10 @@ needs first. Rank is my recommendation, not an approval.
 1. Do you want proactive messages at all (A2), and which categories: tasks/repos, calendar,
    mail, project status? (Mail and calendar through connectors are allowed in the private
    chat; which connectors are actually enabled on your account?)
-2. (Answered 2026-10-30: the freefeed digest stays as is; CP-033 covers connector and proactive-action controls only.)
+2. (Answered 2026-10-30: the freefeed digest stays as is; CP-033 covers built-in recurring presets for the main connectors.)
 3. May A1 read the production store and logs (counts only, via the existing read-only
    diagnostics), or should it use only repo evidence?
-4. CP-033 now exists as `proposed` and covers only the owner controls; the digest/reflection behaviors stay uncreated until A2 gives a yes.
+4. CP-033 now exists as `proposed` and covers built-in connector presets with `/proactive` and setup guidance; reflection and learning stay uncreated until A2 gives a yes.
 
 ## 9. Result of A3a (2026-10-30, documentation and source only, nothing run with an account)
 

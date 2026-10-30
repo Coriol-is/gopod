@@ -35,9 +35,22 @@ keeps working. Nothing is restricted for the owner: presets use the connector as
 read and write, as the agent would in dialog. A global `/proactive off` pauses every preset at
 once without touching other tasks.
 
+Connectors are account state, not gopod state, so some will not be activated. For each connector
+and provider (Claude, Codex) the gateway works out whether it is connected, from what the CLI
+reports in the container (the init event and `claude mcp list` for Claude; `codex plugin list`
+for Codex), and `/proactive` shows one of: ready, not connected, plugin not installed, or
+unknown. For anything not ready the panel offers a **setup guide** in the private chat: the
+exact steps on the provider's side (for Codex: connect the app at the ChatGPT apps page with
+the same account, then install the plugin such as `gmail@openai-curated-remote`; for Claude:
+turn the connector on in the claude.ai account settings), a link, and a "check again" button
+that re-reads the state. The Google consent itself is always given by the owner in the
+provider's own account; gopod never performs the sign-in or stores the Google token. Presets
+for a connector that is not ready stay off and say why. Exact link targets, plugin names and
+the CLI commands are verified in the spec, not taken from this paragraph.
+
 ## Out of scope
 Restricting what a preset may do in the owner's own chat; new connectors beyond the first
-catalog; connector sign-in or consent (done in the provider's account); autonomous reflection
+catalog; performing connector sign-in or consent for the owner (only the setup guide is in scope); autonomous reflection
 or learning; groups and any non-owner scope; changing the existing freefeed digest or other
 tasks; a free-form editor for preset prompts (a later spec may allow it).
 
@@ -56,5 +69,8 @@ later upgrade of the built-in template.
 - Quiet hours delay `proactive`-flagged notifications and do not delay ordinary replies or
   explicit reminders.
 - A preset whose connector is not connected is shown as unavailable and is not scheduled.
+- For each provider, a connector that is not ready is reported with its reason and a setup guide;
+  after the owner connects it in the provider's account, "check again" reports it ready without
+  a restart. The guide contains no credential, and gopod performs no provider sign-in.
 - `/proactive off` pauses all presets and leaves other tasks, including the freefeed digest,
   untouched.
