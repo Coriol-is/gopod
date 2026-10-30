@@ -17,11 +17,16 @@ came from an official library. gopod mounts `~/.claude` and `~/.codex` but has n
 installs, lists, updates or removes what the two providers publish.
 
 ## Proposal
-A gateway command (name open) through `internal/control`, owner-only and **private chat only**
-(Router `Perm`, refused in groups and for any non-owner), that lists installable official skills
+A gateway command (name open) through `internal/control`, owner-only (owner decision
+2026-10-30): in the owner's private chat as usual, and in a group chat only for the owner
+(the D048 group-owner identity, Router `PermGroupOwner`); any other group member gets no reply,
+as for other owner-only commands (D048). It lists installable official skills
 and plugins from the providers' own libraries (Claude's official plugin marketplace and Anthropic
 skills; Codex's curated and bundled marketplaces) and installs, enables, disables, updates and
-removes them, with inline-button pickers (CLAUDE.md "Commands with parameters"). Installs are
+removes them, with inline-button pickers (CLAUDE.md "Commands with parameters"). An install or removal always acts on the owner's personal scope
+(the owner's `~/.claude` and `~/.codex`) wherever the command is typed; it never changes a group's
+runtime, and the reply that carries buttons and results goes to the owner's private chat, as for
+other group-owner confirmations (D048). Installs are
 restricted to a short allowlist of official marketplaces and run in a one-shot container sharing the
 owner's `~/.claude` and `~/.codex` mounts, not inside a running turn, so the result lands in the
 host directories and survives container recreation. After each change the gateway re-probes with
@@ -30,7 +35,8 @@ next turn sees it. Consent that must be given in the provider's account is handl
 guide of CP-033; the gateway never signs in for the owner.
 
 ## Out of scope
-Non-official sources and arbitrary marketplaces; installing from groups or for other chats; writing
+Installing into a group's own runtime or session directory (groups keep their isolated, offline
+tool set under CP-020); non-official sources and arbitrary marketplaces; installing from groups or for other chats; writing
 or publishing skills; MCP servers outside plugins; restricting what an installed plugin may do in
 the owner's own chat; changing the existing `container/skills` mount.
 
@@ -43,7 +49,11 @@ install that races a running turn can leave the CLI with a half-seen set. Sessio
 and are not backed up yet.
 
 ## Acceptance
-- The command is refused by the Router outside the owner's private chat, including forged callbacks.
+- In the owner's private chat it works; in a group it works only for the owner (identified by the
+  D048 group-owner rule, never by `sender_chat`, forwarded messages or bots), and any other member
+  gets no response; forged callbacks are refused by the Router.
+- Run from a group, an install changes only the owner's personal scope and leaves the group runtime
+  unchanged, and its result and buttons arrive in the owner's private chat.
 - A plugin from an allowlisted marketplace installs and appears in the next turn; one from any other
   source is refused with the reason.
 - After the container is removed and recreated, the installed plugins are still listed and usable
