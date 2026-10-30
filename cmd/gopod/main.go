@@ -782,6 +782,11 @@ func run() error {
 				maintainGenerations(ctx, st, 5*time.Minute, time.Duration(cfg.GenerationRetentionDays)*24*time.Hour, reconcile, ipcLog)
 			}()
 		}
+		// Runner-side capability issuer (CP-003 PR C): nil unless V1 artifact
+		// requests are really admitted, so with the flag off nothing is issued.
+		if iss := artifactIssuer(cfg, artifactIPC(durableIPC(cfg.OutboxIPCEnabled, outboxRunning, st, ownerFolder, cfg.OwnerChatID), artifactIPCConfig), st, ipcLog); iss != nil && agentRunner != nil {
+			agentRunner.SetArtifactIssuer(iss)
+		}
 		ipcMsgs := telegram.NewIPCSink(tgBot)
 		ipcTasks := scheduler.NewIPCSink(st)
 		ipcWatcher := ipc.New(ipc.Config{

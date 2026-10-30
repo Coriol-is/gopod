@@ -13,6 +13,7 @@ import (
 // tickOnce sweeps every <DataDir>/ipc/<chat>/{messages,tasks} dir
 // once. Errors are logged and never returned.
 func (w *Watcher) tickOnce(ctx context.Context) {
+	w.beginSweep()
 	var folders []string
 	if w.cfg.Namespaces != nil {
 		var err error
@@ -74,6 +75,7 @@ func (w *Watcher) moveProcessed(folder, path string) bool {
 		return false
 	}
 	delete(w.retries, path)
+	delete(w.writeFloor, path)
 	return true
 }
 
@@ -85,6 +87,7 @@ func (w *Watcher) moveFailed(folder, path string, cause error) {
 		return
 	}
 	delete(w.retries, path)
+	delete(w.writeFloor, path)
 	w.log.Warn("ipc: file moved to .failed",
 		"folder", folder, "file", filepath.Base(path), "cause", cause)
 }

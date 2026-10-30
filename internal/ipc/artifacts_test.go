@@ -1088,3 +1088,51 @@ func TestArtifacts_FinishDeletingPagesPastFailingRows(t *testing.T) {
 	}
 	_ = keys
 }
+
+// A request file's mtime is agent-controlled. A file that appears after the run
+// ended must be refused even when its mtime is set into the past.
+func TestArtifacts_BackdatedMtimeAfterEndRunIsRefused(t *testing.T) {
+	f := newArtFixture(t)
+	f.write("a.csv", "x")
+	w := f.watcher()
+	f.tick(w) // an empty sweep: the host has now seen the channel without the file
+	if f.caps.EndRun("run-1") != 1 {
+		t.Fatal("capability was not active")
+	}
+	time.Sleep(20 * time.Millisecond)
+	f.tick(w) // a later empty sweep, after the run ended
+	time.Sleep(20 * time.Millisecond)
+	f.sendV1("owner", "0001-late.json", f.req("a.csv"))
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(filepath.Join(f.dir("owner", "messages"), "0001-late.json"), old, old); err != nil {
+		t.Fatal(err)
+	}
+	f.tick(w)
+	f.wantError("0001-late.json", "stale_capability")
+	if f.deliveries() != 0 {
+		t.Fatalf("deliveries %d, want 0", f.deliveries())
+	}
+}
+
+// A request the watcher saw while the run was active (here deferred by the
+// per-tick budget) is still admitted inside the grace window after the run ends.
+func TestArtifacts_RequestSeenBeforeEndRunIsAdmittedInGrace(t *testing.T) {
+	f := newArtFixture(t)
+	f.write("a.csv", "x")
+	w := f.watcher()
+	f.tick(w)
+	time.Sleep(20 * time.Millisecond)
+	for i := 0; i < 3; i++ {
+		f.sendV1("owner", fmt.Sprintf("000%d-b.json", i), f.req("a.csv"))
+	}
+	f.tick(w) // two published, the third is observed and deferred
+	if n := f.deliveries(); n != 2 {
+		t.Fatalf("first tick published %d, want 2", n)
+	}
+	f.caps.EndRun("run-1")
+	time.Sleep(20 * time.Millisecond)
+	f.tick(w)
+	if n := f.deliveries(); n != 3 {
+		t.Fatalf("a request observed before the end was lost: %d deliveries", n)
+	}
+}

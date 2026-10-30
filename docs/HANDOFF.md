@@ -57,6 +57,14 @@ of the task/IPC path.
 `GOPOD_OUTBOX_ARTIFACTS` or `GOPOD_MANAGED_TASKS` (both have unmet gates: restore drill + capability issuer; task
 credential adapter + Pi Docker-inspect round trip), changing Telegram privacy/admin rights.
 
+## CP-003 PR C: runner-side capability issuer (branch `feat/cp003-capability-issuer`, 2026-10-30)
+`ipc.RunIssuer` issues a per-exec `GOPOD_ARTIFACT_CAP` capability (runner `ArtifactIssuer`, `Runner.SetArtifactIssuer`,
+`cmd/gopod.artifactIssuer`) for execs started through `Run` and `RunStream` in the owner's private chat (foreground turns
+and, by owner decision, scheduled silent turns, since `runTaskSilently` calls `Run`; not `RunFresh` system runs), bound to
+the scope snapshot and thread, revoked when the exec finishes; nil when `GOPOD_OUTBOX_ARTIFACTS` or its gates are off, so
+nothing is issued by default. The capability can only deliver owner-workspace files to the owner's own chat. A request file's
+mtime is not trusted: the watcher bounds it by the previous sweep. Next: PR D (agent instructions).
+
 ## CP-003 PR B: photo presentation + caption units (branch `feat/cp003-photo-presentation`, 2026-10-30)
 `artifactParts` maps request `presentation: "photo"` to `store.UploadPresentationPhoto` (D052, supersedes D039's "always
 documents"); IPC and `validatePublish` count captions in UTF-16 units (limit 1024, `store.CaptionUTF16Units`), fixing the
