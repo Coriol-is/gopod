@@ -55,7 +55,14 @@ container), keeps the last seen set, and when a connector or plugin appears it s
 private message offering to set up recurring actions. If the owner agrees, the gateway hands the
 agent a ready-made request in dialog and the agent creates the recurring task through the existing
 scheduling (CP-015), so it appears in `/tasks`. A declined offer is remembered and not repeated;
-a connector that disappears is marked unavailable and its tasks are paused. Observed 2026-10-30
+a connector that disappears is marked unavailable and its tasks are paused. So that the agent can
+act on the offer without further explanation, the gateway ships the agent an **integration guide** as
+a container skill (a `SKILL.md`, no rebuild; D009) covering: how to tell which integrations are
+connected for the current provider, how to read what a connector offers, how to propose recurring
+actions and create them as scheduled tasks (CP-015), how to ask the owner for the schedule and the
+notification time, what to do when a connector is not connected (the setup guide), and how to
+report what was created. The same guide serves integrations outside the first preset set and
+ones added later. Observed 2026-10-30
 on the owner's machine: Claude lists connectors by name and health; Codex lists plugins with
 installed/enabled flags (including `gmail@`, `google-calendar@`, `google-drive@`, `slack@`) and
 its `mcp list` shows only local servers; container behavior is verified in the spec.
@@ -72,6 +79,10 @@ switch. Preset prompts depend on the connector being connected: a missing connec
 as "unavailable", not fail silently. A preset edited in `/tasks` must not be silently reset by a
 later upgrade of the built-in template.
 
+Container skills are mounted for Claude only today (`/home/node/.claude/skills`); Codex gets no
+skills mount and its skill search path in `codex exec` is unconfirmed, so delivering the guide to
+Codex needs a mount or an instruction-file route chosen in the spec.
+
 ## Acceptance
 - `/proactive` is refused by the Router outside the owner's private chat, including forged
   callbacks, not by the handler.
@@ -81,6 +92,9 @@ later upgrade of the built-in template.
 - Quiet hours delay `proactive`-flagged notifications and do not delay ordinary replies or
   explicit reminders.
 - A preset whose connector is not connected is shown as unavailable and is not scheduled.
+- The integration guide is available to the agent in the owner's private chat for both providers
+  (Claude and Codex) and an agent given a newly detected connector uses it to propose and create a
+  recurring task without further instruction.
 - A connector newly connected in the provider's account is noticed within the probe interval,
   the owner gets one offer, accepting it ends with a task created by the agent and visible in
   `/tasks`, and declining it is remembered.
