@@ -1,7 +1,7 @@
 # Telegram table rendering — code and API research
 
-Date: 2026-10-25. Status: the monospace `<pre>` table with a row-card fallback for wide tables shipped
-(D050, 2026-10-30); native Rich Tables remain a separate spike, not implemented.
+Date: 2026-10-25. Status: the monospace `<pre>` table with a compact-card fallback for wide tables shipped
+(D050, 2026-10-30; measured on iOS: `<pre>` wraps at about 45 characters, so the limit stays 38); native Rich Tables remain a separate spike, not implemented.
 This is separate from CP-017 capability diagnostics.
 
 ## Finding and recommended direction
