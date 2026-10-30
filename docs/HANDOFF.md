@@ -1,10 +1,22 @@
 # gopod — current handoff
 
-**Last updated:** 2026-10-30 (CP-033 PR 3 added)
+**Last updated:** 2026-10-30 (security and logic review recorded)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
 [ACCEPTANCE](ACCEPTANCE.md) for pending real-client verification.
+
+## Security and logic review, 2026-10-30 (evening) — fix wave pending
+Full report and the prioritized work plan: [reviews/2026-10-30-security-logic-review.md](reviews/2026-10-30-security-logic-review.md).
+Four High findings (H1 fail-open group detection in `runner`, H2 `uncertain` outbox part freezes a chat with
+`GOPOD_OUTBOX_DISPATCHER` on, H3 IPC archive follows an agent-planted symlink, H4 unbounded non-owner task scheduling),
+eleven Medium, assorted Low. Nothing Critical; the authorization core (`Router`, button tokens, IPC authz, mounts,
+isolation proxy) checked clean. Owner asked for the fixes to run as eight parallel worktree PRs with autonomous
+acceptance (worktree -> PR -> independent review -> CI -> admin squash merge), grouped by disjoint files as in the plan
+table; the wave was not started yet when the context was reset. First resume action: read the plan table, confirm
+`main` is still `38f3dcc`+docs, then dispatch groups 1-8 (group 1 `internal/runner` first), leaving M9 deferred for an
+owner decision. Before group 4, run `SELECT count(*) FROM outbox_parts WHERE state='uncertain'` on the Pi copy. No Pi
+deploy is authorized by this wave; HANDOFF/ROADMAP are updated once by the coordinator after it.
 
 ## START HERE — checkpoint 2026-10-30 (afternoon)
 **State.** `main` = `630aa4e`; one open PR: #108 (Go Telegram user-account connector spec, read and write, CP-028). The Pi
