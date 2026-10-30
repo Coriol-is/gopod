@@ -2,6 +2,7 @@ package ipc
 
 import (
 	"context"
+	"github.com/Coriol-is/gopod/internal/store"
 	"path/filepath"
 	"testing"
 	"time"
@@ -123,5 +124,56 @@ func TestWatcher_TaskCrossFolderNonOwnerBlocked(t *testing.T) {
 	}
 	if got := dirEntries(t, filepath.Join(root, "ipc", "alice", ".failed")); len(got) != 1 {
 		t.Errorf(".failed = %v, want 1", got)
+	}
+}
+
+// A preset id is reserved for the owner folder: a group or any other folder
+// must not be able to pre-create preset-<id> and have Enable adopt it.
+func TestWatcher_PresetTaskIDsAreOwnerOnly(t *testing.T) {
+	for folder, wantScheduled := range map[string]int{"alice": 0, "owner": 1} {
+		root := t.TempDir()
+		writeIPC(t, root, folder, "tasks", "0001.json", map[string]any{
+			"op": "schedule", "taskId": "preset-gmail.morning", "prompt": "p",
+			"scheduleType": "cron", "scheduleValue": "0 9 * * *",
+		})
+		tasks := &fakeTaskSink{}
+		w := New(Config{DataDir: root, OwnerFolder: "owner", NowFn: func() time.Time { return time.Unix(1_700_000_000, 0) }},
+			&fakeMessageSink{}, tasks, nil, staticResolver(map[string]string{"alice": "2002", "owner": "1"}))
+		w.tickOnce(context.Background())
+		if got := len(tasks.scheduled); got != wantScheduled {
+			t.Errorf("folder %s: scheduled = %d, want %d", folder, got, wantScheduled)
+		}
+	}
+}
+
+func TestDescribeTaskHidesTheNegativeNextRunMarker(t *testing.T) {
+	info := DescribeTask(store.TaskRecord{ID: "preset-x", Status: "paused", NextRun: -1})
+	if info.NextRun != 0 || info.NextRunAt != "" {
+		t.Fatalf("marker leaked: %+v", info)
+	}
+	if got := DescribeTask(store.TaskRecord{ID: "t", Status: "active", NextRun: 1000}); got.NextRun != 1000 || got.NextRunAt == "" {
+		t.Fatalf("real next run lost: %+v", got)
+	}
+}
+
+// An owner-folder agent must not plant preset-<id> in another registered folder.
+func TestWatcher_PresetTaskIDsCannotTargetAnotherFolder(t *testing.T) {
+	for target, wantScheduled := range map[string]int{"alice": 0, "owner": 1, "": 1} {
+		root := t.TempDir()
+		payload := map[string]any{
+			"op": "schedule", "taskId": "preset-gmail.morning", "prompt": "p",
+			"scheduleType": "cron", "scheduleValue": "0 9 * * *",
+		}
+		if target != "" {
+			payload["targetChatFolder"] = target
+		}
+		writeIPC(t, root, "owner", "tasks", "0001.json", payload)
+		tasks := &fakeTaskSink{}
+		w := New(Config{DataDir: root, OwnerFolder: "owner", NowFn: func() time.Time { return time.Unix(1_700_000_000, 0) }},
+			&fakeMessageSink{}, tasks, nil, staticResolver(map[string]string{"alice": "2002", "owner": "1"}))
+		w.tickOnce(context.Background())
+		if got := len(tasks.scheduled); got != wantScheduled {
+			t.Errorf("target %q: scheduled = %d, want %d", target, got, wantScheduled)
+		}
 	}
 }

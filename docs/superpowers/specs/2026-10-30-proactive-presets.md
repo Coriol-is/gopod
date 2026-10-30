@@ -1,6 +1,6 @@
 # Built-in recurring presets for Gmail and Google Calendar (`/proactive`)
 
-Date: 2026-10-30. CP-033. Status: **design, owner decisions of 2026-10-30 applied (section 16)**; no code, flag or runtime change.
+Date: 2026-10-30. CP-033. Status: **design, owner decisions of 2026-10-30 applied (section 16); PR 1 (core + store) implemented, see section 18**; no flag or runtime change, nothing calls the package from production wiring yet.
 Source baseline: `origin/main` at `f3095fe`. Proposal: [CP-033](../../proposals/CP-033-proactive-controls.md).
 Related: [mechanisms note](../../research/2026-10-30-skills-and-plugins-mechanisms.md),
 [autonomy note](../../research/2026-10-30-codex-agent-autonomy-prioritization.md),
@@ -67,7 +67,7 @@ Non-goals
   comment), and shares the provider session with foreground chat; scheduled jobs "use main's
   session" ([HANDOFF](../../HANDOFF.md)). The queue orders per folder and never coalesces a task
   with a user message (`internal/queue/queue.go:550-556`); I found no preemption of a running task by
-  a user message, **TO VERIFY** in the PR 1 tests.
+  a user message; **verified in PR 1** by `internal/queue/task_order_test.go` (section 18).
 - **Store.** `scheduled_tasks` columns are `id, chat_folder, chat_jid, prompt, schedule_type,
   schedule_value, next_run, last_run, status, created_at` plus the additive CP-004 columns
   (`internal/store/tasks.go:14-25`, `schema_tasks.go:23-48`). Legacy rows must keep the legacy shape
@@ -719,3 +719,71 @@ offer is replied to (PR 6 verifies), and the exact claude.ai and ChatGPT setup p
    turn, disappearance handling.
 7. **Docs and acceptance.** ADR (next free D number), HANDOFF and ROADMAP rows, ACCEPTANCE rows for the
    live checks, CP-033 moves to `in-progress` at PR 1 and `done` after PR 7 and owner acceptance.
+
+## 18. Implementation notes (PR 1, `internal/proactive` core + store)
+
+Where the code and this spec differ, the code wins. Differences found while implementing PR 1:
+
+- **Backup registry.** Section 4 says nothing needs a new backup target. The snapshot covers the whole file, but
+  `internal/store/backup_counts.go` (`rowCountSQL`) lists every table and a parity test fails for an unlisted one;
+  the two new tables are added there.
+- **Tables.** PR 1 creates only `proactive_presets` and `proactive_settings`. `integration_state` and
+  `integration_offers` (section 4) are created by PR 5 and PR 6, which are their first users. Settings keys in use:
+  `tz`, `window` (`09-19`), `quiet` (`2200-0800`), `global_off` (JSON id list; the key's presence is the pause flag).
+  `baseline` and `enabled` come with the probe and offer PRs.
+- **Done row blocks the deterministic id.** Section 6.5 says "enabling again creates a fresh task" after an IPC
+  `cancel` and treats a primary-key conflict as success. An IPC `cancel` leaves a `done` row under
+  `preset-<id>`, so a plain create would fail on the primary key. `Enable` deletes the finished row first
+  (`DeleteTask`) and creates a fresh one; `/tasks cancel` already removed the row.
+- **`user_modified` is derived, not stored.** It is a digest of the length-prefixed `prompt`, `schedule_type` and
+  `schedule_value` compared with `applied_hash` (the spec said prompt and value only; the type is included so an IPC
+  `update` that changes only the type counts as an edit). `Status.Modified` and `Status.TemplateOutdated` are
+  computed on read.
+- **Edited tasks (owner decision 2026-10-30).** An owner-edited preset task is not subject to quiet hours or window
+  changes: the edit is the owner's decision. `Enable` reactivates an edited task as written and skips the quiet check
+  by design (commented in the code); `ResumeAll` does the same. `Configure` on an edited task returns
+  `ErrUserModified` (the spec only said a gopod write recomputes the hash); `ResetToTemplate` is the way back.
+  `SetTimezone` moves only the `CRON_TZ` prefix of an edited `cron` task whose result still parses; an edited task of
+  any other schedule type, or unparsable text, is left untouched and listed in `Report.Kept`. Schedule type is never
+  changed on that path.
+- **Foreign task under a preset id.** `lookupTask` classifies a task whose folder or chat differs from the owner's as
+  a conflict: `Enable` returns `ErrTaskConflict`, `Status.Conflict` is set, and no other operation touches it. The IPC
+  watcher also rejects `schedule` requests with a `preset-` task id from any folder but the owner's.
+- **Global pause (owner decision (b)).** `PauseAll` always sets the pause, even with nothing active ("off means off"):
+  `Enable` returns `ErrGloballyPaused` until `ResumeAll`. `PauseAll` leaves `next_run = -1` on each task it paused;
+  the scheduler ignores it (requires an active status and `next_run > 0`) and every other writer overwrites it
+  (`/tasks` resume sets a time, `/tasks` pause and `Disable` set 0), so `ResumeAll` reactivates only tasks still
+  carrying it and never undoes an owner's resume-then-pause. `ResumeAll` re-renders each unedited task under the
+  current zone, window and quiet hours and keeps one paused (reason `inside quiet hours`) if no run time is left; it
+  returns a `ResumeReport` (`Resumed`, `StillPaused`, `Skipped`). `Disable` during the pause removes the preset from
+  the restore set. While paused, `rerender` rewrites paused tasks whenever they can still be rendered; a paused task
+  that cannot be rendered under new quiet hours keeps its old text until `ResumeAll` re-renders it.
+- **Unmanaged tasks.** A live task under `preset-<id>` with no applied hash (no row written by gopod) was planted,
+  for example by an owner-folder agent over IPC. `Enable`, `Configure` and `ResumeAll` do not adopt it
+  (`ErrUserModified` / skipped); `SetTimezone` only lists it in `Kept`; `ResetToTemplate` is the owner's explicit way to
+  take it over. The IPC watcher reserves `preset-` ids for the owner folder targeting itself, so an agent cannot plant
+  a foreign-folder task that would block the preset with `ErrTaskConflict`.
+- **`next_run = -1` marker is invisible to agents.** `ipc.DescribeTask` reports it as 0 with no `nextRunAt`, and the
+  group receipt projection maps a negative `nextRun` to 0 instead of rejecting the receipt.
+- **`/tasks resume` during the global pause is allowed** (owner decision 2026-10-30; an explicit owner action, no
+  restrictions for the owner). The pause is "not a lock"; `ResumeAll` leaves such a task alone and lists it in `Skipped`.
+- **Reports on failure.** `SetTimezone`, `ResumeAll` and `UpgradeTemplates` return empty results with an error, since
+  the transaction rolled back.
+- **Errors are not swallowed.** `Timezone`, `Window`, `Quiet`, `GloballyPaused` and the per-preset settings return an
+  error for a stored value that does not parse (unset still means the default), and the enclosing transaction fails.
+- **Locking.** The service uses `scheduler.WithTaskLock`, which honors the lock key the IPC path puts in its context,
+  so a future caller inside `ProcessTaskRequest` does not deadlock on the non-reentrant mutex.
+- **`ReminderOneShot` helper** takes the whole task and requires the owner folder and `once` schedule type besides the
+  id prefix or the prompt marker, since both of those are agent-chosen text.
+- **Quiet hours.** A polling hour is dropped when any minute of it is quiet (`22:00-09:30` removes hour 09). A preset
+  paused by quiet hours stores `reason` in its settings JSON and does not resume by itself when quiet hours are
+  cleared; the owner enables it again. `SetQuiet` rejects minutes outside `0..1439` and `start == end`. Polling
+  uses whole hours; fixed times use minutes.
+- **`cal.reminder`.** PR 1 renders only the poll task (cron `*/30` in the window, lead and lookahead written into the
+  prompt) and ships the id, prefix and marker helpers. Deleting pending one-shots on disable, global pause or lead
+  change, the state file, and the sweep are PR 4; until then `Disable` and `PauseAll` touch only the poll task.
+- **Prompt text.** The six bodies and the three fixed paragraphs are in the catalog at `TemplateVersion` 1 so the hash
+  and upgrade logic have real input; PR 3 owns the final wording (including the `cal.reminder` poll and one-shot text)
+  and bumps the version, which exercises the upgrade path.
+- **Queue order verified.** A user message enqueued while a task runs in the same folder waits for the task, is
+  never batched with a task, and does not cancel the task's context (`task_order_test.go`).

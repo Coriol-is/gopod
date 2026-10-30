@@ -35,6 +35,9 @@ type TaskInfo struct {
 
 func DescribeTask(t store.TaskRecord) TaskInfo {
 	info := TaskInfo{TaskID: t.ID, ChatFolder: t.ChatFolder, ChatJID: t.ChatJID, Prompt: t.Prompt, ScheduleType: t.ScheduleType, ScheduleValue: t.ScheduleValue, NextRun: t.NextRun, Status: t.Status}
+	if t.NextRun < 0 { // internal marker (the global pause of a preset): unscheduled to agents
+		info.NextRun = 0
+	}
 	if t.NextRun > 0 {
 		info.NextRunAt = time.UnixMilli(t.NextRun).UTC().Format(time.RFC3339)
 	}

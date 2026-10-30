@@ -2,11 +2,11 @@
 
 | | |
 |---|---|
-| Status | accepted (2026-10-30; first set Gmail and Calendar, preset list approved) |
+| Status | in-progress (2026-10-30; PR 1 core + store in review; first set Gmail and Calendar, preset list approved) |
 | Date | 2026-10-30 |
 | Origin | owner request after the codex-agent autonomy delta ([note](../research/2026-10-30-codex-agent-autonomy-prioritization.md)) |
 | Size | M |
-| Touches | `internal/control` (new `/proactive` command), `internal/store` (preset marker on scheduled tasks), `internal/scheduler`, `internal/telegram` (picker buttons) |
+| Touches | `internal/control` (new `/proactive` command), `internal/proactive` (new core), `internal/store` (side tables `proactive_presets`, `proactive_settings`; no change to `scheduled_tasks`), `internal/scheduler`, `internal/telegram` (picker buttons) |
 | Depends on | existing scheduled tasks (CP-015) and `/tasks`; CP-006 and CP-002 for quiet-hour delivery of proactive messages |
 | Spec | [Proactive presets](../superpowers/specs/2026-10-30-proactive-presets.md) |
 
