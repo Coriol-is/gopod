@@ -23,6 +23,18 @@ mechanisms now, add **one** new candidate for a proactive digest framework built
 deterministically (not the donor's "ask the model to look at every connected source"), and
 keep automatic self-modification out.
 
+### Owner correction, 2026-10-30 (supersedes every restriction below)
+
+In the owner's private chat and the owner's own sessions nothing is forbidden or gated: provider
+connectors (Gmail, Calendar, Drive and the rest) work as connected, in owner turns and in
+proactive runs, read and write, with no read-only requirement, no CP-027 approval step and no
+"connectors off" rule. This restates the standing decision "lower paranoia for the owner's own
+actions, keep the boundary against group members". Anything below that reads as a prohibition
+or a gate (A3a as a precondition, "connectors off in Claude", the host-side Gmail fallback as a
+requirement, read-only profiles) applies only to non-owner scopes such as groups, or is an
+optional owner-chosen switch. Controls the owner wants are visibility, on/off switches, quiet
+hours, a cost cap and an audit record, not enforcement against the owner.
+
 ## 2. Donor autonomy inventory (static read, nothing run)
 
 "Evidence" means tests or docs in the donor repo. The donor repo holds no run logs by design,
@@ -92,15 +104,14 @@ owner already has through connectors on the Mac versus on the Pi. Output: a reco
 with the minimum credential scope. Acceptance: states where each credential lives and who can
 read it.
 
-**A3a. Can a proactive run be made read-only on connectors?**
+**A3a. Can a proactive run be made read-only on connectors? (optional; owner scope needs no restriction)**
 Question: for each pinned CLI, can a single run be given only the read tools of the Gmail and
 Calendar connectors (tool allow/deny list, per-run config, or a read-only Google scope)?
 Method: read the CLI documentation and configuration schema for tool allowlists; if unclear,
 a design-only note listing what must be tried on the Pi with synthetic data and no account
-send. Output: yes/no per provider and the exact mechanism. Acceptance: until this is a
-documented yes, no unattended turn gets a mail or calendar connector at all, only a normal
-owner-initiated turn does. This is the condition for the owner's 2026-10-30 decision to be
-safe.
+send. Output: yes/no per provider and the exact mechanism. Acceptance: a documented answer per
+provider. It is needed only if the owner chooses an optional read-only switch for a job, or
+for non-owner scopes; it is not a condition for owner-scope connector use.
 
 **A4. Quota and budget model for proactive turns.**
 Question: what do N proactive turns per day cost on the shared subscription, and what happens
@@ -151,12 +162,13 @@ needs first. Rank is my recommendation, not an approval.
   output schema and redaction, and the model only summarizes what they return.
 - Delivery goes through the outbox with the `proactive` flag so CP-006 quiet hours apply;
   explicit reminders bypass quiet hours, digests do not.
-- Read-only role, owner chat only, never a group; one stated cost cap and an automatic skip when
-  quota is low (the 20/10/5 percent rules).
+- Owner private chat only, never a group. Read-only is an optional per-job switch, not a rule.
+  A cost cap and a skip when quota is low (the 20/10/5 percent rules) are owner-configurable.
 - The existing freefeed digest is not moved (owner decision 2026-10-30). CP-033 is limited to
   controlling provider connectors and the proactive actions that use them.
 - Mail and calendar are the second step through connectors in the private chat. They must be
-  read-only for proactive turns. CP-027 does **not** cover this: it governs only brokered
+  read-only only if the owner chooses that switch (the owner scope has no such requirement).
+  CP-027 does **not** cover connectors: it governs only brokered
   actions whose credentials the host holds (spec: "Full-access personal shells/native
   integrations that can bypass the broker are not silently claimed to be covered"). A
   provider connector holds its own Google consent, so the host cannot intercept a send made
@@ -218,19 +230,19 @@ synthetic test in the last paragraph passes.
 | Audit of what ran | `tool_use` blocks in `stream-json` (main-thread form not quoted in docs) | `--json` emits `mcp_tool_call` events with server, tool, arguments, status |
 | Unknown | whether connectors load in `-p`; exact server names for Gmail and Calendar | the app id of Gmail; whether dotted `-c apps.*` overrides work; behavior on the pinned tag |
 
-Conclusions:
+Conclusions (for the optional read-only switch and for non-owner scopes only; see the owner
+correction above):
 1. **Claude cannot be made read-only fail-closed with deny rules alone.** Only deny-by-name is
    available, and connector updates can add write tools that pass. A default-deny `PreToolUse`
    hook would fix that if it fires under bypass, which is undocumented. Until a synthetic
    test shows it fires, a Claude proactive run must have connectors **off**.
 2. **Codex can be made read-only with an explicit tool allowlist**, subject to learning the app
    id and exact tool names and confirming the settings apply on the pinned version.
-3. Therefore for proactive runs the plan is: connectors off in Claude, host-side collectors
-   (Gmail API read-only, section 10) for mail and calendar, and a possible Codex connector path
-   only after the live check. Connectors remain available in owner-initiated turns in the
-   private chat, which is what the 2026-10-30 decision allows.
+3. For the owner's private chat nothing needs to change: connectors work as connected in owner
+   turns and in proactive runs. The restriction mechanisms above matter only if the owner opts
+   into read-only for a job, or for a non-owner scope.
 
-Live check that would change this (synthetic data, no send, owner approval needed): run one
+Optional live check, needed only for the read-only switch or non-owner scopes (synthetic data, no send, owner approval needed): run one
 headless turn per provider with a deny/allowlist configuration, ask the model to call one
 read tool and one write tool of a throwaway connector or a local fake MCP server, and confirm
 (a) the write call is blocked and recorded, (b) the read call runs, (c) a newly added tool on
@@ -248,7 +260,7 @@ the connector route is a real option, not a hypothetical, and the live check bel
 remaining gate before a read-only connector configuration can be trusted. The host-side Gmail
 API (section 10) remains the fallback if that check fails for a provider.
 
-## 10. Fallback when connectors cannot be restricted: host-side Gmail and Calendar
+## 10. Optional: host-side Gmail and Calendar (not required for owner scope)
 
 Owner request 2026-10-30. Own OAuth application, read-only scopes (`gmail.readonly`,
 `calendar.readonly`), token held by the host as an environment secret (D012), a collector with a
