@@ -81,8 +81,11 @@ categories wanted (calendar, mail, tasks, repos), categories refused. Acceptance
 decision recorded in HANDOFF.
 
 **A3. Source strategy for digests.**
-Question: provider connectors read by the model (donor) versus a host-side deterministic
-collector that fetches a bounded, redacted structure and hands only that to the model.
+Owner decision 2026-10-30: provider connectors (mail, calendar) are allowed in the private
+chat only. The question is therefore how to make that acceptable, not whether: what the host
+can still record (which connector tools ran, counts, timing), which scopes to request
+(read-only), and when a host-side deterministic collector that hands the model a bounded,
+redacted structure is worth building instead.
 Method: compare on auditability, group-isolation fit (CP-020), credential exposure (the
 credential adapter spec), failure visibility, and cost. Include what mail/calendar access the
 owner already has through connectors on the Mac versus on the Pi. Output: a recommendation
@@ -120,7 +123,7 @@ needs first. Rank is my recommendation, not an approval.
 | 2 | CP-022 model-free reminders and schedule policy | H (zero quota, reliable) | M | L | CP-004 admission truth | Take. Cheapest autonomy win. |
 | 3 | CP-006 quiet hours and idle-only maintenance | H (prerequisite for anything proactive) | S-M | L | CP-002 outbox (merged) | Take before any proactive turn. |
 | 4 | A1, A2, A4 (analysis only) | M | S | L | none | Do now; they decide item 5. |
-| 5 | **New candidate: proactive digest framework** (proposed as CP-033, not created) | M-H | M | M | items 1-3, A2-A5 | Take as proposal-only digests, see below. |
+| 5 | **New candidate: proactive digest framework** (proposed as CP-033, not created) | M-H | M | M | items 1-3, A2-A5 | Take as proposal-only digests, see below. Mail/calendar via connectors in the private chat is allowed. |
 | 6 | CP-021 task outcomes and checkpoints | M | M | L | CP-004 | Take after item 1. |
 | 7 | CP-007 timer and restore drill | M | M | L | owner approval for Pi work | Continue as planned. |
 | 8 | CP-023 research dossiers | M | L | M | CP-004, CP-003 | Later. |
@@ -131,15 +134,19 @@ needs first. Rank is my recommendation, not an approval.
 ### Proposed shape of the digest candidate (for item 5, not a design)
 
 - Cadence and categories come from A2; default off, owner-enabled per digest.
-- Collectors are host code with a fixed output schema and redaction; the model only
-  summarizes what the collector returned. No "review all connected sources" prompt.
+- Sources: the owner's private chat may use provider connectors for mail and calendar
+  (owner decision 2026-10-30), read-only, with an explicit list of sources in the prompt
+  instead of "review all connected sources", and a host record of which tools ran. Sources
+  that do not need a connector (freefeed, repos, tasks) use host collectors with a fixed
+  output schema and redaction, and the model only summarizes what they return.
 - Delivery goes through the outbox with the `proactive` flag so CP-006 quiet hours apply;
   explicit reminders bypass quiet hours, digests do not.
 - Read-only role, owner chat only, never a group; one stated cost cap and an automatic skip when
   quota is low (the 20/10/5 percent rules).
 - The first target is the existing freefeed digest moved onto the same framework, so no new
   data source is needed to prove it.
-- Mail is a second step and needs its own credential decision (A3) and CP-027 approvals.
+- Mail and calendar are the second step through connectors in the private chat, read-only;
+  any send, reply or event change goes through CP-027 approvals, never autonomously.
 
 ## 6. What not to take
 
@@ -147,8 +154,11 @@ needs first. Rank is my recommendation, not an approval.
   files within a trial. gopod's CP-026 already says proposal-only first; keep it.
 - **Model-driven cleanup with full access (D5).** Do cleanup as deterministic host code or
   not at all.
-- **Provider-side connectors as the source of mail/calendar truth.** They cannot be audited
-  and do not fit per-chat isolation.
+- **Provider connectors for mail/calendar outside the owner's private chat.** Owner decision
+  2026-10-30: connectors are allowed in the private chat. They stay out of groups and out of
+  every non-owner scope, because their reads cannot be audited by the host and do not fit
+  per-chat isolation. The private-chat use carries the residual risk that a connector read is
+  visible to the host only as the model's own account of it.
 - **Donor operational choices:** one-second SQLite tick across services, inline schema
   changes without migrations, single 790-line service file, hard SDK/ChatGPT coupling.
 
@@ -167,7 +177,8 @@ needs first. Rank is my recommendation, not an approval.
 ## 8. Open questions for the owner
 
 1. Do you want proactive messages at all (A2), and which categories: tasks/repos, calendar,
-   mail, project status?
+   mail, project status? (Mail and calendar through connectors are allowed in the private
+   chat; which connectors are actually enabled on your account?)
 2. Is the freefeed digest the right first workload to move onto a digest framework?
 3. May A1 read the production store and logs (counts only, via the existing read-only
    diagnostics), or should it use only repo evidence?
