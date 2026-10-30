@@ -57,6 +57,12 @@ of the task/IPC path.
 `GOPOD_OUTBOX_ARTIFACTS` or `GOPOD_MANAGED_TASKS` (both have unmet gates: restore drill + capability issuer; task
 credential adapter + Pi Docker-inspect round trip), changing Telegram privacy/admin rights.
 
+## CP-003 PR B: photo presentation + caption units (branch `feat/cp003-photo-presentation`, 2026-10-30)
+`artifactParts` maps request `presentation: "photo"` to `store.UploadPresentationPhoto` (D052, supersedes D039's "always
+documents"); IPC and `validatePublish` count captions in UTF-16 units (limit 1024, `store.CaptionUTF16Units`), fixing the
+emoji-caption drop for photos and documents. Flag `GOPOD_OUTBOX_ARTIFACTS` stays off, defaults unchanged. Next: PR C
+(capability issuer), then D (agent instructions); E (foreground cutover) is separate.
+
 ## CP-033 PR 2: `/proactive` command (branch `feat/cp033-command`, 2026-10-30)
 `internal/control/proactive*.go` registers `/proactive` (`PermOwnerOnly`; the Router refuses it in groups and for forged
 or stranger presses): overview, connector and preset screens, on/off, frequency, time-of-day and lead pickers, `tz`
