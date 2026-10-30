@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | in-progress (2026-10-30; PR 1 core + store in review; first set Gmail and Calendar, preset list approved) |
+| Status | in-progress (2026-10-30; PR 1 core + store merged, PR 2 `/proactive` command in review; first set Gmail and Calendar, preset list approved) |
 | Date | 2026-10-30 |
 | Origin | owner request after the codex-agent autonomy delta ([note](../research/2026-10-30-codex-agent-autonomy-prioritization.md)) |
 | Size | M |

@@ -227,6 +227,7 @@ Cross-chat operations and global state.
 | `/system health` | `gopod system health` | OwnerOnly | Container daemon, DB, embedder, scheduler, queue health |
 | `/system uptime` | `gopod system uptime` | OwnerOnly | Process uptime, last restart cause |
 | `/debug ...` | `gopod debug ...` | OwnerOnly | Free-form diagnostics (per-subcommand) |
+| `/proactive [gmail\|calendar [<preset> [on\|off\|freq <v>\|time <HHMM>\|lead <min>\|reset]]]`, `/proactive tz [<IANA>]`, `/proactive hours [<HHMM-HHMM>]`, `/proactive quiet [<HHMM-HHMM>\|off]`, `/proactive off\|on` | (Telegram only) | OwnerOnly | Built-in recurring Gmail and Calendar presets (CP-033, [spec](superpowers/specs/2026-10-30-proactive-presets.md)). No argument shows the overview; every screen is a picker (current choice `✓`, message edited in place) and each button re-dispatches the command, so the Router re-checks `OwnerOnly` on the presser. Refused in groups for everyone, the owner included. Turning a preset on while the connector status is unknown asks for a Yes; `reset` (discard edits made in `/tasks`) confirms. `check`, `guide` and `offer` are not built yet |
 
 ### 5.3a Group-scoped owner commands (D048)
 

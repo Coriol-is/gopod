@@ -787,3 +787,20 @@ Where the code and this spec differ, the code wins. Differences found while impl
   and bumps the version, which exercises the upgrade path.
 - **Queue order verified.** A user message enqueued while a task runs in the same folder waits for the task, is
   never batched with a task, and does not cancel the task's context (`task_order_test.go`).
+
+## 19. Implementation notes (PR 2, `/proactive` command)
+
+- **Screens built:** overview, connector, preset, time picker, `tz`, `hours`, `quiet`, global `off|on`, `reset`. The
+  overview omits the provider-status line, the "Other connectors" row and "Check again" (probe and offers are PR 5 and
+  PR 6); the preset screen omits "Run now" (not in the PR 2 outline). `check`, `guide` and `offer` answer "not available yet".
+- **Connector status seam.** `ProactiveDeps.Connector` returns `unknown` (default), `ready` or `not connected`. `unknown`
+  asks a Yes before enabling, `ready` enables directly, `not connected` refuses even with a confirmation.
+- **`reset` verb.** `/proactive <connector> <preset> reset` (confirmed) is `ResetToTemplate`; the spec only named the
+  button. It is offered when the task was edited or the template is outdated.
+- **Time picker** lists hourly times of the preset's range minus quiet hours (`Preset.TimeOptions`); other minutes are typed.
+- **Runs per day** come from `proactive.RunsPerWorkingDay` (the renderer's own hour list), shown per week for Sunday and
+  Monday presets.
+- **Service resolution.** The command resolves the service from the registered owner chat on every call; with no owner
+  registration it answers "unavailable". `UpgradeTemplates` also runs when a preset screen opens (section 6.6).
+- **Language.** Replies are English, like the other control commands (`/trigger`, `/restart`); only the Telegram button
+  layer uses Russian.
