@@ -121,3 +121,77 @@ func mustJSON(t *testing.T, v any) []byte {
 	}
 	return b
 }
+
+// outsideFile makes a valid-looking outcome file outside chatDir.
+func outsideFile(t *testing.T) (outDir string) {
+	t.Helper()
+	outDir = t.TempDir()
+	if err := os.WriteFile(filepath.Join(outDir, "gmail.urgent.last"), []byte(`{"result":"sent","note":"stolen"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return outDir
+}
+
+func TestReadOutcomeRefusesASymlinkedProactiveDirectory(t *testing.T) {
+	chat := t.TempDir()
+	out := outsideFile(t)
+	if err := os.Symlink(out, filepath.Join(chat, "proactive")); err != nil {
+		t.Fatal(err)
+	}
+	if o, err := ReadOutcome(chat, "gmail.urgent"); err == nil {
+		t.Fatalf("followed a directory symlink out of the workspace: %+v", o)
+	}
+}
+
+func TestReadOutcomeRefusesAFileSymlinkEvenInsideTheWorkspace(t *testing.T) {
+	chat := t.TempDir()
+	pd := filepath.Join(chat, "proactive")
+	if err := os.MkdirAll(pd, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out := outsideFile(t)
+	if err := os.Symlink(filepath.Join(out, "gmail.urgent.last"), filepath.Join(pd, "gmail.urgent.last")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(chat, "inside"), []byte(`{"result":"sent"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../inside", filepath.Join(pd, "cal.agenda.last")); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"gmail.urgent", "cal.agenda"} {
+		if o, err := ReadOutcome(chat, id); err == nil {
+			t.Errorf("%s: followed a file symlink: %+v", id, o)
+		}
+	}
+}
+
+func TestReadOutcomeRefusesADirectoryInPlaceOfTheFile(t *testing.T) {
+	chat := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(chat, "proactive", "gmail.urgent.last"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadOutcome(chat, "gmail.urgent"); err == nil {
+		t.Fatal("read a directory")
+	}
+}
+
+func TestReadOutcomeReportsTheFileModificationTime(t *testing.T) {
+	chat := t.TempDir()
+	pd := filepath.Join(chat, "proactive")
+	if err := os.MkdirAll(pd, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(pd, "gmail.urgent.last")
+	if err := os.WriteFile(path, []byte(`{"result":"empty"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mt := time.Date(2026, 10, 30, 9, 0, 0, 0, time.UTC)
+	if err := os.Chtimes(path, mt, mt); err != nil {
+		t.Fatal(err)
+	}
+	o, err := ReadOutcome(chat, "gmail.urgent")
+	if err != nil || !o.Modified.Equal(mt) {
+		t.Fatalf("Modified = %v, %v", o.Modified, err)
+	}
+}

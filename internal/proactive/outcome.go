@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 	"unicode"
 )
@@ -33,7 +33,9 @@ const (
 type Outcome struct {
 	At     time.Time // zero when the agent wrote none or an invalid time
 	Result Result
-	Note   string // sanitized, at most 120 runes, one line, no backticks
+	// Modified is the modification time of the file as opened (zero from ParseOutcome).
+	Modified time.Time
+	Note     string // sanitized, at most 120 runes, one line, no backticks
 }
 
 // Spoke reports whether the run sent a message to the owner.
@@ -86,29 +88,67 @@ func sanitizeNote(s string) string {
 }
 
 // ReadOutcome reads the outcome file of a catalog preset from the host side of
-// the chat workspace (chatDir is the folder mounted at /workspace/chat). It
-// does not follow symlinks: the folder is writable by the agent. A missing
-// file returns an error wrapping fs.ErrNotExist.
+// the chat workspace (chatDir is the folder mounted at /workspace/chat). The
+// folder is writable by the agent, which may have read hostile mail, so:
+//
+//   - the lookup runs inside an os.Root, which refuses any path component (the
+//     proactive directory included) that is a symlink leaving chatDir;
+//   - symlinks are refused outright, even inside the workspace;
+//   - the file is opened non-blocking and its type is checked on the opened
+//     descriptor, so a FIFO or device swapped in after the check cannot hang
+//     the caller or leak data.
+//
+// A missing file returns an error wrapping fs.ErrNotExist.
 func ReadOutcome(chatDir, presetID string) (Outcome, error) {
 	if _, ok := Lookup(presetID); !ok {
 		return Outcome{}, fmt.Errorf("outcome: %q is not a preset", presetID)
 	}
-	path := filepath.Join(chatDir, "proactive", presetID+".last")
-	info, err := os.Lstat(path)
+	root, err := os.OpenRoot(chatDir)
+	if err != nil {
+		return Outcome{}, fmt.Errorf("outcome: %w", err)
+	}
+	defer root.Close()
+	dirInfo, err := root.Lstat("proactive")
+	if err != nil {
+		return Outcome{}, fmt.Errorf("outcome: %w", err)
+	}
+	if !dirInfo.IsDir() {
+		return Outcome{}, fmt.Errorf("outcome: proactive is not a directory")
+	}
+	name := "proactive/" + presetID + ".last"
+	info, err := root.Lstat(name)
 	if err != nil {
 		return Outcome{}, fmt.Errorf("outcome: %w", err)
 	}
 	if !info.Mode().IsRegular() {
 		return Outcome{}, fmt.Errorf("outcome: %s is not a regular file", presetID)
 	}
-	f, err := os.Open(path)
+	if beforeOpenHook != nil {
+		beforeOpenHook()
+	}
+	f, err := root.OpenFile(name, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return Outcome{}, fmt.Errorf("outcome: %w", err)
 	}
 	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return Outcome{}, fmt.Errorf("outcome: %w", err)
+	}
+	if !fi.Mode().IsRegular() {
+		return Outcome{}, fmt.Errorf("outcome: %s is not a regular file", presetID)
+	}
 	data, err := io.ReadAll(io.LimitReader(f, outcomeMaxBytes+1))
 	if err != nil {
 		return Outcome{}, fmt.Errorf("outcome: reading %s: %w", presetID, err)
 	}
-	return ParseOutcome(data)
+	o, err := ParseOutcome(data)
+	if err != nil {
+		return Outcome{}, err
+	}
+	o.Modified = fi.ModTime()
+	return o, nil
 }
+
+// beforeOpenHook runs between the type check and the open; tests swap the file there.
+var beforeOpenHook func()
