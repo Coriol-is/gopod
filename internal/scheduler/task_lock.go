@@ -26,3 +26,13 @@ func taskOperationLock(ctx context.Context, st *store.Store) func() {
 	}
 	return LockTasks(st)
 }
+
+// WithTaskLock runs fn holding the task lock. Unlike LockTasks it honors the
+// lock key the IPC path puts in its context, so a caller already inside
+// ProcessTaskRequest (which holds the non-reentrant mutex) does not deadlock.
+// fn's context carries the key for anything it calls in turn.
+func WithTaskLock(ctx context.Context, st *store.Store, fn func(ctx context.Context) error) error {
+	release := taskOperationLock(ctx, st)
+	defer release()
+	return fn(context.WithValue(ctx, taskLockKey{}, st))
+}

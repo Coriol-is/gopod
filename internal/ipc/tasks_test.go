@@ -125,3 +125,22 @@ func TestWatcher_TaskCrossFolderNonOwnerBlocked(t *testing.T) {
 		t.Errorf(".failed = %v, want 1", got)
 	}
 }
+
+// A preset id is reserved for the owner folder: a group or any other folder
+// must not be able to pre-create preset-<id> and have Enable adopt it.
+func TestWatcher_PresetTaskIDsAreOwnerOnly(t *testing.T) {
+	for folder, wantScheduled := range map[string]int{"alice": 0, "owner": 1} {
+		root := t.TempDir()
+		writeIPC(t, root, folder, "tasks", "0001.json", map[string]any{
+			"op": "schedule", "taskId": "preset-gmail.morning", "prompt": "p",
+			"scheduleType": "cron", "scheduleValue": "0 9 * * *",
+		})
+		tasks := &fakeTaskSink{}
+		w := New(Config{DataDir: root, OwnerFolder: "owner", NowFn: func() time.Time { return time.Unix(1_700_000_000, 0) }},
+			&fakeMessageSink{}, tasks, nil, staticResolver(map[string]string{"alice": "2002", "owner": "1"}))
+		w.tickOnce(context.Background())
+		if got := len(tasks.scheduled); got != wantScheduled {
+			t.Errorf("folder %s: scheduled = %d, want %d", folder, got, wantScheduled)
+		}
+	}
+}
