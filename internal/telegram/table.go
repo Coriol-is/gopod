@@ -117,7 +117,7 @@ func splitTableRow(line string) []string {
 }
 
 var (
-	cellLinkRe   = regexp.MustCompile(`\[([^\]\n]+)\]\([^)\s]+\)`)
+	cellLinkRe   = regexp.MustCompile(`\[([^\]\n]+)\]\(([^)\s]+)\)`)
 	cellBoldRe   = regexp.MustCompile(`\*\*(.+?)\*\*|__(.+?)__`)
 	cellStrikeRe = regexp.MustCompile(`~~(.+?)~~`)
 	cellItalicRe = regexp.MustCompile(`\*(\S[^*]*?)\*`)
@@ -127,6 +127,7 @@ var (
 // spans are swapped for placeholders while the emphasis and link patterns
 // run, so they can wrap a span without touching its contents.
 func plainCell(s string) string {
+	s = strings.ReplaceAll(s, "\x00", "") // NUL delimits the placeholders below
 	var codes []string
 	var masked strings.Builder
 	for i := 0; i < len(s); {
@@ -148,7 +149,20 @@ func plainCell(s string) string {
 		masked.WriteString(s[i : i+n]) // unmatched: literal backticks
 		i += n
 	}
-	out := plainEmphasis(masked.String())
+	// A link keeps its URL as plain text after the label; the URL is masked
+	// too so emphasis patterns cannot touch it.
+	text := cellLinkRe.ReplaceAllStringFunc(masked.String(), func(m string) string {
+		sub := cellLinkRe.FindStringSubmatch(m)
+		url := "(" + sub[2] + ")"
+		if label := strings.TrimSpace(sub[1]); label != "" {
+			url = " " + url
+			codes = append(codes, url)
+			return label + "\x00" + strconv.Itoa(len(codes)-1) + "\x00"
+		}
+		codes = append(codes, url)
+		return "\x00" + strconv.Itoa(len(codes)-1) + "\x00"
+	})
+	out := plainEmphasis(text)
 	for k, c := range codes {
 		out = strings.Replace(out, "\x00"+strconv.Itoa(k)+"\x00", c, 1)
 	}
@@ -176,7 +190,6 @@ func closingRun(s string, from, n int) int {
 }
 
 func plainEmphasis(s string) string {
-	s = cellLinkRe.ReplaceAllString(s, "$1")
 	s = cellBoldRe.ReplaceAllString(s, "$1$2")
 	s = cellStrikeRe.ReplaceAllString(s, "$1")
 	return cellItalicRe.ReplaceAllString(s, "$1")

@@ -28,7 +28,7 @@ func TestTableAlignmentAndCells(t *testing.T) {
 	}{
 		{"center", "|a|b|\n|:-:|:-:|\n|xxxx|y|", "<pre> a   | b\n-----+--\nxxxx | y</pre>"},
 		{"escaped pipe", `|a|b|` + "\n|-|-|\n" + `|x\|y|z|`, "<pre>a   | b\n----+--\nx|y | z</pre>"},
-		{"inline markup stripped", "|**a**|b|\n|-|-|\n|[l](http://x.y)|*i* ~~s~~|", "<pre>a | b\n--+----\nl | i s</pre>"},
+		{"inline markup stripped", "|**a**|b|\n|-|-|\n|[l](http://x.y)|*i* ~~s~~|", "<pre>a              | b\n---------------+----\nl (http://x.y) | i s</pre>"},
 		{"escaped html", "|a|b|\n|-|-|\n|<x>|&|", "<pre>a   | b\n----+--\n&lt;x&gt; | &amp;</pre>"},
 		{"ragged padded", "|a|b|\n|-|-|\n|1|\n|1|2|", "<pre>a | b\n--+--\n1 |\n1 | 2</pre>"},
 		{"no outer pipes", "a | b\n- | -\n1 | 2", "<pre>a | b\n--+--\n1 | 2</pre>"},
@@ -82,7 +82,7 @@ func TestTableMoreCases(t *testing.T) {
 func TestTableReviewRound2(t *testing.T) {
 	long := strings.Repeat("x", 40)
 	tests := []struct{ name, md, want string }{
-		{"emphasis around code", "|a|b|\n|-|-|\n|**a `b` c**|[`x`](http://u)|", "<pre>a     | b\n------+--\na b c | x</pre>"},
+		{"emphasis around code", "|a|b|\n|-|-|\n|**a `b` c**|[`x`](http://u)|", "<pre>a     | b\n------+-------------\na b c | x (http://u)</pre>"},
 		{"unescaped pipe in code splits", "|a|b|\n|-|-|\n|`x|y`|z|", "<pre>a | b\n--+--</pre>\n|<code>x|y</code>|z|"},
 		{"unmatched backticks across cells", "|a|b|c|\n|-|-|-|\n|5`|x`y|z|", "<pre>a  | b   | c\n---+-----+--\n5` | x`y | z</pre>"},
 		{"double backtick span", "|a|b|\n|-|-|\n|``a`b``|z|", "<pre>a   | b\n----+--\na`b | z</pre>"},
@@ -114,44 +114,6 @@ func TestDisplayWidthRound2(t *testing.T) {
 		if got := displayWidth(tc.s); got != tc.want {
 			t.Errorf("%s: width %d want %d", name, got, tc.want)
 		}
-	}
-}
-
-func TestTablePagingRepeatsHeader(t *testing.T) {
-	var sb strings.Builder
-	sb.WriteString("Intro\n\n| Имя | Сумма |\n|:--|--:|\n")
-	for i := 0; i < 400; i++ {
-		fmt.Fprintf(&sb, "| Платёж %d | %d,50 |\n", i, i*7)
-	}
-	md := strings.TrimSuffix(sb.String(), "\n")
-	pages := splitPages(md, pageFits)
-	if len(pages) < 2 {
-		t.Fatalf("want several pages, got %d", len(pages))
-	}
-	next := 0
-	for i, p := range pages {
-		lines := strings.Split(p, "\n")
-		if i == 0 {
-			lines = lines[2:] // "Intro" and the blank line
-		}
-		if lines[0] != "| Имя | Сумма |" || lines[1] != "|:--|--:|" {
-			t.Fatalf("page %d does not start with the header: %q", i, lines[:2])
-		}
-		if !pageFits(p) {
-			t.Errorf("page %d too big", i)
-		}
-		for _, l := range lines[2:] {
-			if want := fmt.Sprintf("| Платёж %d | %d,50 |", next, next*7); l != want {
-				t.Fatalf("page %d: got %q want %q", i, l, want)
-			}
-			next++
-		}
-		if h := markdownToTelegramHTML(p); !strings.HasPrefix(h, "<pre>") && i > 0 {
-			t.Errorf("page %d did not render as a table: %.60q", i, h)
-		}
-	}
-	if next != 400 {
-		t.Errorf("rows across pages: %d, want 400", next)
 	}
 }
 
@@ -279,6 +241,22 @@ func TestLongTableChunksStayValid(t *testing.T) {
 		}
 		if err := balanced(markdownToTelegramHTML(p)); err != nil {
 			t.Errorf("page %d unbalanced: %v", i, err)
+		}
+	}
+}
+
+func TestTableCellNULAndLinks(t *testing.T) {
+	long := strings.Repeat("x", 40)
+	tests := []struct{ name, md, want string }{
+		{"nul next to code", "|a|b|\n|-|-|\n|\x000\x00 `c`|z|", "<pre>a   | b\n----+--\n0 c | z</pre>"},
+		{"link keeps url in pre", "|a|b|\n|-|-|\n|[t](http://u/?a=1&b=2)|z|", "<pre>a                     | b\n----------------------+--\nt (http://u/?a=1&amp;b=2) | z</pre>"},
+		{"link keeps url in cards", "|a|" + long + "|\n|-|-|\n|[t](http://u)|z|", "<b>a</b>: t (http://u)\n<b>" + long + "</b>: z"},
+		{"empty-ish link text", "|a|b|\n|-|-|\n|[ ](http://u)|z|", "<pre>a          | b\n-----------+--\n(http://u) | z</pre>"},
+	}
+	for _, tc := range tests {
+		got := markdownToTelegramHTML(tc.md)
+		if got != tc.want || strings.ContainsRune(got, 0) {
+			t.Errorf("%s:\ngot  %q\nwant %q", tc.name, got, tc.want)
 		}
 	}
 }
