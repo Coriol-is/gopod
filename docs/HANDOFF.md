@@ -29,8 +29,10 @@ push https://github.com/Coriol-is/gopod.git <branch>:<branch>`. Flow: worktree -
 CI -> `gh pr merge --squash --admin --delete-branch` (ruleset needs one approval; admin path is the working one).
 
 **Owner decisions (answered 2026-10-30):**
-1. Task credential adapter: take the recommendation (B2, task-only auth dir with the access token only). The spec's other
-   questions use their recommended answers: [spec](superpowers/specs/2026-10-29-task-role-credential-adapter.md). Not built yet.
+1. Task credential adapter: **deferred** (owner, 2026-10-30). The recommendation stays B2 (task-only auth dir with the
+   access token only) with the spec's recommended answers: [spec](superpowers/specs/2026-10-29-task-role-credential-adapter.md).
+   Not built; `GOPOD_MANAGED_TASKS` stays off, so recurring work (including the CP-033 Gmail and Calendar presets) runs on the
+   existing scheduler path in the owner's main session. Revisit when isolated task sessions (CP-004/CP-021) are needed.
 2. [Agent buttons and hooks](superpowers/specs/2026-10-29-agent-buttons-and-hooks.md): still open (5 questions).
 3. Group `/login` prompt: dropped (branch `feat/group-login-no-prompt`): the owner's group `/login` now sends the real
    step privately and a neutral line to the group; the private confirmation, token maps and `login.group.confirm`
