@@ -2,7 +2,9 @@ package control
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"strings"
 	"time"
 
@@ -180,6 +182,9 @@ func (h proactiveHandler) presetScreen(ctx context.Context, svc *proactive.Servi
 		if st.LastRun > 0 {
 			fmt.Fprintf(&sb, "Last run: %s\n", time.UnixMilli(st.LastRun).In(loc).Format("Mon 15:04"))
 		}
+		if line := h.outcomeLine(ctx, p, st.LastRun, loc); line != "" {
+			sb.WriteString(line + "\n")
+		}
 	}
 	edited := "no"
 	if st.Modified {
@@ -287,4 +292,65 @@ func orNone(s string) string {
 		return "none"
 	}
 	return s
+}
+
+// outcomeLine describes what the last run did, from the outcome file the agent
+// wrote (section 5.3). The file is agent-written and untrusted: only its
+// sanitized fields are shown, nothing acts on it. A run with no usable file
+// (missing, corrupt, from an earlier run) reads "ran, outcome unknown", taken
+// from the task's own last_run. A preset that never ran shows nothing.
+func (h proactiveHandler) outcomeLine(ctx context.Context, p proactive.Preset, lastRun int64, loc *time.Location) string {
+	var o proactive.Outcome
+	known := false
+	if h.deps.ChatDir != nil {
+		if dir, err := h.deps.ChatDir(ctx); err == nil {
+			if got, rerr := proactive.ReadOutcome(dir, p.ID); rerr == nil {
+				o, known = got, true
+			} else if !errors.Is(rerr, fs.ErrNotExist) {
+				h.deps.Log.Debug("proactive: outcome file unusable", "preset", p.ID, "err", rerr)
+			}
+		}
+	}
+	if known && !o.At.IsZero() && lastRun > 0 && o.At.Before(time.UnixMilli(lastRun).Add(-time.Minute)) {
+		known = false // written by an earlier run; this run left none
+	}
+	if known && o.Result == proactive.OutcomeUnknown {
+		known = false
+	}
+	if !known {
+		if lastRun == 0 {
+			return ""
+		}
+		return "Last outcome: ran, outcome unknown"
+	}
+	var what string
+	switch o.Result {
+	case proactive.OutcomeSent:
+		what = "sent a message"
+	case proactive.OutcomeEmpty:
+		what = "stayed silent (nothing to report)"
+	case proactive.OutcomeUnavailable:
+		what = "connector not available"
+	default:
+		what = "error"
+	}
+	at := time.UnixMilli(lastRun)
+	if !o.At.IsZero() {
+		at = o.At
+	}
+	out := fmt.Sprintf("Last outcome: %s (%s)", what, at.In(loc).Format("Mon 15:04"))
+	if note := noMarkup(o.Note); note != "" {
+		out += " · `" + note + "`"
+	}
+	return out
+}
+
+// noMarkup removes the characters that would change Markdown or HTML.
+func noMarkup(s string) string {
+	return strings.Map(func(r rune) rune {
+		if strings.ContainsRune("`*_[]<>&", r) {
+			return -1
+		}
+		return r
+	}, s)
 }

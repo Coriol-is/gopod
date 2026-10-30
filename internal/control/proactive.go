@@ -33,8 +33,12 @@ type ProactiveDeps struct {
 	// Connector reports the status of a connector key ("gmail" or "cal").
 	// Optional: nil means every connector is unknown.
 	Connector func(ctx context.Context, connector string) ConnectorStatus
-	Now       func() time.Time // optional, defaults to time.Now
-	Log       *slog.Logger     // optional
+	// ChatDir returns the host directory mounted at /workspace/chat for the
+	// owner chat; the panel reads the agent's outcome files there. Optional:
+	// nil or an error means no outcome is shown.
+	ChatDir func(context.Context) (string, error)
+	Now     func() time.Time // optional, defaults to time.Now
+	Log     *slog.Logger     // optional
 }
 
 const proactiveUnavailable = "Proactive actions are unavailable right now."

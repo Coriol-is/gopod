@@ -18,6 +18,8 @@ type proactiveFx struct {
 	svc    *proactive.Service
 	r      *Router
 	status ConnectorStatus
+	// chatDir is the host side of the owner's /workspace/chat.
+	chatDir string
 }
 
 func newProactiveFx(t *testing.T) *proactiveFx {
@@ -28,11 +30,12 @@ func newProactiveFx(t *testing.T) *proactiveFx {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fx := &proactiveFx{t: t, st: st, svc: svc, r: New(silentLog()), status: ConnectorUnknown}
+	fx := &proactiveFx{t: t, st: st, svc: svc, r: New(silentLog()), status: ConnectorUnknown, chatDir: t.TempDir()}
 	RegisterBuiltins(fx.r)
 	RegisterProactiveCommand(fx.r, ProactiveDeps{
 		Service:   func(context.Context) (*proactive.Service, error) { return svc, nil },
 		Connector: func(context.Context, string) ConnectorStatus { return fx.status },
+		ChatDir:   func(context.Context) (string, error) { return fx.chatDir, nil },
 		Now:       now,
 	})
 	return fx

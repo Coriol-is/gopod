@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 
 	"github.com/Coriol-is/gopod/internal/proactive"
 	"github.com/Coriol-is/gopod/internal/store"
@@ -23,6 +24,19 @@ func proactiveService(st *store.Store, ownerChatID int64) func(context.Context) 
 			return nil, fmt.Errorf("owner chat %s: %w", jid, err)
 		}
 		return proactive.New(proactive.Config{Store: st, Folder: rc.Folder, ChatJID: jid})
+	}
+}
+
+// proactiveChatDir resolves the host directory of the owner chat's workspace
+// (mounted at /workspace/chat), where the preset outcome files live.
+func proactiveChatDir(st *store.Store, ownerChatID int64, chatsDir string) func(context.Context) (string, error) {
+	jid := fmt.Sprintf("tg:%d", ownerChatID)
+	return func(ctx context.Context) (string, error) {
+		rc, err := st.GetRegistered(ctx, jid)
+		if err != nil {
+			return "", fmt.Errorf("owner chat %s: %w", jid, err)
+		}
+		return filepath.Join(chatsDir, rc.Folder), nil
 	}
 }
 
