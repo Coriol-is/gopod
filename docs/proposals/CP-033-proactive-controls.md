@@ -1,4 +1,4 @@
-# CP-033 — Owner controls for provider connectors and proactive actions
+# CP-033 — Built-in recurring presets for the main connectors
 
 | | |
 |---|---|
@@ -6,52 +6,55 @@
 | Date | 2026-10-30 |
 | Origin | owner request after the codex-agent autonomy delta ([note](../research/2026-10-30-codex-agent-autonomy-prioritization.md)) |
 | Size | M |
-| Touches | `internal/control`, `internal/store`, `internal/scheduler`, `internal/runner` (tool-call record), `internal/telegram` (panel and buttons), `cmd/gopod` (CLI parity) |
-| Depends on | CP-006 and CP-002 for quiet-hour delivery of proactive messages |
+| Touches | `internal/control` (new `/proactive` command), `internal/store` (preset marker on scheduled tasks), `internal/scheduler`, `internal/telegram` (picker buttons) |
+| Depends on | existing scheduled tasks (CP-015) and `/tasks`; CP-006 and CP-002 for quiet-hour delivery of proactive messages |
 | Spec | `—` until accepted |
 
 ## Problem
-Connectors (Gmail, Calendar, Drive and similar) are attached to the owner's Codex or Claude
-account, not to gopod. The host does not know which are connected, cannot say which a given run
-may use, and cannot stop a run from using a write tool. In the donor this is exactly how
-unrequested mail summaries happen: a scheduled prompt says "review all connected sources" and
-whatever the account has connected is read, with only prompt wording as a limit. The owner
-decided on 2026-10-30 that nothing is restricted in the private chat or the owner's own
-sessions; there is no owner-facing view or switch over which connectors exist, which proactive
-actions use them, and when they run.
+Today the owner gets recurring connector work (a morning mail summary, a daily agenda) only by
+describing it to the agent in a dialog, once per task, and re-describing it to change it.
+Nothing ships ready-made, and nothing lets the owner turn such a routine on or off, change how
+often it runs or when its notification arrives, from one place. The donor runs such routines
+unasked from hard-coded prompts; gopod has none.
 
 ## Proposal
-`/connectors` (name open) through `internal/control` like every admin command (D011):
-owner-only, private chat only, authorization in the Router `Perm`. It is a management and
-visibility surface, not a restriction on the owner. Without an argument it shows a panel, with
-inline-button pickers (CLAUDE.md "Commands with parameters"), of the connectors visible to each
-provider, whether each is on for owner turns and for proactive runs (both on by default for the
-owner), and the proactive actions that use them. Each proactive action has an on/off switch,
-schedule, source list, optional per-day cost cap and quiet hours (applied only to messages
-flagged `proactive`) and the last outcome. `/connectors off` pauses all proactive actions at
-once without touching explicit reminders or ordinary schedules. The host records which connector
-tools ran (audit, not enforcement). An optional per-job read-only switch may be added later
-where the CLI can enforce it; it is never required and never applies to the owner by default.
-Non-owner scopes keep their existing isolation.
+The gateway ships a small catalog of **preset recurring tasks** for the main connectors the
+owner has connected to Codex or Claude (first candidates: Gmail, Google Calendar, Drive). A
+preset is a normal scheduled task, created from a built-in prompt template with a default
+schedule, and runs through the same scheduler, queue and delivery as a task the owner set up in
+dialog; the only difference is that it is defined in the gateway, not in conversation. It shows
+up in `/tasks` like any other task and keeps working if the owner edits it there.
+
+`/proactive` (name open), through `internal/control` like every admin command (D011), owner-only
+in the private chat, with inline-button pickers (CLAUDE.md "Commands with parameters"): with no
+argument it lists connectors and their presets with the current state; for each preset the owner
+can switch it on or off, pick how often it runs (a fixed set of choices such as every 30 minutes,
+hourly, daily, weekly) and at what time of day the notification is delivered, and set quiet
+hours. A preset is off until enabled. The text form `/proactive <connector> <preset> on|off`
+keeps working. Nothing is restricted for the owner: presets use the connector as connected,
+read and write, as the agent would in dialog. A global `/proactive off` pauses every preset at
+once without touching other tasks.
 
 ## Out of scope
-The freefeed digest and any other existing schedule (unchanged), new proactive behaviors
-(reflection, mail or calendar summaries; those need their own proposal after analysis A2),
-connector sign-in or consent (done in the provider's own account), host-held mail credentials
-and CP-027 approvals, groups and any non-owner scope, per-chat connector settings.
+Restricting what a preset may do in the owner's own chat; new connectors beyond the first
+catalog; connector sign-in or consent (done in the provider's account); autonomous reflection
+or learning; groups and any non-owner scope; changing the existing freefeed digest or other
+tasks; a free-form editor for preset prompts (a later spec may allow it).
 
 ## Risks
-The panel must show real state: a job shown as paused must really not start. The host sees
-connector use only as tool-call records from the CLI, not the connector's own audit log, and
-connector availability is account state that can change outside gopod.
+Presets spend subscription quota unattended, so each needs a visible schedule and an easy off
+switch. Preset prompts depend on the connector being connected: a missing connector must show
+as "unavailable", not fail silently. A preset edited in `/tasks` must not be silently reset by a
+later upgrade of the built-in template.
 
 ## Acceptance
-- `/connectors` from a group, a non-owner or a forged callback outside the owner's private chat
-  is refused by the Router, not by the handler.
-- Connectors work in owner turns and in proactive runs with no extra gate by default.
-- A proactive action switched off does not start; with the global switch off no proactive run
-  starts and no `proactive` message is sent, while an explicit reminder still fires.
-- Settings persist across restart and are visible in the panel and CLI; a connector that
-  disappears from the account is shown as missing.
-- The host keeps a record of which connector tools each run used.
-- Existing schedules, including the freefeed digest, keep their schedule and next run time.
+- `/proactive` is refused by the Router outside the owner's private chat, including forged
+  callbacks, not by the handler.
+- Enabling a preset creates one scheduled task visible in `/tasks`; disabling it pauses or
+  removes that task; enabling twice does not create a duplicate.
+- Changing frequency or delivery time changes the task's next run accordingly and survives restart.
+- Quiet hours delay `proactive`-flagged notifications and do not delay ordinary replies or
+  explicit reminders.
+- A preset whose connector is not connected is shown as unavailable and is not scheduled.
+- `/proactive off` pauses all presets and leaves other tasks, including the freefeed digest,
+  untouched.

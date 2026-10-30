@@ -144,7 +144,7 @@ needs first. Rank is my recommendation, not an approval.
 | 2 | CP-022 model-free reminders and schedule policy | H (zero quota, reliable) | M | L | CP-004 admission truth | Take. Cheapest autonomy win. |
 | 3 | CP-006 quiet hours and idle-only maintenance | H (prerequisite for anything proactive) | S-M | L | CP-002 outbox (merged) | Take before any proactive turn. |
 | 4 | A1, A2, A4 (analysis only) | M | S | L | none | Do now; they decide item 5. |
-| 5 | **New candidate: proactive digest framework** ([CP-033](../proposals/CP-033-proactive-controls.md), controls over provider connectors and proactive actions only) | M-H | M | M | items 1-3, A2-A5 | Take as proposal-only digests, see below. Mail/calendar via connectors in the private chat is allowed. |
+| 5 | **New candidate: proactive digest framework** ([CP-033](../proposals/CP-033-proactive-controls.md), built-in recurring presets for the main connectors, toggled with `/proactive`) | M-H | M | M | items 1-3, A2-A5 | Take as proposal-only digests, see below. Mail/calendar via connectors in the private chat is allowed. |
 | 6 | CP-021 task outcomes and checkpoints | M | M | L | CP-004 | Take after item 1. |
 | 7 | CP-007 timer and restore drill | M | M | L | owner approval for Pi work | Continue as planned. |
 | 8 | CP-023 research dossiers | M | L | M | CP-004, CP-003 | Later. |
@@ -164,8 +164,8 @@ needs first. Rank is my recommendation, not an approval.
   explicit reminders bypass quiet hours, digests do not.
 - Owner private chat only, never a group. Read-only is an optional per-job switch, not a rule.
   A cost cap and a skip when quota is low (the 20/10/5 percent rules) are owner-configurable.
-- The existing freefeed digest is not moved (owner decision 2026-10-30). CP-033 is limited to
-  controlling provider connectors and the proactive actions that use them.
+- The existing freefeed digest is not moved (owner decision 2026-10-30). CP-033 covers built-in
+  recurring presets for the main connectors, managed with `/proactive`.
 - Mail and calendar are the second step through connectors in the private chat. They must be
   read-only only if the owner chooses that switch (the owner scope has no such requirement).
   CP-027 does **not** cover connectors: it governs only brokered

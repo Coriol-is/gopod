@@ -116,4 +116,4 @@ not enabling the feature merely by merging that document.
 | [CP-030](CP-030-agent-mailboxes.md) | Authenticated agent mailboxes and bounded delegation | proposed | L |
 | [CP-031](CP-031-telegram-restart.md) | Owner Telegram restart with durable recovery notices | in-progress | M |
 | [CP-032](CP-032-telegram-reaction-reading.md) | Read reactions and custom emoji with explicit private/non-admin limitations (design only) | accepted | M |
-| [CP-033](CP-033-proactive-controls.md) | Owner controls for provider connectors and proactive actions: panel, read-only mode, global switch, quiet hours, cost cap | proposed | M |
+| [CP-033](CP-033-proactive-controls.md) | Built-in recurring presets for the main connectors, toggled and scheduled with `/proactive` | proposed | M |
