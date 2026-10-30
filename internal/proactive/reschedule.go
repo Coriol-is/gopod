@@ -54,7 +54,7 @@ func (s *Service) SetWindow(ctx context.Context, w Window) error {
 
 // SetQuiet stores the quiet window (nil turns quiet hours off) and re-renders.
 // Presets with no run time left outside the window are paused with
-// ReasonInsideQuiet; nothing is shifted and nothing resumes by itself.
+// ReasonInsideQuiet or ReasonNoRunHours; nothing is shifted and nothing resumes by itself.
 func (s *Service) SetQuiet(ctx context.Context, q *Quiet) error {
 	if q != nil {
 		if err := q.validate(); err != nil {
@@ -127,13 +127,14 @@ func (s *Service) rerender(ctx context.Context, tzChanged bool) (Report, error) 
 
 		prompt, sched, err := s.renderTask(p, set.Settings, env)
 		if blocked(err) {
+			reason := pauseReason(err)
 			if task.Status != "active" {
 				continue
 			}
 			if err = s.st.UpdateTaskStatus(ctx, task.ID, "paused", 0, task.LastRun); err != nil {
 				return rep, err
 			}
-			set.Reason = ReasonInsideQuiet
+			set.Reason = reason
 			row.Settings, row.UpdatedAt = encodeSettings(set), s.now().UnixMilli()
 			if err = s.st.PutProactivePreset(ctx, row); err != nil {
 				return rep, err

@@ -104,10 +104,11 @@ func (s *Service) ResumeAll(ctx context.Context) (ResumeReport, error) {
 			}
 			prompt, sched, err := s.renderTask(p, set.Settings, env)
 			if blocked(err) {
+				reason := pauseReason(err)
 				if err = s.st.UpdateTaskStatus(ctx, task.ID, "paused", 0, task.LastRun); err != nil {
 					return err
 				}
-				set.Reason = ReasonInsideQuiet
+				set.Reason = reason
 				row.Settings, row.UpdatedAt = encodeSettings(set), s.now().UnixMilli()
 				if err = s.st.PutProactivePreset(ctx, row); err != nil {
 					return err

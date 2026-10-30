@@ -544,7 +544,7 @@ func TestQuietCoveringTheWindowPausesPollers(t *testing.T) {
 	if err := f.svc.SetQuiet(context.Background(), &q); err != nil {
 		t.Fatal(err)
 	}
-	if s := f.status("gmail.urgent"); s.State != StatePaused || s.PausedReason != ReasonInsideQuiet {
+	if s := f.status("gmail.urgent"); s.State != StatePaused || s.PausedReason != ReasonNoRunHours {
 		t.Fatalf("status %+v", s)
 	}
 }
@@ -587,5 +587,71 @@ func TestSettingsPersistAcrossServiceInstances(t *testing.T) {
 	w, _ := g.Window(ctx)
 	if got == nil || *got != q || w != (Window{10, 18}) {
 		t.Fatalf("not persisted: quiet=%v window=%v", got, w)
+	}
+}
+
+func TestDisableRefusesAnUnmanagedTaskUnderAPresetID(t *testing.T) {
+	f := newFixture(t)
+	if _, err := f.st.CreateTask(context.Background(), store.TaskRecord{
+		ID: TaskID("gmail.morning"), ChatFolder: "owner", ChatJID: "tg:1", Prompt: "planted",
+		ScheduleType: "cron", ScheduleValue: "0 9 * * *", NextRun: f.clock().Add(time.Hour).UnixMilli(), Status: "active",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.svc.Disable(context.Background(), "gmail.morning"); !errors.Is(err, ErrUserModified) {
+		t.Fatalf("Disable of an unmanaged task: %v", err)
+	}
+	if f.task("gmail.morning").Status != "active" {
+		t.Fatal("the planted task was paused")
+	}
+}
+
+func TestUpdateSettingsRunsUnderTheLockAndKeepsConcurrentFieldChanges(t *testing.T) {
+	f := newFixture(t)
+	f.enable("gmail.morning")
+	ctx := context.Background()
+	var wg sync.WaitGroup
+	errs := make(chan error, 2)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		errs <- f.svc.UpdateSettings(ctx, "gmail.morning", func(s *Settings) error { s.Freq = "weekdays"; return nil })
+	}()
+	go func() {
+		defer wg.Done()
+		errs <- f.svc.UpdateSettings(ctx, "gmail.morning", func(s *Settings) error { s.Time = "0900"; return nil })
+	}()
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := f.task("gmail.morning").ScheduleValue; got != "CRON_TZ=Europe/Belgrade 0 9 * * 1-5" {
+		t.Fatalf("a field change was lost: %q", got)
+	}
+	boom := errors.New("boom")
+	if err := f.svc.UpdateSettings(ctx, "gmail.morning", func(s *Settings) error { s.Time = "0700"; return boom }); !errors.Is(err, boom) {
+		t.Fatal(err)
+	}
+	if err := f.svc.UpdateSettings(ctx, "gmail.morning", func(s *Settings) error { s.Time = "0500"; return nil }); err == nil {
+		t.Fatal("invalid result must be rejected")
+	}
+	if got := f.task("gmail.morning").ScheduleValue; got != "CRON_TZ=Europe/Belgrade 0 9 * * 1-5" {
+		t.Fatalf("a failed update changed the task: %q", got)
+	}
+}
+
+func TestNoRunHoursPauseHasItsOwnReason(t *testing.T) {
+	f := newFixture(t)
+	f.enable("gmail.urgent")
+	q := Quiet{StartMin: 8 * 60, EndMin: 20 * 60}
+	if err := f.svc.SetQuiet(context.Background(), &q); err != nil {
+		t.Fatal(err)
+	}
+	st := f.status("gmail.urgent")
+	if st.State != StatePaused || st.PausedReason != ReasonNoRunHours {
+		t.Fatalf("%+v", st)
 	}
 }
