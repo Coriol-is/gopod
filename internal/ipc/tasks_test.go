@@ -12,7 +12,6 @@ func TestWatcher_TaskScheduleHappyPath(t *testing.T) {
 	root := t.TempDir()
 	writeIPC(t, root, "alice", "tasks", "0001.json", map[string]any{
 		"op":            "schedule",
-		"taskId":        "task-fixed-1",
 		"prompt":        "remind me",
 		"scheduleType":  "cron",
 		"scheduleValue": "0 9 * * *",
@@ -28,7 +27,7 @@ func TestWatcher_TaskScheduleHappyPath(t *testing.T) {
 		t.Fatalf("scheduled = %d, want 1", got)
 	}
 	rec := tasks.scheduled[0]
-	if rec.ID != "task-fixed-1" {
+	if rec.ID == "" {
 		t.Errorf("ID = %q, want task-fixed-1", rec.ID)
 	}
 	if rec.ChatFolder != "alice" {

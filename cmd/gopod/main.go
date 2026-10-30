@@ -788,6 +788,7 @@ func run() error {
 			agentRunner.SetArtifactIssuer(iss)
 		}
 		ipcMsgs := telegram.NewIPCSink(tgBot)
+		scheduler.SetTaskNotifier(st, tgBot.NotifyOwner)
 		ipcTasks := scheduler.NewIPCSink(st)
 		ipcWatcher := ipc.New(ipc.Config{
 			DataDir:     cfg.DataDir,

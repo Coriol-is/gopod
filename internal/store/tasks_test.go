@@ -65,6 +65,9 @@ func TestGetDueTasks(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
 
+	if err := s.RegisterChat(ctx, RegisteredChat{JID: "tg:1", Folder: "owner", IsOwner: true, AddedAt: 1}); err != nil {
+		t.Fatal(err)
+	}
 	s.CreateTask(ctx, TaskRecord{ChatFolder: "owner", ChatJID: "tg:1", Prompt: "due", ScheduleType: "cron", ScheduleValue: "* * * * *", NextRun: 100, Status: "active"})
 	s.CreateTask(ctx, TaskRecord{ChatFolder: "owner", ChatJID: "tg:1", Prompt: "future", ScheduleType: "cron", ScheduleValue: "* * * * *", NextRun: 99999, Status: "active"})
 	s.CreateTask(ctx, TaskRecord{ChatFolder: "owner", ChatJID: "tg:1", Prompt: "paused", ScheduleType: "cron", ScheduleValue: "* * * * *", NextRun: 50, Status: "paused"})
@@ -143,5 +146,26 @@ func TestTaskRunLifecycle(t *testing.T) {
 	}
 	if err := s.FinishTaskRun(ctx, "nope", 1, "error", 0, "x"); !errors.Is(err, ErrTaskRunNotFound) {
 		t.Errorf("unknown run err = %v, want ErrTaskRunNotFound", err)
+	}
+}
+
+func TestDueTasksRequireMatchingRegistration(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	if err := s.RegisterChat(ctx, RegisteredChat{JID: "tg:2", Folder: "alice", AddedAt: 1}); err != nil {
+		t.Fatal(err)
+	}
+	for _, rec := range []TaskRecord{{ID: "missing", ChatFolder: "bob", ChatJID: "tg:3"}, {ID: "mismatch", ChatFolder: "alice", ChatJID: "tg:3"}, {ID: "valid", ChatFolder: "alice", ChatJID: "tg:2"}} {
+		rec.Prompt = "p"
+		rec.ScheduleType = "interval"
+		rec.ScheduleValue = "1h"
+		rec.NextRun = 1
+		if _, err := s.CreateTask(ctx, rec); err != nil {
+			t.Fatal(err)
+		}
+	}
+	due, err := s.GetDueTasks(ctx, 2)
+	if err != nil || len(due) != 1 || due[0].ID != "valid" {
+		t.Fatalf("%+v %v", due, err)
 	}
 }

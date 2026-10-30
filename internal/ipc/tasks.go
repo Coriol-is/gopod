@@ -59,8 +59,8 @@ func (w *Watcher) processTaskFile(ctx context.Context, folder, path string) (com
 	// A user-selected global ID would reveal whether a private task already uses
 	// that ID by collision/success responses. Returned IDs remain valid for get,
 	// pause/resume/update/cancel/delete; only schedule creation omits taskId.
-	if p.Op == "schedule" && p.TaskID != "" && folder != w.cfg.OwnerFolder && strings.HasPrefix(sourceJID, "tg:-") {
-		return fail(&errUnauthorized{reason: "group schedules must omit taskId; use the host-returned task ID for management"})
+	if p.Op == "schedule" && p.TaskID != "" && folder != w.cfg.OwnerFolder {
+		return fail(&errUnauthorized{reason: "non-owner schedules must omit taskId; use the host-returned task ID for management"})
 	}
 	// preset-<id> task ids belong to the built-in proactive presets (CP-033), which
 	// adopt a task found under their id. Only the owner folder may choose one.
