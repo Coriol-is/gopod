@@ -818,7 +818,7 @@ Where the code and this spec differ, the code wins. Differences found while impl
 
 Where the code and this spec differ, the code wins.
 
-- **Templates are `TemplateVersion` 2.** The three fixed paragraphs and the six bodies are final in
+- **Templates are `TemplateVersion` 3** (2 was the first final text; 3 added the read-back rule, so rows written under 2 upgrade: an untouched task is rewritten, an edited one waits for Apply). The three fixed paragraphs and the six bodies are final in
   `internal/proactive/catalog.go`. Every body opens with one shared connector sentence (`gmailAccess`, `calAccess`): "use the
   Gmail / Google Calendar connector connected to this agent (a connector, MCP server or plugin; do not assume tool names, look
   at the tools you have)" plus "only read", so one text works for a Claude connector and a Codex plugin. No tool name appears
@@ -832,20 +832,25 @@ Where the code and this spec differ, the code wins.
   reminder when `start - lead` has already passed and does nothing for later events. With a 30-minute poll and a lead of
   10 or 15 minutes many meetings would get no reminder, the failure section 7.2 names, so the catalog marks the preset
   unavailable (`Preset.Unavailable()`, reason "timed reminders arrive in a later update"). `Enable` returns
-  `ErrPresetUnavailable` (no task, no row), the panel shows "Not available yet" with no On/Off or lead buttons and answers
-  every verb but `off` with the same message, and `UpgradeTemplates` skips it. The template, renderer and tests stay for PR 4,
+  `ErrPresetUnavailable` (no task, no row), as do `UpdateSettings`/`Configure` and `ResetToTemplate`; `SetTimezone`, window and
+  quiet re-rendering skip it, `ResumeAll` leaves it paused (listed in `Skipped`), and `UpgradeTemplates` never rewrites it but
+  pauses a live active task of it once (outcome `paused-unavailable`, reason on the panel). The panel shows "Not available yet"
+  whatever the state (a live task from an earlier build can only be turned off), with no On, frequency, lead or Reset buttons,
+  and answers every verb but `off` with the same message. The template, renderer and tests stay for PR 4,
   which removes the `unavailable` field. Internal tests lift the gate with `makeAvailable`.
 - **Outcome display.** `proactive.ReadOutcome` / `ParseOutcome` (`internal/proactive/outcome.go`) read the host side of
   `/workspace/chat/proactive/<id>.last`. The workspace is writable by an agent that reads hostile mail, so: the lookup runs in an
   `os.Root` over the chat directory (no path component, `proactive` included, can leave it), symlinks are refused even inside
-  the workspace, the file is opened `O_NONBLOCK` and its type is checked on the opened descriptor (a FIFO or device swapped in
-  after the check cannot hang the screen), 4 KiB cap, only the six catalog ids name a file (a custom task's
+  the workspace (Lstat before, `O_NOFOLLOW|O_NOCTTY|O_NONBLOCK` on the open, then on the descriptor: regular file, same file as
+  the path names now, one hard link; `os.Root` alone follows in-root symlinks and opens device nodes, hence the extra checks;
+  the non-unix build keeps the checks it can), 4 KiB cap, only the six catalog ids name a file (a custom task's
   `custom-<taskId>.last` is never read), `result` outside the four values becomes unknown, a bad `at` is dropped, the note is
   one line, printable, without backticks, at most 120 runes. `Outcome.Modified` is the mtime of the opened file. The preset
   screen (`outcomeLine`) adds `Last outcome: sent a message | stayed silent (nothing to report) | connector not available |
   error` with the time and, in a code span, `(agent note, untrusted)` followed by the note capped at 80 characters with markup
   removed. `ran, outcome unknown` is shown when the task ran but the file is missing, corrupt, has an unrecognized result, or
-  is older than the last run by more than a minute (by its `at`, or by its mtime when `at` is absent). It is computed from the
+  is older than the last run by more than a minute by either clock, the agent's `at` or the file's mtime (a forged future `at`
+  cannot freshen an old file). The time shown is the file's mtime, the host's clock, never the agent's `at`. It is computed from the
   task's own `last_run`; the spec's mention of `task_run_logs` is not used because `Status.LastRun` already carries the time. A
   preset that never ran and has no file shows nothing. `ProactiveDeps.ChatDir` supplies the directory
   (`cmd/gopod/proactive.go`); nothing acts on the file.
@@ -857,11 +862,12 @@ Where the code and this spec differ, the code wins.
   overwritten; custom tasks write `custom-<taskId>.last`, never a preset's file name, and their task id must not start with
   `preset-` or equal a preset id). Contents follow the section 12 outline and add: never put service text into a stored task prompt, quiet hours
   and the working window apply to presets only, and the built-in presets are the owner's `/proactive` business.
-- **`IntegrationsPolicy`** is appended after `SchedulingPolicy` in `systemPromptWith`, so Claude gets it as system prompt and
-  Codex as the prompt prefix (one test covers both providers, Run and RunStream, with and without memory). Because the system
-  prompt is shared by every chat, the policy is conditional ("If /workspace/chat/INTEGRATIONS.md exists ... If that file does
-  not exist, ignore this section"), so a group agent is not pointed at a file it does not have. This is a deviation from the
-  unconditional wording one might expect from "exactly like SchedulingPolicy".
+- **`IntegrationsPolicy`** is appended after `SchedulingPolicy` in `systemPromptWith`, for **owner turns only**
+  (`tier == TierOwner` and not a group), so Claude gets it as system prompt and Codex as the prompt prefix (tests cover both
+  providers, Run and RunStream, with and without memory, and that a registered-tier turn does not carry it). A group member
+  could otherwise get the group agent to create `INTEGRATIONS.md` and have the policy send later turns to read it. Scheduled
+  task runs use `TierRegistered` and do not carry it (they follow their own prompt). The text is still conditional on the file
+  existing. This deviates from "exactly like SchedulingPolicy", which is appended to every chat.
 - **Optional skill added:** `container/skills/integrations/SKILL.md`, a pointer only (Claude mounts it, Codex does not; the
   policy and workspace file are the route that works for both).
 - **Not done in PR 3 by design:** the `cal.reminder` one-shot creation, the one-shot prompt, the quiet-window rule for

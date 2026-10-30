@@ -330,7 +330,7 @@ func (r *Runner) Run(
 				slog.Int("len", len(compiled)))
 		}
 	}
-	opts.AppendSystemPrompt = systemPromptWith(opts.AppendSystemPrompt)
+	opts.AppendSystemPrompt = systemPromptWith(opts.AppendSystemPrompt, tier == TierOwner && !group)
 
 	agentPrompt, err := r.handoffPrompt(ctx, chatFolder, thread, prov.Name(), prompt)
 	if err != nil {
@@ -479,7 +479,7 @@ func (r *Runner) RunStream(
 				slog.Int("len", len(compiled)))
 		}
 	}
-	systemPrompt = systemPromptWith(systemPrompt)
+	systemPrompt = systemPromptWith(systemPrompt, tier == TierOwner && !group)
 
 	agentPrompt, err := r.handoffPrompt(ctx, chatFolder, thread, prov.Name(), prompt)
 	if err != nil {

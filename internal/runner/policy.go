@@ -1,5 +1,7 @@
 package runner
 
+import "strings"
+
 // OutputPolicy is appended to the agent's system prompt on every
 // conversational turn (Run and RunStream). Replies are read in
 // Telegram, which is a poor place to read code, so the agent reports
@@ -16,13 +18,21 @@ Your reply is read in Telegram, a poor place to read code.
 - When something long matters, say which file contains it instead of quoting it.`
 
 // systemPromptWith returns the system prompt appendix for one turn:
-// the compiled memory context (may be empty) followed by OutputPolicy.
-// The policy is never dropped, even when memory has nothing to add.
-func systemPromptWith(memory string) string {
-	if memory == "" {
-		return OutputPolicy + "\n\n" + SchedulingPolicy + "\n\n" + IntegrationsPolicy
+// the compiled memory context (may be empty) followed by OutputPolicy and
+// SchedulingPolicy. The policies are never dropped, even when memory has
+// nothing to add. IntegrationsPolicy is added only for the owner's own turns
+// (owner true): the guide it points at exists in the owner workspace only, and
+// a group member must not be able to make a group agent create that file and
+// then have the policy tell later turns to read it.
+func systemPromptWith(memory string, owner bool) string {
+	parts := []string{OutputPolicy, SchedulingPolicy}
+	if owner {
+		parts = append(parts, IntegrationsPolicy)
 	}
-	return memory + "\n\n" + OutputPolicy + "\n\n" + SchedulingPolicy + "\n\n" + IntegrationsPolicy
+	if memory != "" {
+		parts = append([]string{memory}, parts...)
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 // SchedulingPolicy reaches existing/custom workspaces without rewriting their

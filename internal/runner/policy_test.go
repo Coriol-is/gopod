@@ -34,12 +34,7 @@ func TestOutputPolicyReachesAgentOnEveryTurn(t *testing.T) {
 				t.Run(prov.Name()+"/"+mode+"/memory="+boolStr(mem != ""), func(t *testing.T) {
 					h := newConvHarness(t, prov)
 					h.r.memory = fixedMemory(mem)
-					if mode == "Run" {
-						h.run(t, 0)
-					} else if res := h.runStream(t, 0); res.Err != nil {
-						t.Fatalf("stream: %v", res.Err)
-					}
-					sp := systemPromptIn(t, prov, h.home.lastRun())
+					sp := promptForTier(t, h, prov, mode, TierOwner)
 					if !strings.Contains(sp, SchedulingPolicy) {
 						t.Fatal("scheduling guide reference absent from agent prompt")
 					}
@@ -54,6 +49,54 @@ func TestOutputPolicyReachesAgentOnEveryTurn(t *testing.T) {
 					}
 				})
 			}
+		}
+	}
+}
+
+// promptForTier runs one turn at the given tier and returns the system prompt
+// the provider's argv carried.
+func promptForTier(t *testing.T, h *convHarness, prov AgentProvider, mode string, tier Tier) string {
+	t.Helper()
+	if mode == "Run" {
+		if _, err := h.r.Run(context.Background(), convChat, 0, tier, nil, "hi"); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+	} else {
+		stream, err := h.r.RunStream(context.Background(), convChat, 0, tier, nil, "hi")
+		if err != nil {
+			t.Fatalf("RunStream: %v", err)
+		}
+		if res := readResult(t, stream); res.Err != nil {
+			t.Fatalf("stream: %v", res.Err)
+		}
+	}
+	return systemPromptIn(t, prov, h.home.lastRun())
+}
+
+// Only the owner's own turns learn about the integrations guide: a group
+// member who got the agent to create the file must not make later turns read it.
+func TestIntegrationsPolicyIsOwnerTurnsOnly(t *testing.T) {
+	for _, prov := range providersUnderTest() {
+		for _, mode := range []string{"Run", "RunStream"} {
+			t.Run(prov.Name()+"/"+mode, func(t *testing.T) {
+				if sp := promptForTier(t, newConvHarness(t, prov), prov, mode, TierRegistered); strings.Contains(sp, IntegrationsPolicy) || strings.Contains(sp, "INTEGRATIONS.md") {
+					t.Fatalf("a non-owner turn carries the integrations policy:\n%s", sp)
+				}
+				if sp := promptForTier(t, newConvHarness(t, prov), prov, mode, TierOwner); !strings.Contains(sp, IntegrationsPolicy) {
+					t.Fatal("the owner turn lacks the integrations policy")
+				}
+			})
+		}
+	}
+}
+
+func TestSystemPromptWithOmitsIntegrationsPolicyUnlessAsked(t *testing.T) {
+	for _, mem := range []string{"", "memory"} {
+		if sp := systemPromptWith(mem, false); strings.Contains(sp, IntegrationsPolicy) || !strings.Contains(sp, SchedulingPolicy) || !strings.Contains(sp, OutputPolicy) {
+			t.Errorf("owner=false mem=%q: %q", mem, sp)
+		}
+		if sp := systemPromptWith(mem, true); !strings.Contains(sp, IntegrationsPolicy) {
+			t.Errorf("owner=true mem=%q lacks the policy", mem)
 		}
 	}
 }
