@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | proposed |
+| Status | accepted (2026-10-30; auto-update stays on for official marketplaces) |
 | Date | 2026-10-30 |
 | Origin | owner requirement during the connector discussion; analysis in the [mechanisms note](../research/2026-10-30-skills-and-plugins-mechanisms.md) |
 | Size | M |
@@ -36,7 +36,9 @@ the owner's own chat; changing the existing `container/skills` mount.
 
 ## Risks
 A plugin can ship hooks and scripts that run with the agent's rights, so "official" must be a real
-allowlist of marketplace ids, not a name match. Auto-update can change behavior between runs. An
+allowlist of marketplace ids, not a name match. Auto-update stays on for official marketplaces
+(owner decision 2026-10-30), so behavior can change between runs; the recorded installed set shows
+version changes after each probe. An
 install that races a running turn can leave the CLI with a half-seen set. Session directories grow
 and are not backed up yet.
 

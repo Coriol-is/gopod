@@ -90,7 +90,7 @@ runs outside the foreground turn, and a probe that detects what changed.
    sharing the mounts (cleaner; no race with a running turn).
 3. Non-interactive behavior: `-y` and `CLAUDE_CODE_SYNC_PLUGIN_INSTALL=1` for Claude; `authPolicy`
    consent flow for Codex remote plugins (the consent happens in the provider account).
-4. Auto-update: leave it on for official marketplaces or turn it off and update on owner command.
+4. Auto-update: decided 2026-10-30, stays on for official marketplaces; the spec only records version changes.
 5. Whether Codex `exec` loads skills and whether `CODEX_HOME/skills` is searched.
 6. The pinned Codex tag's real `plugin --help` and `--json` shapes (the research used `main` and the
    owner's 0.165.0).
