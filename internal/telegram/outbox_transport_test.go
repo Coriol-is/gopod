@@ -21,6 +21,10 @@ type fakeAPI struct {
 	docBytes           []byte
 	sends, edits, docs int
 	voices             int
+	photos             int
+	lastPhoto          *bot.SendPhotoParams
+	photoBytes         []byte
+	photoErr           error
 	lastVoice          *bot.SendVoiceParams
 	voiceBytes         []byte
 	lastSend           *bot.SendMessageParams
@@ -46,6 +50,18 @@ func (f *fakeAPI) SendDocument(_ context.Context, p *bot.SendDocumentParams) (*m
 	f.lastDoc = p
 	if up, ok := p.Document.(*models.InputFileUpload); ok && up.Data != nil {
 		f.docBytes, _ = io.ReadAll(up.Data)
+	}
+	return f.msg, f.err
+}
+
+func (f *fakeAPI) SendPhoto(_ context.Context, p *bot.SendPhotoParams) (*models.Message, error) {
+	f.photos++
+	f.lastPhoto = p
+	if up, ok := p.Photo.(*models.InputFileUpload); ok && up.Data != nil {
+		f.photoBytes, _ = io.ReadAll(up.Data)
+	}
+	if f.photoErr != nil {
+		return nil, f.photoErr
 	}
 	return f.msg, f.err
 }

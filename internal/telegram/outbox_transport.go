@@ -2,8 +2,10 @@ package telegram
 
 // Durable-outbox transport (CP-002 PR 2).
 //
-// A transport makes exactly ONE Telegram API attempt for one immutable part
-// and classifies the result. It is deliberately separate from the interactive
+// A transport makes one attempt (one DB attempt row) for one immutable part
+// and classifies the result. That is one API call, except an upload with the
+// photo presentation, which makes at most two: a document of the same bytes
+// only after Telegram proved the photo itself was refused (outbox_photo.go). It is deliberately separate from the interactive
 // send helpers (sendFormattedErr, sendFinal, sendDocument): those retry, fall
 // back to plain text after a formatting error, and redirect a gone topic to the
 // main chat. None of that is allowed here, because every one of those moves
@@ -15,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"strconv"
 	"strings"
@@ -80,6 +83,10 @@ type SendRequest struct {
 	ReplyMarkup     string // JSON of an inline keyboard, as frozen at publication
 	TargetMessageID int64
 	ArtifactRef     string
+	// PartID and AttemptID identify the stored attempt; they are used only for
+	// logging a second API call.
+	PartID    string
+	AttemptID int64
 	// NamespaceID and NamespaceEpoch are the delivery's scope; an artifact of
 	// any other namespace or epoch is never uploaded.
 	NamespaceID    string
@@ -92,6 +99,7 @@ type outboxAPI interface {
 	EditMessageText(ctx context.Context, p *bot.EditMessageTextParams) (*models.Message, error)
 	SendDocument(ctx context.Context, p *bot.SendDocumentParams) (*models.Message, error)
 	SendVoice(ctx context.Context, p *bot.SendVoiceParams) (*models.Message, error)
+	SendPhoto(ctx context.Context, p *bot.SendPhotoParams) (*models.Message, error)
 }
 
 // ArtifactOpener resolves an immutable artifact reference to the exact bytes to
@@ -106,11 +114,12 @@ type ArtifactOpener interface {
 type botTransport struct {
 	api       outboxAPI
 	artifacts ArtifactOpener
+	log       *slog.Logger // optional; nil logs nothing
 }
 
 // NewOutboxTransport returns the single-attempt transport over the bot API.
 func (b *Bot) NewOutboxTransport(artifacts ArtifactOpener) *botTransport {
-	return &botTransport{api: b.api, artifacts: artifacts}
+	return &botTransport{api: b.api, artifacts: artifacts, log: b.log}
 }
 
 func refused(code string) Outcome { return Outcome{Kind: OutcomeRefused, Code: code} }
@@ -144,7 +153,9 @@ func (t *botTransport) Attempt(ctx context.Context, req SendRequest) Outcome {
 		if t.artifacts == nil {
 			return refused("upload_unavailable")
 		}
-		if req.ParseMode != "" && req.ParseMode != store.UploadPresentationVoice {
+		switch req.ParseMode {
+		case "", store.UploadPresentationVoice, store.UploadPresentationPhoto:
+		default:
 			return refused("invalid_presentation")
 		}
 		name, data, err := t.artifacts.OpenArtifact(ctx, req.ArtifactRef, req.NamespaceID, req.NamespaceEpoch)
@@ -153,6 +164,9 @@ func (t *botTransport) Attempt(ctx context.Context, req SendRequest) Outcome {
 		}
 		if err != nil {
 			return refused("artifact_unavailable")
+		}
+		if req.ParseMode == store.UploadPresentationPhoto {
+			return t.attemptPhoto(ctx, req, name, data)
 		}
 		if req.ParseMode == store.UploadPresentationVoice {
 			// Host-generated audio only (the V1 agent request cannot set this).

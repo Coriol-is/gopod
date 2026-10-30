@@ -89,3 +89,6 @@ func (o *SnapshotOpener) OpenArtifact(ctx context.Context, ref, namespaceID stri
 	}
 	return art.Filename, bytes.NewReader(data), nil
 }
+
+// MaxFileBytes is the per-file bound of the opened buffer.
+func (o *SnapshotOpener) MaxFileBytes() int64 { return o.MaxBytes }
