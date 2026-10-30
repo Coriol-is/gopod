@@ -247,6 +247,51 @@ holds the credential. To verify before choosing it: the Google consent-screen st
 refresh tokens do not expire after about seven days for a personal account, and the warning
 for restricted scopes. IMAP with an app password is weaker because it cannot be scoped to read.
 
+## 11. Prior art: Hermes Agent (Nous Research, MIT, commit `8dfc96d`, 2026-04-09)
+
+Static read of a local clone; nothing run. Hermes has no Gmail or Calendar tool, MCP server or
+read-only mode.
+
+- **Gmail and Calendar** are a skill (`skills/productivity/google-workspace/`): a single Python CLI
+  (`scripts/google_api.py`) over Google's client libraries, with its own OAuth desktop client.
+  Scopes are all-or-nothing (`gmail.readonly`, `gmail.send`, `gmail.modify`, full `calendar`,
+  Drive, Sheets, Docs); a token missing any is rejected, so a narrower read-only token is
+  blocked, not allowed. "Confirm before sending" is one sentence of prompt text, with no code
+  gate. The token file is written without a chmod and the 7-day testing-mode refresh-token expiry
+  is not handled beyond a `REFRESH_FAILED` re-auth path.
+- **Third-party route:** the same skill sends users who only want mail to the `himalaya` skill
+  (an open-source IMAP/SMTP command-line client, app-password or OAuth). There is also an
+  optional `agentmail` skill (a hosted mailbox service for the agent itself) and an IMAP/SMTP
+  chat channel (`gateway/platforms/email.py`), which is the agent's own mailbox, not the
+  owner's.
+- **Proactive:** only a cron scheduler (60 s tick with a lock, fresh agent per job, 600 s
+  inactivity timeout, jobs cannot create jobs, delivery-target whitelist, `[SILENT]` reply
+  suppresses an empty digest but still saves output). A job can run a **pre-step script** whose
+  stdout is injected into the prompt: deterministic collection and change detection before any
+  model call. No quiet hours, cost caps, rate limits, per-job tool restriction or read-only
+  profile. Management: `hermes cron list|create|edit|pause|resume|run|remove`.
+- **MCP filtering:** per-server `tools.include` / `tools.exclude` lists in config (include
+  wins), and each server is its own toolset. This is the shape a read-only list should have.
+- **Safety:** command approval covers terminal commands only, not Google or MCP calls. Secrets
+  are masked in logs, not email bodies; there is no untrusted-content handling for mail. Prompt
+  injection scanning applies to cron prompt text at creation, not to fetched content.
+- **Evidence:** cron and MCP have real tests; the Google skill has 9 tests covering scope
+  handling, none for Gmail, Calendar or send.
+
+What we take: the pre-step collector + change detection + silent-when-empty pattern, the
+tick lock and inactivity timeout, a per-source include list, `list|pause|resume|run|remove`
+job commands (CP-033 already has this shape), the PKCE paste-the-redirect OAuth flow (suits a
+bot with no local browser), `gmail.readonly` and `calendar.readonly` only, and Gmail search
+syntax. What we add ourselves: code-enforced read-only, an audit record of every Google call,
+treating mail as untrusted data, quiet hours and a cost cap. Nothing is reusable as code
+(Python, tied to its home layout); MIT permits copying with the notice, but gopod forbids
+Python in the repo.
+
+Third-party tools worth evaluating before building our own Gmail client (not yet checked, no
+claims made): himalaya (Rust, IMAP/SMTP, Gmail OAuth). Evaluate on read-only enforcement
+(it cannot scope an app password), audit, and whether it can run as a host subprocess instead
+of inside the agent container.
+
 ## Sources
 
 Donor `docs/features.md`, `src/service.js`, `src/conversations.js`, `src/scheduler.js`,
