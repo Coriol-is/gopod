@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | proposed |
+| Status | accepted (2026-10-30; first set Gmail and Calendar, preset list approved) |
 | Date | 2026-10-30 |
 | Origin | owner request after the codex-agent autonomy delta ([note](../research/2026-10-30-codex-agent-autonomy-prioritization.md)) |
 | Size | M |
