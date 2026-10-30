@@ -200,6 +200,53 @@ needs first. Rank is my recommendation, not an approval.
    diagnostics), or should it use only repo evidence?
 4. CP-033 now exists as `proposed` and covers only the owner controls; the digest/reflection behaviors stay uncreated until A2 gives a yes.
 
+## 9. Result of A3a (2026-10-30, documentation and source only, nothing run with an account)
+
+Question: can one run be limited to read-only connector tools for each pinned CLI? Both CLIs
+were checked against current official docs (not the pinned tags) by two read-only research
+passes; the Codex part also reads source on `main`. Treat "inferred" as unverified until the
+synthetic test in the last paragraph passes.
+
+| | Claude Code 2.1.310 | Codex 0.164.0 |
+|---|---|---|
+| Do restrictions survive the bypass flag gopod uses? | Yes, documented: "Deny rules block in every mode, including `bypassPermissions`"; `--disallowedTools` is a deny source | Probably yes, inferred from source: the app/tool enabled check runs before any approval. Approval modes (`prompt`, `writes`) are likely auto-approved under bypass, so rely on enable flags, not approvals |
+| Allowlist of tools | **No.** `--allowedTools` only auto-approves; `--tools` does not touch MCP tools; an allow rule cannot carve out of a deny | Yes: `apps.<id>.default_tools_enabled=false` plus `apps.<id>.tools.<tool>.enabled=true` |
+| Read vs write classification | None; write tools must be denied by exact name, so a tool added by a connector update is allowed by default (fail-open) | By hints: `destructive_enabled=false` blocks tools with `destructiveHint` true **or missing**, but not write tools that only carry `openWorldHint`; `readOnlyHint` is not used. Use the allowlist, not the hints |
+| Per run | CLI flags per run; `disableClaudeAiConnectors` / `ENABLE_CLAUDEAI_MCP_SERVERS=false` turn all connectors off | `-c key=value` (dotted use inferred), `--profile`; avoid a per-run `CODEX_HOME` |
+| Host-enforced layer the agent cannot override | Managed-settings deny; a `PreToolUse` hook (deny by exit 2) but whether it fires under bypass is not documented | `/etc/codex/requirements.toml`; pinning `features.apps=false` is the likely kill switch |
+| Seeing what is available | `system/init` event lists MCP servers and tools in `stream-json`; denials arrive as `permission_denied` | `codex plugin list --json`, `codex mcp list`; no documented tool listing for apps |
+| Audit of what ran | `tool_use` blocks in `stream-json` (main-thread form not quoted in docs) | `--json` emits `mcp_tool_call` events with server, tool, arguments, status |
+| Unknown | whether connectors load in `-p`; exact server names for Gmail and Calendar | the app id of Gmail; whether dotted `-c apps.*` overrides work; behavior on the pinned tag |
+
+Conclusions:
+1. **Claude cannot be made read-only fail-closed with deny rules alone.** Only deny-by-name is
+   available, and connector updates can add write tools that pass. A default-deny `PreToolUse`
+   hook would fix that if it fires under bypass, which is undocumented. Until a synthetic
+   test shows it fires, a Claude proactive run must have connectors **off**.
+2. **Codex can be made read-only with an explicit tool allowlist**, subject to learning the app
+   id and exact tool names and confirming the settings apply on the pinned version.
+3. Therefore for proactive runs the plan is: connectors off in Claude, host-side collectors
+   (Gmail API read-only, section 10) for mail and calendar, and a possible Codex connector path
+   only after the live check. Connectors remain available in owner-initiated turns in the
+   private chat, which is what the 2026-10-30 decision allows.
+
+Live check that would change this (synthetic data, no send, owner approval needed): run one
+headless turn per provider with a deny/allowlist configuration, ask the model to call one
+read tool and one write tool of a throwaway connector or a local fake MCP server, and confirm
+(a) the write call is blocked and recorded, (b) the read call runs, (c) a newly added tool on
+the fake server is blocked by default, (d) a `PreToolUse` hook fires under the bypass flag.
+A local fake MCP server needs no Google account.
+
+## 10. Fallback when connectors cannot be restricted: host-side Gmail and Calendar
+
+Owner request 2026-10-30. Own OAuth application, read-only scopes (`gmail.readonly`,
+`calendar.readonly`), token held by the host as an environment secret (D012), a collector with a
+fixed output schema and redaction that gives the model a bounded structure. Sending uses a
+separate token and scope and goes through CP-027 approvals, which do apply because the host
+holds the credential. To verify before choosing it: the Google consent-screen status needed so
+refresh tokens do not expire after about seven days for a personal account, and the warning
+for restricted scopes. IMAP with an app password is weaker because it cannot be scoped to read.
+
 ## Sources
 
 Donor `docs/features.md`, `src/service.js`, `src/conversations.js`, `src/scheduler.js`,
