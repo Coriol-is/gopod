@@ -79,6 +79,10 @@ switch. Preset prompts depend on the connector being connected: a missing connec
 as "unavailable", not fail silently. A preset edited in `/tasks` must not be silently reset by a
 later upgrade of the built-in template.
 
+Container skills are mounted for Claude only today (`/home/node/.claude/skills`); Codex gets no
+skills mount and its skill search path in `codex exec` is unconfirmed, so delivering the guide to
+Codex needs a mount or an instruction-file route chosen in the spec.
+
 ## Acceptance
 - `/proactive` is refused by the Router outside the owner's private chat, including forged
   callbacks, not by the handler.
