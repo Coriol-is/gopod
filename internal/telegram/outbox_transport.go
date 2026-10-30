@@ -92,6 +92,7 @@ type outboxAPI interface {
 	EditMessageText(ctx context.Context, p *bot.EditMessageTextParams) (*models.Message, error)
 	SendDocument(ctx context.Context, p *bot.SendDocumentParams) (*models.Message, error)
 	SendVoice(ctx context.Context, p *bot.SendVoiceParams) (*models.Message, error)
+	SendPhoto(ctx context.Context, p *bot.SendPhotoParams) (*models.Message, error)
 }
 
 // ArtifactOpener resolves an immutable artifact reference to the exact bytes to
@@ -144,7 +145,9 @@ func (t *botTransport) Attempt(ctx context.Context, req SendRequest) Outcome {
 		if t.artifacts == nil {
 			return refused("upload_unavailable")
 		}
-		if req.ParseMode != "" && req.ParseMode != store.UploadPresentationVoice {
+		switch req.ParseMode {
+		case "", store.UploadPresentationVoice, store.UploadPresentationPhoto:
+		default:
 			return refused("invalid_presentation")
 		}
 		name, data, err := t.artifacts.OpenArtifact(ctx, req.ArtifactRef, req.NamespaceID, req.NamespaceEpoch)
@@ -153,6 +156,9 @@ func (t *botTransport) Attempt(ctx context.Context, req SendRequest) Outcome {
 		}
 		if err != nil {
 			return refused("artifact_unavailable")
+		}
+		if req.ParseMode == store.UploadPresentationPhoto {
+			return t.attemptPhoto(ctx, req, name, data)
 		}
 		if req.ParseMode == store.UploadPresentationVoice {
 			// Host-generated audio only (the V1 agent request cannot set this).

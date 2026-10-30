@@ -190,6 +190,26 @@ func TestVoiceMarkerIsOnlyAcceptedByTheVoicePublishPath(t *testing.T) {
 	}
 }
 
+// The photo marker is only a hint with a document as its safe outcome, so the
+// generic publish path accepts it; it must still change the plan identity.
+func TestPhotoMarkerIsAcceptedByTheGenericPathAndChangesTheHash(t *testing.T) {
+	f := newDeliveryFixture(t)
+	p := f.reserve(1, 100)
+	f.ready(p, 10)
+	part := DeliveryPart{Kind: PartUpload, ArtifactRef: ArtifactRef(p.ArtifactIDs[0]), ParseMode: UploadPresentationPhoto}
+	req := PublishRequest{Conversation: f.conv, Owner: OwnerLegacyAgentIPC, Parts: []DeliveryPart{part}}
+	d, err := f.st.PublishDeliveryWithArtifacts(t.Context(), req, p.ID)
+	if err != nil {
+		t.Fatalf("photo marker: %v", err)
+	}
+	if got := d.Parts[0].Part.ParseMode; got != UploadPresentationPhoto {
+		t.Fatalf("stored presentation = %q", got)
+	}
+	if partHash(0, part) == partHash(0, DeliveryPart{Kind: PartUpload, ArtifactRef: part.ArtifactRef}) {
+		t.Fatal("the presentation is not part of the part hash")
+	}
+}
+
 func TestPurgeGenerationsKeepsRecentAndInFlightRows(t *testing.T) {
 	f := newDeliveryFixture(t)
 	ctx := t.Context()

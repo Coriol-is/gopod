@@ -170,8 +170,10 @@ func validatePublish(req PublishRequest, now int64) error {
 		case PartEdit:
 			ok = validTextPresentation(p) && len(p.Payload) > 0 && p.ArtifactRef == "" && p.TargetMessageID > 0
 		case PartUpload:
-			// An upload has no parse mode; the only value is the host-only voice marker.
-			presentationOK := p.ParseMode == "" || (p.ParseMode == UploadPresentationVoice && req.voicePresentation)
+			// An upload has no parse mode: the value is a presentation marker, the
+			// photo hint or the host-only voice marker.
+			presentationOK := p.ParseMode == "" || p.ParseMode == UploadPresentationPhoto ||
+				(p.ParseMode == UploadPresentationVoice && req.voicePresentation)
 			ok = presentationOK && len(p.Payload) <= MaxUploadCaptionBytes && p.ArtifactRef != "" && p.TargetMessageID == 0
 		}
 		if !ok {
