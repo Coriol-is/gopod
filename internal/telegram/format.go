@@ -22,6 +22,7 @@ import (
 //	`inline code`         → <code>inline code</code>
 //	```lang\ncode\n```    → <pre>code</pre>
 //	[text](url)           → <a href="url">text</a>
+//	GFM table             → aligned <pre>, or row cards when wide (table.go)
 //
 // Everything else is HTML-escaped so <, >, & don't break rendering.
 func markdownToTelegramHTML(md string) string {
@@ -67,7 +68,11 @@ func renderMarkdown(md string, collapseOver int) string {
 		case strings.HasPrefix(lines[i], "> "):
 			rendered, i = renderQuote(lines, i)
 		default:
-			rendered = renderMarkdownLine(lines[i])
+			if header, aligns, rows, end, ok := parseTable(lines, i); ok {
+				rendered, i = renderTable(header, aligns, rows), end
+			} else {
+				rendered = renderMarkdownLine(lines[i])
+			}
 		}
 		result.WriteString(rendered)
 		if i < len(lines)-1 {

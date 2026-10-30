@@ -1800,3 +1800,20 @@ are limited to one per group per 30 seconds (in memory).
 **Consequences.** Old confirmation buttons in the owner's private chat stop working (unknown command). Groups
 cannot be given an account of their own without a new ADR.
 
+
+## D050 — Markdown tables render as aligned monospace, wide ones as row cards
+
+**Status:** accepted 2026-10-30. Refines the table note of D045 and the 2026-10-25 table research.
+
+**Decision.** `renderMarkdown` (so `markdownToTelegramHTML` and `finalReplyHTML`) detects a GFM table outside code
+fences: a header line with a pipe, a separator line of `-`/`:` cells with the same cell count, then pipe rows. A
+sentence with pipes or a pipe line without a separator is not a table. A table of at most `tableMaxWidth` (38)
+display columns becomes one `<pre>` block: cells HTML-escaped, inline markdown stripped to plain text, columns padded
+by display width (CJK and emoji 2), `:--:`/`--:` alignment honored, `\|` and pipes in code spans do not split cells.
+A wider table with data rows becomes row cards: per row `<b>Header</b>: value` lines, rows separated by a blank
+line (lossless; empty cells omitted). `chunkHTML` already closes and reopens `<pre>` and prefers line breaks, so a
+long table splits into valid chunks on row boundaries.
+
+**Consequences.** Streaming previews stay plain text; the table appears on the final edit. Command paging
+(`splitPages`) cuts on lines, so a table split across pages loses its header on the later pages, which then show
+as plain pipe lines (valid HTML). Native Rich Tables remain a separate spike.
