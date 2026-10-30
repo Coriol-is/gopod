@@ -43,6 +43,9 @@ func TestOutputPolicyReachesAgentOnEveryTurn(t *testing.T) {
 					if !strings.Contains(sp, SchedulingPolicy) {
 						t.Fatal("scheduling guide reference absent from agent prompt")
 					}
+					if !strings.Contains(sp, IntegrationsPolicy) {
+						t.Fatal("integrations guide reference absent from agent prompt")
+					}
 					if !strings.Contains(sp, OutputPolicy) {
 						t.Fatalf("output policy missing from the agent argv:\n%s", sp)
 					}
@@ -60,4 +63,17 @@ func boolStr(b bool) string {
 		return "yes"
 	}
 	return "no"
+}
+
+func TestIntegrationsPolicyPointsAtTheGuideOnlyWhenItExists(t *testing.T) {
+	for _, want := range []string{"/workspace/chat/INTEGRATIONS.md", "If that file does not exist", "SCHEDULING.md", "without a yes"} {
+		if !strings.Contains(IntegrationsPolicy, want) {
+			t.Errorf("IntegrationsPolicy lacks %q", want)
+		}
+	}
+	for _, bad := range []string{"mcp__", "claude_ai"} {
+		if strings.Contains(IntegrationsPolicy, bad) {
+			t.Errorf("policy names a provider-specific tool %q", bad)
+		}
+	}
 }
