@@ -40,17 +40,33 @@ Code only, flag untouched.
   marker. Unlike voice it is accepted by the generic publish path: it is a hint whose safe outcome is a
   document, so it cannot widen what an agent may do. It is part of the part hash and so of the plan identity.
 - Transport (`internal/telegram/outbox_photo.go`): a photo-presented upload reads the verified snapshot
-  bytes once, then
-  - sends a **document** (no photo call) if the bytes are not PNG/JPEG, exceed 10 MB, have
-    width + height over 10000, a side ratio over 20, or an unreadable header;
+  bytes once (bounded by the opener's per-file bound, `store.DefaultMaxArtifactFileBytes` = 20 MiB by
+  default), then
+  - sends a **document** (no photo call) if the bytes are not PNG/JPEG, exceed 10 MB, have a side over
+    10000, width + height over 10000 (each side is bounded before summing, so it cannot overflow on any
+    GOARCH; the Pi is arm64, 64-bit, and a 32-bit build is a separate gate below), a side ratio over 20
+    (symmetric, so EXIF rotation is irrelevant), an unreadable header, a CMYK JPEG or an animated PNG
+    (`acTL` before `IDAT`);
   - otherwise calls `sendPhoto` with the same buffer;
-  - falls back to **one** `sendDocument` of the same buffer only when Telegram answers 400 naming the picture
-    (`PHOTO_INVALID_DIMENSIONS`, `PHOTO_SAVE_FILE_INVALID`, `PHOTO_EXT_INVALID`, `IMAGE_PROCESS_FAILED`),
-    which proves nothing was stored.
+  - falls back to **one** `sendDocument` of the same buffer only when Telegram answers 400 and the
+    description, parsed as `Bad Request: <TOKEN>` from go-telegram v1.27.0's `"%w, %s"` error, has a TOKEN
+    that is **equal** to `PHOTO_INVALID_DIMENSIONS` or `IMAGE_PROCESS_FAILED`. If the attempt context has
+    ended by then, no document is sent (`not_sent`/`canceled_before_dispatch`).
+  - **Assumption, not evidence:** that such a 400 means Telegram stored nothing, and that these two strings
+    are what Telegram sends, are assumed from memory. Nothing in the repository or in a cited Bot API page
+    supports them. `PHOTO_SAVE_FILE_INVALID` and `PHOTO_EXT_INVALID` were considered and dropped for the same
+    reason. Verify in the live smoke; until then treat the fallback as best effort.
+  - **Decision for unlisted 400s:** refused, no document. A 400 we cannot name may concern the
+    destination, the caption or the thread, where a document would fail or misroute the same way, and a
+    wrong guess here costs a duplicate upload while a missed guess costs one missing photo that the
+    agent sees as a rejected receipt and can re-request as a `document`. Growing the list is a one-line
+    change once the smoke shows real strings.
 - Not changed: timeout, 5xx, malformed reply, transport error, 429, 403, thread-gone and any other 400 are
   classified exactly as for a document and never produce a second upload. A failure of the fallback
   document is classified on its own and not repeated. The uncertain-outcome handling and "no replay" rule
-  of the dispatcher are untouched; the dispatcher still counts one attempt.
+  of the dispatcher are untouched: **one DB attempt, at most two API calls** (a document only after a proven
+  photo refusal; the second call is logged at info with the part and attempt id). A success reply without a
+  usable message id stays `malformed_reply` (ambiguous) and is never followed by a document.
 - Original quality: the document is the form that keeps the bytes. Presentation `document` (the default)
   never calls `sendPhoto`. Telegram recompresses and may downscale photos, which matters for dense charts.
 - Limits are from the Bot API as understood at writing (10 MB, 10000, ratio 20). **Unknown:** whether the
@@ -128,17 +144,23 @@ Not needed for a first image, which travels the IPC path. Remaining from the del
 
 ### Gates before any enablement (owner, not code)
 
-1. **CP-007 matched backup**: `GOPOD_OUTBOX_ARTIFACTS` must not be set until a matched DB plus artifact
-   backup, lease and restore pass (D039). HANDOFF shows backup create/verify exists, but the restore and
-   activation command, the Pi restore drill, and capture of some trees are listed as not done. **Whether the
-   current backup already covers `<data>/artifacts` with the lease is unverified here; check before the drill.**
+1. **CP-007 matched backup: NOT satisfied, not verified.** `GOPOD_OUTBOX_ARTIFACTS` must not be set until a
+   matched DB plus artifact backup, lease and restore pass (D039). HANDOFF ("CP-007 PR 1") lists restore and
+   activation, the Pi drill and capture of some trees as not done. I have no evidence that the current
+   backup covers `<data>/artifacts` with the lease; link the run output before calling this gate passed.
 2. **Restore drill on the Pi** with a published image artifact present (owner-run).
 3. **Pi flag change**: `GOPOD_OUTBOX_DISPATCHER=1`, `GOPOD_OUTBOX_IPC=1` (already on for the personal chat) and
    then `GOPOD_OUTBOX_ARTIFACTS=1`. Owner only; this plan does not do it.
-4. **Bounded live smoke** on the real bot in the owner's private chat: one small PNG as photo, one large or
+4. **Bounded live smoke** (also the only place to confirm the two refusal tokens and the "400 stored
+   nothing" assumption: send an image that Telegram rejects as a photo and record the exact description) on the real bot in the owner's private chat: one small PNG as photo, one large or
    odd-shaped image proving the document fallback, one request retried to prove convergence on a single
    delivery. Needs the owner at the keyboard; uses a real Telegram call, so it is a separate authorized step.
-5. Review that turning the flag on also activates PR 5 behavior (prepared code documents and prepared
+5. **Architecture check**: the Pi is arm64 (64-bit `int`). Run the transport tests under `GOARCH=386` (or
+   `arm`) if any 32-bit target is ever built; the dimension and chunk-length checks are written to avoid
+   overflow but only a 64-bit run is exercised in CI.
+6. **Caption-limit fix before PR B** (see "Known defect: caption limits" below). A 1024-emoji caption is
+   accepted by our validators and refused by Telegram, so a photo or document request can be dropped.
+7. Review that turning the flag on also activates PR 5 behavior (prepared code documents and prepared
    voice with a billed backend) because they share the flag. Accept that explicitly or split the flag.
 
 ## Rollout and rollback
@@ -155,12 +177,32 @@ an upload recorded as uncertain stays uncertain and is not resent (no operator r
 Code rollback of this PR is a revert: a stored part with the photo marker would be refused by the old
 transport as `invalid_presentation`, so revert only with the flag off.
 
+## Known defect: caption limits (prerequisite of PR B, not changed here)
+
+Telegram counts a caption as at most 1024 characters **after entity parsing, in UTF-16 units**. Our checks
+differ: `internal/ipc/artifact_request.go` caps at 1024 **runes** (`maxCaptionRunes`) and
+`store.MaxUploadCaptionBytes` is 4096 **bytes**. A caption of 1024 emoji is 1024 runes, 4096 bytes and 2048
+UTF-16 units: it passes both validators and Telegram refuses the upload (a 400 that is not a photo token, so
+under the decision above it is refused with no document), and the file is dropped. The document path has the
+same defect today. The transport passes the caption through untouched (tested).
+Fix before PR B, in the validators, not the transport: count UTF-16 units (`utf16.RuneLen` sum) against 1024
+in `parseArtifactRequest`, and make the store bound consistent. Test sketch: table of captions (1024 ASCII
+accepted; 512 emoji accepted; 513 emoji rejected as `invalid_request`; 1024 emoji rejected; a lone
+surrogate-range rune counted as 1 or 2 consistently) run through `parseArtifactRequest`, plus a store
+publish with a 4097-byte caption rejected.
+
 ## Honest unknowns
 
 - No live Telegram call has been made for photos; all behavior here is fake-API tested, not a
-  Telegram qualification. The exact error strings of a refused photo are from Telegram's documented behavior
-  and common reports, matched case-insensitively; an unlisted string simply means no fallback (refused, no
-  second upload).
+  Telegram qualification. The two refusal strings and the meaning of that 400 are **assumed from memory**
+  (see PR A) and matched exactly, case-sensitively; an unlisted description means no fallback (refused,
+  no second upload). The 10 MB / 10000 / ratio-20 limits are likewise from memory of the Bot API.
 - Photo recompression quality for charts is a product judgement, not measured.
-- Pi memory use with one 20 MiB buffer plus a 10 MiB photo copy per upload is bounded by the single-worker
-  design but not measured.
+- Pi memory use per upload: `ReadVerified` returns one in-memory buffer (up to the 20 MiB per-file bound),
+  the opener wraps it in a reader, and the photo path copies it once more (`io.ReadAll`), so about 2x the
+  file (up to ~40 MiB) is live, plus whatever go-telegram allocates to build the multipart body (not
+  inspected). One upload runs at a time. Not measured on the Pi.
+- Verified by reading the code: `artifactfs.ReadVerified` opens the blob through the no-follow descriptor
+  walk, reads at most size+1 bytes into memory, checks size and SHA-256 on that buffer and returns it; the
+  upload sends those bytes, so there is no pathname reopen and no time-of-check/time-of-use window between
+  verification and upload.

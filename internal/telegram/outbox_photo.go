@@ -9,36 +9,50 @@ package telegram
 // document is the original-quality form and is also what an upload with no
 // presentation always gets.
 //
-// The one-attempt rule of the transport holds for the network outcome: there is
-// never a second request after an ambiguous or unproven result. The only
-// two-request path is an explicit "Bad Request" naming the photo itself, which
-// proves Telegram stored nothing, followed by one document of the same bytes.
+// One DB attempt, at most two API calls: there is never a second request after
+// an ambiguous or unproven result. The only two-call path is a 400 whose
+// description is exactly one of photoRefusalTokens, followed by one document of
+// the same bytes. ASSUMPTION: such a 400 means Telegram stored nothing. Nothing
+// in this repository proves it; verify it in the live smoke before relying on it.
 
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"image"
+	"image/color"
 	_ "image/jpeg" // registers the decoder used by image.DecodeConfig
 	_ "image/png"  // registers the decoder used by image.DecodeConfig
 	"io"
+	"log/slog"
+	"slices"
 	"strings"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
+
+	"github.com/Coriol-is/gopod/internal/store"
 )
 
 // Telegram's sendPhoto limits (Bot API): at most 10 MB, width plus height at
 // most 10000 pixels, and a width to height ratio of at most 20.
 const (
-	maxPhotoBytes    = 10 << 20
-	maxPhotoSideSum  = 10000
-	maxPhotoRatio    = 20
-	maxSnapshotBytes = 64 << 20 // defensive read bound; the opener's own bound is the store's file limit
+	maxPhotoBytes   = 10 << 20
+	maxPhotoSideSum = 10000
+	maxPhotoRatio   = 20
 )
 
+// photoRefusalTokens are the 400 descriptions (after "Bad Request: ") treated as
+// a refusal of the picture itself. ASSUMED FROM MEMORY of Telegram's behavior,
+// not from documentation or anything in this repository: verify each in the
+// live smoke. A description not listed here is NOT a photo refusal: the part is
+// refused as an ordinary bad request and no document is sent.
+var photoRefusalTokens = []string{"PHOTO_INVALID_DIMENSIONS", "IMAGE_PROCESS_FAILED"}
+
 // photoFits reports whether data can be sent with sendPhoto. Only the image
-// header is decoded.
+// header is decoded. CMYK JPEG and animated PNG (APNG) are not photos: they go
+// as documents so the bytes are kept as they are.
 func photoFits(data []byte) bool {
 	if len(data) == 0 || len(data) > maxPhotoBytes {
 		return false
@@ -47,31 +61,67 @@ func photoFits(data []byte) bool {
 	if err != nil || (format != "png" && format != "jpeg") {
 		return false
 	}
-	w, h := cfg.Width, cfg.Height
-	if w <= 0 || h <= 0 || w+h > maxPhotoSideSum {
+	if cfg.ColorModel == color.CMYKModel || (format == "png" && isAnimatedPNG(data)) {
 		return false
 	}
-	return max(w, h) <= maxPhotoRatio*min(w, h)
+	w, h := cfg.Width, cfg.Height
+	// Each side is bounded before any sum, so the sum cannot overflow on any GOARCH.
+	if w <= 0 || h <= 0 || w > maxPhotoSideSum || h > maxPhotoSideSum || w+h > maxPhotoSideSum {
+		return false
+	}
+	return max(w, h) <= maxPhotoRatio*min(w, h) // symmetric: EXIF rotation does not matter
 }
 
-// photoRefused reports whether err is Telegram refusing the photo itself (a
-// 400 naming the picture), as opposed to the destination, the caption or an
-// unknown failure. Only this proves a document of the same bytes is safe to send.
+// isAnimatedPNG reports whether an acTL chunk precedes the first IDAT.
+func isAnimatedPNG(data []byte) bool {
+	const sig = 8
+	for off := sig; off+8 <= len(data); {
+		n := int(binary.BigEndian.Uint32(data[off:]))
+		switch string(data[off+4 : off+8]) {
+		case "acTL":
+			return true
+		case "IDAT", "IEND":
+			return false
+		}
+		if n < 0 || n > len(data) || off+12+n > len(data) {
+			return false
+		}
+		off += 12 + n
+	}
+	return false
+}
+
+// photoRefused reports whether err is the library's 400 for a refused picture.
+// go-telegram v1.27.0 builds it as fmt.Errorf("%w, %s", ErrorBadRequest,
+// description) with Telegram's description "Bad Request: <TOKEN>". The token
+// must equal an entry of photoRefusalTokens; a substring match anywhere in the
+// text is not accepted, and a wrapped or differently shaped error is not a match.
 func photoRefused(err error) bool {
 	if err == nil || !errors.Is(err, bot.ErrorBadRequest) {
 		return false
 	}
-	msg := strings.ToUpper(err.Error())
-	return strings.Contains(msg, "PHOTO_INVALID_DIMENSIONS") ||
-		strings.Contains(msg, "PHOTO_SAVE_FILE_INVALID") ||
-		strings.Contains(msg, "PHOTO_EXT_INVALID") ||
-		strings.Contains(msg, "IMAGE_PROCESS_FAILED")
+	desc, ok := strings.CutPrefix(err.Error(), bot.ErrorBadRequest.Error()+", ")
+	if !ok {
+		return false
+	}
+	tok, ok := strings.CutPrefix(desc, "Bad Request: ")
+	return ok && slices.Contains(photoRefusalTokens, tok)
+}
+
+// uploadBound is the largest snapshot the transport will buffer: the opener's own
+// bound when it states one, else the store's default per-file limit.
+func (t *botTransport) uploadBound() int64 {
+	if m, ok := t.artifacts.(interface{ MaxFileBytes() int64 }); ok && m.MaxFileBytes() > 0 {
+		return m.MaxFileBytes()
+	}
+	return store.DefaultMaxArtifactFileBytes
 }
 
 // attemptPhoto delivers one photo-presented upload from the verified bytes.
 func (t *botTransport) attemptPhoto(ctx context.Context, req SendRequest, name string, data io.Reader) Outcome {
-	buf, err := io.ReadAll(io.LimitReader(data, maxSnapshotBytes+1))
-	if err != nil || len(buf) > maxSnapshotBytes {
+	bound := t.uploadBound()
+	buf, err := io.ReadAll(io.LimitReader(data, bound+1))
+	if err != nil || int64(len(buf)) > bound {
 		return refused("artifact_unavailable")
 	}
 	sendDoc := func() Outcome {
@@ -91,6 +141,15 @@ func (t *botTransport) attemptPhoto(ctx context.Context, req SendRequest, name s
 		Caption: req.Text, // plain text; an upload has no parse mode
 	})
 	if photoRefused(err) {
+		if ctx.Err() != nil {
+			// Proven refusal, but the attempt is over: do not start a second
+			// call whose timeout would be recorded as an uncertain outcome.
+			return Outcome{Kind: OutcomeNotSent, Code: "canceled_before_dispatch"}
+		}
+		if t.log != nil {
+			t.log.Info("photo refused by telegram; sending the same bytes as a document",
+				slog.String("part", req.PartID), slog.Int64("attempt_id", req.AttemptID))
+		}
 		return sendDoc()
 	}
 	return classifySend(msg, err, 0)
