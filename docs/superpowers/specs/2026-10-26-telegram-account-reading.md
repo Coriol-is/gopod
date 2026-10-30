@@ -1,6 +1,7 @@
 # Scoped Telegram user-account reading
 
 Date: 2026-10-26. CP-028. Status: **proposed design**, not implemented or enabled.
+**Superseded in scope on 2026-10-30** by the [Go user-client design](2026-10-30-telegram-user-client.md) (read and write, owner-only private chat); its security acceptance is kept there.
 Planning wave: 4 deferred; size estimate: L.
 
 [Proposal](../../proposals/CP-028-telegram-account-reading.md) ·

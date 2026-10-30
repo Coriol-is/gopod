@@ -111,7 +111,7 @@ not enabling the feature merely by merging that document.
 | [CP-025](CP-025-managed-profile-updates.md) | Managed profile sections and concurrent edit protection | proposed | M |
 | [CP-026](CP-026-reversible-learning.md) | Sourced reversible learning with host evidence | proposed | L |
 | [CP-027](CP-027-scoped-action-approvals.md) | Exact scoped action approvals and publication grants | proposed | M |
-| [CP-028](CP-028-telegram-account-reading.md) | Scoped Telegram user-account reading | proposed | L |
+| [CP-028](CP-028-telegram-account-reading.md) | Telegram user-account connector, read and write, Go port (spec written; owner decisions recorded) | proposed | L |
 | [CP-029](CP-029-scoped-location.md) | Scoped location context and expiry | proposed | M |
 | [CP-030](CP-030-agent-mailboxes.md) | Authenticated agent mailboxes and bounded delegation | proposed | L |
 | [CP-031](CP-031-telegram-restart.md) | Owner Telegram restart with durable recovery notices | in-progress | M |
