@@ -91,8 +91,9 @@ Implemented on this branch: early persistent private Stop placeholder, Router
 `/stop` scoped by chat/topic, buffered/fallback cancellation, private menu entry.
 CP-035 is reserved by the existing CLI-hooks research worktree. Build, vet, full
 suite and affected-package race tests pass; Docker shell cancellation passed
-(114 ms). Source self-review completed; independent review/PR CI and deployment
-remain pending. A08/A10 real-client checks stay open. No production changes.
+(114 ms). Source self-review completed; [PR #124](https://github.com/Coriol-is/gopod/pull/124)
+contains implementation `cdecaa2`. Independent review/PR CI and deployment remain
+pending. A08/A10 real-client checks stay open. No production changes.
 
 1. Record real-client security acceptance: changed trigger/callback denial, owner-bound buttons,
    `/outbox` confirmation/settlement, and ordinary messages during device login. Keep startup/CI
