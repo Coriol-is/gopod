@@ -3,11 +3,11 @@ package ipc
 import (
 	"context"
 	"encoding/json"
+	"golang.org/x/sys/unix"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 
 	"github.com/Coriol-is/gopod/internal/store"
 )
@@ -75,6 +75,9 @@ func (w *Watcher) rememberReceipt(folder, key, state string) {
 	if w.receiptStates == nil {
 		w.receiptStates = make(map[string]string)
 	}
+	if len(w.receiptStates) >= maxWatcherEntries {
+		clear(w.receiptStates)
+	}
 	w.receiptStates[folder+"\x00"+key] = state
 }
 
@@ -85,10 +88,16 @@ func (w *Watcher) readReceiptState(folder, name string) string {
 		return ""
 	}
 	defer root.Close()
-	f, err := root.OpenFile(filepath.Join("results/messages", name), os.O_RDONLY|syscall.O_NONBLOCK|syscall.O_NOFOLLOW, 0)
+	dir, err := openDirectory(root, "results/messages", false)
 	if err != nil {
 		return ""
 	}
+	defer dir.Close()
+	fd, err := unix.Openat(int(dir.Fd()), name, unix.O_RDONLY|unix.O_NONBLOCK|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return ""
+	}
+	f := os.NewFile(uintptr(fd), name)
 	defer f.Close()
 	if info, err := f.Stat(); err != nil || !info.Mode().IsRegular() {
 		return ""

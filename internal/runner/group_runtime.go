@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -32,13 +33,13 @@ func isGroupRegistration(c store.RegisteredChat) bool {
 	id, err := strconv.ParseInt(strings.TrimPrefix(c.JID, "tg:"), 10, 64)
 	return err == nil && id < 0 && c.JID == "tg:"+strconv.FormatInt(id, 10)
 }
-func (r *Runner) groupRegistration(ctx context.Context, folder string) (store.RegisteredChat, bool) {
+func (r *Runner) groupRegistration(ctx context.Context, folder string) (store.RegisteredChat, bool, error) {
 	if r.profilePolicy == nil || r.profilePolicy.registrations == nil {
-		return store.RegisteredChat{}, false
+		return store.RegisteredChat{}, false, ErrProfileUnavailable
 	}
 	rows, err := r.profilePolicy.registrations.ListRegistered(ctx)
 	if err != nil {
-		return store.RegisteredChat{}, false
+		return store.RegisteredChat{}, false, ErrProfileUnavailable
 	}
 	var found store.RegisteredChat
 	count := 0
@@ -48,14 +49,24 @@ func (r *Runner) groupRegistration(ctx context.Context, folder string) (store.Re
 			count++
 		}
 	}
-	return found, count == 1 && isGroupRegistration(found)
+	if count != 1 {
+		return store.RegisteredChat{}, false, ErrProfileUnavailable
+	}
+	return found, isGroupRegistration(found), nil
 }
 func (r *Runner) turnRuntime(ctx context.Context, folder string, thread int, tier Tier, al *mountsec.Allowlist) (string, AgentProvider, func(), error) {
-	if c, ok := r.groupRegistration(ctx, folder); ok {
+	c, ok, err := r.groupRegistration(ctx, folder)
+	if err != nil {
+		return "", nil, func() {}, err
+	}
+	if ok {
 		if r.groups == nil {
 			return "", nil, func() {}, ErrProfileUnavailable
 		}
 		return r.groups.Start(ctx, c, r.ProviderForChat(folder), thread, r.ModelForChat(folder))
+	}
+	if err := r.authorizeOwner(ctx, folder); err != nil {
+		return "", nil, func() {}, err
 	}
 	id, err := r.ensure(ctx, folder, tier, al)
 	return id, r.ProviderForChat(folder), func() {}, err
@@ -77,4 +88,13 @@ func (r *Runner) WithChatSlot(ctx context.Context, folder string, operation func
 	}
 	defer release()
 	return operation(ctx)
+}
+
+// authorizeOwner requires positive host identity, never the absence of a group.
+func (r *Runner) authorizeOwner(ctx context.Context, folder string) error {
+	c, _, err := r.groupRegistration(ctx, folder)
+	if err != nil || r.profilePolicy.ownerID <= 0 || !c.IsOwner || c.JID != fmt.Sprintf("tg:%d", r.profilePolicy.ownerID) {
+		return ErrProfileUnavailable
+	}
+	return nil
 }

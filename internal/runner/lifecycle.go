@@ -200,44 +200,25 @@ func (r *Runner) idleWatcherSweep(ctx context.Context, now time.Time, timeout ti
 // are logged at warn but otherwise swallowed (we'll try again next
 // tick).
 func (r *Runner) killIdleChat(ctx context.Context, chatFolder string) {
-	name := ContainerName(chatFolder)
-	r.log.Info("idle: stopping container",
-		slog.String("chat", chatFolder),
-		slog.String("name", name))
-
-	id, err := r.d.inspectByName(ctx, name)
+	containers, err := r.d.ListGopodContainers(ctx)
 	if err != nil {
-		r.log.Warn("idle: inspect failed",
-			slog.String("chat", chatFolder),
-			slog.Any("err", err))
-		// Drop from activity map so we stop scanning a chat we
-		// can't even find.
-		r.forgetChat(chatFolder)
+		r.log.Warn("idle: list failed", slog.Any("err", err))
 		return
 	}
-	if id == "" {
-		// Container is already gone (operator killed it manually,
-		// previous gopod run cleaned it up, etc). Just forget.
-		r.forgetChat(chatFolder)
-		return
-	}
-
-	if err := r.d.Stop(ctx, id, DefaultStopGrace); err != nil {
-		r.log.Warn("idle: stop failed",
-			slog.String("chat", chatFolder),
-			slog.Any("err", err))
-		// Don't forget — try again next tick.
-		return
-	}
-	if err := r.d.Remove(ctx, id); err != nil {
-		r.log.Warn("idle: remove failed",
-			slog.String("chat", chatFolder),
-			slog.Any("err", err))
-		return
+	for _, c := range containers {
+		if c.Labels[LabelChat] != chatFolder {
+			continue
+		}
+		if err := r.d.Stop(ctx, c.ID, DefaultStopGrace); err != nil {
+			r.log.Warn("idle: stop failed", slog.String("chat", chatFolder), slog.Any("err", err))
+			return
+		}
+		if err := r.d.Remove(ctx, c.ID); err != nil {
+			r.log.Warn("idle: remove failed", slog.String("chat", chatFolder), slog.Any("err", err))
+			return
+		}
 	}
 	r.forgetChat(chatFolder)
-	r.log.Info("idle: container removed",
-		slog.String("chat", chatFolder))
 }
 
 // forgetChat drops a chat from the activity map. Used after the chat
