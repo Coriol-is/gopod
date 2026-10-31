@@ -1,12 +1,15 @@
 package ipc
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"sort"
-	"syscall"
+	"strings"
+
+	"golang.org/x/sys/unix"
 )
 
 func (w *Watcher) namespacePath(folder string) (string, error) {
@@ -40,20 +43,18 @@ func (w *Watcher) readRequest(path, folder, channel string) ([]byte, error) {
 		return nil, err
 	}
 	defer root.Close()
-	name := filepath.Join(channel, filepath.Base(path))
-	info, err := root.Lstat(name)
+	dir, err := openDirectory(root, channel, false)
 	if err != nil {
 		return nil, err
 	}
-	if !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("regular JSON request file required")
-	}
-	f, err := root.OpenFile(name, os.O_RDONLY|syscall.O_NONBLOCK|syscall.O_NOFOLLOW, 0)
+	defer dir.Close()
+	fd, err := unix.Openat(int(dir.Fd()), filepath.Base(path), unix.O_RDONLY|unix.O_NONBLOCK|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if err != nil {
 		return nil, err
 	}
+	f := os.NewFile(uintptr(fd), filepath.Base(path))
 	defer f.Close()
-	info, err = f.Stat()
+	info, err := f.Stat()
 	if err != nil {
 		return nil, err
 	}
@@ -64,20 +65,82 @@ func (w *Watcher) readRequest(path, folder, channel string) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(f, (64<<10)+1))
 }
 
-func (w *Watcher) archiveFile(folder, path, destination string) error {
-	root, err := w.openNamespace(folder)
-	if err != nil {
-		return err
+// openDirectory pins each path component before walking the next one. os.Root
+// contains paths, but intentionally permits symlinks within the root; IPC channel
+// separation additionally requires that no component be a symlink.
+func openDirectory(root *os.Root, path string, create bool) (*os.File, error) {
+	if path == "" || filepath.Clean(path) != path || filepath.IsAbs(path) {
+		return nil, fmt.Errorf("invalid IPC directory")
 	}
-	defer root.Close()
-	if err = root.MkdirAll(destination, 0o700); err != nil {
-		return err
+	dir, err := root.Open(".")
+	if err != nil {
+		return nil, err
+	}
+	for _, part := range strings.Split(path, string(filepath.Separator)) {
+		if part == "." || part == ".." {
+			dir.Close()
+			return nil, fmt.Errorf("invalid IPC directory")
+		}
+		if create {
+			err = unix.Mkdirat(int(dir.Fd()), part, 0700)
+			if err != nil && !errors.Is(err, unix.EEXIST) {
+				dir.Close()
+				return nil, err
+			}
+		}
+		fd, err := unix.Openat(int(dir.Fd()), part, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+		dir.Close()
+		if err != nil {
+			return nil, err
+		}
+		dir = os.NewFile(uintptr(fd), part)
+	}
+	return dir, nil
+}
+
+func (w *Watcher) archiveFile(folder, path, destination string) error {
+	if destination != ".processed" && destination != ".failed" {
+		return fmt.Errorf("invalid IPC archive")
 	}
 	channel := filepath.Base(filepath.Dir(path))
 	if channel != "messages" && channel != "tasks" {
 		return fmt.Errorf("invalid IPC source channel")
 	}
-	return root.Rename(filepath.Join(channel, filepath.Base(path)), filepath.Join(destination, filepath.Base(path)))
+	root, err := w.openNamespace(folder)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	src, err := openDirectory(root, channel, false)
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+	dst, err := openDirectory(root, destination, true)
+	if err != nil {
+		return err
+	}
+	defer dst.Close()
+	si, err := src.Stat()
+	if err != nil {
+		return err
+	}
+	di, err := dst.Stat()
+	if err != nil {
+		return err
+	}
+	if os.SameFile(si, di) {
+		return fmt.Errorf("IPC archive aliases source")
+	}
+	name := filepath.Base(path)
+	if err := unix.Renameat(int(src.Fd()), name, int(dst.Fd()), name); err != nil {
+		return err
+	}
+	var st unix.Stat_t
+	if err := unix.Fstatat(int(src.Fd()), name, &st, unix.AT_SYMLINK_NOFOLLOW); !errors.Is(err, unix.ENOENT) {
+		return fmt.Errorf("IPC source still present after archive")
+	}
+	return nil
 }
 
 func (w *Watcher) pruneNamespace(folder string) {
@@ -87,7 +150,7 @@ func (w *Watcher) pruneNamespace(folder string) {
 	}
 	defer root.Close()
 	for _, channel := range []string{".processed", ".failed", "results", "results/messages"} {
-		f, err := root.OpenFile(channel, os.O_RDONLY|syscall.O_NONBLOCK|syscall.O_NOFOLLOW, 0)
+		f, err := openDirectory(root, channel, false)
 		if err != nil {
 			continue
 		}
@@ -96,9 +159,9 @@ func (w *Watcher) pruneNamespace(folder string) {
 			f.Close()
 			continue
 		}
-		entries, err := f.ReadDir(-1)
-		f.Close()
-		if err != nil {
+		entries, err := f.ReadDir(maxDirectoryEntries)
+		defer f.Close()
+		if err != nil && !errors.Is(err, io.EOF) {
 			continue
 		}
 		var names []string
@@ -109,7 +172,7 @@ func (w *Watcher) pruneNamespace(folder string) {
 		}
 		sort.Strings(names)
 		for len(names) > w.cfg.Retention {
-			if err = root.Remove(filepath.Join(channel, names[0])); err != nil {
+			if err = unix.Unlinkat(int(f.Fd()), names[0], 0); err != nil {
 				w.log.Warn("ipc: prune receipt/archive", "folder", folder, "channel", channel, "err", err)
 			}
 			names = names[1:]

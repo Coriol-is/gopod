@@ -462,6 +462,11 @@ func (w *Watcher) writtenBound(path string, mtime time.Time) time.Time {
 	floor, seen := w.writeFloor[path]
 	if !seen {
 		floor = w.prevSweep
+		if len(w.writeFloor) >= maxWatcherEntries {
+			// Refuse post-run admission when the host cannot retain first-seen proof.
+			// Returning current time cannot make an expired capability valid again.
+			return w.cfg.NowFn()
+		}
 		w.writeFloor[path] = floor
 	}
 	if mtime.After(floor) {

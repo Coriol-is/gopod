@@ -4,16 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
-	"syscall"
 )
 
 // tickOnce sweeps every <DataDir>/ipc/<chat>/{messages,tasks} dir
 // once. Errors are logged and never returned.
 func (w *Watcher) tickOnce(ctx context.Context) {
 	w.beginSweep()
+	w.pruneWatcherState()
 	var folders []string
 	if w.cfg.Namespaces != nil {
 		var err error
@@ -102,7 +103,10 @@ func (w *Watcher) moveFailed(folder, path string, cause error) {
 // first two backoff entries are used (the 45s is reserved for a
 // future MaxRetries bump).
 func (w *Watcher) bumpRetry(path string) (exhausted bool) {
-	e := w.retries[path]
+	e, exists := w.retries[path]
+	if !exists && len(w.retries) >= maxWatcherEntries {
+		return true
+	}
 	e.attempts++
 	if e.attempts >= w.cfg.MaxRetries {
 		return true
@@ -144,7 +148,7 @@ func (w *Watcher) processChannel(ctx context.Context, folder, channel string,
 		return
 	}
 	defer root.Close()
-	f, err := root.OpenFile(channel, os.O_RDONLY|syscall.O_NONBLOCK|syscall.O_NOFOLLOW, 0)
+	f, err := openDirectory(root, channel, false)
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
 			w.log.Warn("ipc: unsafe or unreadable channel", "folder", folder, "channel", channel)
@@ -157,8 +161,17 @@ func (w *Watcher) processChannel(ctx context.Context, folder, channel string,
 		w.log.Warn("ipc: channel must be a directory", "folder", folder, "channel", channel)
 		return
 	}
-	entries, err := f.ReadDir(-1)
-	if err != nil {
+	// A broken archive must not allow repeated side effects, even across restarts.
+	for _, archive := range []string{".processed", ".failed"} {
+		dst, err := openDirectory(root, archive, true)
+		if err != nil {
+			w.log.Warn("ipc: unsafe archive; channel deferred", "folder", folder)
+			return
+		}
+		dst.Close()
+	}
+	entries, err := f.ReadDir(maxDirectoryEntries)
+	if err != nil && !errors.Is(err, io.EOF) {
 		w.log.Warn("ipc: readdir channel failed", "folder", folder, "channel", channel)
 		return
 	}
@@ -173,11 +186,16 @@ func (w *Watcher) processChannel(ctx context.Context, folder, channel string,
 		names = append(names, e.Name())
 	}
 	sort.Strings(names)
+	dispatched := 0
 	for _, name := range names {
+		if ctx.Err() != nil || dispatched >= maxChannelDispatches {
+			break
+		}
 		path := filepath.Join(dir, name)
 		if w.shouldSkipForBackoff(path) {
 			continue
 		}
+		dispatched++
 		w.safeDispatch(ctx, folder, path, handler)
 	}
 }
@@ -195,4 +213,32 @@ func (w *Watcher) safeDispatch(ctx context.Context, folder, path string,
 		}
 	}()
 	handler(ctx, folder, path)
+}
+
+// Bound work and state independently of the number of files an agent creates.
+// Backlogs remain on disk for subsequent ticks; cache eviction never replays a
+// terminal delivery. A full safety-state map refuses new work rather than
+// discarding the old outcome or weakening capability timing.
+const (
+	maxDirectoryEntries  = 1024
+	maxChannelDispatches = 32
+	maxWatcherEntries    = 4096
+)
+
+func (w *Watcher) pruneWatcherState() {
+	for path := range w.retries {
+		if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
+			delete(w.retries, path)
+		}
+	}
+	for path := range w.writeFloor {
+		if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
+			delete(w.writeFloor, path)
+		}
+	}
+	for path := range w.terminalMessages {
+		if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
+			delete(w.terminalMessages, path)
+		}
+	}
 }

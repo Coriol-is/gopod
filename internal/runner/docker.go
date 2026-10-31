@@ -1,7 +1,6 @@
 package runner
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -233,7 +232,7 @@ func (d *Docker) Exec(
 	stopClose := context.AfterFunc(ctx, func() { resp.Close() })
 	defer stopClose()
 
-	var outBuf, errBuf bytes.Buffer
+	var outBuf, errBuf boundedBuffer
 	if _, err := stdcopy.StdCopy(&outBuf, &errBuf, resp.Reader); err != nil && !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("docker: exec demux: %w", err)
 	}
