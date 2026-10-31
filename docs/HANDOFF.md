@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-10-31 (security fix wave accepted; no Pi deployment)
+**Last updated:** 2026-10-31 (security fix wave deployed to Pi)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -14,18 +14,26 @@ source review, green `test`, Docker `isolation-spike` and Sonar checks, then adm
 See [acceptance and limitations](reviews/2026-10-31-security-wave-acceptance.md) for the PR/SHA map,
 regression coverage, review fixes and the combined verification result.
 
-**Production is unchanged.** No Pi deployment, restart, flag change, schedule change or account operation
-was performed. The only Pi operation was a read-only SQLite count: `outbox_parts WHERE state='uncertain'`
-returned **0** before group 4. The last recorded deployed release remains `630aa4e` (2026-10-30);
-local/CI acceptance does not establish real-client or native-provider acceptance.
+**Pi deployed:** `e3b5401` started **2026-10-31 00:24:07 UTC**, explicitly authorized after wave acceptance.
+Image `sha256:289e86dcd86ce470c4ba8d38c97b42da944f40b6b2e14752333d11fb9d89cf69`;
+controller running, restart count 0, OOM false. Owner Claude container and CLI 2.1.310 ready;
+Telegram long polling and outbox running. [Deployment evidence and rollback](deployments/2026-10-31-security-wave.md).
+Verified backups: `20261031T001910Z-db-a42b1b89` (online) and
+`20261031T002335Z-ms-376e0956` (matched stopped). Rollback image:
+`gopod-gopod:rollback-pre-security-e3b5401` (previous `630aa4e`).
 
-**Next action:** deployment is a separate owner-authorized task. Before a future rollout, check the
-Docker bridge address for `GOPOD_MEMORY_BIND_IP` (default `172.17.0.1`) and review the new non-owner
-budgets: 10 unfinished tasks, 15-minute minimum recurring period, 96 task runs per folder/UTC day;
-group runtime defaults to 1 active group and 96 turns per namespace/UTC day (configurable).
-Owner-private turns are not subject to those budgets or the new 15-minute group turn timeout.
-After rollout, exercise trigger/callback denial, `/outbox` confirmation/settlement, ordinary messages
-during device login, and bridge-only memory access before declaring live acceptance.
+**Post-deploy:** DB integrity OK; schedules, sessions and registrations exactly match the stopped backup.
+Outbox: 14 sent, none uncertain; 176 done turns, no pending/running. Existing outbox dispatcher/IPC flags
+remain on; artifacts/managed-task flags remain off. Memory API binds only `172.17.0.1:9876`, is reachable
+from the owner container, returns 401 without a capability, and refuses LAN connections. Telegram API
+read-only probes succeeded and `/outbox` is in the command menu. No account refresh, inference canary,
+Gmail/Calendar run or deliberate schedule mutation was performed.
+
+**Next action:** real-client acceptance of trigger/callback denial, `/outbox` confirmation/settlement,
+and ordinary messages during device login remains open; do not infer it from startup or CI.
+New non-owner budgets: 10 unfinished tasks, 15-minute minimum recurring period, 96 task runs per
+folder/UTC day; group defaults 1 active group and 96 turns per namespace/UTC day (configurable).
+Owner-private turns are exempt from those budgets and the 15-minute group turn timeout.
 
 **Boundaries:** M9 (derived credential copy) remains deferred for the owner decision. Group upload
 import skips excess files instead of disabling the group, but only examines the first 128 directory
@@ -299,8 +307,8 @@ Core Telegram assistant, Docker runtime, Claude/Codex native sessions,
 conversation-scoped history, memory, voice, scheduler and filesystem IPC are
 implemented. No other runtime, channel, guest agent or bot-to-bot peer is enabled.
 
-The last recorded Pi controller release is **630aa4e**, deployed 2026-10-30 13:07 UTC.
-The security wave is merged only; see START HERE. The deployment narratives below are historical evidence,
+The Pi controller release is **e3b5401**, deployed 2026-10-31 00:24:07 UTC.
+The security wave is deployed; live client acceptance remains separate (see START HERE). The deployment narratives below are historical evidence,
 not a current inventory or permission to alter flags.
 CP-020 implementation is merged (PRs #66/#67; green CI/Sonar and independent review).
 Groups remain disabled in production configuration. Both final native images
