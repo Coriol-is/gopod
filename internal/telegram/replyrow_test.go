@@ -217,7 +217,7 @@ func TestStoppedReplyGetsNoRegenerate(t *testing.T) {
 func TestEditPathFinalCarriesActionRow(t *testing.T) {
 	fake := editPathFake()
 	b, item := newStreamFixture(t, fake)
-	defer b.registerInflight(item.ID, item.ChatID, func() {})()
+	defer b.registerInflight(item.ID, item.ChatID, 0, func() {})()
 	s := newStructuredStream()
 	go s.finish("готово")
 	if err := b.streamReply(context.Background(), item, s.stream()); err != nil {

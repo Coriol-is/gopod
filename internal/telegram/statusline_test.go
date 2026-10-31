@@ -130,7 +130,7 @@ func TestEditPathHeaderEvery5s(t *testing.T) {
 	b, item := newStreamFixture(t, fake)
 	clock := newManualClock()
 	b.reactClock = clock
-	defer b.registerInflight(item.ID, item.ChatID, func() {})()
+	defer b.registerInflight(item.ID, item.ChatID, 0, func() {})()
 	s := newStructuredStream()
 	done := make(chan error, 1)
 	go func() { done <- b.streamReply(t.Context(), item, s.stream()) }()

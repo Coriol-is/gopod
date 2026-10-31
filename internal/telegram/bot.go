@@ -113,6 +113,9 @@ type Bot struct {
 	// taskRun overrides how silent scheduled turns run the agent. Tests only.
 	taskRun func(ctx context.Context, folder string, thread int, tier runner.Tier, prompt string) (string, error)
 
+	// syncRun overrides buffered interactive execution in tests.
+	syncRun func(context.Context, string, int, runner.Tier, string) (string, error)
+
 	// draftsOff marks chats where sendMessageDraft was refused; sticky
 	// until restart. draftSeq hands out draft ids.
 	draftsMu  sync.Mutex
@@ -359,7 +362,7 @@ func (b *Bot) publishCommands(ctx context.Context) {
 			}
 			entry := models.BotCommand{Command: c.SlashName, Description: c.Description}
 			privateCmds = append(privateCmds, entry)
-			if c.Name != "telegram" {
+			if c.Name != "telegram" && c.Name != "stop" {
 				cmds = append(cmds, entry)
 			}
 		}

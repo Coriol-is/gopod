@@ -75,6 +75,25 @@ See [current isolation policy](ISOLATION.md), [acceptance](ACCEPTANCE.md) and th
 
 ## Resume next
 
+Private-chat interruption audit (2026-10-31, documentation branch):
+[behavior, verification and limitations](reviews/2026-10-31-private-chat-interruptions.md).
+Ordinary messages queue; Stop explicitly cancels a turn. Race tests and a local
+Docker process-kill probe passed; real-client A08/A10 remain open. Noted without
+fixes: sync fallback uses the parent context, cleanup failure still releases the
+slot, and stopped partial-reply delivery errors can be swallowed. No production
+runtime changes or deliberate interruptions were performed.
+
+Owner explicitly rejected new-message interruption and requested a group-style
+Stop button plus /stop in the private chat. [CP-036](proposals/CP-036-private-chat-stop.md)
+is in progress; [spec](superpowers/specs/2026-10-31-private-chat-stop.md) defines
+same-topic explicit cancellation with preserved sessions and unchanged queueing.
+Implemented on this branch: early persistent private Stop placeholder, Router
+`/stop` scoped by chat/topic, buffered/fallback cancellation, private menu entry.
+CP-035 is reserved by the existing CLI-hooks research worktree. Build, vet, full
+suite and affected-package race tests pass; Docker shell cancellation passed
+(114 ms). Source self-review completed; independent review/PR CI and deployment
+remain pending. A08/A10 real-client checks stay open. No production changes.
+
 1. Record real-client security acceptance: changed trigger/callback denial, owner-bound buttons,
    `/outbox` confirmation/settlement, and ordinary messages during device login. Keep startup/CI
    evidence separate from Telegram-client evidence.

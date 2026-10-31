@@ -80,7 +80,7 @@ func TestStopKeyboard(t *testing.T) {
 func TestPlaceholderCarriesStopButton(t *testing.T) {
 	fake := editPathFake()
 	b, item := newStreamFixture(t, fake)
-	defer b.registerInflight(item.ID, item.ChatID, func() {})()
+	defer b.registerInflight(item.ID, item.ChatID, 0, func() {})()
 	s := newStructuredStream()
 	done := make(chan error, 1)
 	go func() { done <- b.streamReply(context.Background(), item, s.stream()) }()
@@ -130,7 +130,7 @@ func TestPlaceholderWithoutInflightHasNoStop(t *testing.T) {
 func TestFinalEditRemovesKeyboard(t *testing.T) {
 	fake := editPathFake()
 	b, item := newStreamFixture(t, fake)
-	defer b.registerInflight(item.ID, item.ChatID, func() {})()
+	defer b.registerInflight(item.ID, item.ChatID, 0, func() {})()
 	s := newStructuredStream()
 	go s.finish("**done**")
 	if err := b.streamReply(context.Background(), item, s.stream()); err != nil {
@@ -152,7 +152,7 @@ func TestStopCallbackCancelsTurnInSameChat(t *testing.T) {
 	b.registerCallbacks()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	defer b.registerInflight(5, streamChat, cancel)()
+	defer b.registerInflight(5, streamChat, 0, cancel)()
 
 	b.callbackHandler(context.Background(), b.api, cbUpdate("q1", streamChat, 0, 77, "st:5"))
 
@@ -181,7 +181,7 @@ func TestStopCallbackFromOtherChatIsRefused(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	defer b.registerInflight(5, streamChat, cancel)()
+	defer b.registerInflight(5, streamChat, 0, cancel)()
 
 	// Someone forwards the callback data from another registered chat.
 	b.callbackHandler(context.Background(), b.api, cbUpdate("q1", other, 0, 77, "st:5"))
@@ -199,7 +199,7 @@ func TestStopCallbackAfterFinishToastsFinished(t *testing.T) {
 	b := newCallbackFixture(t, fake)
 	b.registerCallbacks()
 	cancels := 0
-	unregister := b.registerInflight(5, streamChat, func() { cancels++ })
+	unregister := b.registerInflight(5, streamChat, 0, func() { cancels++ })
 
 	b.callbackHandler(context.Background(), b.api, cbUpdate("q1", streamChat, 0, 77, "st:5"))
 	b.callbackHandler(context.Background(), b.api, cbUpdate("q2", streamChat, 0, 77, "st:5"))
@@ -232,7 +232,7 @@ func TestStopCallbackEndsEditPathTurnStopped(t *testing.T) {
 	b.registerCallbacks()
 	runCtx, cancelRun := context.WithCancel(context.Background())
 	defer cancelRun()
-	defer b.registerInflight(item.ID, item.ChatID, cancelRun)()
+	defer b.registerInflight(item.ID, item.ChatID, 0, cancelRun)()
 	s := newStructuredStream()
 	errc := make(chan error, 1)
 	go func() { errc <- b.streamReply(context.Background(), item, s.stream()) }()
@@ -274,7 +274,7 @@ func TestWaitPlaceholderCarriesStopButton(t *testing.T) {
 	fake := &fakeTelegram{respond: okResponder}
 	b, item := newStreamFixture(t, fake)
 	b.markDraftsUnsupported(streamChat)
-	defer b.registerInflight(item.ID, item.ChatID, func() {})()
+	defer b.registerInflight(item.ID, item.ChatID, 0, func() {})()
 	ctx := context.Background()
 
 	b.waitNotice(ctx, item)(runner.WaitSlot)
@@ -300,7 +300,7 @@ func TestStreamNotStartedClearsStopButton(t *testing.T) {
 	b, item := newStreamFixture(t, fake)
 	b.markDraftsUnsupported(streamChat)
 	runCtx, cancelRun := context.WithCancel(context.Background())
-	defer b.registerInflight(item.ID, item.ChatID, cancelRun)()
+	defer b.registerInflight(item.ID, item.ChatID, 0, cancelRun)()
 	ctx := context.Background()
 	b.waitNotice(ctx, item)(runner.WaitSlot)
 	cancelRun()

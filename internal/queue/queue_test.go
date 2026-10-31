@@ -1030,3 +1030,42 @@ func TestQueuePosition_Waiting(t *testing.T) {
 	}
 	close(release)
 }
+
+// New input waits for an explicit Stop; Stop ends only the running batch.
+func TestNewMessageWaitsAndSurvivesExplicitStop(t *testing.T) {
+	ss := newStatusStore()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	q := New(t.Context(), func(ctx context.Context, items []Item) error {
+		if items[0].SourceID == "first" {
+			close(started)
+			select {
+			case <-release:
+				return ErrStopped
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+		return nil
+	}, 1, ss, silentLog())
+	defer q.Close()
+	finished := make(chan Item, 2)
+	q.OnDone(func(it Item, _ error) { finished <- it })
+	first, _ := q.Enqueue(t.Context(), Item{Folder: "owner", Source: "telegram", SourceID: "first"})
+	<-started
+	next, _ := q.Enqueue(t.Context(), Item{Folder: "owner", Source: "telegram", SourceID: "next"})
+	if q.Pending() != 1 || ss.statusOf(first) != "running" {
+		t.Fatal("new input did not remain queued")
+	}
+	close(release)
+	for i := 0; i < 2; i++ {
+		select {
+		case <-finished:
+		case <-time.After(3 * time.Second):
+			t.Fatal("queued input did not complete after Stop")
+		}
+	}
+	if ss.statusOf(first) != StatusStopped || ss.statusOf(next) != StatusDone {
+		t.Fatal("Stop lost or replayed an input")
+	}
+}
