@@ -1,14 +1,35 @@
 # gopod — current handoff
 
-**Last updated:** 2026-10-31 (housekeeping after the security-wave deployment)
+**Last updated:** 2026-10-31 (private Stop merged and deployed)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
 [ACCEPTANCE](ACCEPTANCE.md) for pending real-client verification.
 
-## START HERE — security fix wave, 2026-10-31
+## Resume here — private Stop deployed, 2026-10-31
 
-**Resume here.** All eight groups from the [security review](reviews/2026-10-30-security-logic-review.md)
+[CP-036](proposals/CP-036-private-chat-stop.md) is merged in
+[PR #124](https://github.com/Coriol-is/gopod/pull/124), **`8a3ce75`**, and deployed
+to the Pi at **20:00:48 UTC**. Final-head PR/main CI and Sonar passed; build/vet,
+full tests and affected-package race suites passed. See
+[deployment evidence and rollback](deployments/2026-10-31-private-stop.md).
+
+Owner-private answers now carry an inline Stop before agent startup; `/stop`
+acts only on the current topic. New input remains queued, and Stop does not clear
+history/session mappings. Buffered fallback cancellation and voice-only delivery
+are covered. All 34 session mappings, 10 schedules, 2 registrations and feature
+flags matched before/after rollout. Controller is running, restarts 0, OOM false;
+private Telegram menu contains `/stop`. Both online and matched-stopped backups
+verified; the previous controller image is retained.
+
+Next: real-client A08/A10 acceptance of button and command during thinking/tools/
+waiting and subsequent Claude/Codex session continuation. Startup and menu checks
+are not this acceptance. No deliberate active-turn interruption or inference
+canary was performed. Existing security/proactive/artifact gates below remain.
+
+## Previous deployment — security fix wave, 2026-10-31
+
+All eight groups from the [security review](reviews/2026-10-30-security-logic-review.md)
 are merged, code baseline **`e586c4a`**. Group 1 shipped first. Each PR had an independent
 source review, green `test`, Docker `isolation-spike` and Sonar checks, then admin squash merge.
 See [acceptance and limitations](reviews/2026-10-31-security-wave-acceptance.md) for the PR/SHA map,
@@ -83,21 +104,18 @@ limitations: cleanup failure still releases the slot, and stopped partial-reply
 delivery errors can be swallowed. No production
 runtime changes or deliberate interruptions were performed.
 
-Owner explicitly rejected new-message interruption and requested a group-style
-Stop button plus /stop in the private chat. [CP-036](proposals/CP-036-private-chat-stop.md)
-is in progress; [spec](superpowers/specs/2026-10-31-private-chat-stop.md) defines
-same-topic explicit cancellation with preserved sessions and unchanged queueing.
-Implemented on this branch: early persistent private Stop placeholder, Router
-`/stop` scoped by chat/topic, buffered/fallback cancellation, private menu entry.
-CP-035 is reserved by the existing CLI-hooks research worktree. Build, vet, full
-suite and affected-package race tests pass; Docker shell cancellation passed
-(114 ms). Source self-review completed; [PR #124](https://github.com/Coriol-is/gopod/pull/124)
-contains implementation `cdecaa2` and the pre-merge voice-only regression fix.
-The owner authorized checks, merge and then deployment. A fresh source re-review
-found and fixed buffered voice-only text duplication; the regression test is
-included. Source review is by the implementing agent; Sonar is the separate
-automated analysis, not a human approval. Final-head CI/merge and deployment are
-being completed. A08/A10 real-client checks stay open.
+Owner-private Stop is implemented and merged in [PR #124](https://github.com/Coriol-is/gopod/pull/124),
+`8a3ce75`; [CP-036](proposals/CP-036-private-chat-stop.md) is done. Ordinary messages
+remain queued. The persistent inline Stop and `/stop` cancel the active answer in
+the current topic without clearing history/session mappings. Buffered fallback
+uses the registered child context; voice-only completion keeps its delivery policy.
+Build, vet, full tests, affected-package race tests, PR CI and main CI passed.
+Source re-review was performed by the implementing agent and found/fixed the
+voice-only regression; Sonar provided separate automated analysis, not a human
+GitHub approval. Owner-authorized admin squash retained the source branch.
+Deployment completed at 20:00:48 UTC; [evidence](deployments/2026-10-31-private-stop.md)
+records both verified backups, retained rollback image and unchanged state hashes.
+A08/A10 real-client checks remain open.
 
 1. Record real-client security acceptance: changed trigger/callback denial, owner-bound buttons,
    `/outbox` confirmation/settlement, and ordinary messages during device login. Keep startup/CI
