@@ -34,7 +34,7 @@ has passed. The proposal registry remains the single CP status source;
 | Order | Workstream | Ordered work / dependencies | State |
 |---|---|---|---|
 | 1 | Qualify the deployed release | Tasks panel, delivery, upgraded CLIs, quota/provider continuity, Stop/recovery and media baseline — A01–A17 | Implemented/deployed baseline; live checks open |
-| 2 | Reliability and diagnostics | CP-017 Telegram diagnosis -> CP-002 bounded outbox/uncertain delivery -> CP-004 isolated task sessions -> CP-007 scheduled backups/restore -> CP-006 maintenance/quiet hours | CP-017 private-DM slice implemented; live acceptance pending; remaining source-backed specs and implementation plans saved 2026-10-26, implementation not started |
+| 2 | Reliability and diagnostics | CP-017 Telegram diagnosis -> CP-002 bounded outbox/uncertain delivery -> CP-004 isolated task sessions -> CP-007 scheduled backups/restore -> CP-006 maintenance/quiet hours | CP-017 private-DM slice implemented; live acceptance pending; CP-002/003/004/007 partially implemented and deployed; full cutover, managed execution and restore gates remain open; CP-006 planned |
 | 3 | Conversation management | CP-016 topic deletion/retirement -> CP-018 per-conversation providers/models/quota scope | Specs saved; no implementation |
 | 4 | Group service UX | CP-019 ephemeral command/service/error replies; T14 scoped menu/strings work coordinated with transport | Spec saved; ordinary output stays public |
 | 5 | Media, three queues | CP-014 Q1 cards/links/attachment fidelity -> Q2 document/OCR/image/speech -> Q3 video speech+frames/export; CP-003 typed IPC artifacts and CP-005 qualified tools support appropriate slices | Specs/proposals only beyond existing baseline |
@@ -44,9 +44,9 @@ Done implementation must not remain "in progress" just because a live check is
 pending. Host memory-cgroup changes/reboot (T9) and parallel execution (T5/T5b)
 remain paused operational/research items, not implicit deployment steps.
 
-## Next iteration — status as of 2026-10-29 (night)
+## Next iteration — status as of 2026-10-31
 
-Done since 2026-10-27 (all merged to `main`; production runs `8bdff46`, flags below): CP-002 PR 1-5
+Done since 2026-10-27 (all merged to `main`; production runs `e3b5401`; outbox IPC/dispatcher on, artifacts/managed tasks off): CP-002 PR 1-5
 (store, dispatcher, durable personal text IPC, immutable artifacts, voice/code preparation),
 CP-004 PR 1-3 (storage, managed dispatch, policy-guarded execution), CP-007 backup foundation,
 rich-message formatting P1 (D045), supervised owner `/restart` (CP-031).
@@ -54,11 +54,11 @@ rich-message formatting P1 (D045), supervised owner `/restart` (CP-031).
 | Step | Work | State / gate |
 |---|---|---|
 | 1 | Owner live acceptance A08–A11, A18, A20, A02, plus formatting and `/restart` edge cases | Owner in Telegram; failures become fix PRs |
-| 2 | CP-020 final gates: refresh Claude auth, fix Codex tree-budget admission, two-turn canaries, one controlled group; groups meanwhile give a plain refusal | Private management only; no paid fallback |
-| 3 | CP-002 PR 6-8 (foreground freeze/streaming ownership, protected challenges, staged release), CP-004 PR 4-5 (settlement/visibility, schedule policy) | One PR each; artifacts flag also gated on CP-007 restore drill and the capability issuer |
+| 2 | CP-020 final gates: Codex two-turn/tool canaries and cross-boundary/client checks; tree-budget fix #88 and default admission #89 shipped; historical Claude group new/resume succeeded | Private management only; no paid fallback |
+| 3 | CP-002 PR 6-8 (foreground freeze/streaming ownership, protected challenges, staged release), CP-004 PR 4-5 (settlement/visibility, schedule policy) | One PR each; artifacts flag gated on CP-007 backup/restore qualification; capability issuer shipped in #110 |
 | 4 | Rich messages: stickers P2/P3, [thread awareness](docs/superpowers/specs/2026-10-29-agent-thread-awareness.md), [buttons/hooks](docs/superpowers/specs/2026-10-29-agent-buttons-and-hooks.md), [reaction reading](docs/superpowers/specs/2026-10-29-telegram-reaction-reading.md) | Specs saved; no implementation |
 | 5 | Task-role credential adapter (needed before `GOPOD_MANAGED_TASKS` can run anything); Pi Docker-inspect round trip | Deferred by the owner 2026-10-30 (B2 stays the recommendation) |
-| 6 | Group triggers (`owner`/`mention`/`all`), owner-in-group identity for group-scoped commands, group `/login` guidance — [spec](docs/superpowers/specs/2026-10-29-group-trigger-and-owner-in-group.md) | Spec saved; owner answers 4 open questions |
+| 6 | Group triggers (`owner`/`mention`/`all`), owner-in-group identity for group-scoped commands, group `/login` guidance — [spec](docs/superpowers/specs/2026-10-29-group-trigger-and-owner-in-group.md) | Implemented and deployed (#93/#95/#97); security wave hardens callbacks; live client checks remain |
 | Deferred | CP-014 media, CP-018 per-thread providers, T9 cgroup reboot, observability | Owner re-prioritises |
 
 Open owner decisions: branch protection requiring `test` + `isolation-spike` (a ruleset requiring one approval exists; admin squash-merge is the working path); whether to add a CD workflow.
@@ -308,14 +308,14 @@ previously silent Cyrillic task-list replies.
 [Audit](docs/research/2026-10-25-personal-group-isolation-audit.md),
 [contract](docs/superpowers/specs/2026-10-25-personal-group-container-isolation.md)
 and [implementation/acceptance plan](docs/superpowers/plans/2026-10-25-personal-group-container-isolation.md)
-track the work. **Controller deployed; group activation blocked:** full architecture merged to main in PRs #66/#67
-(`a3a9c53a24456cce40678231ef048e6baba51956`), with green CI/Sonar and independent
-review. Local tests/races/vet and real Docker tools passed; Pi offline tools
-passed (6.22 s), and earlier-candidate Claude actual new/resume two-turn file/context/session checks
-passed. Production controller is now `a3a9c53` with groups disabled. Both final-image native TCP
-preflights passed; full qualification is blocked by expired Claude auth and Codex
-post-preflight tree-budget admission. Codex simple inference passed. No production
-group epoch migration occurred; see [rollout evidence](docs/deployments/2026-10-27-group-isolation.md).
+track the work. **Implementation deployed; final provider/client qualification remains open.**
+The architecture merged in #66/#67; follow-ups #88/#89 fixed Codex tree-budget admission and
+admit registered groups by default. #93/#95/#97 implement triggers, owner-in-group controls
+and private group-login guidance. The current controller is `e3b5401`; security groups 1–8 are deployed.
+Historical 2026-10-29 evidence records Claude group new/resume success after owner login;
+final Codex two-turn/tool and cross-boundary acceptance remain open. Earlier TCP/offline-tool
+checks are in the [2026-10-27 report](docs/deployments/2026-10-27-group-isolation.md),
+current rollout in the [2026-10-31 report](docs/deployments/2026-10-31-security-wave.md).
 
 Implemented: immutable namespace epochs and retired keys, protected separate
 roots, two personal/group provider image sets, read-only native-subscription auth,
@@ -323,7 +323,7 @@ credential-free offline commands, exact inference-only HTTPS egress, scoped loca
 memory/IPC, owner controls and evidence-preserving drain/orphan recovery.
 Native policy v2 passed 69 local cases over all 11 public catalog models; ARM64
 release images were built locally from exact merged main. The production catalog
-was installed; no production group migration occurred.
+was installed; later default admission prepared the existing group (historical checkpoint in HANDOFF archive).
 No personal service or paid API fallback is granted to groups. Group speech and
 automatic maintenance remain unavailable; private behavior stays the baseline.
 

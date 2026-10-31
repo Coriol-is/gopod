@@ -103,7 +103,7 @@ not enabling the feature merely by merging that document.
 | [CP-017](CP-017-telegram-capability-diagnostics.md) | Telegram capability diagnostics (initial private-DM slice) | done | M |
 | [CP-018](CP-018-per-thread-providers.md) | Provider selection per conversation (design only) | accepted | M |
 | [CP-019](CP-019-telegram-ephemeral-commands.md) | Private command/service/error replies in groups (design only) | accepted | M |
-| [CP-020](CP-020-personal-group-isolation.md) | Personal/group isolation (controller deployed; groups admitted by default once registered, D047; provider qualification/group activation blocked) | implemented | L |
+| [CP-020](CP-020-personal-group-isolation.md) | Personal/group isolation (controller deployed; groups admitted by default once registered, D047; final provider/client qualification open) | implemented | L |
 | [CP-021](CP-021-task-outcomes-checkpoints.md) | Task outcomes, evidence and checkpoints | proposed | M |
 | [CP-022](CP-022-schedule-execution-policies.md) | Schedule overlap, misfire and model-free reminders | proposed | M |
 | [CP-023](CP-023-research-dossiers.md) | Source-backed research dossiers and reviewed reports | proposed | L |
@@ -114,7 +114,7 @@ not enabling the feature merely by merging that document.
 | [CP-028](CP-028-telegram-account-reading.md) | Scoped Telegram user-account reading | proposed | L |
 | [CP-029](CP-029-scoped-location.md) | Scoped location context and expiry | proposed | M |
 | [CP-030](CP-030-agent-mailboxes.md) | Authenticated agent mailboxes and bounded delegation | proposed | L |
-| [CP-031](CP-031-telegram-restart.md) | Owner Telegram restart with durable recovery notices | in-progress | M |
+| [CP-031](CP-031-telegram-restart.md) | Owner Telegram restart with durable recovery notices (baseline owner-accepted; edge-case acceptance separate) | done | M |
 | [CP-032](CP-032-telegram-reaction-reading.md) | Read reactions and custom emoji with explicit private/non-admin limitations (design only) | accepted | M |
 | [CP-033](CP-033-proactive-controls.md) | Built-in recurring presets for the main connectors, toggled and scheduled with `/proactive` (first set: Gmail and Calendar) | in-progress | M |
 | [CP-034](CP-034-private-chat-plugin-install.md) | Install official skills and plugins from the private chat; installed set survives container recreation | accepted | M |

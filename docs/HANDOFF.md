@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-10-31 (security fix wave deployed to Pi)
+**Last updated:** 2026-10-31 (housekeeping after the security-wave deployment)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -22,7 +22,7 @@ Verified backups: `20261031T001910Z-db-a42b1b89` (online) and
 `20261031T002335Z-ms-376e0956` (matched stopped). Rollback image:
 `gopod-gopod:rollback-pre-security-e3b5401` (previous `630aa4e`).
 
-**Post-deploy:** DB integrity OK; schedules, sessions and registrations exactly match the stopped backup.
+**Post-deploy snapshot at rollout (not live counters):** DB integrity OK; schedules, sessions and registrations exactly match the stopped backup.
 Outbox: 14 sent, none uncertain; 176 done turns, no pending/running. Existing outbox dispatcher/IPC flags
 remain on; artifacts/managed-task flags remain off. Memory API binds only `172.17.0.1:9876`, is reachable
 from the owner container, returns 401 without a capability, and refuses LAN connections. Telegram API
@@ -41,482 +41,95 @@ entries: new attachments can remain outside that window until older files are re
 does not complete CP-002/003/004, resolve the CP-028 spec questions, or authorize deferred low findings.
 Worktrees and remote branches are retained; unrelated PR #108 remains open.
 
-## Previous deployment checkpoint — 2026-10-30 (afternoon)
+## Current source and operational snapshot
 
-This checkpoint describes the deployed baseline; the security wave above is the current source state.
-**State.** `main` = `630aa4e`; one open PR: #108 (Go Telegram user-account connector spec, read and write, CP-028). The Pi
-(192.168.1.128, `ssh spaceinvaderz@192.168.1.128`; needs the 1Password SSH agent unlocked) runs `630aa4e`, deployed
-2026-10-30 13:07 UTC. Flags on: `GOPOD_OUTBOX_DISPATCHER`, `GOPOD_OUTBOX_IPC` (owner chat). Off: artifacts, managed tasks.
-Backup before this deploy: `20261030T130648Z-db-e71c345b` (verified); rollback tag `gopod-gopod:rollback-pre-proactive`.
+Housekeeping started from clean `main` **47f0fcc** (deployment evidence PR #122).
+All 27 existing worktrees were clean; all branches and worktrees are retained.
+Only open PR at the check: [#108](https://github.com/Coriol-is/gopod/pull/108),
+CP-028 Telegram user-account connector specification, awaiting owner decisions.
+This documentation update uses its own worktree and reviewed PR; it needs no Pi deployment.
 
-**Shipped and deployed since the morning checkpoint:** group `/login` redirect without the confirmation (D049); Markdown
-tables as aligned blocks or compact cards (D050, D051; measured on the owner's phone: `<pre>` wraps at about 45 characters,
-no horizontal scroll); CP-033 PR 1-3 (preset core and store, owner-only `/proactive` with pickers and timezone choice, final
-templates, outcome display, integrations guide for agents; five presets: Gmail morning/urgent/evening, Calendar
-agenda/weekly; `cal.reminder` unavailable until PR 4; all presets off by default); CP-003 PR A-C (photo transport with
-document fallback, `photo` presentation and UTF-16 caption limit D052, per-run `GOPOD_ARTIFACT_CAP` issuer; flag still off).
-Docs merged: autonomy delta note, skills/plugins mechanisms note, CP-033 spec, CP-034 (accepted).
+Read-only Pi recheck **2026-10-31 00:42:54 UTC**: checkout `e3b5401`, exact image
+above, controller running, restarts 0, OOM false. The original startup, backups,
+rollback tag and data-verification evidence remain in the deployment report.
+No runtime flags, schedules, credentials or containers changed during housekeeping.
 
-**Owner acceptance 2026-10-30:** `/proactive` settings work; preliminary acceptance of P01-P03 passed; the first real
-digests are awaited (not yet seen). The P03 result (scheduled run creating a `once` task through IPC) is not recorded: PR 4
-needs it.
+## Shipped behavior and remaining streams
 
-**Owner decisions taken today (do not re-ask):** task credential adapter deferred (recurring work runs on the existing
-scheduler path in the main session); nothing is restricted in the owner's private chat and sessions (see memory
-`feedback-owner-scope-no-restrictions`); connectors (Gmail, Calendar) allowed in the private chat; CP-034 plugin/skill install
-from the private chat only, official sources, auto-update on, not in groups; CP-033 first set Gmail + Calendar, conservative
-quota (`gmail.urgent` hourly), Europe/Belgrade default timezone with a picker, quiet hours mean "do not run", `/proactive` in
-English, owner-edited preset tasks are not subject to quiet hours; Telegram user-account connector: Go port (gotd/td), read AND
-write, private chat only, never in groups.
+| Stream | Implemented and deployed | Still open |
+|---|---|---|
+| Security groups 1–8 | PRs #113–120; acceptance report above | Real-client checks, M9 derived credentials, deferred low findings |
+| CP-002/003 outbox | Store/dispatcher, personal durable rich text, artifact snapshots, voice/code preparation, photo presentation and per-run capability issuer; owner `/outbox` settlement | Foreground cutover, protected challenges/staged release, artifact backup/restore qualification and activation; paid TTS qualification |
+| CP-004 tasks | Storage, managed dispatch/recovery, guarded task execution/reporting | Settlement/result visibility, schedule policy, task-role credential adapter (owner deferred); managed flag off |
+| CP-007 backups | Online and matched-stopped create/verify foundation, controller lock and recovery quarantine | Timer/retention, complete auth/session/workspace/IPC coverage, artifact leases, restore/activation command and Pi restore drill |
+| CP-020 groups | Isolation, default registered-group admission (D047), tree-budget fix #88, triggers and owner-in-group controls (D048), private login redirect (D049) | Final Codex new/resume/tool qualification and cross-boundary/client checks; do not infer broad acceptance from startup |
+| CP-031 restart | #84 / `8bdff46`, deployed; owner reported baseline success | Negative/topic/provider edge cases in live acceptance |
+| CP-033 proactive | PRs 1–3: preset core/store, owner `/proactive`, templates/outcomes and integration guide | First actual digest evidence; P03 scheduled-run → once-task result before PR 4 reminders, then probe/discovery/docs |
+| Tables | D050/D051 aligned blocks and compact cards | Native Rich Tables remain separate |
 
-**Open owner questions:** the seven questions in `docs/superpowers/specs/2026-10-30-telegram-user-client.md` section 16
-(recommendations: confirm-by-default for send/edit/delete with the taint rule, admin class later, encrypted session file keyed
-from `GOPOD_TG_SESSION_KEY`, own account only, own my.telegram.org app, keep budgets 20/h 100/day, keep media 7 days/1 GiB/50
-MiB); whether to split `GOPOD_OUTBOX_ARTIFACTS` from the code-document and voice parts of CP-003 PR 5 before enabling it; the
-CP-007 restore drill and backup coverage of artifacts before the Pi flag change.
+Group admission is no longer accurately described as globally disabled: the 2026-10-29
+checkpoint records automatic preparation and successful Claude new/resume group turns after
+owner login. That is historical evidence, not a current auth probe or Codex qualification.
+The security rollout did not intentionally alter registrations or activate additional groups.
+See [current isolation policy](ISOLATION.md), [acceptance](ACCEPTANCE.md) and the historical snapshot.
 
-**Next candidates (in order):** (a) watch the first digests and record P01-P03 outcomes in ACCEPTANCE; (b) CP-033 PR 4
-(one-shot reminders for `cal.reminder`; blocked on P03), PR 5 (connector probe), PR 6 (discovery and offers), PR 7 (docs);
-(c) CP-003 PR D (agent instructions for image delivery) and PR E (foreground cutover), then the Pi gates; (d) CP-034
-spec and implementation; (e) Telegram user client implementation after the owner accepts the spec (7 PRs); (f) older items
-still open: group trigger follow-ups, stickers, thread awareness, CP-032 reactions, CP-002 PR 6-8, CP-004 PR 4-5.
+## Resume next
 
-**How to deploy (what worked, repeated 3 times today):** on the Pi `cd ~/gopod && git fetch && git merge --ff-only
-origin/main`, `docker tag gopod-gopod:latest gopod-gopod:rollback-pre-<topic>`, `docker compose build --build-arg
-VERSION=<sha> gopod`, backup with `gp backup create` + `gp backup verify <id>` where `gp() { docker compose run --rm --no-deps
--v $HOME/gopod-backups:/backups -e GOPOD_BACKUP_DIR=/backups gopod "$@"; }`, then `docker compose up -d --no-build gopod` and
-check `docker logs`. Push and merge from the Mac over HTTPS with the gh credential helper when SSH is down; flow: worktree ->
-PR -> independent review agent -> fixes -> CI -> `gh pr merge --squash --admin`.
+1. Record real-client security acceptance: changed trigger/callback denial, owner-bound buttons,
+   `/outbox` confirmation/settlement, and ordinary messages during device login. Keep startup/CI
+   evidence separate from Telegram-client evidence.
+2. Record first proactive digest outcomes and P03 in [ACCEPTANCE](ACCEPTANCE.md); do not mutate
+   the existing active freefeed digest (09:00 Europe/Belgrade) merely to close a checkbox.
+3. Plan a bounded fix for the first-128-entry group upload window; no rotation policy is implemented.
+   Resolve M9 credential derivation with the owner before changing credential format.
+4. Continue the [approved roadmap](../ROADMAP.md): CP-033 remaining slices, CP-003 agent image
+   instructions/foreground cutover and backup gates; deferred task adapter remains deferred.
+   CP-034 and CP-028 require their design/owner gates before implementation.
 
-**Not authorized without the owner:** account logins/refresh, paid fallbacks, T9 reboot, schedule changes, enabling
-`GOPOD_OUTBOX_ARTIFACTS` or `GOPOD_MANAGED_TASKS`, changing Telegram privacy/admin rights, live runs against the owner's Gmail
-or Calendar (owner-run acceptance).
+## Decisions already taken — do not re-ask
 
-## Latest design request (2026-10-29)
-- CP-032 [reaction-reading specification](superpowers/specs/2026-10-29-telegram-reaction-reading.md): group emoji/custom-ID events, durable admission, exact message/topic mapping and no-admin/unavailable diagnostics. Private native reactions are transport-blocked; no account-reader workaround is authorized. Design only; no source or runtime flags changed.
-- Task-role credential adapter [design spec](superpowers/specs/2026-10-29-task-role-credential-adapter.md): why `GOPOD_MANAGED_TASKS=1` denies every task, options A-D, recommendation (access-token-only task auth copy), live gates and 5 owner questions. Design only; no source or flags changed.
-- Owner reports live `/restart` checked successfully on 2026-10-29; this establishes the reported baseline, not every negative/topic/provider scenario.
+- Owner-private chat/sessions retain their broad authority; group budgets do not narrow owner-private work.
+- Task-role credential adapter deferred; recurring tasks continue on the existing main-session scheduler.
+- Gmail/Calendar connectors allowed in private chat. CP-033 uses Europe/Belgrade with a picker,
+  conservative hourly urgent checks, English UI, and quiet hours mean no run; owner-edited tasks
+  are outside preset quiet hours. Presets ship off by default; do not reset owner settings.
+- CP-034: official-source skill/plugin installation from private chat only, auto-update on, never groups.
+- CP-028 direction: Go/gotd, read and write, private chat only; its seven spec questions remain open in PR #108.
+- No automatic paid fallback. T9 memory-cgroup/reboot and parallel threads remain paused.
 
-## Group triggers, owner-in-group, group login guidance (branch `feat/group-triggers-owner`, unmerged, 2026-10-29)
-- ADR [D048](DECISIONS.md), spec [group trigger and owner-in-group](superpowers/specs/2026-10-29-group-trigger-and-owner-in-group.md).
-  Store `group_triggers` (additive), `PermGroupOwner` + `Caller.IsGroupOwner`, `/trigger`, the gate in
-  `telegram/group_trigger.go`, private confirmation of group `/isolation enable|prepare` (`Response.Private`),
-  group sign-in guidance (`telegram/group_login_guidance.go`), per-turn host line `[gopod group: ...]`.
-- Production impact: none to configure. The existing group has no row and keeps `all`; owner sends
-  `/trigger mention` (or another mode) in the group to change it. New groups start at `mention`.
-- The private confirmation prompt of group `/login` was removed by D049 (owner decision 2026-10-30). An album answers only if its
-  first message qualifies. Existing workspaces keep their seeded instruction files; the per-turn line carries
-  the mode for them.
+## Open gates and boundaries
 
-## Default group admission (branch `feat/group-default-admission`, not merged, 2026-10-29)
-- Owner decision, ADR [D047](DECISIONS.md): registered groups are admitted without a `group-runtime.json`
-  entry. `AdmissionMode` (`registered` default / `allowlist`), `MaxGroups` (default 50), automatic
-  Prepare+Enable on `/register`, at startup and on the first denied admission, owner kill switch
-  `/isolation disable`, one neutral rate-limited group notice plus a private owner notice on refusal.
-- Not done here and still gating real use: refresh the expired Claude auth, the Codex tree-budget fix
-  (separate branch), live two-turn canaries on the Pi. No production change, push or deploy was made.
-- Production config needs no edit: omitted `AdmissionMode` means registered; old `EnabledGroups` is ignored.
-- Touched near the group `/login` private-confirmation path only by adding a regression test
-  (`internal/telegram/group_refusal_test.go`); `login_handoff.go`, `login.go`, `confirm.go` are unchanged.
+- Artifacts and managed-task flags remain off. Artifact activation needs matched DB/artifact backup,
+  restore qualification, and artifact leases if using online matched backups; decide whether to
+  separate image delivery from code/voice activation.
+- Managed tasks cannot execute with the current unqualified task credential adapter. Before enabling,
+  qualify native subscription use and an actual Pi Docker create/inspect/reuse role round trip.
+- Account login/refresh, paid inference/TTS, T9 reboot, deliberate schedule changes, feature activation,
+  Telegram privacy/admin changes and live Gmail/Calendar acceptance require their own explicit scope.
+- CP-011/012/014/016/018/019 and CP-032 remain designs; CP-019 does not yet make group service replies private.
+  Ordinary conversation remains public. Topic workspace/container state is chat-shared, not per-thread secret.
+- Media baseline is path/transcription, not universal OCR/video understanding. Provider switching remains
+  chat-wide. Maintenance re-arming/quiet hours, compaction recovery, crash windows and live controls retain
+  their acceptance gates. [Proposal registry](proposals/README.md) is the CP status authority.
+- Non-owner cron bounds are conservative; SQLite log copies can drop on the bounded queue/shutdown deadline.
+  See the wave acceptance report for the complete limitations and deliberately unallocated low findings.
+- `store.Open` raw SQLite URI paths containing `#` can alias fixtures; URI escaping remains a separate fix.
+  Storage dependency upgrades remain constrained by D017.
 
-## Codex tree-budget admission fix (2026-10-29, branch `fix/codex-group-tree-budget`, unmerged)
-- **Root cause:** pinned Codex creates `CODEX_HOME/tmp/arg0/codex-arg0<id>/` containing the
-  symlinks `apply_patch`, `applypatch` (Linux also `codex-linux-sandbox`, `codex-execve-wrapper`)
-  and a `.lock` on every start and leaves them behind after exit (also when killed); its janitor only
-  removes them at the next start, after gopod's walk. The single-turn run left them, so the next
-  `Start` hit the **symlink rule** in `privateTreeBudget` on the native tree, before any inference.
-  The number rules are not implicated: a fresh group tree (plugins/apps/skill search disabled) is
-  well under 64 MiB / 2048 files; the owner's personal `.codex` is 160 MiB / 5960 files only because of
-  plugin clones and remote catalogs that group config disables. No FIFO/socket/non-symlink found.
-- **Evidence:** local, not Pi. Codex 0.165.0 (pinned is 0.164.0, same mechanism) run offline with
-  a temp `CODEX_HOME`: `--version` alone leaves `tmp/arg0*/codex-arg0*/{.lock,apply_patch,applypatch}`;
-  an interrupted `exec` also created SQLite `-wal`/`-shm` files, `sessions/`, `skills/.system`,
-  `thread-writer-locks/`. Read-only Pi inspection (`find`/`du` metadata only) of the owner's
-  `.codex`: no symlinks, FIFOs or sockets, max depth 15, WAL files present. No Pi group namespace
-  existed to inspect (qualification data already cleaned), so the failing tree itself was not observed;
-  the attribution is inferred from the local reproduction and the stage evidence. Linux alias names
-  come from Codex's arg0 code (not re-verified on the Pi).
-- **Also fixed:** the depth test used `filepath.SplitList` (splits on `:`), so it never fired; it now
-  counts `/` components (limit 64 unchanged). Walk is entry-capped so growth or loops terminate.
-- **Diagnosable:** `TreeBudgetError{Tree, Reason, Class}` -> host `slog` warning -> `AdmissionError.Detail`
-  -> canary `admission_detail=`. Group chats still see only the generic unavailable text.
-- **Owner-directed relaxation (same branch):** limits raised to native 512 MiB / 20000 files and
-  workspace 256 MiB / 5000 (runaway-growth guards, not security limits; depth cap 64 kept). A planted
-  symlink/FIFO/socket in the native or workspace tree is now unlinked via `unlinkat` on the verified
-  parent fd (no follow, no recursion), warned and counted, then admitted; only a failed removal
-  (`heal`) or a bytes/files/depth/walk violation refuses. Policy tree never heals; owner-private
-  note not implemented (log only). `/login`, control confirm and login handoff untouched.
-- **Review fixes (independent review of 24958a8):** healing moved out of `Authorize` (check-only,
-  admits healable entries untouched) into `Start` under the namespace lock after reconcile; ENOENT
-  counts as healed; classification/unlink use the verified parent fd (`fstatat`/`openat O_NOFOLLOW`)
-  and the root is opened `O_NOFOLLOW`; arg0 aliases must point at a `codex` binary under the
-  image's npm prefix (exact path unverified on the Pi). Workspace symlink healing kept because
-  `telegram/media.go` writes into the host workspace by path; see ISOLATION.md for the audit.
-- **Boundary (strict part):** no-follow rooted walk (Lstat + same-inode check on every directory
-  open); the only symlinks tolerated are the four exact alias names at exactly depth 5 under
-  `codex/tmp/arg0/codex-arg0<id>/`, native tree only, never followed. Claude native state may leave
-  its own entries; not observed here.
-- **Still required (owner/orchestrator):** rebuild the Codex group image and controller from the
-  merged fix and rerun the full two-turn (new + resume) Codex canary on the Pi; confirm with
-  `admission_detail=` if it still fails. Claude qualification still needs a refreshed subscription.
+## Operations and history
 
-## Resume here (2026-10-29, Codex continuation)
-- Latest Claude session `17a9d2c0-7ae3-4ea8-bdf2-a4af91a2ebe5` stopped on a usage limit.
-  Its P1 formatting child stopped after read-only exploration; the clean worktree was resumed in Codex.
-- CP-004 PR2/PR3 (#79/#81), CP-007 foundation (#80), and rich-message requirements (#82) are merged.
-  Base for this continuation: `19ae2e2`. Old branch-status notes below are historical implementation notes.
-- P1 merged as `3fcbf06` in PR #83 after green CI and independent review.
-  Owner `/restart` merged as `8bdff46` in PR #84; both features are deployed.
-  Owner authorized PRs and automatic admin squash merge after green CI (ruleset 24430037 requires
-  one approval; native auto-merge is disabled). The worktrees of the merged branches were removed after verification on 2026-10-29 night.
-- P1 implements Markdown-default / sanitized HTML / plain text for personal durable IPC, shared canonical
-  HTML validation, explicit rich-field rejection on unsupported routes, and one recorded plain fallback
-  after an explicit Telegram entity-parse refusal. The original plan stays immutable; ambiguous sends
-  remain uncertain and are never replayed. ADR D045. Legacy messages without rich fields stay literal.
-- Production: `8bdff46` deployed on 2026-10-29 at 19:11 UTC; see [evidence](deployments/2026-10-29-8bdff46.md).
-  Owner-personal durable text IPC and dispatcher are enabled. Two Markdown/HTML smoke messages
-  received Telegram acknowledgements; all schedules and data counts were preserved. Groups,
-  artifact delivery and managed tasks remain disabled.
-- Next: owner-client formatting inspection and remaining restart edge cases. The owner has checked the baseline `/restart`. API acknowledgements and startup readiness do not establish these live acceptance gates.
-- **Group admission live 2026-10-29 (late):** Pi runs `2543950` (D047 default group admission + tree-budget fix #88);
-  first online `gopod backup create` set `20261029T222618Z-db-63737a76` (verified), rollback tag
-  `gopod-gopod:rollback-pre-group-admission`. The legacy group `tg:-1003850302017` was prepared automatically
-  (epoch `e2`); after the owner re-logged in Claude in the private chat, new and resume group turns ran on Claude.
-  Owner-only commands from the group are denied because ownership is by chat (see
-  [group trigger and owner-in-group spec](superpowers/specs/2026-10-29-group-trigger-and-owner-in-group.md)).
-  Group `/login` always fails by design (groups use the owner's account); fix and trigger modes are specified, not built.
-  Still open: live two-turn Codex canary in the group, trigger modes, owner-in-group commands, stickers, buttons spec,
-  thread awareness.
-- **Status sync 2026-10-29 night:** `main` = `079e5ea` (PRs #70-#86 merged, none open, no extra worktrees or
-  unmerged local branches). Production `8bdff46`, restart count 1 is the owner's graceful `/restart`
-  (19:18 UTC, exit 0). Flags on: `GOPOD_OUTBOX_DISPATCHER`, `GOPOD_OUTBOX_IPC` (owner chat, thread 0).
-  Off: artifacts, managed tasks, groups. Observed since deploy: Claude usage-limit error at 19:19 UTC
-  (quota, not a defect) and a denied `/restart` from the disabled group (expected). The freefeed digest
-  (09:00 Belgrade) is still the first unattended check of the post-deploy task/IPC path.
-  Four merged remote branches (`docs/deploy-rich-restart`, `docs/reaction-reading`,
-  `feat/rich-messages-formatting`, `feat/telegram-restart`) are left for the owner to approve deleting.
-- Not authorized here: account logins, paid fallbacks, T9 reboot, group activation or schedule changes.
+Pi: `ssh spaceinvaderz@192.168.1.128`, checkout `~/gopod`, data `/opt/gopod/data`.
+Use [deployment evidence](deployments/2026-10-31-security-wave.md) and
+[backup/restore runbook](deployments/BACKUP-RESTORE.md), preserving the rollback image and both backups.
+For commands inside an SSH script, redirect `docker compose run` stdin from `/dev/null`
+so the one-shot container cannot consume the rest of the deployment script.
 
-## Telegram restart (merged #84, deployed 2026-10-29)
-- CP-031 / D046: branch `feat/telegram-restart`, worktree `gopod-telegram-restart`.
-  `/restart` is owner/private-only through the Router; it records a replay-fenced
-  request, requires an acknowledged initiating-thread notice, verifies Docker
-  Compose supervision, gracefully drains and recycles exact old personal container
-  IDs. Startup reports ready/degraded only after local runtime checks.
-- Local build, vet (native and Linux ARM64), full tests and restart-related race suites passed.
-  Merged in PR #84 and deployed as `8bdff46`; gateway and owner runtime recreated successfully during rollout.
-  The owner reports the live `/restart` baseline checked. Negative cases, specific topic behavior
-  and provider usability beyond that report remain separate acceptance.
-- Active non-personal profiles and unresolved managed task holds refuse restart;
-  disabled groups stay disabled. Sessions/auth/workspaces and schedules are preserved.
-- See [spec](superpowers/specs/2026-10-29-telegram-restart.md); this is not an emergency
-  kill of a wedged drain, host reboot or image update.
+Worktree → PR → independent review → green CI → admin squash merge; no direct main edits,
+force push or remote branch deletion. HTTPS with `gh auth git-credential` is the working fallback
+when Git SSH stalls. Do not prune preserved worktrees, backups, images or session data as routine cleanup.
 
-
-## CP-004 PR 3 merged (#81, 2026-10-29)
-- Branch `feat/cp004-task-exec` (worktree `gopod-cp004-pr3`), merged as `39d4d5e`. ADR D044.
-  `internal/runner/{exec_policy,exec_guard,task_managed,task_run,provider_task,docker_policy}.go`, `internal/taskreport`,
-  `internal/taskexec`, `internal/store/task_report.go`, `queue.ErrDenied`/`FolderHeld`, flag `GOPOD_MANAGED_TASKS` (off).
-- With the flag on, **no task can run yet**: no credential adapter is qualified for the task role (shared native state dir also holds
-  foreground transcripts). Owner decision needed: qualify a shared-dir binding explicitly, or build a separate task credential adapter.
-- Pending acceptance gates: native subscription smoke for Claude and Codex (separate explicit gate, never run in unit tests), a real
-  Docker inspection check on the Pi (digest normalisation is fixture-verified only), role round trip with the live foreground container.
-- **Before setting `GOPOD_MANAGED_TASKS` a live create/inspect/reuse round trip on the Pi is REQUIRED.** The guard compares the
-  Docker-inspected mounts, env names and hardening exactly with the digest recorded at creation; the only tolerated normalizations are
-  `CapDrop` "ALL" case and `SecurityOpt` `no-new-privileges[:true]`. A daemon that rewrites bind sources, `User` or other fields would
-  make the owner container undeployable (denied every turn) until the digest is deliberately extended.
-- With the flag on, a running container without policy labels (legacy) is replaced by the first slot-holding turn when no unproven
-  attempt holds the folder; startup cleanup does the same unless `GOPOD_LEFTOVER_CLEANUP_DISABLED` is set. The public `Runner.Ensure`
-  (used by `/login`) holds no slot and refuses to recycle a running container (`ErrRecycleNeedsSlot`), so `/login` right after a role or
-  scope change fails until a turn has run. The task role mounts only `ipc/messages` and `ipc/task-results`; the report capability env
-  is `GOPOD_TASK_REPORT_CAP` (no KEY/SECRET/TOKEN in agent env names).
-- Not done: settlement/result publication/stop coordination (PR 4), schedule policy (PR 5), per-role IPC enforcement in the watcher,
-  persisting report revisions beyond latest. CP-004 stays `in-progress`.
-
-## CP-007 PR 1 merged (#80, 2026-10-29)
-- Branch `feat/cp007-backups` (worktree `gopod-cp007-pr1`), merged as `e671c0f`: backup foundation
-  (reliability-operations plan slices 4-6, ADR D043). `gopod backup create|verify|list|idle|quarantine`
-  (`internal/{backup,maintenance}`, `internal/store/backup*.go`, `internal/control/backup_cmds.go`,
-  `cmd/gopod/{backup_cli,quarantine}.go`), runbook [BACKUP-RESTORE](deployments/BACKUP-RESTORE.md).
-- Behavior change on `main`: the controller now takes `<data>/.controller.lock` at start (waits 60 s), so a second
-  controller on one data dir fails to start; `GOPOD_RECOVERY_QUARANTINE=1` or `<data>/.restore-quarantine` runs control
-  plane only. Both default to normal behavior.
-- Not done: timer/retention (slice 7), session/auth/ChatsDir/IPC capture, restore + activation command, Pi drill. The
-  Pi now runs `gopod backup`; first online create/verify evidence is in the deployment report.
-  The rollout used a pre-deploy cold copy. Restore/activation drill remains pending. CP-007 is `in-progress`.
-
-## CP-004 PR 2 merged (#79, 2026-10-29)
-- Branch `feat/cp004-dispatch` (worktree `gopod-cp004-pr2`), based on PR 1 (`c7ff9d2`): managed dispatch and conservative
-  recovery (`internal/queue/managed.go`, `internal/store/task_dispatch.go`, `cmd/gopod/managed_turns.go`, ADR D042). Merged as `5680a85`.
-- Production wiring is inspect-only (`queue.ManagedRuntime` without a handler): no managed task can exist or run yet, legacy
-  queue behavior is unchanged. Possibly started attempts become `execution_unknown`, are never replayed, and their holds are
-  rebuilt before any work is scheduled. Needs PR 3 for the real handler, snapshot resolver and exit evidence.
-- Not done: PR 3-5; stop/delete vs dispatch coordination and frozen-result publication (PR 4); operator command for `ReleaseHold`.
-  CP-004 stays `in-progress`.
-
-## CP-003 PR 5 merged (#78, 2026-10-29)
-- Branch `feat/cp003-voice-code-parity` (worktree `gopod-cp003-pr5`), merged as `9cd3ce1`. Code documents
-  and the personal automatic voice clip are prepared as immutable snapshots (`internal/telegram/{prepared,artifact_prepare,
-  speech,speech_openai,voice_plan}.go`, `internal/store/generation.go`, `artifactfs.SnapshotBytes`), ADR D041.
-- Behind `GOPOD_OUTBOX_ARTIFACTS` only (same gates as PR 4, no new flag). Foreground still sends directly; `PublishVoiceReply`
-  (text + voice in one plan, truthful status) is built and tested but unused until PR 6.
-- Not done: **live TTS/billing qualification (needs its own authorized scope and evidence)**, foreground cutover (PR 6),
-  agent-requested voice (needs the runner capability issuer), operator resend of uncertain uploads. CP-002/003 stay `in-progress`.
-
-## CP-004 PR 1 merged (#77, 2026-10-29)
-- Branch `feat/cp004-task-storage` (worktree `gopod-cp004-pr1`), merged as `c7ff9d2`: additive task storage only
-  (`internal/store/{schema_tasks,task_definitions,task_occurrences,task_runs}.go`, ADR D040).
-- Nothing calls the new APIs yet and `GetDueTasks` still serves only legacy rows, so behavior is unchanged.
-  `AdmitTaskOccurrence` takes a planned `AdmissionRequest`; the cron/DST/overlap planner is PR 5, queue
-  dispatch of the committed turn is PR 2. CP-004 is `in-progress`; CP-021/022 stay `proposed` until their slices.
-- Not done: PR 2-5, native execution, settlement, purge (always blocked), managed `/tasks` UI.
-
-## CP-003 PR 4 merged (#76, 2026-10-29)
-- Merged as `6548bd6`, off by default: artifact inventory
-  and quotas (`internal/store/artifacts*.go`), rooted no-follow snapshot store (`internal/artifactfs`), per-run
-  capabilities, strict V1 admission and reconcile (`internal/ipc/{capabilities,artifact_request,artifacts,artifacts_reconcile}.go`),
-  verified-bytes upload (`internal/telegram/artifact_opener.go`), ADR D039.
-- Off by default: `GOPOD_OUTBOX_ARTIFACTS=1` also needs the dispatcher and `GOPOD_OUTBOX_IPC=1`. **Do not enable** before the
-  CP-007 matched DB/artifact backup, lease and restore gate passes (D039); groups still need CP-020/CP-019.
-- Not done: the runner-side capability issuer (so every V1 request is still `stale_capability`), voice and generated-code
-  parity (PR 5), foreground freeze (PR 6), operator resend of uncertain uploads, a bounded live smoke. CP-002/003 stay `in-progress`.
-
-## CP-002 PR 3 merged (#74, 2026-10-28)
-- Branch `feat/cp002-ipc-durable` (worktree `gopod-cp002-pr3`), based on PR 2 (`e7eaeee`): personal text IPC
-  durable admission (`internal/ipc/durable*.go`, `store.RecentIPCRequests`), silent scheduled turns
-  (`telegram.runTaskSilently`), ADR D038. Enabled in production for the owner's personal chat since 2026-10-29.
-- Off by default: needs `GOPOD_OUTBOX_DISPATCHER=1` and `GOPOD_OUTBOX_IPC=1`; only the owner's personal chat,
-  thread 0. Everything else (groups, shared chats, cross-chat owner sends) is the unchanged legacy path.
-- Not done: bounded live smoke on the real bot; operator handling of uncertain rows (diagnostics only, no
-  resend); PR 4 artifacts. CP-002 stays `in-progress`.
-
-## CP-002 PR 2 merged (#73, 2026-10-28)
-- Branch `feat/cp002-dispatcher` (worktree `gopod-cp002-pr2`), based on PR 1 (`d3c3d69`): store
-  claim/ack/release/fail/uncertain/sweep (`internal/store/outbox_dispatch.go`), single-attempt
-  transport and dispatcher (`internal/telegram/outbox_{transport,dispatcher}.go`), ADR D037.
-- Dispatcher is wired in `cmd/gopod` only when `GOPOD_OUTBOX_DISPATCHER=1` (default off). Nothing
-  publishes deliveries yet and no existing send path was changed. CP-002 stays `in-progress`.
-- Review fixes: terminal-write retries, in-process orphan reconcile, retry_after margin, stale-cancel loop, startup lock wait (dispatcher disabled on failure), artifact reader close.
-- Next: PR 3 personal text IPC durable admission. Deferred: visibility value set, operator resend of
-  uncertain deliveries via a superseding delivery, artifact opener (PR 4).
-
-## Current state
-Markdown tables in replies render as an aligned `<pre>` block, or compact cards (bold title, one `Header value · ...` line) when wider than 38 columns (D050, `internal/telegram/table.go`).
-
-Core Telegram assistant, Docker runtime, Claude/Codex native sessions,
-conversation-scoped history, memory, voice, scheduler and filesystem IPC are
-implemented. No other runtime, channel, guest agent or bot-to-bot peer is enabled.
-
-The Pi controller release is **e3b5401**, deployed 2026-10-31 00:24:07 UTC.
-The security wave is deployed; live client acceptance remains separate (see START HERE). The deployment narratives below are historical evidence,
-not a current inventory or permission to alter flags.
-CP-020 implementation is merged (PRs #66/#67; green CI/Sonar and independent review).
-Groups remain disabled in production configuration. Both final native images
-passed TCP isolation preflight; full activation is blocked by expired Claude auth
-and Codex post-preflight tree-budget admission failure. Codex simple no-tool
-inference succeeded. Personal sessions/memory/schedules were preserved.
-See [deployment evidence and remaining gates](deployments/2026-10-27-group-isolation.md).
-[Private-login rollout](deployments/2026-10-25-01c18fe.md): group auth now requires
-private owner confirmation, preserving the group target/tier. Actual client login
-visibility remains A20; no account login was performed by rollout.
-[Doctor output rollout](deployments/2026-10-25-ea38581.md): underscore rendering,
-manual-refresh labels and historical owner startup cache corrected; client
-reverification pending.
-[Startup deployment evidence](deployments/2026-10-25-0a25267.md): controller
-automatically created the selected Claude owner runtime; CLI2.1.310/auth ready.
-Management correctly reports Claude quota unknown/unsupported; no model call.
-[CP-017 deployment evidence](deployments/2026-10-25-f1f4532.md): private diagnostics
-activated, read-only getMe/menu checks passed; actual client acceptance A18 pending.
-Claude Code2.1.310 and Codex CLI 0.164.0 agent tags remain unchanged. Build/review/CI,
-full tests and runner/Telegram/queue races passed. A real no-network Docker
-preemption test passed on the Pi: a silent background shell was gone before a
-foreground waiter reused the slot (no model request). Running version/image,
-startup/integrity verified. Latest login rollout preserved sessions12/history37/tasks1 and both registrations;
-restarts 0, OOMKilled false, no unfinished user turns at the post-ready verification snapshot.
-[Background-preemption deployment evidence](deployments/2026-10-25-18e0c86.md) records backup,
-rollback, tests and limits. New authenticated Codex replies were observed before
-this fix; real multi-topic/model acceptance after it remains open. Native
-Claude's NODE_OPTIONS acceptance is not a qualified memory cap.
-
-The existing **freefeed-daily-digest is active**, 09:00 Europe/Belgrade. It was
-already active in the 17:24 predeploy backup; the older paused observation is
-historical. No schedule/provider mutation was issued by this incident fix. Do
-not pause/resume, replace or change it merely to close a validation checkbox.
-
-## What's done
-- CP-017 initial private-DM capability diagnostics is implemented; deployment/client evidence tracked separately below.
-- CP-001: per-exec memory capability, header-only authorization and chat/thread
-  scope; stale registry status closed. Authenticated real skill acceptance A14.
-- CP-008: /model selection/persistence and provider flags; stale accepted status
-  closed. /model restart/use acceptance remains A11. Per-topic choice is CP-018.
-- CP-009/010 (D030/D031): bounded per-topic handoff preserves native sessions;
-  provider selection is still chat-wide. Quota switching needs explicit consent
-  and queues one retry; no unattended fallback chain. /clear invalidates this
-  topic's history and both provider mappings, not a complete data purge.
-- CP-013: successful speech transcripts carry source/automatic-ASR/duration
-  metadata after raw command/login routing. Voice baseline confirmed by owner; remaining media/provenance acceptance A07.
-- CP-015: agent scheduling guide, validated recurring task operations and
-  scoped receipts; explicit IPC delivery, canonical tg: JID adapter and message
-  error receipts. Live delivery API acceptance was verified, not user reading.
-- /tasks now uses Unicode-safe truncation and three-task pages with scoped
-  Pause/Resume/Refresh/navigation. Stale actions and completed tasks cannot
-  mutate unexpectedly. Baseline /tasks confirmed by owner; paging/toggle acceptance remains A01.
-- Telegram UX T6/T10–T13/T15 is implemented/deployed, not actively being coded:
-  callbacks/Stop/Retry, reply actions, reactions/progress, pickers/confirmations/
-  HTML paging, reply/quote/forward/albums/audio/video-note baseline. Live A07–A11.
-- Durable turns, explicit session ids, native streaming/fallback and capability
-  API tests are in main. Unit/CI success does not close crash/client tests.
-
-## Accepted designs — not implementations
-| CP | Saved specification |
-|---|---|
-| 011 | [Sandbox runtime](superpowers/specs/2026-10-25-sandbox-runtime.md) |
-| 012 | [Provider registry](superpowers/specs/2026-10-25-provider-registry.md) |
-| 014 | [Three media queues](superpowers/specs/2026-10-25-telegram-media-input.md) |
-| 016 | [Topic deletion and session retirement](superpowers/specs/2026-10-25-telegram-topic-deletion.md) |
-| 018 | [Per-conversation providers](superpowers/specs/2026-10-25-per-thread-providers.md) |
-| 019 | [Ephemeral commands/service/errors](superpowers/specs/2026-10-25-telegram-ephemeral-commands.md) |
-
-Ordinary bot content must remain public in groups. CP-019 makes only service,
-command replies and errors private, including every callback/page/failure path;
-there is no implementation or privacy-flag activation yet.
-
-## What's in progress
-CP-020 implementation is complete and merged to main (PRs #66/#67): namespace/epoch/CAS,
-protected roots, split personal/group images, read-only native-auth references,
-isolated offline tools, exact-route HTTPS relay, local group memory/IPC and
-confirmed owner controls. Local full tests/races/vet and real Docker tool checks
-passed; CI/Sonar and independent review are green. The Pi offline-tool test passed
-(6.22 s), and earlier-candidate real Claude new/resume two-turn qualification preserved file, context
-and session identity. Controller deployment and both native TCP preflights passed; full two-turn
-provider qualification and controlled-group activation remain open; use [the plan](superpowers/plans/2026-10-25-personal-group-container-isolation.md)
-and [current policy/config](ISOLATION.md) for gates. Group speech and automatic
-maintenance/extraction/compaction are unavailable; personal behavior is unchanged.
-No T9 memory-cgroup change/reboot, account refresh or paid API fallback is included.
-Native policy v2 passed 69 local cases across all 11 public catalog models, new/
-resume and hostile scenarios. Sanitized public catalog default is `gpt-6.1-sol`;
-ARM64 controller/Claude/Codex v2 images were built locally from exact merged main.
-Production catalog/policy were installed with zero enabled groups. No production
-group migration occurred. Fix Codex tree-budget admission and refresh Claude auth
-through private management before rerunning full canaries.
-
-Doctor output follow-up is merged and deployed: protect technical identifiers from
-Markdown emphasis, label refresh eligibility as manual-only, and expose a scoped
-historical startup observation without claiming current runtime health. Owner
-provided a real doctor response; remaining A18 client checks stay open.
-
-CP-017 initial private-DM slice is reviewed, merged and deployed as f1f4532.
-The separate owner-startup runtime/self-diagnostic slice is merged and deployed;
-see [startup contract](STARTUP.md) and D035. It restores selections before
-recovery, warms the selected owner image, checks CLI/local auth and performs a
-Codex management-only quota observation where supported. No model call or
-automatic provider switch is included. Actual selected Claude startup is
-verified; live Codex subscription quota and failure cases remain A19.
-`/telegram` reads cached observations for registered private chats; owner chat alone
-can use `/telegram doctor` and explicit `refresh`. Static `/help guest|inline|topics`
-works without model/container/media processing. New commands silently suppress all
-output in groups/unknown contexts; no new query handlers or subscriptions.
-Five-second getMe uses a raw tri-state decoder, single-flight lifecycle cache,
-15-minute freshness, 30-second cooldown and capped backoff. SDK constructor no
-longer blocks startup on getMe. See [plan](superpowers/plans/2026-10-25-telegram-capability-diagnostics.md)
-and D034. Real Telegram client acceptance remains pending (A18).
-
-The live extraction stall is addressed by a one-minute system-run deadline and
-same-chat foreground preemption; buffered user/system cancellation waits for a
-bounded process-group cleanup attempt. Canceled compaction preserves context.
-See [D033](DECISIONS.md#d033--bound-fresh-system-work-and-yield-to-foreground-runs)
-and [incident](incidents/2026-10-25-background-extraction-starvation.md).
-Remaining live checks use ACCEPTANCE.md; full maintenance re-arming/quiet hours
-and per-topic providers are still planned work, not shipped by this bug fix.
-Preserve other agents' work/worktrees and use reviewed, green-CI squash PRs.
-
-## What's next — owner-approved order
-1. Qualify current deployed functionality using A01–A17 in ACCEPTANCE.md.
-2. Reliability: CP-017 diagnostics, CP-002 outbox, CP-004 task sessions,
-   CP-007 automatic backup/restore, CP-006 maintenance/quiet hours.
-3. CP-016 topic deletion and CP-018 per-topic providers.
-4. CP-019 group private service UX plus T14 scoped menu/localized strings.
-5. CP-014 media Q1 fidelity -> Q2 extraction/OCR -> Q3 video; CP-003/005 support
-   relevant output/tool slices rather than blocking simple link preservation.
-6. Runtime/provider extensions and selected bot-to-bot experiment; gateway,
-   MCP/tool ecosystem, extra providers and observability remain deferred.
-
-Queue agreement sets priority, not automatic implementation approval for every
-unreviewed proposal. The [reliability wave](superpowers/plans/2026-10-26-reliability-wave.md)
-now has source-backed specs/plans; its runtime implementation remains separate.
-The owner specifically advanced CP-020 full implementation ahead of that wave.
-
-## Known limitations and follow-ups
-- [Acceptance register](ACCEPTANCE.md) is the actionable current live checklist.
-  Host cgroup/reboot and parallel threads are paused operational/research work,
-  not implicit parts of deploying the current code.
-- Legacy IPC receipts are diagnostic. Owner-personal text now uses the durable outbox;
-  ambiguous sends remain uncertain and are not replayed. Full foreground/artifact cutover remains CP-002/003. Voice-only reply memo and crash windows need
-  A12 verification. Queue.Close still waits without its own timeout.
-- Scheduled jobs use main's session; isolation is CP-004. System-run deadlines and same-chat preemption are deployed; full maintenance
-  rescheduling/quiet hours remain proposed; compaction source-context/restart
-  behavior needs A17 investigation, not a claim that old notes are all fixed.
-- No documented Telegram topic-deleted update; current deleted/closed-topic
-  fallback is not session retirement. CP-016 separates closure from deletion.
-- Dated getMe research: Guest/topics on; inline/business off; group privacy on.
-  Gopod subscribes only to message/callback/Stop, no guest handler. SDK inline
-  capability JSON tag is wrong; CP-017 now bypasses it with the tested raw decoder.
-- Media baseline is download/path/transcription, not universal understanding:
-  ordinary video lacks a handler, album audio/video skipped, captionless-photo
-  prompt path gap and hidden entity/button URL loss remain CP-014 queue1.
-- [Bot-to-bot research](research/2026-10-25-telegram-bot-to-bot.md) is feasibility
-  only. No peer contacted; enablement unknown, peer trust/loop budgets absent.
-- New advanced interfaces do not imply per-thread filesystem secrecy: workspace
-  and container stay chat-shared, turns serialize per chat.
-
-Separate [table-rendering analysis](research/2026-10-25-telegram-table-rendering.md)
-recommends a bounded Markdown-table parser with lossless row cards, then a native
-Rich Table client spike. SDK already supports Rich Tables; no formatter change
-is implemented or implicitly approved by that research.
-
-[Group mention analysis](research/2026-10-25-group-mention-delivery.md) separates
-privacy-mode command/reply delivery from unsupported Guest updates. Registration
-alone does not make ordinary @mentions arrive. No rights/privacy/subscriptions
-were changed. Use Reply for a supported group delivery test; Guest integration
-and private unregistered-chat hints remain separately scoped.
-
-## Open questions / blockers
-Private-login hardening and owner-DM group confirmation are merged and deployed
-as01c18fe. See [login delivery contract](LOGIN.md); actual private-client
-visibility remains A20. Full container/service isolation remains separate.
-
-CP-020 source implementation follows the [contract](superpowers/specs/2026-10-25-personal-group-container-isolation.md)
-and [acceptance plan](superpowers/plans/2026-10-25-personal-group-container-isolation.md).
-The full controller is deployed with all groups disabled. The new native CLI sees a fresh
-inference directory, group-only state and an explicit read-only auth-only inode;
-actual files execute in a separate no-network sandbox. Missing/expired auth fails
-closed until private management refreshes the source. It is not a separate
-account/quota. Final two-turn inference/tool/resume checks and Telegram acceptance remain gates.
-SSH recovered; both native TCP preflights passed. See the deployment evidence
-for the expired Claude token and Codex admission failure.
-A future clean-epoch preparation preserves old scope data under retired keys,
-pauses old group schedules and stays disabled if interrupted. No production
-preparation was performed in this release. Timed-out host callbacks remain
-tracked until drain proof; orphan cleanup cannot authorize replay or delete native
-history. Controlled sandboxes permit incremental checks, not an unqualified real
-group rollout. Personal services, channel/Guest transport, T9 reboot and automatic
-group maintenance remain off. [One-way private reads](research/2026-10-25-one-way-private-group-access.md)
-remain a separate future grant, never reciprocal access.
-
-No open implementation decision for the initial CP-017 slice. Implementation-specific choices
-are in accepted specs or pending proposals, not stale "should we build buttons?"
-questions. Driver/sqlite-vec upgrade remains constrained by D017; do not change
-storage dependencies as routine cleanup.
-
-## Historical material
-[Pre-housekeeping snapshot](history/HANDOFF-2026-10-25-before-housekeeping.md)
-preserves the full old handoff, review notes and detailed test procedures. It is
-historical, not a second task queue. DECISIONS.md retains ADR authority. Current
-source/tests/deployment reports outrank old flags, versions and branch-status
-claims. Update this short handoff when facts change; keep acceptance evidence in
-its register and delivery priorities in ROADMAP.
-
-## Nearby work noted but out of scope (2026-10-29)
-- `store.Open` builds a SQLite file URI by concatenating the raw path. A `#` in a path
-  can be interpreted as a URI fragment; repeated test names exposed cross-fixture DB
-  aliasing. Formatting tests use distinct descriptive names. URI escaping is a separate fix.
+[Full pre-housekeeping snapshot](history/HANDOFF-2026-10-31-before-housekeeping.md)
+preserves detailed implementation/review/deployment history, including superseded claims.
+The [older snapshot](history/HANDOFF-2026-10-25-before-housekeeping.md) remains available.
+Current source, tests and timestamped deployment evidence outrank historical status prose;
+[DECISIONS](DECISIONS.md) remains the ADR authority.
