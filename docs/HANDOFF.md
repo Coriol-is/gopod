@@ -1,24 +1,41 @@
 # gopod — current handoff
 
-**Last updated:** 2026-10-30 (security and logic review recorded)
+**Last updated:** 2026-10-31 (security fix wave accepted; no Pi deployment)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
 [ACCEPTANCE](ACCEPTANCE.md) for pending real-client verification.
 
-## Security and logic review, 2026-10-30 (evening) — fix wave pending
-Full report and the prioritized work plan: [reviews/2026-10-30-security-logic-review.md](reviews/2026-10-30-security-logic-review.md).
-Four High findings (H1 fail-open group detection in `runner`, H2 `uncertain` outbox part freezes a chat with
-`GOPOD_OUTBOX_DISPATCHER` on, H3 IPC archive follows an agent-planted symlink, H4 unbounded non-owner task scheduling),
-eleven Medium, assorted Low. Nothing Critical; the authorization core (`Router`, button tokens, IPC authz, mounts,
-isolation proxy) checked clean. Owner asked for the fixes to run as eight parallel worktree PRs with autonomous
-acceptance (worktree -> PR -> independent review -> CI -> admin squash merge), grouped by disjoint files as in the plan
-table; the wave was not started yet when the context was reset. First resume action: read the plan table, confirm
-`main` is still `38f3dcc`+docs, then dispatch groups 1-8 (group 1 `internal/runner` first), leaving M9 deferred for an
-owner decision. Before group 4, run `SELECT count(*) FROM outbox_parts WHERE state='uncertain'` on the Pi copy. No Pi
-deploy is authorized by this wave; HANDOFF/ROADMAP are updated once by the coordinator after it.
+## START HERE — security fix wave, 2026-10-31
 
-## START HERE — checkpoint 2026-10-30 (afternoon)
+**Resume here.** All eight groups from the [security review](reviews/2026-10-30-security-logic-review.md)
+are merged, code baseline **`e586c4a`**. Group 1 shipped first. Each PR had an independent
+source review, green `test`, Docker `isolation-spike` and Sonar checks, then admin squash merge.
+See [acceptance and limitations](reviews/2026-10-31-security-wave-acceptance.md) for the PR/SHA map,
+regression coverage, review fixes and the combined verification result.
+
+**Production is unchanged.** No Pi deployment, restart, flag change, schedule change or account operation
+was performed. The only Pi operation was a read-only SQLite count: `outbox_parts WHERE state='uncertain'`
+returned **0** before group 4. The last recorded deployed release remains `630aa4e` (2026-10-30);
+local/CI acceptance does not establish real-client or native-provider acceptance.
+
+**Next action:** deployment is a separate owner-authorized task. Before a future rollout, check the
+Docker bridge address for `GOPOD_MEMORY_BIND_IP` (default `172.17.0.1`) and review the new non-owner
+budgets: 10 unfinished tasks, 15-minute minimum recurring period, 96 task runs per folder/UTC day;
+group runtime defaults to 1 active group and 96 turns per namespace/UTC day (configurable).
+Owner-private turns are not subject to those budgets or the new 15-minute group turn timeout.
+After rollout, exercise trigger/callback denial, `/outbox` confirmation/settlement, ordinary messages
+during device login, and bridge-only memory access before declaring live acceptance.
+
+**Boundaries:** M9 (derived credential copy) remains deferred for the owner decision. Group upload
+import skips excess files instead of disabling the group, but only examines the first 128 directory
+entries: new attachments can remain outside that window until older files are removed. The wave
+does not complete CP-002/003/004, resolve the CP-028 spec questions, or authorize deferred low findings.
+Worktrees and remote branches are retained; unrelated PR #108 remains open.
+
+## Previous deployment checkpoint — 2026-10-30 (afternoon)
+
+This checkpoint describes the deployed baseline; the security wave above is the current source state.
 **State.** `main` = `630aa4e`; one open PR: #108 (Go Telegram user-account connector spec, read and write, CP-028). The Pi
 (192.168.1.128, `ssh spaceinvaderz@192.168.1.128`; needs the 1Password SSH agent unlocked) runs `630aa4e`, deployed
 2026-10-30 13:07 UTC. Flags on: `GOPOD_OUTBOX_DISPATCHER`, `GOPOD_OUTBOX_IPC` (owner chat). Off: artifacts, managed tasks.
@@ -61,7 +78,7 @@ origin/main`, `docker tag gopod-gopod:latest gopod-gopod:rollback-pre-<topic>`, 
 VERSION=<sha> gopod`, backup with `gp backup create` + `gp backup verify <id>` where `gp() { docker compose run --rm --no-deps
 -v $HOME/gopod-backups:/backups -e GOPOD_BACKUP_DIR=/backups gopod "$@"; }`, then `docker compose up -d --no-build gopod` and
 check `docker logs`. Push and merge from the Mac over HTTPS with the gh credential helper when SSH is down; flow: worktree ->
-PR -> independent review agent -> fixes -> CI -> `gh pr merge --squash --admin --delete-branch`.
+PR -> independent review agent -> fixes -> CI -> `gh pr merge --squash --admin`.
 
 **Not authorized without the owner:** account logins/refresh, paid fallbacks, T9 reboot, schedule changes, enabling
 `GOPOD_OUTBOX_ARTIFACTS` or `GOPOD_MANAGED_TASKS`, changing Telegram privacy/admin rights, live runs against the owner's Gmail
@@ -282,7 +299,9 @@ Core Telegram assistant, Docker runtime, Claude/Codex native sessions,
 conversation-scoped history, memory, voice, scheduler and filesystem IPC are
 implemented. No other runtime, channel, guest agent or bot-to-bot peer is enabled.
 
-The reference Pi controller now runs **8bdff46**, deployed 2026-10-29 19:11 UTC (see Resume here; earlier baseline a3a9c53 from 2026-10-27).
+The last recorded Pi controller release is **630aa4e**, deployed 2026-10-30 13:07 UTC.
+The security wave is merged only; see START HERE. The deployment narratives below are historical evidence,
+not a current inventory or permission to alter flags.
 CP-020 implementation is merged (PRs #66/#67; green CI/Sonar and independent review).
 Groups remain disabled in production configuration. Both final native images
 passed TCP isolation preflight; full activation is blocked by expired Claude auth
