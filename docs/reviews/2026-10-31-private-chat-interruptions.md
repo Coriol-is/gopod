@@ -96,3 +96,13 @@ private button callback, private-only menu, idle/repeated/wrong-topic commands,
 buffered cancellation and a fallback that returns late output after cancellation,
 and queued input surviving explicit Stop. Independent review and live acceptance
 are separate gates; neither is established by this self-review.
+
+### Pre-merge re-review
+
+Owner requested checks/merge and then deployment. Source re-review found that
+routing a buffered voice-only reply through the streaming renderer would publish
+its full text. The fix retires the Stop placeholder and preserves the existing
+voice-only delivery path; a regression test checks no answer text is published.
+No other new blocking source finding was identified. This is implementer
+re-review plus separately executed Sonar analysis, not an independent human
+GitHub approval. Existing cleanup/delivery limitations remain recorded above.

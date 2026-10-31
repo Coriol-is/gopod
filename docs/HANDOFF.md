@@ -75,12 +75,12 @@ See [current isolation policy](ISOLATION.md), [acceptance](ACCEPTANCE.md) and th
 
 ## Resume next
 
-Private-chat interruption audit (2026-10-31, documentation branch):
+Private-chat interruption audit (2026-10-31):
 [behavior, verification and limitations](reviews/2026-10-31-private-chat-interruptions.md).
 Ordinary messages queue; Stop explicitly cancels a turn. Race tests and a local
-Docker process-kill probe passed; real-client A08/A10 remain open. Noted without
-fixes: sync fallback uses the parent context, cleanup failure still releases the
-slot, and stopped partial-reply delivery errors can be swallowed. No production
+Docker process-kill probe passed; real-client A08/A10 remain open. The sync-fallback cancellation-context defect is fixed in CP-036. Remaining
+limitations: cleanup failure still releases the slot, and stopped partial-reply
+delivery errors can be swallowed. No production
 runtime changes or deliberate interruptions were performed.
 
 Owner explicitly rejected new-message interruption and requested a group-style
@@ -92,8 +92,12 @@ Implemented on this branch: early persistent private Stop placeholder, Router
 CP-035 is reserved by the existing CLI-hooks research worktree. Build, vet, full
 suite and affected-package race tests pass; Docker shell cancellation passed
 (114 ms). Source self-review completed; [PR #124](https://github.com/Coriol-is/gopod/pull/124)
-contains implementation `cdecaa2`. Independent review/PR CI and deployment remain
-pending. A08/A10 real-client checks stay open. No production changes.
+contains implementation `cdecaa2` and the pre-merge voice-only regression fix.
+The owner authorized checks, merge and then deployment. A fresh source re-review
+found and fixed buffered voice-only text duplication; the regression test is
+included. Source review is by the implementing agent; Sonar is the separate
+automated analysis, not a human approval. Final-head CI/merge and deployment are
+being completed. A08/A10 real-client checks stay open.
 
 1. Record real-client security acceptance: changed trigger/callback denial, owner-bound buttons,
    `/outbox` confirmation/settlement, and ordinary messages during device login. Keep startup/CI

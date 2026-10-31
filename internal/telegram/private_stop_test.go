@@ -173,3 +173,27 @@ func TestStopMenuPrivateOnly(t *testing.T) {
 		t.Fatal(calls)
 	}
 }
+
+func TestPrivateStopBufferedVoiceOnlyDoesNotPublishAnswerText(t *testing.T) {
+	voiceOnly(t)
+	fake := &fakeTelegram{respond: okResponder}
+	b, item := newStreamFixture(t, fake)
+	b.syncRun = func(context.Context, string, int, runner.Tier, string) (string, error) {
+		return "Voice-only answer content", nil
+	}
+	if err := b.runAgentSync(t.Context(), item); err != nil {
+		t.Fatal(err)
+	}
+	sends := fake.callsTo("sendMessage")
+	if len(sends) != 1 || !hasStop(t, sends[0], item.ID) {
+		t.Fatal("expected only the initial Stop placeholder", sends)
+	}
+	if len(fake.callsTo("deleteMessage")) != 1 || b.waitPlaceholder(item) != 0 {
+		t.Fatal("voice-only completion did not retire the placeholder")
+	}
+	for _, c := range fake.callsTo("editMessageText") {
+		if strings.Contains(c.Form["text"], "Voice-only answer content") {
+			t.Fatal("voice-only answer was published as text")
+		}
+	}
+}

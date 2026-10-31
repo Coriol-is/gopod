@@ -477,6 +477,18 @@ func (b *Bot) runAgentSyncContext(ctx, runCtx context.Context, item queue.Item) 
 		return nil
 	}
 	if b.waitPlaceholder(item) != 0 {
+		if b.getReplyMode(item.ChatID, item.IsVoice) == "voice" && stripCodeBlocks(reply) == reply {
+			// The Stop placeholder must not turn a buffered voice-only answer
+			// into voice+text. Retire the control, then keep the original delivery.
+			ph := b.popWaitPlaceholder(item)
+			if _, err := b.api.DeleteMessage(ctx, &bot.DeleteMessageParams{ChatID: item.ChatID, MessageID: ph}); err != nil {
+				b.log.Warn("remove voice reply placeholder", slog.Any("err", err))
+				b.editMessage(ctx, item.ChatID, ph, "Finished.")
+			}
+			status.Set(stDone)
+			b.deliverSyncReply(ctx, item, reply)
+			return nil
+		}
 		// Reuse the persistent private response and its normal terminal UI.
 		chunks := make(chan string)
 		close(chunks)

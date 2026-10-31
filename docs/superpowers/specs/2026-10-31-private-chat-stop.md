@@ -8,7 +8,8 @@ interruption by a new message. CP-036; refines D021 private reply presentation.
 Owner-private interactive turns send an ordinary editable placeholder carrying
 existing st:<turn-id> Stop before starting the agent. Agent wait notices update
 that placeholder; streaming reuses it. Completion, failure and Stop retire its
-Stop button. Other chats retain existing presentation. A failed placeholder send
+Stop button. Buffered voice-only completion removes the temporary control and retains its
+voice-only delivery policy. Other chats retain existing presentation. A failed placeholder send
 must not prevent /stop from cancelling a registered run.
 
 /stop is registered in internal/control with PermOwnerOnly and requires a private
