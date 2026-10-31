@@ -114,3 +114,49 @@ func TestImportUploadCountOverflowDoesNotDisableGroup(t *testing.T) {
 		t.Fatalf("expected 128 uploads and guide, got %d", count)
 	}
 }
+
+func TestImportUploadsRejectsInRootSymlinks(t *testing.T) {
+	for _, directory := range []bool{false, true} {
+		t.Run(fmt.Sprint(directory), func(t *testing.T) {
+			root := t.TempDir()
+			_ = os.Chmod(root, 0700)
+			e := &Executor{Root: root, UID: 1000, GID: 1000}
+			workspace := t.TempDir()
+			if err := os.WriteFile(filepath.Join(workspace, "private"), []byte("PRIVATE_CANARY"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if directory {
+				if err := os.Symlink(".", filepath.Join(workspace, "uploads")); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				if err := os.Mkdir(filepath.Join(workspace, "uploads"), 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink("../private", filepath.Join(workspace, "uploads", "escape")); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(workspace, "uploads", "safe"), []byte("SAFE_CANARY"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			err := e.ImportUploads(t.Context(), "namespace-one", workspace, "guide", func(context.Context) error { return nil })
+			if directory {
+				if err == nil {
+					t.Fatal("symlink directory admitted")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal("symlink file should be skipped", err)
+			}
+			seed, err := e.snapshot("namespace-one")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if bytes.Contains(seed, []byte("PRIVATE_CANARY")) || !bytes.Contains(seed, []byte("SAFE_CANARY")) {
+				t.Fatal("symlink followed or safe input lost")
+			}
+		})
+	}
+}

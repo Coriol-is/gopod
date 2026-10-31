@@ -4,11 +4,11 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"golang.org/x/sys/unix"
 	"io"
 	"os"
 	"path"
 	"strings"
-	"syscall"
 )
 
 // ImportUploads admits regular controller-downloaded files through a protected
@@ -66,12 +66,24 @@ func (e *Executor) ImportUploads(ctx context.Context, scope, workspace, guide st
 		return ErrUnavailable
 	}
 	defer root.Close()
-	dir, err := root.OpenFile("uploads", os.O_RDONLY|syscall.O_DIRECTORY|syscall.O_NOFOLLOW, 0)
+	base, err := root.Open(".")
+	if err != nil {
+		return ErrUnavailable
+	}
+	defer base.Close()
+	fd, err := unix.Openat(int(base.Fd()), "uploads", unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	var dir *os.File
+	if err == nil {
+		dir = os.NewFile(uintptr(fd), "uploads")
+	}
 	if err != nil && !os.IsNotExist(err) {
 		return ErrUnavailable
 	}
 	if err == nil {
 		defer dir.Close()
+		// Bound directory scanning as well as retained bytes. This is the first
+		// 128 directory entries, not newest-first: a full input directory can
+		// defer newer attachments until earlier host uploads are removed.
 		entries, err := dir.ReadDir(128)
 		if err != nil && err != io.EOF {
 			return ErrUnavailable
@@ -81,10 +93,11 @@ func (e *Executor) ImportUploads(ctx context.Context, scope, workspace, guide st
 			if strings.ContainsAny(name, "/\\") || name == "." || name == ".." || entry.IsDir() {
 				continue
 			}
-			f, err := root.OpenFile("uploads/"+name, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+			fd, err := unix.Openat(int(dir.Fd()), name, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
 			if err != nil {
 				continue
 			}
+			f := os.NewFile(uintptr(fd), name)
 			info, err := f.Stat()
 			if err != nil || !info.Mode().IsRegular() || info.Size() > 4<<20 {
 				_ = f.Close()
