@@ -200,6 +200,8 @@ func (b *Bot) callbackPrompt(ctx context.Context, q cbQuery, text string) string
 			text = rest
 		}
 	}
+	regen = regen || strings.HasPrefix(text, regeneratePrefix)
+	text = strings.TrimPrefix(text, regeneratePrefix)
 	if regen {
 		text = regeneratePrefix + text
 	}

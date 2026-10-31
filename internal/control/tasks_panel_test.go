@@ -50,7 +50,7 @@ func TestTasksPanelPagesAndStateActions(t *testing.T) {
 	}
 	action := first.Buttons[0][0]
 	paused := call(action.Command, 100, action.Args...)
-	if paused.Code != 0 || !strings.Contains(paused.Text, "[paused] task-0") {
+	if paused.Code != 0 || !strings.Contains(paused.Text, "[paused] `task-0`") {
 		t.Fatalf("pause panel: %+v", paused)
 	}
 	record, _ := st.GetTask(ctx, "task-0")
