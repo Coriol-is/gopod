@@ -227,3 +227,12 @@ func TestLoadManagedTasksFlagIsOffByDefault(t *testing.T) {
 		}
 	}
 }
+
+func TestOwnerIDRequiresPositivePrivateChat(t *testing.T) {
+	for _, value := range []string{"0", "-1", "-100123456"} {
+		t.Setenv("GOPOD_OWNER_CHAT_ID", value)
+		if _, err := Load(false); err == nil {
+			t.Fatalf("accepted owner ID %s", value)
+		}
+	}
+}
