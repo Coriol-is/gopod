@@ -89,7 +89,11 @@ func (h *SQLiteHandler) WithGroup(name string) slog.Handler {
 	if name == "" {
 		return h
 	}
-	return &SQLiteHandler{wrapped: h.wrapped.WithGroup(h.sink.redactor.Text(name)), attrs: h.attrs, group: h.sink.redactor.Text(h.group + "." + name), sink: h.sink}
+	group := name
+	if h.group != "" {
+		group = h.group + "." + name
+	}
+	return &SQLiteHandler{wrapped: h.wrapped.WithGroup(h.sink.redactor.Text(name)), attrs: h.attrs, group: h.sink.redactor.Text(group), sink: h.sink}
 }
 
 // Close flushes queued records for up to five seconds, then cancels the writer
