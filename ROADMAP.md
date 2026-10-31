@@ -21,8 +21,8 @@ right now" view, see [docs/HANDOFF.md](docs/HANDOFF.md).
 ✅ All eight groups from the [2026-10-30 review](docs/reviews/2026-10-30-security-logic-review.md)
 merged through `e586c4a` (PRs #113–120), group 1 first, with independent review and green CI.
 See [acceptance evidence and limits](docs/reviews/2026-10-31-security-wave-acceptance.md).
-No Pi deployment or runtime activation. M9 credential derivation stays deferred; deployment and
-real-client acceptance are separate gates. This does not mark the larger CP-002/003/004 streams complete.
+Deployed to Pi as `e3b5401` on 2026-10-31 00:24 UTC; [operational checks passed](docs/deployments/2026-10-31-security-wave.md).
+Existing feature flags preserved. M9 credential derivation and real-client acceptance remain open. This does not mark the larger CP-002/003/004 streams complete.
 
 ## Approved delivery queue — 2026-10-25
 
