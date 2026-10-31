@@ -2,12 +2,9 @@ package memory
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
 	"log/slog"
-	"math"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/Coriol-is/gopod/internal/store"
@@ -240,20 +237,7 @@ const allThreads = -1
 // conversation. allThreads means no filter. The condition starts with
 // " AND " or is empty.
 func visibleIn(alias string, thread int) (string, []any) {
-	if thread == allThreads {
-		return "", nil
-	}
-	p := ""
-	if alias != "" {
-		p = alias + "."
-	}
-	cond := " AND (" + p + "kind != 'conversation_summary' OR " + p + "thread_id = ?)"
-	args := []any{thread}
-	if thread != 0 {
-		cond += " AND " + p + "thread_id IN (0, ?)"
-		args = append(args, thread)
-	}
-	return cond, args
+	return store.MemoryVisibility(alias, thread)
 }
 
 // vecSearch runs a KNN query against memory_vec, filtering by
@@ -362,12 +346,7 @@ func decayMultiplier(it Item, now time.Time) float64 {
 // float32sToBlob serializes a float32 slice to little-endian bytes
 // (the format sqlite-vec expects).
 func float32sToBlob(v []float32) []byte {
-	out := make([]byte, 4*len(v))
-	for i, f := range v {
-		bits := math.Float32bits(f)
-		binary.LittleEndian.PutUint32(out[4*i:], bits)
-	}
-	return out
+	return store.MemoryVectorBlob(v)
 }
 
 // sanitizeFTS turns arbitrary user text into a valid FTS5 query by
@@ -377,21 +356,7 @@ func float32sToBlob(v []float32) []byte {
 // "fts5: syntax error near ..." errors. Wrapping each word in
 // double quotes makes them literal phrase tokens.
 func sanitizeFTS(s string) string {
-	words := strings.Fields(s)
-	var clean []string
-	for _, w := range words {
-		// Strip non-alphanumeric characters from both ends.
-		w = strings.TrimFunc(w, func(r rune) bool {
-			return !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
-				(r >= '0' && r <= '9') || r >= 0x80) // keep unicode letters
-		})
-		if w == "" {
-			continue
-		}
-		// Wrap in double quotes for literal FTS5 matching.
-		clean = append(clean, `"`+w+`"`)
-	}
-	return strings.Join(clean, " ")
+	return store.SanitizeMemoryFTS(s)
 }
 
 // ArchiveStale marks memories not retrieved in archiveAfter days as
@@ -414,18 +379,7 @@ func scanItems(rows interface {
 	Scan(dest ...interface{}) error
 	Err() error
 }) ([]Item, error) {
-	var items []Item
-	for rows.Next() {
-		var it Item
-		var createdMs int64
-		if err := rows.Scan(&it.ID, &it.ChatFolder, &it.Kind, &it.Title,
-			&it.Content, &it.Source, &createdMs); err != nil {
-			return nil, err
-		}
-		it.CreatedAt = time.UnixMilli(createdMs)
-		items = append(items, it)
-	}
-	return items, rows.Err()
+	return store.ScanMemoryItems(rows)
 }
 
 func vectorDim(vecs [][]float32) int {

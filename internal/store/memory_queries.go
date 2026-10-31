@@ -29,7 +29,7 @@ func (s *Store) ListMemoriesInThread(ctx context.Context, chatFolder string, thr
 	if limit <= 0 {
 		limit = 20
 	}
-	vis, visArgs := visibleIn("", thread)
+	vis, visArgs := MemoryVisibility("", thread)
 	args := append([]any{chatFolder}, visArgs...)
 	args = append(args, limit)
 	rows, err := s.db.QueryContext(ctx, `
@@ -43,7 +43,7 @@ func (s *Store) ListMemoriesInThread(ctx context.Context, chatFolder string, thr
 		return nil, fmt.Errorf("memory: ListInThread: %w", err)
 	}
 	defer rows.Close()
-	return scanItems(rows)
+	return ScanMemoryItems(rows)
 }
 
 func (s *Store) ListMemories(ctx context.Context, chatFolder string, limit int) ([]MemoryItem, error) {
@@ -60,7 +60,7 @@ func (s *Store) ListMemories(ctx context.Context, chatFolder string, limit int) 
 		return nil, fmt.Errorf("memory: List: %w", err)
 	}
 	defer rows.Close()
-	return scanItems(rows)
+	return ScanMemoryItems(rows)
 }
 
 func (s *Store) DeleteMemory(ctx context.Context, id int64) error {
@@ -107,7 +107,7 @@ func (s *Store) FindSimilarMemory(ctx context.Context, chatFolder string, thread
 		   AND IFNULL(m.status, 'active') = 'active'
 		 ORDER BY v.distance ASC
 		 LIMIT 1`,
-		memoryVectorBlob(vec), similarCandidates, chatFolder, thread)
+		MemoryVectorBlob(vec), similarCandidates, chatFolder, thread)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -125,8 +125,8 @@ func (s *Store) FindSimilarMemory(ctx context.Context, chatFolder string, thread
 }
 
 func (s *Store) SearchMemoryVectors(ctx context.Context, chatFolder string, thread int, queryVec []float32, k int) ([]MemoryItem, error) {
-	vis, visArgs := visibleIn("m", thread)
-	args := append([]any{memoryVectorBlob(queryVec), k, chatFolder, chatFolder}, visArgs...)
+	vis, visArgs := MemoryVisibility("m", thread)
+	args := append([]any{MemoryVectorBlob(queryVec), k, chatFolder, chatFolder}, visArgs...)
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT m.id, m.chat_folder, m.kind, IFNULL(m.title,''), m.content,
 		       IFNULL(m.source,''), m.created_at, IFNULL(m.last_retrieved_at,0),
@@ -168,11 +168,11 @@ func (s *Store) SearchMemoryText(ctx context.Context, chatFolder string, thread 
 	// Sanitize query for FTS5: wrap each word in double quotes so
 	// punctuation (.,?!) doesn't break FTS5 query syntax. FTS5 MATCH
 	// treats raw punctuation as operators and errors on them.
-	sanitized := sanitizeFTS(query)
+	sanitized := SanitizeMemoryFTS(query)
 	if sanitized == "" {
 		return nil, nil
 	}
-	vis, visArgs := visibleIn("m", thread)
+	vis, visArgs := MemoryVisibility("m", thread)
 	args := append([]any{sanitized, chatFolder, chatFolder}, visArgs...)
 	args = append(args, k)
 	rows, err := s.db.QueryContext(ctx, `
@@ -241,7 +241,7 @@ func (s *Store) ArchiveStaleMemories(ctx context.Context, chatFolder string, arc
 	return res.RowsAffected()
 }
 
-func visibleIn(alias string, thread int) (string, []any) {
+func MemoryVisibility(alias string, thread int) (string, []any) {
 	if thread == allThreads {
 		return "", nil
 	}
@@ -258,7 +258,7 @@ func visibleIn(alias string, thread int) (string, []any) {
 	return cond, args
 }
 
-func sanitizeFTS(s string) string {
+func SanitizeMemoryFTS(s string) string {
 	words := strings.Fields(s)
 	var clean []string
 	for _, w := range words {
@@ -276,7 +276,7 @@ func sanitizeFTS(s string) string {
 	return strings.Join(clean, " ")
 }
 
-func memoryVectorBlob(v []float32) []byte {
+func MemoryVectorBlob(v []float32) []byte {
 	out := make([]byte, 4*len(v))
 	for i, f := range v {
 		bits := math.Float32bits(f)
@@ -285,7 +285,7 @@ func memoryVectorBlob(v []float32) []byte {
 	return out
 }
 
-func scanItems(rows interface {
+func ScanMemoryItems(rows interface {
 	Next() bool
 	Scan(dest ...interface{}) error
 	Err() error
