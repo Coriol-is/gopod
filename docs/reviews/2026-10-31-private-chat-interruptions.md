@@ -106,3 +106,8 @@ voice-only delivery path; a regression test checks no answer text is published.
 No other new blocking source finding was identified. This is implementer
 re-review plus separately executed Sonar analysis, not an independent human
 GitHub approval. Existing cleanup/delivery limitations remain recorded above.
+
+Release: PR #124 merged as `8a3ce75` after final-head green CI and the above fix.
+The owner's later deployment authorization was completed; see
+[deployment evidence](../deployments/2026-10-31-private-stop.md). The earlier
+"no production changes" statements describe the audit/implementation checkpoint.

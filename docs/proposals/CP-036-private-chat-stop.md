@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | in-progress |
+| Status | done |
 | Date | 2026-10-31 |
 | Origin | Owner correction: ordinary messages must not interrupt; add the group-style button and /stop |
 | Size | M |
@@ -45,3 +45,11 @@ or undo external actions. Already queued user messages can run after Stop.
 - Buffered execution and streaming fallback obey the same cancellation context.
 - History/session mappings are not cleared; native resumption retains its existing gates.
 - Router authorization, topic isolation, UI lifecycle and cancellation have regression tests.
+
+## Delivery
+
+Merged by owner-authorized admin squash in [PR #124](https://github.com/Coriol-is/gopod/pull/124),
+`8a3ce75113c0709c63ede99ed437fad4d8e191a0`. Build/vet/full and race tests passed;
+PR test, isolation-spike and Sonar checks were green on final head `9dad3a5`.
+The owner subsequently authorized deployment; [rollout completed](../deployments/2026-10-31-private-stop.md)
+at 20:00:48 UTC. Real-client A08/A10 acceptance remains separate from implementation.
