@@ -2,88 +2,112 @@ package memory
 
 import (
 	"context"
-	"io"
-	"log/slog"
-	"path/filepath"
-	"testing"
-	"time"
-
+	"errors"
 	"github.com/Coriol-is/gopod/internal/store"
+	"testing"
 )
 
-func newSupersedeMemory(t *testing.T) (*Memory, *store.Store) {
-	t.Helper()
-	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	st, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "store.sqlite"), log)
-	if err != nil {
-		t.Fatalf("store.Open: %v", err)
-	}
-	t.Cleanup(func() { _ = st.Close() })
-	return New(st, nil, log), st
-}
-
-// runWithDeadline runs trySupersede in a goroutine and fails if it does
-// not return in time (the single-connection deadlock).
-func runWithDeadline(t *testing.T, m *Memory, chat, keyword string) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	done := make(chan struct{})
-	go func() {
-		m.trySupersede(ctx, chat, 0, keyword)
-		close(done)
-	}()
-	select {
-	case <-done:
-	case <-time.After(4 * time.Second):
-		t.Fatal("trySupersede did not return: connection deadlock")
-	}
-	if ctx.Err() != nil {
-		t.Fatalf("trySupersede ran into the context deadline: %v", ctx.Err())
-	}
-}
-
-func TestTrySupersedeMarksMatchedMemory(t *testing.T) {
-	m, st := newSupersedeMemory(t)
-	_, err := st.DB().Exec(`INSERT INTO memories
-		(chat_folder, kind, content, embed_model, created_at, updated_at)
-		VALUES ('chat1', 'fact', 'owner lives in Lisbon', 'test', 1, 1)`)
-	if err != nil {
-		t.Fatalf("insert: %v", err)
-	}
-
-	runWithDeadline(t, m, "chat1", "Lisbon")
-
-	var status, typ string
-	if err := st.DB().QueryRow(
-		`SELECT status, typeof(updated_at) FROM memories WHERE chat_folder='chat1'`,
-	).Scan(&status, &typ); err != nil {
-		t.Fatalf("select: %v", err)
-	}
-	if status != "superseded" {
-		t.Errorf("status = %q, want superseded", status)
-	}
-	if typ != "integer" {
-		t.Errorf("typeof(updated_at) = %q, want integer", typ)
+func TestReplacementProtectsProvenanceAndPreservesHistory(t *testing.T) {
+	for _, source := range []string{"manual", "user", "agent", "extraction", ""} {
+		for _, pinned := range []bool{false, true} {
+			t.Run(source+map[bool]string{false: "", true: "-pinned"}[pinned], func(t *testing.T) {
+				m := newThreadTestMemory(t)
+				ctx := t.Context()
+				old, err := m.Add(ctx, "chat", "fact", "old title", "Lisbon", source)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if pinned {
+					if _, err = m.store.DB().ExecContext(ctx, `UPDATE memories SET pinned=1 WHERE id=?`, old); err != nil {
+						t.Fatal(err)
+					}
+				}
+				m.IngestExtracted(ctx, "chat", 0, []ExtractedFact{{Kind: "decision", Content: "Lisbon", SupersedesKeyword: "Lisbon"}})
+				var content, kind, gotSource, status string
+				var by int64
+				if err := m.store.DB().QueryRowContext(ctx, `SELECT content,kind,source,status,IFNULL(superseded_by,0) FROM memories WHERE id=?`, old).Scan(&content, &kind, &gotSource, &status, &by); err != nil {
+					t.Fatal(err)
+				}
+				if content != "Lisbon" || kind != "fact" || gotSource != source {
+					t.Fatal("original rewritten")
+				}
+				eligible := !pinned && (source == "agent" || source == "extraction")
+				if eligible && (status != "superseded" || by == 0) {
+					t.Fatalf("replacement missing: %s %d", status, by)
+				}
+				if !eligible && (status != "active" || by != 0) {
+					t.Fatalf("protected row replaced: %s %d", status, by)
+				}
+			})
+		}
 	}
 }
 
-func TestTrySupersedeNoMatchReturns(t *testing.T) {
-	m, st := newSupersedeMemory(t)
-	_, err := st.DB().Exec(`INSERT INTO memories
-		(chat_folder, kind, content, embed_model, created_at, updated_at)
-		VALUES ('chat1', 'fact', 'owner lives in Lisbon', 'test', 1, 1)`)
+type failingEmbedder struct{ hashEmbedder }
+
+func (failingEmbedder) Embed(context.Context, []string) ([][]float32, error) {
+	return nil, errors.New("embedding unavailable")
+}
+func TestFailedReplacementKeepsOriginalActive(t *testing.T) {
+	m := newThreadTestMemory(t)
+	old, err := m.Add(t.Context(), "chat", "fact", "", "Lisbon", "extraction")
 	if err != nil {
-		t.Fatalf("insert: %v", err)
+		t.Fatal(err)
+	}
+	m.embedder = failingEmbedder{}
+	m.IngestExtracted(t.Context(), "chat", 0, []ExtractedFact{{Kind: "fact", Content: "Porto", SupersedesKeyword: "Lisbon"}})
+	var state string
+	if err := m.store.DB().QueryRow(`SELECT status FROM memories WHERE id=?`, old).Scan(&state); err != nil || state != "active" {
+		t.Fatalf("%s %v", state, err)
+	}
+}
+
+func TestVectorFailureRollsBackReplacement(t *testing.T) {
+	m := newThreadTestMemory(t)
+	old, err := m.Add(t.Context(), "chat", "fact", "", "Lisbon", "extraction")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Invalid vector dimension fails after relational insert within InsertMemory.
+	_, err = m.store.InsertMemory(t.Context(), store.MemoryWrite{Folder: "chat", Kind: "fact", Source: "extraction", Content: "Porto", Model: "fake", Vector: []byte{0, 0, 0, 0}, SimilarID: old, Keyword: "Lisbon"})
+	if err == nil {
+		t.Fatal("invalid vector accepted")
 	}
 
-	runWithDeadline(t, m, "chat1", "Tokyo")
-
-	var status string
-	if err := st.DB().QueryRow(`SELECT status FROM memories`).Scan(&status); err != nil {
-		t.Fatalf("select: %v", err)
+	var count int
+	if err := m.store.DB().QueryRow(`SELECT count(*) FROM memories`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("rows=%d %v", count, err)
 	}
-	if status != "active" {
-		t.Errorf("status = %q, want active", status)
+	var state string
+	if err := m.store.DB().QueryRow(`SELECT status FROM memories WHERE id=?`, old).Scan(&state); err != nil || state != "active" {
+		t.Fatalf("%s %v", state, err)
+	}
+}
+
+func TestSummaryReplacementProtectsManualAndUnknownSources(t *testing.T) {
+	for _, source := range []string{"manual", "user", "", "compact"} {
+		t.Run(source, func(t *testing.T) {
+			m := newThreadTestMemory(t)
+			old, err := m.Add(t.Context(), "chat", "conversation_summary", "", "old summary", source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			next, err := m.Add(t.Context(), "chat", "conversation_summary", "", "new summary", "compact")
+			if err != nil {
+				t.Fatal(err)
+			}
+			var state string
+			var by int64
+			if err := m.store.DB().QueryRow(`SELECT status,IFNULL(superseded_by,0) FROM memories WHERE id=?`, old).Scan(&state, &by); err != nil {
+				t.Fatal(err)
+			}
+			if source == "compact" {
+				if state != "superseded" || by != next {
+					t.Fatalf("%s %d", state, by)
+				}
+			} else if state != "active" || by != 0 {
+				t.Fatalf("protected source %s changed: %s %d", source, state, by)
+			}
+		})
 	}
 }

@@ -2,13 +2,10 @@ package memory
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
-	"time"
 )
 
 // ExtractionPromptFn sends a prompt to Claude and returns the reply.
@@ -18,9 +15,9 @@ type ExtractionPromptFn func(ctx context.Context, folder, prompt string) (string
 // ExtractedFact is one structured fact extracted by the LLM from a
 // conversation turn.
 type ExtractedFact struct {
-	Kind               string `json:"kind"`                          // fact, decision, preference, hypothesis
-	Content            string `json:"content"`                       // normalized statement
-	SupersedesKeyword  string `json:"supersedes_keyword,omitempty"`  // keyword to find + supersede old memory
+	Kind              string `json:"kind"`                         // fact, decision, preference, hypothesis
+	Content           string `json:"content"`                      // normalized statement
+	SupersedesKeyword string `json:"supersedes_keyword,omitempty"` // keyword to find + supersede old memory
 }
 
 const extractionPrompt = `You are a memory extraction system. Analyze the following conversation turn (user message + assistant reply) and extract ONLY durable, reusable facts.
@@ -101,13 +98,7 @@ func (m *Memory) ExtractFromTurn(
 // within the same conversation.
 func (m *Memory) IngestExtracted(ctx context.Context, chatFolder string, thread int, facts []ExtractedFact) {
 	for _, f := range facts {
-		// Handle supersession: if the fact declares it replaces
-		// something, search for the old memory and mark it superseded.
-		if f.SupersedesKeyword != "" {
-			m.trySupersede(ctx, chatFolder, thread, f.SupersedesKeyword)
-		}
-
-		id, err := m.AddInThread(ctx, chatFolder, thread, f.Kind, "", f.Content, "extraction")
+		id, err := m.addInThread(ctx, chatFolder, thread, f.Kind, "", f.Content, "extraction", sanitizeFTSKeyword(f.SupersedesKeyword))
 		if err != nil {
 			m.log.Warn("memory: ingest extracted fact failed",
 				slog.String("content", truncateForPrompt(f.Content, 80)),
@@ -119,56 +110,6 @@ func (m *Memory) IngestExtracted(ctx context.Context, chatFolder string, thread 
 			slog.String("kind", f.Kind),
 			slog.String("content", truncateForPrompt(f.Content, 60)))
 	}
-}
-
-// trySupersede searches for an existing active memory of the same
-// conversation (chat and thread) matching the keyword and supersedes it
-// with the assumption that a newer fact is about to be stored. Like
-// dedup, it never touches another conversation's rows.
-func (m *Memory) trySupersede(ctx context.Context, chatFolder string, thread int, keyword string) {
-	// Use FTS for keyword match — more precise than vector for
-	// supersession detection.
-	sanitized := sanitizeFTSKeyword(keyword)
-	if sanitized == "" {
-		return
-	}
-	// QueryRow (not Query): the store has a single DB connection, so the
-	// read must release it before the UPDATE below can run.
-	var oldID int64
-	err := m.store.DB().QueryRowContext(ctx, `
-		SELECT m.id FROM memory_fts f
-		  JOIN memories m ON m.id = f.rowid
-		 WHERE memory_fts MATCH ?
-		   AND m.chat_folder = ?
-		   AND m.thread_id = ?
-		   AND IFNULL(m.status, 'active') = 'active'
-		 LIMIT 1`, sanitized, chatFolder, thread).Scan(&oldID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return
-	}
-	if err != nil {
-		m.log.Warn("memory: supersede lookup failed",
-			slog.String("keyword", keyword),
-			slog.Any("err", err))
-		return
-	}
-	// Mark as superseded (superseded_by will point to the new fact
-	// once it's stored — for now just mark the status).
-	if _, err := m.store.DB().ExecContext(ctx, `
-		UPDATE memories SET status = 'superseded', updated_at = ?
-		 WHERE id = ?`, timeNowMs(), oldID); err != nil {
-		m.log.Warn("memory: supersede update failed",
-			slog.Int64("old_id", oldID),
-			slog.Any("err", err))
-		return
-	}
-	m.log.Debug("memory: superseded old fact",
-		slog.Int64("old_id", oldID),
-		slog.String("keyword", keyword))
-}
-
-func timeNowMs() int64 {
-	return time.Now().UnixMilli()
 }
 
 func extractJSONArray(s string) string {

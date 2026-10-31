@@ -175,12 +175,12 @@ func TestDedupDoesNotCrossThreads(t *testing.T) {
 	if aID == mainID {
 		t.Fatalf("thread %d fact deduped into the main row", threadA)
 	}
-	// Same text again in A, as a decision: updates A's row only.
+	// Same text again in A creates a new row and preserves the original.
 	again, _ := m.AddInThread(ctx, "chat", threadA, "decision", "", text, "extraction")
-	if again != aID {
-		t.Errorf("same-thread duplicate not deduped: got %d, want %d", again, aID)
+	if again == aID {
+		t.Errorf("same-thread duplicate rewrote original: got %d, original %d", again, aID)
 	}
-	if k, th := kindOf(aID); k != "decision" || th != threadA {
+	if k, th := kindOf(again); k != "decision" || th != threadA {
 		t.Errorf("thread row = (%s, %d), want (decision, %d)", k, th, threadA)
 	}
 	if k, th := kindOf(mainID); k != "fact" || th != 0 {
@@ -191,10 +191,10 @@ func TestDedupDoesNotCrossThreads(t *testing.T) {
 		t.Errorf("thread %d fact deduped into another conversation's row %d", threadB, bID)
 	}
 	// A manual write dedups against main only.
-	if again, _ := m.Add(ctx, "chat", "preference", "", text, "user"); again != mainID {
+	if again, _ := m.Add(ctx, "chat", "preference", "", text, "user"); again == mainID {
 		t.Errorf("manual duplicate = %d, want main row %d", again, mainID)
 	}
-	if k, _ := kindOf(aID); k != "decision" {
+	if k, _ := kindOf(aID); k != "fact" {
 		t.Errorf("manual write changed thread row kind to %s", k)
 	}
 }

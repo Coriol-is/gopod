@@ -157,3 +157,11 @@ func TestAPIAddRejectsConversationSummary(t *testing.T) {
 		t.Fatalf("normal kind: got %d %s", rr.Code, rr.Body.String())
 	}
 }
+
+func TestAPIRejectsOversizedAuthenticatedBodyBeforeMemoryWrite(t *testing.T) {
+	s, ops, tokens := newTestAPI(t)
+	rr := do(s, http.MethodPost, "/memory/add", tokens.Mint("chat", 0), `{"content":"`+strings.Repeat("x", 65<<10)+`"}`)
+	if rr.Code != http.StatusBadRequest || len(ops.chats) != 0 {
+		t.Fatalf("status=%d writes=%d", rr.Code, len(ops.chats))
+	}
+}
