@@ -43,6 +43,11 @@ func (e *Executor) ImportUploads(ctx context.Context, scope, workspace, guide st
 		if err != nil {
 			return ErrUnavailable
 		}
+		// Uploads are a bounded input window, refreshed each turn. Preserve other
+		// tool-created files but do not accumulate old imported uploads forever.
+		if strings.HasPrefix(h.Name, "uploads/") {
+			continue
+		}
 		if h.Typeflag == tar.TypeReg {
 			b, err := io.ReadAll(io.LimitReader(tr, 4<<20))
 			if err != nil {
@@ -67,18 +72,18 @@ func (e *Executor) ImportUploads(ctx context.Context, scope, workspace, guide st
 	}
 	if err == nil {
 		defer dir.Close()
-		entries, err := dir.ReadDir(129)
-		if err != nil && err != io.EOF || len(entries) > 128 {
+		entries, err := dir.ReadDir(128)
+		if err != nil && err != io.EOF {
 			return ErrUnavailable
 		}
 		for _, entry := range entries {
 			name := entry.Name()
 			if strings.ContainsAny(name, "/\\") || name == "." || name == ".." || entry.IsDir() {
-				return ErrUnavailable
+				continue
 			}
 			f, err := root.OpenFile("uploads/"+name, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 			if err != nil {
-				return ErrUnavailable
+				continue
 			}
 			info, err := f.Stat()
 			if err != nil || !info.Mode().IsRegular() || info.Size() > 4<<20 {
@@ -89,7 +94,7 @@ func (e *Executor) ImportUploads(ctx context.Context, scope, workspace, guide st
 			available := int64(maxSnapshot) - total + int64(len(files[key]))
 			if available < 0 || info.Size() > available {
 				_ = f.Close()
-				return ErrUnavailable
+				continue
 			}
 			if available > 4<<20 {
 				available = 4 << 20
@@ -97,7 +102,7 @@ func (e *Executor) ImportUploads(ctx context.Context, scope, workspace, guide st
 			b, err := io.ReadAll(io.LimitReader(f, available+1))
 			_ = f.Close()
 			if err != nil || int64(len(b)) > available {
-				return ErrUnavailable
+				continue
 			}
 			if err = put(key, b); err != nil {
 				return err
