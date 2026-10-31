@@ -16,6 +16,14 @@ right now" view, see [docs/HANDOFF.md](docs/HANDOFF.md).
 
 ---
 
+## Security fix wave — 2026-10-31
+
+✅ All eight groups from the [2026-10-30 review](docs/reviews/2026-10-30-security-logic-review.md)
+merged through `e586c4a` (PRs #113–120), group 1 first, with independent review and green CI.
+See [acceptance evidence and limits](docs/reviews/2026-10-31-security-wave-acceptance.md).
+No Pi deployment or runtime activation. M9 credential derivation stays deferred; deployment and
+real-client acceptance are separate gates. This does not mark the larger CP-002/003/004 streams complete.
+
 ## Approved delivery queue — 2026-10-25
 
 The owner approved this order. This is prioritization, not a claim that all
