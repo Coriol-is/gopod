@@ -35,8 +35,8 @@ Retained rollback tag: `gopod-gopod:rollback-pre-stop-20261031`.
    reservations, executing task runs and held attempts.
 4. Stopped the controller gracefully and the remaining labeled agent container.
    Captured and verified matched-stopped set `20261031T200015Z-ms-b00fa5a4`:
-   1 file, 32 tables, 7,101 rows. No config files or artifact blobs were present
-   to include. One-off backup containers used detached stdin.
+   1 file, 32 tables, 7,101 rows. No config files were declared; no referenced
+   artifact blobs required inclusion. One-off backup containers used detached stdin.
 5. Started the new controller with `docker compose up -d --no-build gopod` at
    **2026-10-31 20:00:48.751 UTC**. Runtime image:
    `sha256:d273819f674a1f6a73444170e6a2ddcc112af83076009111dc8c7efaa4ceec5f`.
