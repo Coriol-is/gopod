@@ -100,7 +100,8 @@ See [current isolation policy](ISOLATION.md), [acceptance](ACCEPTANCE.md) and th
 ## Open gates and boundaries
 
 - Artifacts and managed-task flags remain off. Artifact activation needs matched DB/artifact backup,
-  leases and restore qualification; decide whether to separate image delivery from code/voice activation.
+  restore qualification, and artifact leases if using online matched backups; decide whether to
+  separate image delivery from code/voice activation.
 - Managed tasks cannot execute with the current unqualified task credential adapter. Before enabling,
   qualify native subscription use and an actual Pi Docker create/inspect/reuse role round trip.
 - Account login/refresh, paid inference/TTS, T9 reboot, deliberate schedule changes, feature activation,
