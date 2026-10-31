@@ -118,3 +118,4 @@ not enabling the feature merely by merging that document.
 | [CP-032](CP-032-telegram-reaction-reading.md) | Read reactions and custom emoji with explicit private/non-admin limitations (design only) | accepted | M |
 | [CP-033](CP-033-proactive-controls.md) | Built-in recurring presets for the main connectors, toggled and scheduled with `/proactive` (first set: Gmail and Calendar) | in-progress | M |
 | [CP-034](CP-034-private-chat-plugin-install.md) | Install official skills and plugins from the private chat; installed set survives container recreation | accepted | M |
+| [CP-036](CP-036-private-chat-stop.md) | Explicit inline Stop and /stop for owner-private answers | in-progress | M |

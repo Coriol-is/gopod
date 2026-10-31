@@ -56,6 +56,10 @@ func waitKeyOf(item queue.Item) waitKey {
 func (b *Bot) waitNotice(ctx context.Context, item queue.Item) runner.WaitNotice {
 	return func(reason runner.WaitReason) {
 		text := waitText(reason)
+		if ph := b.waitPlaceholder(item); ph != 0 {
+			b.editMessageKB(ctx, item.ChatID, ph, text, b.turnKeyboard(item.ID))
+			return
+		}
 		if item.Resumed && item.PlaceholderMsgID != 0 {
 			// streamReply reuses the interrupted attempt's placeholder.
 			b.editMessageKB(ctx, item.ChatID, item.PlaceholderMsgID, text, b.turnKeyboard(item.ID))
@@ -99,6 +103,34 @@ func (b *Bot) waitNotice(ctx context.Context, item queue.Item) runner.WaitNotice
 	}
 }
 
+// preparePrivateStop gives the owner the same persistent Stop control as the
+// group edit path, before container setup or agent admission can block.
+func (b *Bot) preparePrivateStop(ctx context.Context, item queue.Item) {
+	if item.ChatID <= 0 || item.ChatID != b.ownerChatID || b.inflightStop(item.ID) == nil {
+		return
+	}
+	ph := b.reusePlaceholder(ctx, item)
+	if ph == 0 {
+		ph = b.sendPlaceholderText(ctx, item.ChatID, item.ThreadID, item.MessageID, "Thinking…", b.turnKeyboard(item.ID))
+	}
+	if ph == 0 {
+		return // /stop still works when Telegram refuses the placeholder
+	}
+	b.recordPlaceholder(ctx, item, ph)
+	b.waitMu.Lock()
+	if b.waitPlaceholders == nil {
+		b.waitPlaceholders = make(map[waitKey]int)
+	}
+	b.waitPlaceholders[waitKeyOf(item)] = ph
+	b.waitMu.Unlock()
+}
+
+func (b *Bot) waitPlaceholder(item queue.Item) int {
+	b.waitMu.Lock()
+	defer b.waitMu.Unlock()
+	return b.waitPlaceholders[waitKeyOf(item)]
+}
+
 // popWaitPlaceholder returns (and forgets) the placeholder the turn's
 // wait notice sent, or 0.
 func (b *Bot) popWaitPlaceholder(item queue.Item) int {
@@ -120,7 +152,8 @@ func (b *Bot) takeWaitPlaceholder(ctx context.Context, item queue.Item) int {
 	return ph
 }
 
-// streamNotStarted ends a turn whose agent never started because
+// streamNotStarted also handles a stopped buffered fallback with no partial output.
+// It ends a turn whose agent never started because
 // runCtx was cancelled while it waited (for the chat's previous agent or
 // for the agent gate). A Stop ends it stopped, with stoppedEmpty as the
 // reply (in the early placeholder when there is one); a shutdown returns
@@ -134,7 +167,7 @@ func (b *Bot) streamNotStarted(ctx, runCtx context.Context, item queue.Item) (bo
 	if ctx.Err() != nil {
 		return true, nil
 	}
-	b.log.Info("turn stopped before its agent started",
+	b.log.Info("turn stopped without streamed output",
 		slog.Int64("turn", item.ID), slog.String("folder", item.Folder))
 	sent := ph
 	if ph != 0 {

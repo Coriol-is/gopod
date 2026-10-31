@@ -30,7 +30,8 @@ type inflightTurn struct {
 
 	// home is the chat the turn answers in; only a button in that chat
 	// may stop it (stopTurn).
-	home int64
+	home   int64
+	thread int
 
 	// chatID and draftID name the draft currently showing the stop
 	// button; zero when the turn is not streaming through a draft.
@@ -42,11 +43,11 @@ type inflightTurn struct {
 // unregister is called. cancel stops the turn's agent run. A zero
 // turnID (memory-only queue) is not registered, and its drafts and
 // placeholders carry no stop button.
-func (b *Bot) registerInflight(turnID int64, chatID int64, cancel context.CancelFunc) (unregister func()) {
+func (b *Bot) registerInflight(turnID int64, chatID int64, threadID int, cancel context.CancelFunc) (unregister func()) {
 	if turnID == 0 {
 		return func() {}
 	}
-	t := &inflightTurn{cancel: cancel, stopped: make(chan struct{}), home: chatID}
+	t := &inflightTurn{cancel: cancel, stopped: make(chan struct{}), home: chatID, thread: threadID}
 	b.inflightMu.Lock()
 	if b.inflight == nil {
 		b.inflight = make(map[int64]*inflightTurn)
@@ -143,5 +144,26 @@ func (b *Bot) stopTurn(turnID int64, chatID int64) bool {
 	}
 	b.log.Info("turn stopped by user (button)",
 		slog.Int64("turn", turnID), slog.Int64("chat_id", chatID))
+	return true
+}
+
+// StopCurrentTurn is the control Router's /stop action. Snapshot the exact
+// in-flight turn: a late stop must never be retargeted to its successor.
+// Authorization belongs to the Router; this lookup scopes effects to chat/topic.
+func (b *Bot) StopCurrentTurn(chatID int64, threadID int) bool {
+	b.inflightMu.Lock()
+	var match *inflightTurn
+	var turnID int64
+	for id, t := range b.inflight {
+		if t.home == chatID && t.thread == threadID {
+			match, turnID = t, id
+			break
+		}
+	}
+	b.inflightMu.Unlock()
+	if match == nil || !match.stop() {
+		return false
+	}
+	b.log.Info("turn stopped by user (command)", slog.Int64("turn", turnID), slog.Int64("chat_id", chatID), slog.Int("thread", threadID))
 	return true
 }

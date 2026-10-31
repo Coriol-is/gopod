@@ -616,3 +616,17 @@ An available owner startup snapshot includes its timestamp/age and local
 container/CLI/auth results, explicitly historical and not current-health proof.
 Changing provider/model invalidates its association; doctor never starts a probe
 to fill it. Nonowner summaries do not expose startup details.
+
+## Private-chat Stop (CP-036)
+
+`/stop` is an owner-only, Telegram-private command with no arguments. It requests
+cancellation of the active interactive answer in the current topic (main chat is
+topic 0). It bypasses the turn queue, uses the same per-turn cancellation as the
+inline Stop button, and is published only in the private command menu. An idle or
+repeated command reports that there is no active answer or Stop is already requested.
+
+Owner-private answers use a persistent editable response with Stop, including
+startup/admission waits and buffered execution. Stop does not clear context,
+create a replacement turn, cancel schedules, or remove queued messages. New input
+never interrupts automatically; queued input may start after cleanup. Process
+cleanup is best effort, and completed external effects cannot be undone.

@@ -168,10 +168,11 @@ func (b *Bot) runAgentStreaming(ctx context.Context, item queue.Item) error {
 	}
 	runCtx, cancelRun := context.WithCancel(ctx)
 	defer cancelRun()
-	defer b.registerInflight(item.ID, item.ChatID, cancelRun)()
+	defer b.registerInflight(item.ID, item.ChatID, item.ThreadID, cancelRun)()
 	// No queue-position draft may land in this thread from now on.
 	defer b.markThreadBusy(item)()
 	b.stopQueueWaits(item.ChatID, item.ThreadID)
+	b.preparePrivateStop(ctx, item)
 
 	waitCtx := runner.WithWaitNotice(runCtx, b.waitNotice(ctx, item))
 	stream, err := b.runner.RunStream(waitCtx, item.Folder, item.ThreadID, tier, b.allowlist, prompt)
@@ -182,15 +183,11 @@ func (b *Bot) runAgentStreaming(ctx context.Context, item queue.Item) error {
 		if handled, err := b.streamNotStarted(ctx, runCtx, item); handled {
 			return err
 		}
-		if ph := b.popWaitPlaceholder(item); ph != 0 {
-			b.editMessage(ctx, item.ChatID, ph, "")
-		}
 		// Fallback: if streaming setup fails, try sync path.
 		b.log.Warn("RunStream failed, falling back to sync",
 			slog.String("folder", item.Folder),
 			slog.Any("err", err))
-		b.runAgentSync(ctx, item)
-		return nil
+		return b.runAgentSyncContext(ctx, runCtx, item)
 	}
 	b.turnStatus(item).Set(stThinking) // the agent runs
 	return b.streamReply(ctx, item, stream)
@@ -243,10 +240,10 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 	draftID := 0 // non-zero while the turn streams through drafts
 	var lastDraft time.Time
 	var draftHold time.Time // no draft updates before this (429 retry_after)
-	if placeholder = b.reusePlaceholder(ctx, item); placeholder != 0 {
+	if placeholder = b.takeWaitPlaceholder(ctx, item); placeholder != 0 {
+		// Sent before startup or while the turn waited for the agent gate.
+	} else if placeholder = b.reusePlaceholder(ctx, item); placeholder != 0 {
 		b.recordPlaceholder(ctx, item, placeholder)
-	} else if placeholder = b.takeWaitPlaceholder(ctx, item); placeholder != 0 {
-		// Sent (and recorded) while the turn waited for the agent gate.
 	} else if b.draftsSupported(item.ChatID) {
 		// The opening draft shows the cursor and probes support up front.
 		draftID = useDraft(b.newDraftID())

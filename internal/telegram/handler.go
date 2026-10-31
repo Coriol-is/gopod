@@ -431,7 +431,19 @@ func SetReplyMode(chatID int64, mode string) {
 
 // runAgentSync is the synchronous agent path. Used as the queue
 // handler callback (and directly when Queue is nil).
-func (b *Bot) runAgentSync(ctx context.Context, item queue.Item) {
+func (b *Bot) runAgentSync(ctx context.Context, item queue.Item) error {
+	runCtx, cancelRun := context.WithCancel(ctx)
+	defer cancelRun()
+	defer b.registerInflight(item.ID, item.ChatID, item.ThreadID, cancelRun)()
+	defer b.markThreadBusy(item)()
+	b.stopQueueWaits(item.ChatID, item.ThreadID)
+	b.preparePrivateStop(ctx, item)
+	return b.runAgentSyncContext(ctx, runCtx, item)
+}
+
+// runAgentSyncContext keeps agent cancellation separate from Telegram feedback.
+// The streaming setup fallback passes its already registered child context here.
+func (b *Bot) runAgentSyncContext(ctx, runCtx context.Context, item queue.Item) error {
 	tier := runner.TierRegistered
 	if item.IsOwner {
 		tier = runner.TierOwner
@@ -447,10 +459,42 @@ func (b *Bot) runAgentSync(ctx context.Context, item queue.Item) {
 	if item.Resumed {
 		prompt = resumePrompt(item.Text)
 	}
-	reply, err := b.runner.Run(ctx, item.Folder, item.ThreadID, tier, b.allowlist, prompt)
+	run := b.syncRun
+	if run == nil {
+		run = func(ctx context.Context, folder string, thread int, tier runner.Tier, prompt string) (string, error) {
+			return b.runner.Run(ctx, folder, thread, tier, b.allowlist, prompt)
+		}
+	}
+	reply, err := run(runCtx, item.Folder, item.ThreadID, tier, prompt)
+	if handled, stopErr := b.streamNotStarted(ctx, runCtx, item); handled {
+		return stopErr
+	}
 	if err != nil {
+		if ph := b.popWaitPlaceholder(item); ph != 0 {
+			b.editMessage(ctx, item.ChatID, ph, "Answer failed.")
+		}
 		b.replyError(ctx, item, err)
-		return
+		return nil
+	}
+	if b.waitPlaceholder(item) != 0 {
+		if b.getReplyMode(item.ChatID, item.IsVoice) == "voice" && stripCodeBlocks(reply) == reply {
+			// The Stop placeholder must not turn a buffered voice-only answer
+			// into voice+text. Retire the control, then keep the original delivery.
+			ph := b.popWaitPlaceholder(item)
+			if _, err := b.api.DeleteMessage(ctx, &bot.DeleteMessageParams{ChatID: item.ChatID, MessageID: ph}); err != nil {
+				b.log.Warn("remove voice reply placeholder", slog.Any("err", err))
+				b.editMessage(ctx, item.ChatID, ph, "Finished.")
+			}
+			status.Set(stDone)
+			b.deliverSyncReply(ctx, item, reply)
+			return nil
+		}
+		// Reuse the persistent private response and its normal terminal UI.
+		chunks := make(chan string)
+		close(chunks)
+		result := make(chan runner.RunResult, 1)
+		result <- runner.RunResult{FullText: reply}
+		return b.streamReply(ctx, item, &runner.AgentStream{Chunks: chunks, Result: result})
 	}
 
 	status.Set(stDone)
@@ -459,6 +503,7 @@ func (b *Bot) runAgentSync(ctx context.Context, item queue.Item) {
 		reply = "(empty reply)"
 	}
 	b.deliverSyncReply(ctx, item, reply)
+	return nil
 }
 
 // deliverSyncReply sends the sync path's final reply: voice when the
@@ -539,7 +584,7 @@ func (b *Bot) NewAgentHandler() queue.Handler {
 		if b.streamEnabled {
 			runErr = b.runAgentStreaming(ctx, item)
 		} else {
-			b.runAgentSync(ctx, item)
+			runErr = b.runAgentSync(ctx, item)
 		}
 		if err := ctx.Err(); err != nil {
 			// Shutdown cut the run short: report it so the queue marks

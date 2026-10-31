@@ -1856,3 +1856,20 @@ a second bound. The 4096-byte store bound stays as a coarse outer limit
 **Consequences.** Nothing is observable while `GOPOD_OUTBOX_ARTIFACTS` is off, and every V1 request still ends in
 `stale_capability` until the runner capability issuer lands. Rolling back to a binary without the photo marker refuses
 a stored photo part as `invalid_presentation`; revert only with the flag off.
+
+## D053 — Explicit owner-private Stop button and command
+
+**Status:** accepted 2026-10-31 (owner explicitly rejected new-message interruption).
+Refines D021 presentation; D020/D022 session and queue semantics remain unchanged.
+
+Owner-private interactive replies use the existing persistent placeholder/edit
+path with an inline Stop, prepared before agent startup. `/stop` is an owner-only
+private Telegram command through `internal/control`, scoped to the calling topic.
+Both cancel the same registered run, including buffered execution and streaming
+setup fallback. Stop never clears history/session mappings or starts a replacement
+turn; ordinary input remains queued and can execute after the stopped turn ends.
+Scheduled tasks remain outside the interactive registry. Cancellation acknowledgement
+is not proof of process death: D033 best-effort cleanup and native session-write
+limitations still apply. Other chats retain their current presentation and controls.
+
+[CP-036](proposals/CP-036-private-chat-stop.md), [spec](superpowers/specs/2026-10-31-private-chat-stop.md).

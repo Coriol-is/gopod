@@ -31,8 +31,8 @@ func TestStopCancelsOnlyMatchingTurn(t *testing.T) {
 	ctxB, cancelB := context.WithCancel(context.Background())
 	defer cancelB()
 
-	defer b.registerInflight(1, streamChat, cancelA)()
-	defer b.registerInflight(2, streamChat, cancelB)()
+	defer b.registerInflight(1, streamChat, 0, cancelA)()
+	defer b.registerInflight(2, streamChat, 0, cancelB)()
 	b.bindDraft(1, streamChat, 7)
 	b.bindDraft(2, streamChat, 8)
 
@@ -56,7 +56,7 @@ func TestStopAfterFinishIsNoop(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	unregister := b.registerInflight(1, streamChat, cancel)
+	unregister := b.registerInflight(1, streamChat, 0, cancel)
 	b.bindDraft(1, streamChat, 7)
 	unregister()
 
@@ -76,7 +76,7 @@ func TestStopAfterFinishIsNoop(t *testing.T) {
 func TestStopTwiceIsNoop(t *testing.T) {
 	b := newFakeBot(t, &fakeTelegram{})
 	var cancels int32
-	defer b.registerInflight(1, streamChat, func() { atomic.AddInt32(&cancels, 1) })()
+	defer b.registerInflight(1, streamChat, 0, func() { atomic.AddInt32(&cancels, 1) })()
 	b.bindDraft(1, streamChat, 7)
 
 	b.handleGenerationStopped(context.Background(), stopUpdate(streamChat, 7))
@@ -95,7 +95,7 @@ func TestDefaultHandlerRoutesStopUpdate(t *testing.T) {
 	b := newFakeBot(t, &fakeTelegram{})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	defer b.registerInflight(1, streamChat, cancel)()
+	defer b.registerInflight(1, streamChat, 0, cancel)()
 	b.bindDraft(1, streamChat, 7)
 
 	b.defaultHandler(context.Background(), nil, stopUpdate(streamChat, 7))
@@ -117,7 +117,7 @@ func TestStreamReply_StopDeliversPartial(t *testing.T) {
 	b, item := newStreamFixture(t, fake)
 	runCtx, cancelRun := context.WithCancel(context.Background())
 	defer cancelRun()
-	defer b.registerInflight(item.ID, item.ChatID, cancelRun)()
+	defer b.registerInflight(item.ID, item.ChatID, 0, cancelRun)()
 
 	chunks := make(chan string)
 	result := make(chan runner.RunResult, 1)
@@ -189,7 +189,7 @@ func TestStreamReply_StopRacingStreamEndEndsStopped(t *testing.T) {
 			return http.StatusOK, `{"ok":true,"result":true}`
 		}
 		b, item := newStreamFixture(t, fake)
-		unregister := b.registerInflight(item.ID, item.ChatID, func() {})
+		unregister := b.registerInflight(item.ID, item.ChatID, 0, func() {})
 		b.bindDraft(item.ID, item.ChatID, 999)
 		b.handleGenerationStopped(context.Background(), stopUpdate(item.ChatID, 999))
 
@@ -228,7 +228,7 @@ func TestStreamReply_StopWhileWaitingForResult(t *testing.T) {
 		return http.StatusOK, `{"ok":true,"result":true}`
 	}
 	b, item := newStreamFixture(t, fake)
-	defer b.registerInflight(item.ID, item.ChatID, func() {})()
+	defer b.registerInflight(item.ID, item.ChatID, 0, func() {})()
 
 	chunks := make(chan string)
 	result := make(chan runner.RunResult, 1)

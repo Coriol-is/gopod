@@ -16,6 +16,13 @@ right now" view, see [docs/HANDOFF.md](docs/HANDOFF.md).
 
 ---
 
+## Private-chat Stop — CP-036
+
+🟦 Explicit inline Stop and `/stop` for owner-private interactive answers. Owner
+rejected automatic interruption by new messages. Implementation and verification
+are in [PR #124](https://github.com/Coriol-is/gopod/pull/124); independent review, CI and real-client acceptance pending.
+[Proposal](docs/proposals/CP-036-private-chat-stop.md) · [Spec](docs/superpowers/specs/2026-10-31-private-chat-stop.md)
+
 ## Security fix wave — 2026-10-31
 
 ✅ All eight groups from the [2026-10-30 review](docs/reviews/2026-10-30-security-logic-review.md)
