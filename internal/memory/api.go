@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // APIServer is a small HTTP server that exposes memory operations to
@@ -65,8 +66,13 @@ func newAPIServer(mem memoryOps, addr string, tokens *Tokens, log *slog.Logger) 
 		tokens: tokens,
 		log:    log,
 		server: &http.Server{
-			Addr:    addr,
-			Handler: mux,
+			Addr:              addr,
+			Handler:           mux,
+			ReadHeaderTimeout: 5 * time.Second,
+			ReadTimeout:       15 * time.Second,
+			WriteTimeout:      30 * time.Second,
+			IdleTimeout:       60 * time.Second,
+			MaxHeaderBytes:    16 << 10,
 		},
 	}
 	mux.HandleFunc("/memory/search", s.withChat(s.handleSearch))
@@ -98,7 +104,10 @@ func (s *APIServer) withChat(h chatHandler) http.HandlerFunc {
 			http.Error(w, `{"error":"invalid or expired capability"}`, http.StatusUnauthorized)
 			return
 		}
-		h(w, r, chat, thread)
+		ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
+		defer cancel()
+		r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+		h(w, r.WithContext(ctx), chat, thread)
 	}
 }
 
@@ -114,7 +123,13 @@ func (s *APIServer) Start() error {
 
 // Shutdown gracefully stops the server.
 func (s *APIServer) Shutdown(ctx context.Context) error {
-	return s.server.Shutdown(ctx)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err := s.server.Shutdown(ctx); err != nil {
+		_ = s.server.Close()
+		return err
+	}
+	return nil
 }
 
 func (s *APIServer) handleSearch(w http.ResponseWriter, r *http.Request, chat string, thread int) {
@@ -123,6 +138,7 @@ func (s *APIServer) handleSearch(w http.ResponseWriter, r *http.Request, chat st
 	if k <= 0 {
 		k = 5
 	}
+	k = min(k, 100)
 	if q == "" {
 		http.Error(w, `{"error":"q param required"}`, http.StatusBadRequest)
 		return
@@ -195,6 +211,7 @@ func (s *APIServer) handleList(w http.ResponseWriter, r *http.Request, chat stri
 		limit = 20
 	}
 
+	limit = min(limit, 100)
 	items, err := s.mem.ListInThread(r.Context(), chat, thread, limit)
 	if err != nil {
 		s.log.Error("memory api: list", slog.Any("err", err))
