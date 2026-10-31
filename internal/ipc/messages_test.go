@@ -378,15 +378,15 @@ func TestWatcher_MessageArchiveFailureDoesNotResend(t *testing.T) {
 				t.Fatal(err)
 			}
 			w := New(Config{DataDir: root, OwnerFolder: "owner"}, sink, &fakeTaskSink{}, nil, staticResolver(map[string]string{"alice": "tg:2002"}))
-			w.tickOnce(context.Background())
-			w.tickOnce(context.Background())
+			w.processMessageFile(context.Background(), "alice", filepath.Join(root, "ipc", "alice", "messages", "probe.json"))
+			w.processMessageFile(context.Background(), "alice", filepath.Join(root, "ipc", "alice", "messages", "probe.json"))
 			if len(sink.callsSnapshot()) != 1 {
 				t.Fatal("archive failure resent terminal message")
 			}
 			if err := os.Remove(blocked); err != nil {
 				t.Fatal(err)
 			}
-			w.tickOnce(context.Background())
+			w.processMessageFile(context.Background(), "alice", filepath.Join(root, "ipc", "alice", "messages", "probe.json"))
 			if len(sink.callsSnapshot()) != 1 || len(w.terminalMessages) != 0 {
 				t.Fatal("archive recovery resent message or leaked terminal outcome")
 			}
