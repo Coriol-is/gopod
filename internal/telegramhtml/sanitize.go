@@ -132,8 +132,6 @@ func allowedRichURL(raw string) bool {
 	switch strings.ToLower(u.Scheme) {
 	case "http", "https":
 		return u.Host != ""
-	case "tg":
-		return u.Host != ""
 	}
 	return false
 }

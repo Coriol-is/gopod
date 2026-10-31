@@ -77,7 +77,7 @@ func tasksDispatch(st *store.Store, lookup func(int64) string, promptFn PromptFu
 			return tasksCancel(ctx, st, folder, args)
 		default:
 			return Response{
-				Text: fmt.Sprintf("Unknown subcommand %q. Try: /tasks list, /tasks add, /tasks pause, /tasks resume, /tasks cancel", sub),
+				Text: fmt.Sprintf("Unknown subcommand %s. Try: /tasks list, /tasks add, /tasks pause, /tasks resume, /tasks cancel", safeCommandValue(sub)),
 				Code: 1,
 			}, nil
 		}

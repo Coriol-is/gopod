@@ -120,8 +120,9 @@ type OutboxDispatcher struct {
 	log       *slog.Logger
 	cfg       OutboxConfig
 
-	liveMu sync.Mutex
-	live   map[string]struct{} // parts held by a running worker
+	claimMu sync.Mutex // claim-to-live publication and orphan sweep barrier
+	liveMu  sync.Mutex
+	live    map[string]struct{} // parts held by a running worker
 
 	mu            sync.Mutex
 	wake          chan struct{}
@@ -274,7 +275,12 @@ func (d *OutboxDispatcher) sleep(ctx context.Context, wake <-chan struct{}, wait
 
 // step claims and fully processes at most one part.
 func (d *OutboxDispatcher) step(loopCtx, attemptCtx context.Context) (bool, error) {
+	d.claimMu.Lock()
 	claim, ok, err := d.backend.ClaimNext(loopCtx, d.cfg.Now())
+	if err == nil && ok {
+		d.setLive(claim.PartID, true)
+	}
+	d.claimMu.Unlock()
 	if err != nil || !ok {
 		return false, err
 	}
@@ -436,7 +442,7 @@ func (d *OutboxDispatcher) reconcile(ctx context.Context) {
 			return
 		case <-t.C:
 		}
-		n, err := d.backend.SweepOrphanedSending(ctx, d.liveParts(), d.cfg.OrphanGrace)
+		n, err := d.sweepOrphans(ctx)
 		switch {
 		case err != nil && ctx.Err() == nil:
 			d.log.Error("outbox reconcile failed", slog.Any("err", err))
@@ -487,4 +493,10 @@ func (d *OutboxDispatcher) plainFallback(ctx context.Context, c store.OutboxClai
 	req.Text = htmlToPlain(req.Text)
 	req.ParseMode = ""
 	d.persist(next, d.attempt(ctx, req))
+}
+
+func (d *OutboxDispatcher) sweepOrphans(ctx context.Context) (int, error) {
+	d.claimMu.Lock()
+	defer d.claimMu.Unlock()
+	return d.backend.SweepOrphanedSending(ctx, d.liveParts(), d.cfg.OrphanGrace)
 }

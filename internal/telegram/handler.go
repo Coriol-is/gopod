@@ -204,20 +204,6 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 		return
 	}
 
-	// If this chat has an active /login session, the next non-empty
-	// message is the OAuth code from the browser success page. Intercept
-	// it and pipe it to claude's stdin instead of sending it to the
-	// agent. Slash commands are NOT intercepted — the user might type
-	// /help mid-login and that should still work.
-	if b.logins.awaitingCode(m.Chat.ID, text) != nil {
-		if b.loginCode != nil {
-			b.loginCode(ctx, m.Chat.ID, text)
-		} else {
-			b.handleLoginCode(ctx, m.Chat.ID, text)
-		}
-		return
-	}
-
 	// Slash commands are dispatched through the Router. /login is
 	// handled separately (registered via go-telegram/bot's
 	// MatchTypeCommand because it's a stateful interactive session).
@@ -390,7 +376,7 @@ func (b *Bot) dispatchSlash(ctx context.Context, m *models.Message, text string)
 		b.sendDiagnosticResponse(ctx, m, resp.Text)
 		return
 	}
-	b.sendCommandResponse(ctx, m.Chat.ID, thread, m.ID, resp)
+	b.sendCommandResponse(ctx, m.Chat.ID, thread, m.ID, resp, userID(m.From))
 }
 
 func userID(u *models.User) int64 {
@@ -759,7 +745,7 @@ func (b *Bot) sendChunks(ctx context.Context, chatID int64, thread int, replyToM
 		fatal := func(err error) bool {
 			return errors.As(err, new(*bot.TooManyRequestsError)) || (thread != 0 && isThreadGone(err))
 		}
-		if err != nil && params.ReplyMarkup != nil && !fatal(err) {
+		if err != nil && params.ReplyMarkup != nil && isKeyboardRefusal(err) {
 			// The keyboard may be what Telegram refused: send this same
 			// HTML chunk again without it. Buttons are a convenience;
 			// the formatted text is not, and earlier chunks are out.
@@ -775,7 +761,7 @@ func (b *Bot) sendChunks(ctx context.Context, chatID int64, thread int, replyToM
 			}
 		}
 		if err != nil {
-			if fatal(err) {
+			if fatal(err) || !isParseRefusal(err) {
 				return last, fmt.Errorf("sendMessage: %w", err)
 			}
 			// Fallback: send as plain text, only what has not gone out:
@@ -801,7 +787,7 @@ func (b *Bot) sendChunks(ctx context.Context, chatID int64, thread int, replyToM
 					pp.ReplyMarkup = markup
 				}
 				sent, err := b.api.SendMessage(ctx, pp)
-				if err != nil && pp.ReplyMarkup != nil && !errors.As(err, new(*bot.TooManyRequestsError)) {
+				if err != nil && pp.ReplyMarkup != nil && isKeyboardRefusal(err) {
 					// A refused keyboard never costs the reply: the
 					// buttons are a convenience, the text is not.
 					b.log.Warn("reply keyboard refused, sending without it",
@@ -989,4 +975,15 @@ func messageText(m *models.Message) string {
 		return m.Text
 	}
 	return m.Caption
+}
+
+func isKeyboardRefusal(err error) bool {
+	if !errors.Is(err, bot.ErrorBadRequest) {
+		return false
+	}
+	text := strings.ToLower(err.Error())
+	return strings.Contains(text, "button_data_invalid") || strings.Contains(text, "button_type_invalid") || strings.Contains(text, "button_url_invalid") || strings.Contains(text, "reply markup") || strings.Contains(text, "inline keyboard")
+}
+func isParseRefusal(err error) bool {
+	return errors.Is(err, bot.ErrorBadRequest) && strings.Contains(strings.ToLower(err.Error()), "can't parse entities")
 }

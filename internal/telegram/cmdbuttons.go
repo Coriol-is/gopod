@@ -36,6 +36,7 @@ const (
 
 // cmdButton is what a command button's token stands for.
 type cmdButton struct {
+	userID    int64 // group buttons belong to the requesting user
 	chatID    int64 // the chat the button was shown in
 	name      string
 	args      []string
@@ -63,9 +64,16 @@ func buttonStyle(s string) string {
 
 // commandRows renders a Response's buttons for chatID, storing each
 // button's command under a fresh token.
-func (b *Bot) commandRows(chatID int64, rows [][]control.Button) [][]models.InlineKeyboardButton {
+func (b *Bot) commandRows(chatID int64, rows [][]control.Button, actor ...int64) [][]models.InlineKeyboardButton {
 	if len(rows) == 0 {
 		return nil
+	}
+	userID := int64(0)
+	if chatID < 0 {
+		userID = b.ownerChatID
+		if len(actor) > 0 {
+			userID = actor[0]
+		}
 	}
 	now := b.clock()
 	b.btnMu.Lock()
@@ -82,6 +90,7 @@ func (b *Bot) commandRows(chatID int64, rows [][]control.Button) [][]models.Inli
 			tok := newButtonToken()
 			e := cmdButton{
 				chatID:    chatID,
+				userID:    userID,
 				name:      btn.Command,
 				args:      append([]string(nil), btn.Args...),
 				confirmed: btn.Confirmed && btn.Command != "",
@@ -235,7 +244,7 @@ func (b *Bot) cancelButton(ctx context.Context, q cbQuery) (string, error) {
 // buttonInChat reports whether a token is pressed in the chat it was
 // shown in; a token replayed from another chat is refused and logged.
 func (b *Bot) buttonInChat(e cmdButton, q cbQuery) bool {
-	if e.chatID == q.ChatID {
+	if e.chatID == q.ChatID && (q.ChatID >= 0 || (e.userID > 0 && e.userID == q.UserID)) {
 		return true
 	}
 	b.log.Info("command button refused: shown in another chat",
@@ -253,6 +262,9 @@ func (b *Bot) buttonInChat(e cmdButton, q cbQuery) bool {
 // spinner hanging, and the message is edited to the result, or to a
 // failure text when the handler failed.
 func (b *Bot) runButtonCommand(ctx context.Context, q cbQuery, cmd control.Command) (string, error) {
+	if !b.groupActionAllowed(ctx, q) {
+		return cbToastNotYours, nil
+	}
 	if resp, err := b.router.Check(cmd); err != nil {
 		if cmd.Confirmed {
 			b.editCommandText(ctx, q.ChatID, q.MessageID, resp.Text, nil)
@@ -269,7 +281,7 @@ func (b *Bot) runButtonCommand(ctx context.Context, q cbQuery, cmd control.Comma
 		b.editCommandText(ctx, q.ChatID, q.MessageID, text, nil)
 		return cbToastFailed, fmt.Errorf("button command %s: %w", cmd.Name, err)
 	}
-	b.editCommandMessage(ctx, q.ChatID, q.MessageID, resp)
+	b.editCommandMessage(ctx, q.ChatID, q.MessageID, resp, q.UserID)
 	return "", nil
 }
 
@@ -278,11 +290,11 @@ const cmdTextTopicGone = "Тема удалена. Повторите коман
 // sendCommandResponse sends a command's Response as a reply to the
 // command message: one message (paged when long, pages.go) with its
 // buttons.
-func (b *Bot) sendCommandResponse(ctx context.Context, chatID int64, thread, replyTo int, resp control.Response) {
+func (b *Bot) sendCommandResponse(ctx context.Context, chatID int64, thread, replyTo int, resp control.Response, actor ...int64) {
 	if resp.Text == "" && len(resp.Buttons) == 0 {
 		return
 	}
-	text, markup := b.commandMessage(chatID, resp)
+	text, markup := b.commandMessage(chatID, resp, actor...)
 	if resp.Code == control.CodeConfirm {
 		// Confirmation applies to the requested conversation. Moving its
 		// buttons to main would change /clear's target when pressed.
@@ -301,8 +313,8 @@ func (b *Bot) sendCommandResponse(ctx context.Context, chatID int64, thread, rep
 // editCommandMessage replaces a command message (a picker, a
 // confirmation) with resp in place: its text and its buttons, or none.
 // Best-effort: a failed edit is logged only.
-func (b *Bot) editCommandMessage(ctx context.Context, chatID int64, msgID int, resp control.Response) {
-	text, markup := b.commandMessage(chatID, resp)
+func (b *Bot) editCommandMessage(ctx context.Context, chatID int64, msgID int, resp control.Response, actor ...int64) {
+	text, markup := b.commandMessage(chatID, resp, actor...)
 	b.editCommandText(ctx, chatID, msgID, text, markup)
 }
 

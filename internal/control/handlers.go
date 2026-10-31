@@ -206,7 +206,7 @@ func RegisterProviderCommand(r *Router, switchFn ProviderSwitchFunc, currentFn f
 			// provider must not cost a confirmation (or a provider change).
 			if !slices.Contains(names, cmd.Args[0]) {
 				return Response{
-					Text: fmt.Sprintf("unknown provider %q (available: %s)", cmd.Args[0], strings.Join(names, ", ")),
+					Text: fmt.Sprintf("unknown provider %s (available: %s)", safeCommandValue(cmd.Args[0]), strings.Join(names, ", ")),
 					Code: 1,
 				}, nil
 			}

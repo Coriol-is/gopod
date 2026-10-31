@@ -195,7 +195,7 @@ func TestConfirm_YesRechecksPerm(t *testing.T) {
 			return control.Response{Text: "wiped"}, nil
 		})
 	// A Yes button for an owner-only command, shown in a non-owner chat.
-	rows := b.commandRows(groupChat, control.Confirm(control.Command{Name: "wipe"}, "Wipe?").Buttons)
+	rows := b.commandRows(groupChat, control.Confirm(control.Command{Name: "wipe"}, "Wipe?").Buttons, 42)
 
 	b.callbackHandler(context.Background(), b.api, cbUpdate("q1", groupChat, 0, 900, rows[0][0].CallbackData))
 
