@@ -80,8 +80,8 @@ func (c SpawnConfig) Validate() error {
 	if c.Version == "" {
 		return errors.New("SpawnConfig: Version is empty")
 	}
-	if c.UID == 0 && c.GID == 0 {
-		return errors.New("SpawnConfig: refusing uid=0 gid=0 (container must run as non-root)")
+	if c.UID == 0 {
+		return errors.New("SpawnConfig: refusing uid=0 (container must run as non-root)")
 	}
 	if c.UID < 0 || c.GID < 0 {
 		return fmt.Errorf("SpawnConfig: UID=%d GID=%d must be non-negative", c.UID, c.GID)

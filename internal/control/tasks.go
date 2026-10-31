@@ -210,6 +210,10 @@ func tasksAdd(ctx context.Context, st *store.Store, folder string, caller Caller
 		}, nil
 	}
 
+	// Reject a full or missing non-owner registration before spending a parser turn.
+	if err := scheduler.CheckTaskBudget(ctx, st, store.TaskRecord{ChatFolder: folder, ChatJID: fmt.Sprintf("tg:%d", caller.ChatID), ScheduleType: "once"}); err != nil {
+		return Response{Text: err.Error(), Code: 1}, nil
+	}
 	userText := strings.Join(args, " ")
 	now := time.Now()
 
@@ -271,7 +275,7 @@ func tasksAdd(ctx context.Context, st *store.Store, folder string, caller Caller
 	chatJID := fmt.Sprintf("tg:%d", caller.ChatID)
 	release := scheduler.LockTasks(st)
 	defer release()
-	id, err := st.CreateTask(ctx, store.TaskRecord{
+	rec := store.TaskRecord{
 		ChatFolder:    folder,
 		ChatJID:       chatJID,
 		Prompt:        parsed.Prompt,
@@ -279,11 +283,17 @@ func tasksAdd(ctx context.Context, st *store.Store, folder string, caller Caller
 		ScheduleValue: parsed.Schedule,
 		NextRun:       nextRun,
 		Status:        "active",
-	})
+	}
+	if err := scheduler.CheckTaskBudget(ctx, st, rec); err != nil {
+		return Response{Text: err.Error(), Code: 1}, nil
+	}
+	id, err := st.CreateTask(ctx, rec)
 	if err != nil {
 		return Response{}, err
 	}
 
+	rec.ID = id
+	scheduler.NotifyTaskCreated(ctx, st, rec)
 	nextStr := time.UnixMilli(nextRun).UTC().Format(time.RFC3339)
 	return Response{
 		Text: fmt.Sprintf("Task created: %s\nType: %s %s\nNext run (UTC): %s\nPrompt: %s",
@@ -344,6 +354,9 @@ func tasksSetStatusExpected(ctx context.Context, st *store.Store, folder string,
 
 	nextRun := t.NextRun
 	if status == "active" && t.Status == "paused" {
+		if err := scheduler.CheckTaskBudget(ctx, st, t); err != nil {
+			return Response{Text: err.Error(), Code: 1}, nil
+		}
 		// Resuming: recompute next_run from now.
 		now := time.Now().UnixMilli()
 		nextRun, _ = computeNextRunForResume(t, now)

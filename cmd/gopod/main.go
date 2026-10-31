@@ -449,6 +449,7 @@ func run() error {
 		}
 	}
 	control.RegisterTaskCommands(router, st, chatFolderLookup, taskPromptFn)
+	control.RegisterOutboxCommands(router, st)
 
 	// /proactive (CP-033): owner-only recurring Gmail and Calendar presets. Every
 	// preset is off until the owner turns it on, so this changes nothing by itself.
@@ -788,6 +789,7 @@ func run() error {
 			agentRunner.SetArtifactIssuer(iss)
 		}
 		ipcMsgs := telegram.NewIPCSink(tgBot)
+		scheduler.SetTaskNotifier(st, tgBot.NotifyOwner)
 		ipcTasks := scheduler.NewIPCSink(st)
 		ipcWatcher := ipc.New(ipc.Config{
 			DataDir:     cfg.DataDir,

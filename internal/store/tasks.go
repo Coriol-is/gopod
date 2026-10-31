@@ -125,7 +125,8 @@ func (s *Store) GetDueTasks(ctx context.Context, now int64) ([]TaskRecord, error
 		       next_run, IFNULL(last_run, 0), status, created_at
 		  FROM scheduled_tasks
 		 WHERE status = 'active' AND next_run > 0 AND next_run <= ?
-		   AND execution_version = 0
+		   AND execution_version = 0 AND deleted_at IS NULL
+ AND EXISTS (SELECT 1 FROM registered_chats r WHERE r.folder=scheduled_tasks.chat_folder AND r.jid=scheduled_tasks.chat_jid)
 		 ORDER BY next_run ASC`
 	rows, err := s.taskDB(ctx).QueryContext(ctx, q, now)
 	if err != nil {
