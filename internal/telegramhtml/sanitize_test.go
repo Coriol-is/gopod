@@ -17,7 +17,7 @@ func TestSanitizeCanonicalAndHostileInputs(t *testing.T) {
 			t.Errorf("accepted %q", s)
 		}
 	}
-	for _, u := range []string{"javascript:alert(1)", "data:text/html,bad", "file:///etc/passwd", "https://", "https:\\bad"} {
+	for _, u := range []string{"tg://user?id=123", "tg://resolve?domain=someone", "javascript:alert(1)", "data:text/html,bad", "file:///etc/passwd", "https://", "https:\\bad"} {
 		clean, ok := Sanitize(`<a href="` + u + `">label</a>`)
 		if !ok || clean != "label" {
 			t.Errorf("unsafe URL %q => %q %v", u, clean, ok)

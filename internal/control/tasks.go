@@ -77,7 +77,7 @@ func tasksDispatch(st *store.Store, lookup func(int64) string, promptFn PromptFu
 			return tasksCancel(ctx, st, folder, args)
 		default:
 			return Response{
-				Text: fmt.Sprintf("Unknown subcommand %q. Try: /tasks list, /tasks add, /tasks pause, /tasks resume, /tasks cancel", sub),
+				Text: fmt.Sprintf("Unknown subcommand %s. Try: /tasks list, /tasks add, /tasks pause, /tasks resume, /tasks cancel", safeCommandValue(sub)),
 				Code: 1,
 			}, nil
 		}
@@ -115,7 +115,7 @@ func tasksListPage(ctx context.Context, st *store.Store, folder string, page int
 		if t.NextRun > 0 {
 			next = time.UnixMilli(t.NextRun).UTC().Format(time.RFC3339)
 		}
-		fmt.Fprintf(&sb, "%d. [%s] %s\n%s %s\n%s\nNext (UTC): %s\n\n", i+1, t.Status, t.ID, truncate(t.ScheduleType, 12), truncate(t.ScheduleValue, 60), truncate(t.Prompt, 70), next)
+		fmt.Fprintf(&sb, "%d. [%s] %s\n%s %s\n%s\nNext (UTC): %s\n\n", i+1, t.Status, safeCommandValue(t.ID), safeCommandValue(truncate(t.ScheduleType, 12)), safeCommandValue(truncate(t.ScheduleValue, 60)), safeCommandValue(truncate(t.Prompt, 70)), next)
 		label, target, style := "", "", ""
 		switch t.Status {
 		case "active":
@@ -225,7 +225,7 @@ func tasksAdd(ctx context.Context, st *store.Store, folder string, caller Caller
 		reply, err := promptFn(ctx, folder, llmPrompt)
 		if err != nil {
 			return Response{
-				Text: fmt.Sprintf("Failed to parse schedule (agent error): %v\n\nTry a simpler phrasing.", err),
+				Text: fmt.Sprintf("Failed to parse schedule (agent error): %s\n\nTry a simpler phrasing.", safeCommandValue(err.Error())),
 				Code: 1,
 			}, nil
 		}
@@ -234,7 +234,7 @@ func tasksAdd(ctx context.Context, st *store.Store, folder string, caller Caller
 		jsonStr := extractJSON(reply)
 		if jsonStr == "" {
 			return Response{
-				Text: "Could not parse schedule from agent reply:\n" + truncate(reply, 200) +
+				Text: "Could not parse schedule from agent reply:\n" + safeCommandValue(truncate(reply, 200)) +
 					"\n\nTry a simpler phrasing.",
 				Code: 1,
 			}, nil
@@ -242,7 +242,7 @@ func tasksAdd(ctx context.Context, st *store.Store, folder string, caller Caller
 
 		if err := json.Unmarshal([]byte(jsonStr), &parsed); err != nil {
 			return Response{
-				Text: "Agent returned invalid JSON: " + truncate(reply, 200),
+				Text: "Agent returned invalid JSON: " + safeCommandValue(truncate(reply, 200)),
 				Code: 1,
 			}, nil
 		}
@@ -265,7 +265,7 @@ func tasksAdd(ctx context.Context, st *store.Store, folder string, caller Caller
 	now = time.Now()
 	nextRun, err := scheduler.FirstRunAt(parsed.Type, parsed.Schedule, now)
 	if err != nil {
-		return Response{Text: fmt.Sprintf("Invalid schedule: %v", err), Code: 1}, nil
+		return Response{Text: fmt.Sprintf("Invalid schedule: %s", safeCommandValue(err.Error())), Code: 1}, nil
 	}
 
 	if parsed.Prompt == "" {
@@ -297,7 +297,7 @@ func tasksAdd(ctx context.Context, st *store.Store, folder string, caller Caller
 	nextStr := time.UnixMilli(nextRun).UTC().Format(time.RFC3339)
 	return Response{
 		Text: fmt.Sprintf("Task created: %s\nType: %s %s\nNext run (UTC): %s\nPrompt: %s",
-			id, parsed.Type, parsed.Schedule, nextStr, truncate(parsed.Prompt, 80)),
+			safeCommandValue(id), parsed.Type, safeCommandValue(parsed.Schedule), nextStr, safeCommandValue(truncate(parsed.Prompt, 80))),
 	}, nil
 }
 
@@ -349,7 +349,7 @@ func tasksSetStatusExpected(ctx context.Context, st *store.Store, folder string,
 		return Response{Text: "Task state changed; list refreshed. No change made.", Code: 1}, nil
 	}
 	if t.Status == status {
-		return Response{Text: fmt.Sprintf("Task %s is already %s", id, status)}, nil
+		return Response{Text: fmt.Sprintf("Task %s is already %s", safeCommandValue(id), status)}, nil
 	}
 
 	nextRun := t.NextRun
@@ -371,7 +371,7 @@ func tasksSetStatusExpected(ctx context.Context, st *store.Store, folder string,
 	if err := st.UpdateTaskStatus(ctx, id, status, nextRun, t.LastRun); err != nil {
 		return Response{}, err
 	}
-	return Response{Text: fmt.Sprintf("Task %s → %s", id, status)}, nil
+	return Response{Text: fmt.Sprintf("Task %s → %s", safeCommandValue(id), status)}, nil
 }
 
 func tasksCancel(ctx context.Context, st *store.Store, folder string, args []string) (Response, error) {
@@ -393,7 +393,7 @@ func tasksCancel(ctx context.Context, st *store.Store, folder string, args []str
 		}
 		return Response{}, err
 	}
-	return Response{Text: fmt.Sprintf("Task %s cancelled and deleted.", id)}, nil
+	return Response{Text: fmt.Sprintf("Task %s cancelled and deleted.", safeCommandValue(id))}, nil
 }
 
 // computeNextRunForResume recomputes next_run when a paused task is

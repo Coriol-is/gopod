@@ -171,12 +171,12 @@ func pageMarkup(tok string, page int, p pagedReply) models.ReplyMarkup {
 // commandMessage renders a command Response for chatID as the text of
 // one message and its keyboard: the first page and the page row when
 // the text needs several messages, then the Response's buttons.
-func (b *Bot) commandMessage(chatID int64, resp control.Response) (string, models.ReplyMarkup) {
+func (b *Bot) commandMessage(chatID int64, resp control.Response, actor ...int64) (string, models.ReplyMarkup) {
 	text := resp.Text
 	if text == "" {
 		text = cmdTextDone
 	}
-	rows := b.commandRows(chatID, resp.Buttons)
+	rows := b.commandRows(chatID, resp.Buttons, actor...)
 	pages := splitPages(text, pageFits)
 	if len(pages) == 1 {
 		if len(rows) == 0 {

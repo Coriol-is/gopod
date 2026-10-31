@@ -74,6 +74,9 @@ func (b *Bot) groupCommandSkips(m *models.Message, mode store.TriggerMode, text 
 	if target != "" && username != "" && !equalFoldASCII(target, username) {
 		return true
 	}
+	if mode == store.TriggerOwner {
+		return !b.isGroupOwner(m)
+	}
 	if mode == store.TriggerAll || target != "" {
 		return false
 	}
@@ -168,4 +171,40 @@ func (b *Bot) withGroupNote(ctx context.Context, m *models.Message, rc store.Reg
 		sender = "owner"
 	}
 	return "[gopod group: trigger=" + string(mode) + "; sender=" + sender + "]\n\n" + text
+}
+
+// A button press addresses the bot, but does not inherit its original sender.
+func (b *Bot) groupActionAllowed(ctx context.Context, q cbQuery) bool {
+	if q.ChatID >= 0 {
+		return true
+	}
+	if b.store == nil {
+		return false
+	}
+	rc, err := b.store.GetRegistered(ctx, buildChatJID(q.ChatID))
+	if err != nil || rc.IsOwner || rc.Folder != q.Chat.Folder {
+		return false
+	}
+	mode, err := b.store.GroupTrigger(ctx, rc.JID)
+	return err == nil && triggerMatches(mode, b.isGroupOwnerUser(q.ChatKind, q.ChatID, q.UserID), true)
+}
+
+func (b *Bot) callbackPrompt(ctx context.Context, q cbQuery, text string) string {
+	if q.ChatID >= 0 {
+		return text
+	}
+	regen := strings.HasPrefix(text, regeneratePrefix)
+	text = strings.TrimPrefix(text, regeneratePrefix)
+	if strings.HasPrefix(text, "[gopod group: ") {
+		if _, rest, ok := strings.Cut(text, "\n\n"); ok {
+			text = rest
+		}
+	}
+	regen = regen || strings.HasPrefix(text, regeneratePrefix)
+	text = strings.TrimPrefix(text, regeneratePrefix)
+	if regen {
+		text = regeneratePrefix + text
+	}
+	m := &models.Message{Chat: models.Chat{ID: q.ChatID, Type: models.ChatType(q.ChatKind)}, From: &models.User{ID: q.UserID}}
+	return b.withGroupNote(ctx, m, q.Chat, text)
 }

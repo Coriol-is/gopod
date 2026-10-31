@@ -156,7 +156,7 @@ func TestCommandButton_OwnerOnlyRefusedForNonOwner(t *testing.T) {
 		})
 	// A button for an owner-only command shown in a non-owner chat (for
 	// example offered by a chat-local command's response).
-	rows := b.commandRows(groupChat, [][]control.Button{{{Label: "X", Command: "danger"}}})
+	rows := b.commandRows(groupChat, [][]control.Button{{{Label: "X", Command: "danger"}}}, 42)
 	data := rows[0][0].CallbackData
 
 	b.callbackHandler(context.Background(), b.api, cbUpdate("q1", groupChat, 0, 900, data))

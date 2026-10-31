@@ -32,6 +32,9 @@ const retriedTTL = time.Hour
 // (a new query id) is caught by the in-memory retried set, and the
 // button is taken off the reply.
 func (b *Bot) retryTurn(ctx context.Context, q cbQuery) (string, error) {
+	if !b.groupActionAllowed(ctx, q) {
+		return cbToastNotYours, nil
+	}
 	if len(q.Data.Args) != 1 || b.queue == nil || b.store == nil {
 		return cbToastExpired, nil
 	}
@@ -46,7 +49,7 @@ func (b *Bot) retryTurn(ctx context.Context, q cbQuery) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("retry turn %d: %w", turnID, err)
 	}
-	if turn.ChatID != q.ChatID {
+	if turn.ChatID != q.ChatID || turn.ChatFolder != q.Chat.Folder || turn.Source == "task" {
 		b.log.Info("retry refused: turn belongs to another chat",
 			slog.Int64("turn", turnID), slog.Int64("chat_id", q.ChatID))
 		return cbToastNotYours, nil
@@ -60,7 +63,7 @@ func (b *Bot) retryTurn(ctx context.Context, q cbQuery) (string, error) {
 		ThreadID:  q.ThreadID,
 		Folder:    q.Chat.Folder,
 		IsOwner:   q.Chat.IsOwner,
-		Text:      turn.Text,
+		Text:      b.callbackPrompt(ctx, q, turn.Text),
 		FilePath:  turn.FilePath,
 		IsVoice:   turn.IsVoice,
 		Source:    "telegram",
@@ -174,7 +177,7 @@ func (b *Bot) chatTurn(ctx context.Context, q cbQuery) (turn store.Turn, toast s
 	if err != nil {
 		return store.Turn{}, "", fmt.Errorf("load turn %d: %w", turnID, err)
 	}
-	if turn.ChatID != q.ChatID || turn.Source == "task" {
+	if turn.ChatID != q.ChatID || turn.ChatFolder != q.Chat.Folder || turn.Source == "task" {
 		b.log.Info("reply action refused: turn belongs to another chat",
 			slog.String("act", q.Data.Act), slog.Int64("turn", turnID), slog.Int64("chat_id", q.ChatID))
 		return store.Turn{}, cbToastNotYours, nil
@@ -188,6 +191,9 @@ func (b *Bot) chatTurn(ctx context.Context, q cbQuery) (turn store.Turn, toast s
 // (a redelivered update is one turn) and a second tap within the hour
 // only toasts. The pressed row is removed; the new reply brings its own.
 func (b *Bot) regenerate(ctx context.Context, q cbQuery) (string, error) {
+	if !b.groupActionAllowed(ctx, q) {
+		return cbToastNotYours, nil
+	}
 	turn, toast, err := b.chatTurn(ctx, q)
 	if toast != "" || err != nil {
 		return toast, err
@@ -204,7 +210,7 @@ func (b *Bot) regenerate(ctx context.Context, q cbQuery) (string, error) {
 		ThreadID:  q.ThreadID,
 		Folder:    q.Chat.Folder,
 		IsOwner:   q.Chat.IsOwner,
-		Text:      regeneratePrompt(turn.Text),
+		Text:      b.callbackPrompt(ctx, q, regeneratePrompt(turn.Text)),
 		FilePath:  turn.FilePath,
 		IsVoice:   turn.IsVoice,
 		Source:    "telegram",
