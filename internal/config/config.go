@@ -271,6 +271,9 @@ func Load(loadDotenv bool) (Config, error) {
 		if err != nil {
 			return Config{}, fmt.Errorf("parsing GOPOD_OWNER_CHAT_ID=%q: %w", v, err)
 		}
+		if id <= 0 {
+			return Config{}, fmt.Errorf("GOPOD_OWNER_CHAT_ID must be a positive private chat ID; omit it to disable the owner")
+		}
 		cfg.OwnerChatID = id
 	}
 

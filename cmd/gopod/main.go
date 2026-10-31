@@ -139,6 +139,7 @@ func run() error {
 
 	// Upgrade logger to also write to SQLite logs table.
 	sqliteHandler := picoclog.NewSQLiteHandler(st.DB(), logger.Handler())
+	defer sqliteHandler.Close()
 	logger = slog.New(sqliteHandler)
 	slog.SetDefault(logger)
 
@@ -722,6 +723,7 @@ func run() error {
 				// CP-003 artifact snapshots: off unless GOPOD_OUTBOX_ARTIFACTS=1.
 				// A failure to open the store leaves uploads refused, not the bot down.
 				var opener telegram.ArtifactOpener
+				var closeArtifacts func()
 				if cfg.OutboxArtifactsEnabled {
 					if ac, blobs, err := openArtifactStore(cfg, st); err != nil {
 						outboxLog.Error("artifact delivery DISABLED", slog.Any("err", err))
@@ -729,20 +731,28 @@ func run() error {
 						artifactIPCConfig = ac
 						tgBot.EnablePreparedDelivery(preparedDelivery(cfg, st, blobs, outboxLog))
 						opener = &telegram.SnapshotOpener{Inventory: st, Blobs: blobs, MaxBytes: st.ArtifactLimits().MaxFileBytes, Log: outboxLog}
-						onShutdown(func() { blobs.Close() })
+						closeArtifacts = func() { blobs.Close() }
 					}
 				}
 				dispatcher := telegram.NewOutboxDispatcher(owner, tgBot.NewOutboxTransport(opener), telegram.OutboxConfig{}, outboxLog)
 				if err := dispatcher.Start(ctx); err != nil {
 					owner.Release()
 					outboxLog.Error("outbox dispatcher DISABLED: start failed", slog.Any("err", err))
+					if closeArtifacts != nil {
+						onShutdown(closeArtifacts)
+					}
 				} else {
 					st.SetPublishNotifier(dispatcher.Notify)
 					onShutdown(func() {
 						if err := dispatcher.Stop(10 * time.Second); err != nil {
 							outboxLog.Error("outbox dispatcher stop", slog.Any("err", err))
+							// An unobserved stop must not close descriptors still in use.
+							return
 						}
 						owner.Release()
+						if closeArtifacts != nil {
+							closeArtifacts()
+						}
 					})
 					outboxRunning = true
 					outboxLog.Info("outbox dispatcher running")
@@ -961,7 +971,7 @@ func (a *memoryCompilerAdapter) CompileContext(ctx context.Context, chatFolder s
 }
 
 func newLogger(cfg config.Config) *slog.Logger {
-	opts := &slog.HandlerOptions{Level: cfg.LogLevel}
+	opts := &slog.HandlerOptions{Level: cfg.LogLevel, ReplaceAttr: picoclog.NewRedactor().ReplaceAttr}
 	var h slog.Handler
 	switch cfg.LogFormat {
 	case "json":

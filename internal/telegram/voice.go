@@ -65,11 +65,11 @@ func (b *Bot) transcribeFile(ctx context.Context, fileID, name string) (string, 
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, b.api.FileDownloadLink(file), nil)
 	if err != nil {
-		return "", fmt.Errorf("download audio: %w", err)
+		return "", fmt.Errorf("download audio: %w", redactDownloadError(err))
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("download audio: %w", err)
+		return "", fmt.Errorf("download audio: %w", redactDownloadError(err))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {

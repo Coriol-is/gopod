@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -26,16 +27,35 @@ var secretPattern = regexp.MustCompile(`(?i)` + SecretWords)
 // It also forwards to a wrapped handler (typically stderr) so logs
 // appear in both places.
 type SQLiteHandler struct {
-	db      *sql.DB
 	wrapped slog.Handler
 	attrs   []slog.Attr
 	group   string
+	sink    *sqliteSink
 }
 
-// NewSQLiteHandler creates a handler that writes to both the SQLite
-// logs table and the wrapped handler (for stderr).
+type logWrite struct {
+	record slog.Record
+	attrs  []slog.Attr
+	group  string
+}
+type sqliteSink struct {
+	db       *sql.DB
+	redactor *Redactor
+	mu       sync.Mutex
+	closed   bool
+	queue    chan logWrite
+	done     chan struct{}
+	ctx      context.Context
+	cancel   context.CancelFunc
+}
+
+// NewSQLiteHandler uses one bounded writer, so a locked database cannot spawn
+// unbounded goroutines or stall stderr. Full queues drop the SQLite copy.
 func NewSQLiteHandler(db *sql.DB, wrapped slog.Handler) *SQLiteHandler {
-	return &SQLiteHandler{db: db, wrapped: wrapped}
+	ctx, cancel := context.WithCancel(context.Background())
+	sink := &sqliteSink{db: db, redactor: NewRedactor(), queue: make(chan logWrite, 256), done: make(chan struct{}), ctx: ctx, cancel: cancel}
+	go sink.run()
+	return &SQLiteHandler{wrapped: wrapped, sink: sink}
 }
 
 func (h *SQLiteHandler) Enabled(ctx context.Context, level slog.Level) bool {
@@ -43,83 +63,91 @@ func (h *SQLiteHandler) Enabled(ctx context.Context, level slog.Level) bool {
 }
 
 func (h *SQLiteHandler) Handle(ctx context.Context, r slog.Record) error {
-	// Forward to wrapped handler (stderr) first.
-	if err := h.wrapped.Handle(ctx, r); err != nil {
-		return err
+	clean := slog.NewRecord(r.Time, r.Level, h.sink.redactor.Text(r.Message), r.PC)
+	r.Attrs(func(a slog.Attr) bool { clean.AddAttrs(h.sink.redactor.ReplaceAttr([]string{h.group}, a)); return true })
+	err := h.wrapped.Handle(ctx, clean)
+	h.sink.mu.Lock()
+	defer h.sink.mu.Unlock()
+	if !h.sink.closed {
+		select {
+		case h.sink.queue <- logWrite{clean.Clone(), h.attrs, h.group}:
+		default:
+		}
 	}
-
-	// Write to SQLite. Best-effort: never fail the log call.
-	go h.writeToSQLite(r)
-	return nil
+	return err
 }
 
 func (h *SQLiteHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return &SQLiteHandler{
-		db:      h.db,
-		wrapped: h.wrapped.WithAttrs(attrs),
-		attrs:   append(h.attrs, attrs...),
-		group:   h.group,
+	clean := make([]slog.Attr, len(attrs))
+	for i, a := range attrs {
+		clean[i] = h.sink.redactor.ReplaceAttr([]string{h.group}, a)
 	}
+	joined := append(append([]slog.Attr(nil), h.attrs...), clean...)
+	return &SQLiteHandler{wrapped: h.wrapped.WithAttrs(clean), attrs: joined, group: h.group, sink: h.sink}
 }
-
 func (h *SQLiteHandler) WithGroup(name string) slog.Handler {
-	return &SQLiteHandler{
-		db:      h.db,
-		wrapped: h.wrapped.WithGroup(name),
-		attrs:   h.attrs,
-		group:   name,
+	if name == "" {
+		return h
 	}
+	group := name
+	if h.group != "" {
+		group = h.group + "." + name
+	}
+	return &SQLiteHandler{wrapped: h.wrapped.WithGroup(h.sink.redactor.Text(name)), attrs: h.attrs, group: h.sink.redactor.Text(group), sink: h.sink}
 }
 
-func (h *SQLiteHandler) writeToSQLite(r slog.Record) {
-	if h.db == nil {
-		return
+// Close flushes queued records for up to five seconds, then cancels the writer
+// and waits for it to exit. Call before closing the database. All derived
+// handlers share this lifecycle; later records go only to stderr.
+func (h *SQLiteHandler) Close() {
+	h.sink.mu.Lock()
+	if !h.sink.closed {
+		h.sink.closed = true
+		close(h.sink.queue)
 	}
-
-	ts := r.Time.UnixMilli()
-	level := r.Level.String()
-	msg := r.Message
-
-	// Extract subsystem from pre-set attrs.
-	subsys := h.group
-	for _, a := range h.attrs {
+	h.sink.mu.Unlock()
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
+	select {
+	case <-h.sink.done:
+	case <-timer.C:
+		h.sink.cancel()
+		<-h.sink.done
+	}
+	h.sink.cancel()
+}
+func (s *sqliteSink) run() {
+	defer close(s.done)
+	for w := range s.queue {
+		if s.ctx.Err() != nil {
+			return
+		}
+		if s.db == nil {
+			continue
+		}
+		s.write(w)
+	}
+}
+func (s *sqliteSink) write(w logWrite) {
+	attrs := make(map[string]any)
+	subsys := w.group
+	for _, a := range w.attrs {
 		if a.Key == "subsys" {
 			subsys = a.Value.String()
+		} else {
+			attrs[a.Key] = a.Value.String()
 		}
 	}
-
-	// Collect all attributes into a JSON map, redacting secrets.
-	attrs := make(map[string]any)
-	for _, a := range h.attrs {
-		if a.Key != "subsys" {
-			attrs[redactKey(a.Key)] = redactValue(a.Key, a.Value.String())
-		}
-	}
-	r.Attrs(func(a slog.Attr) bool {
-		attrs[redactKey(a.Key)] = redactValue(a.Key, a.Value.String())
-		return true
-	})
-
+	w.record.Attrs(func(a slog.Attr) bool { attrs[a.Key] = a.Value.String(); return true })
 	var attrsJSON *string
 	if len(attrs) > 0 {
 		b, _ := json.Marshal(attrs)
-		s := string(b)
-		attrsJSON = &s
+		v := string(b)
+		attrsJSON = &v
 	}
-
-	h.db.Exec(`INSERT INTO logs (timestamp, level, subsystem, message, attrs_json) VALUES (?, ?, ?, ?, ?)`,
-		ts, level, nullStr(subsys), msg, attrsJSON)
-}
-
-func redactKey(key string) string {
-	return key
-}
-
-func redactValue(key, value string) string {
-	if secretPattern.MatchString(key) {
-		return "<redacted>"
-	}
-	return value
+	ctx, cancel := context.WithTimeout(s.ctx, 2*time.Second)
+	defer cancel()
+	_, _ = s.db.ExecContext(ctx, `INSERT INTO logs (timestamp, level, subsystem, message, attrs_json) VALUES (?, ?, ?, ?, ?)`, w.record.Time.UnixMilli(), w.record.Level.String(), nullStr(subsys), w.record.Message, attrsJSON)
 }
 
 func nullStr(s string) *string {
