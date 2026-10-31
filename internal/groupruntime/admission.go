@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/Coriol-is/gopod/internal/runner"
 	"github.com/Coriol-is/gopod/internal/store"
@@ -33,7 +34,9 @@ func (c Config) validAdmission() bool {
 	default:
 		return false
 	}
-	return c.MaxGroups >= 0 && c.MaxGroups <= maxGroupsCeiling
+	return c.MaxGroups >= 0 && c.MaxGroups <= maxGroupsCeiling &&
+		c.MaxConcurrentGroups >= 0 && c.MaxConcurrentGroups <= 50 &&
+		c.MaxTurnsPerGroupDay >= 0 && c.MaxTurnsPerGroupDay <= 10000
 }
 
 // Mode returns the effective admission mode. An unknown value is neither mode and
@@ -134,6 +137,9 @@ func (m *Manager) Reason(ctx context.Context, jid string) string {
 			return "over prepared-group limit"
 		}
 		return "not in allowlist"
+	}
+	if err := m.authorizeBudget(ctx, c.NamespaceID, time.Now()); err != nil {
+		return "turn budget unavailable"
 	}
 	return ""
 }

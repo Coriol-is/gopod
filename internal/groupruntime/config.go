@@ -33,6 +33,9 @@ type Config struct {
 	AdmissionMode string
 	// MaxGroups bounds prepared groups in registered mode; zero means 50.
 	MaxGroups int
+	// Non-owner admission limits. Zero selects conservative defaults.
+	MaxConcurrentGroups int
+	MaxTurnsPerGroupDay int
 	// EnabledGroups is the allowlist in allowlist mode and ignored in registered
 	// mode (kept so older configuration files still load).
 	EnabledGroups []string
