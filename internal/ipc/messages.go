@@ -60,7 +60,7 @@ func (w *Watcher) processMessageFile(ctx context.Context, folder, path string) (
 		}
 		pending++
 	}
-	if pending >= w.cfg.Retention {
+	if pending >= w.cfg.Retention || len(w.terminalMessages) >= maxWatcherEntries {
 		w.log.Error("ipc: message archive backlog full; repair archives before sending more", "folder", folder)
 		return false
 	}
