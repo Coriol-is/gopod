@@ -9,15 +9,19 @@ import (
 
 // AgentLimits are the admission settings (D026), read by internal/config.
 type AgentLimits struct {
-	MaxAgents      int // agents running at once; < 1 means 1
-	MinAvailableMB int // MemAvailable a start needs; 0 disables the check
-	NodeHeapMB     int // V8 heap cap for Claude agents; 0 disables
+	GrowthReserveMB int  // additional unmeasured growth headroom per admitted agent
+	StrictMemory    bool // fail closed on missing/low memory; no idle bypass
+	MaxAgents       int  // agents running at once; < 1 means 1
+	MinAvailableMB  int  // MemAvailable a start needs; 0 disables the check
+	NodeHeapMB      int  // V8 heap cap for Claude agents; 0 disables
 }
 
 // SetAgentLimits replaces the agent gate and the heap cap. Call it at
 // startup, before the first agent runs (like SetCompactAfter).
 func (r *Runner) SetAgentLimits(l AgentLimits) {
 	r.gate = newGate(l.MaxAgents, int64(max(l.MinAvailableMB, 0)), readMemAvailableMB, r.log)
+	r.gate.strictMemory = l.StrictMemory
+	r.gate.growthReserveMB = int64(max(l.GrowthReserveMB, 0))
 	r.nodeHeapMB = max(l.NodeHeapMB, 0)
 }
 
