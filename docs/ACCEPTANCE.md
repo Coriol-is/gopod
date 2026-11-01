@@ -77,6 +77,20 @@ operator's current authorization. Ordinary topic deletion is not a full data
 purge; ephemeral/group privacy and per-topic provider selection are unimplemented
 specs, not acceptance tests for an advertised current capability.
 
+## CP-037 contract A tests
+
+Automated evidence for the CP-037 P1 durable session identity contract
+([D055](DECISIONS.md)). These IDs are separate from the A01-A19 release
+scenarios above.
+
+| ID | Contract | Tests | Status |
+| --- | --- | --- | --- |
+| CP-037 A01 | A conversation resolves to one stable session and binding, scoped to the registration, retiring older epochs | `internal/store`: `TestResolveConversation*`, `TestNativeContextRoundTrip`, `TestSessionSchemaConstraints`; `cmd/gopod`: `TestDurableAdapter*`, `TestNewSessionStateStoreSelectsByMarker` | automated |
+| CP-037 A02 | Legacy sessions are adopted atomically, only when quiesced, and idempotently | `internal/store`: `TestAdoptLegacySessions*` (atomicity, busy, idempotent); `cmd/gopod`: `TestAdoptSessionsIfRequested*`, `TestSessionsAdoptRefusedWhileBusy`; `internal/control`: `TestSessions*` | automated |
+| CP-037 A06 | An attempt is bound to its session and epoch; a stale epoch never runs | `internal/store`: `TestBindAttempt*`; `cmd/gopod`: `TestBindingHandler*` (incl. `RefusesStaleEpoch`) | automated |
+| CP-037 A11 | Turn ordering and per-session execution claims; an unknown claim still blocks; batches never span threads | `internal/store`: `TestExecutionClaim*`; `internal/queue`: `TestBatchesNeverSpanThreads` | automated |
+| CP-037 native resume after adoption (Pi) | Real native provider resume after `/sessions adopt` and restart on the Pi | none yet | open |
+
 ## Procedure detail and retention
 Original scenario steps and historical review notes are retained in
 [the pre-housekeeping snapshot](history/HANDOFF-2026-10-25-before-housekeeping.md).

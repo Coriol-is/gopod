@@ -1,12 +1,29 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-01 (P0 merged as `5c36b81`; production unchanged)
+**Last updated:** 2026-11-01 (P0 merged 5c36b81; P1 durable identity in PR)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
 [ACCEPTANCE](ACCEPTANCE.md) for pending real-client verification.
 
-## Resume here — CP-037 P0 merged, 2026-11-01
+## Resume here — CP-037 P1 durable identity in review, 2026-11-01
+
+P1 adds durable session identity ([D055](DECISIONS.md)): additive store tables
+for execution sessions, conversation bindings, native contexts, attempt
+bindings and per-session execution claims, a runner adapter that resolves the
+native context through the binding, queue binding that refuses a stale epoch,
+and an owner-only `/sessions [status|adopt]` command. Adoption of legacy
+`sessions` rows is one transaction at the next controller startup, refused
+while unfinished turns exist. It lives on branch `feat/p1-durable-identity` in
+worktree `gopod-p1-identity`, `PR #TBD`. The default mapping mode stays
+`legacy`, so nothing changes on the Pi until `/sessions adopt` plus a restart;
+not deployed. Rollback to pre-adoption code after durable writes needs explicit
+reconciliation (the old `sessions` table is frozen at adoption). Open: real
+native resume after adoption on the Pi ([ACCEPTANCE](ACCEPTANCE.md)).
+
+Next: P2 scoped controls (`/clear`, `/new` epochs) per the slice plan.
+
+## Previous — CP-037 P0 merged, 2026-11-01
 
 [PR #126](https://github.com/Coriol-is/gopod/pull/126) (`feat/p0-integration`,
 worktree `gopod-p0-integration`, branch retained) was admin squash-merged to

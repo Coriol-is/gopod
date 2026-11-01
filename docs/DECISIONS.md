@@ -1943,3 +1943,57 @@ live stream reattachment, automatic replay of started work, per-thread parallel
 runtimes, the autoscaler and provider failover are not part of this decision.
 Real Telegram and native-provider acceptance remain separate gates
 ([P0 acceptance](reviews/2026-11-01-p0-acceptance.md)).
+
+## D055 — Durable session identity behind an atomic adoption marker
+
+**Status:** accepted 2026-11-01 (CP-037 P1)
+
+**Context.** Parallel sessions (CP-037 A1/A4) need a session identity that is
+independent of the chat folder: a stable session per conversation, a native
+provider context that can be replaced per epoch, and a record of which
+attempt ran against which session. The legacy `sessions` table keys native
+contexts by folder only and cannot express this.
+
+**Decision.**
+- *Additive tables.* `execution_sessions`, `conversation_bindings`,
+  `native_contexts`, `attempt_bindings` and `execution_claims` are added
+  without touching `sessions`. `ResolveConversation` creates the binding and
+  session at context epoch 1 (workspace `legacy:<folder>`) and retires older
+  epoch bindings of the same namespace. `turns.id` stays the monotonic
+  per-conversation ingress sequence and `UNIQUE(source, source_id)` the dedup
+  key; no new sequencing is introduced.
+- *Scope on every write.* Each write validates the registration `ScopeRef` in
+  the same transaction; authorization comes from the registration, never from
+  data the LLM produced.
+- *Marker read once.* `session_mapping` in `router_state` (default `legacy`)
+  selects the mode at startup only. In `durable` mode the runner's
+  `GetSession/PutSession/DeleteSession` resolve through the binding (Delete
+  removes only the current epoch's native context of that provider); in
+  `legacy` mode the plain store is used unchanged.
+- *Atomic adoption when quiesced.* `/sessions adopt` (owner-only, D028
+  confirmation) only records a request. Adoption runs at the next controller
+  startup right after the store opens, in one transaction: refused while
+  unfinished turns exist (`ErrAdoptionBusy` is logged and the request kept,
+  other errors are fatal) and failing whole if a legacy row belongs to an
+  unregistered folder. The same boot starts in durable mode. Default stays
+  legacy, so nothing changes until adopted.
+- *Binding and claims.* In durable mode every interactive batch is bound to
+  its session and epoch before running; a recovered turn bound to a superseded
+  epoch or session is finished as stopped (`ErrContextEpochChanged`) without
+  running. One execution claim per session is taken for the batch and settled
+  afterwards; `execution_unknown` is retained and still blocks. Managed task
+  attempts pass through untouched.
+- *Controller ruling on unknown claims.* In P1 re-execution of a turn whose
+  claim is `execution_unknown` is gated by the runner's process proof from P0
+  (`acquireSlot`/`ExecutionUncertain` refuse while exit is unproven;
+  `reconcileExited` clears on proven death or idle). The store claim is the
+  durable record; P5 adds claim reconciliation.
+- *Rollback.* Rolling back to pre-adoption code after durable writes needs
+  explicit reconciliation: the old `sessions` table is frozen at adoption time
+  and does not see later native context changes.
+
+**Consequences.** P2 can add `/clear` and `/new` epoch transitions (not part
+of P1) and P4 can build on execution claims. There is no behavior change
+until the owner adopts and restarts. Adoption is one-way in practice because
+of the rollback caveat. Real native resume after adoption on the Pi remains an
+open acceptance row ([ACCEPTANCE](ACCEPTANCE.md)).
