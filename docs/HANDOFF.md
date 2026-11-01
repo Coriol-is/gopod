@@ -1,12 +1,38 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-01 (CP-038 design merged as `2ca967c`; production unchanged)
+**Last updated:** 2026-11-01 (`/silent` merged as `6d11765`, CP-038 design merged as `2ca967c`; production unchanged)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
 [ACCEPTANCE](ACCEPTANCE.md) for pending real-client verification.
 
-## Resume here — CP-038 elevated host session designed, 2026-11-01
+## Resume here — `/silent` progress-only streaming merged, 2026-11-01
+
+[PR #130](https://github.com/Coriol-is/gopod/pull/130) (`feat/silent-mode`,
+worktree `gopod-silent`, branch retained locally) was admin squash-merged to
+`main` as **`6d11765`** after green PR CI (test, isolation-spike, Sonar). It adds
+[D055](DECISIONS.md): `/silent` (`internal/control/silent.go`, `ChatLocal`,
+owner-only in groups, `on`/`off` picker, state `silent:<chatFolder>` in
+`router_state`, default off) and, in `streamReply`, a silent turn keeps answer
+chunks out of the draft and the edit-path placeholder (they accumulate only for
+Stop); the view stays on the status header and the last five tool steps until the
+final message. On the edit path a reply or stopped partial over `editLimit` takes
+the overflow branch (placeholder keeps the progress summary, reply sent
+separately). Command rows: [CONTROL.md](CONTROL.md) ChatLocal table and §6.1.
+Plan: [superpowers/plans/2026-11-01-silent-mode.md](superpowers/plans/2026-11-01-silent-mode.md).
+
+Verified: `go test ./... -race`, vet, independent reviewer findings fixed (long
+edit-path reply lost, vacuous negative assertions, group-scope test), Sonar
+duplication gate passed after folding the test fixtures. **Not deployed**; Pi
+remains `8a3ce75`. Real Telegram acceptance of `/silent` is open: picker edit in
+place, draft shows only header and steps, final reply once, Stop mid-turn,
+group edit path, a reply over 4096 chars. Owner asked session `gopod-08` to run
+the acceptance.
+
+Noted, out of scope: `gofmt -l` lists `internal/runner/auth.go`, `compact.go`,
+`provider_claude.go` on `main` (pre-existing, CI has no gofmt gate).
+
+## Also current — CP-038 elevated host session designed, 2026-11-01
 
 [CP-038](proposals/CP-038-elevated-host-session.md) is **design only** and merged to
 `main` as **`2ca967c`** ([PR #128](https://github.com/Coriol-is/gopod/pull/128), green
@@ -81,7 +107,7 @@ the review surfaced. No CP-038 feature slice is started and no flag exists.
 Still open and not closable here: M9 credential derivation stays the owner's decision, so
 a first elevated session would require an interactive provider sign-in.
 
-## Previous — CP-037 P0 merged, 2026-11-01
+## Previous state — CP-037 P0 merged, 2026-11-01
 
 [PR #126](https://github.com/Coriol-is/gopod/pull/126) (`feat/p0-integration`,
 worktree `gopod-p0-integration`, branch retained) was admin squash-merged to
