@@ -119,6 +119,6 @@ not enabling the feature merely by merging that document.
 | [CP-033](CP-033-proactive-controls.md) | Built-in recurring presets for the main connectors, toggled and scheduled with `/proactive` (first set: Gmail and Calendar) | in-progress | M |
 | [CP-034](CP-034-private-chat-plugin-install.md) | Install official skills and plugins from the private chat; installed set survives container recreation | accepted | M |
 | [CP-036](CP-036-private-chat-stop.md) | Explicit inline Stop and /stop for owner-private answers | done | M |
-| [CP-037](CP-037-parallel-sessions.md) | Parallel private topics and background sessions (P0 lifecycle implementation) | in-progress (P0 merged, P1 in review) | L |
+| [CP-037](CP-037-parallel-sessions.md) | Parallel private topics and background sessions (P0 lifecycle implementation) | in-progress (P0 and P1 merged, deployed in legacy mapping) | L |
 | [CP-038](CP-038-elevated-host-session.md) | Explicitly started elevated host session for the owner's private chat (design only) | proposed | M |
 | [CP-039](CP-039-full-backup-restore-migration.md) | Automatic full backup/restore (files, sessions, auth) and device migration (draft) | proposed | L |

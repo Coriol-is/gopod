@@ -1,12 +1,30 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-01 (`/silent` `6d11765`, CP-038 design `2ca967c` and gap closure `9ccfba4` merged; CP-037 P1 durable identity in PR #133; production unchanged)
+**Last updated:** 2026-11-01 (`main` `be7575f` deployed to the Pi at 18:37:46 UTC: CP-037 P0+P1, `/silent`, CP-038 gap closure)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
 [ACCEPTANCE](ACCEPTANCE.md) for pending real-client verification.
 
-## Resume here — CP-037 P1 durable identity in review, 2026-11-01
+## Resume here — `be7575f` deployed, 2026-11-01
+
+`main` `be7575f` runs on the Pi since **2026-11-01 18:37:46 UTC** (image
+`45ffd4e9…`, restart count 0, no errors after startup, session mapping
+`legacy`). It ships CP-037 P0 (`5c36b81`) and P1 (`3409907`, [D056](DECISIONS.md)),
+`/silent` (`6d11765`, [D055](DECISIONS.md)), the CP-038 gap closure (`9ccfba4`:
+button presses now carry `MessageID`, so the `/restart` lifecycle buttons work) and
+the CP-039 draft. Evidence, backups (`20261101T183220Z-db-8df16ea0`,
+`20261101T183712Z-ms-eb46af94`) and rollback tag `gopod-gopod:rollback-pre-p1-20261101`:
+[deployment report](deployments/2026-11-01-p1-silent-cp038.md). Reach the Pi
+through Tailscale (`rpi4`, `100.123.150.53`); the LAN address is not used.
+
+**Next:** real-client acceptance on the deployed build — A08/A10 Stop, A21
+`/silent`, the `/restart` drain/force/status/cancel buttons, `/sessions status`.
+`/sessions adopt` is not run; the Pi profile `deploy/compose.rpi4.yml` is not
+applied. Then P2 scoped controls (`/clear`, `/new` epochs) per the CP-037 slice
+plan, and the CP-039 draft refinement when the owner picks it up.
+
+## Previous — CP-037 P1 durable identity merged, 2026-11-01
 
 P1 adds durable session identity ([D056](DECISIONS.md)): additive store tables
 for execution sessions, conversation bindings, native contexts, attempt
@@ -15,7 +33,7 @@ native context through the binding, queue binding that refuses a stale epoch,
 and an owner-only `/sessions [status|adopt|cancel]` command. Adoption of legacy
 `sessions` rows is one transaction at the next controller startup, deferred
 while unfinished turns exist. It lives on branch `feat/p1-durable-identity` in
-worktree `gopod-p1-identity`, [PR #133](https://github.com/Coriol-is/gopod/pull/133). The default mapping mode stays
+worktree `gopod-p1-identity`, [PR #133](https://github.com/Coriol-is/gopod/pull/133), squash-merged as `3409907`. The default mapping mode stays
 `legacy`, so nothing changes on the Pi until `/sessions adopt` plus a restart;
 not deployed. Rollback to pre-adoption code after durable writes needs explicit
 reconciliation (the old `sessions` table is frozen at adoption). Open: real
