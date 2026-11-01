@@ -12,6 +12,7 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
+	"github.com/Coriol-is/gopod/internal/control"
 	"github.com/Coriol-is/gopod/internal/queue"
 	"github.com/Coriol-is/gopod/internal/runner"
 )
@@ -245,6 +246,9 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 
 	stop := b.inflightStop(item.ID) // nil: not stoppable, never fires
 	status := b.turnStatus(item)
+	// Silent mode (D055): answer text never reaches the draft or the
+	// placeholder; the view stays on progress until the final message.
+	silent := b.silentMode(ctx, item)
 	stopOpts := draftOpts{CanStop: stop != nil, KeepOnStop: stop != nil}
 	// kb is the edit path's Stop button (nil when not stoppable): on
 	// the placeholder and on every mid-stream edit of it.
@@ -342,8 +346,11 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 	// had to be finished by drainAndSend.
 	addChunk := func(chunk string) bool {
 		status.Set(stThinking)
-		accumulated.WriteString(chunk)
 		full.WriteString(chunk)
+		if silent {
+			return true // kept for a stop only; the view stays on progress
+		}
+		accumulated.WriteString(chunk)
 		answering = true
 		dirty = true
 
@@ -600,6 +607,22 @@ loop:
 	// Voice reply (must wait for full text).
 	b.maybeVoiceReply(ctx, item, finalText)
 	return nil
+}
+
+// silentMode reports whether the turn's chat has silent mode on
+// (control.SilentStateKey, D055). A lookup failure logs and streams
+// normally.
+func (b *Bot) silentMode(ctx context.Context, item queue.Item) bool {
+	if b.store == nil {
+		return false
+	}
+	v, err := b.store.GetState(ctx, control.SilentStateKey+item.Folder)
+	if err != nil {
+		b.log.Warn("silent mode lookup failed",
+			slog.Int64("chat_id", item.ChatID), slog.String("folder", item.Folder), slog.Any("err", err))
+		return false
+	}
+	return v == "1"
 }
 
 // finalEditLost reports whether the final edit of a turn's placeholder
