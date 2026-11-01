@@ -19,11 +19,23 @@ the fixture, not acceptance of the new implementation.
 
 ## Gates
 
-- Integrated build, vet, full unit tests and affected-package race suites: pending.
-- Disposable Docker busy-idle/drain/force tests: pending.
-- Independent agent source review: pending.
-- PR final-head test, Docker isolation and analysis checks: pending.
-- Main post-merge checks: pending.
+Claude acceptance session, 2026-11-01, on integration head `1e47e22` (Go 1.27.3,
+Docker 29.8.2, macOS arm64):
+
+- Integrated `go build ./...`, `go vet ./...`, `go test ./...` (28 packages): passed.
+- `go test -race` for runner, queue, telegram, store, control, scheduler and
+  `cmd/gopod`: passed, no data race reports.
+- Docker fixtures with `GOPOD_TEST_SH_IMAGE=redis:7-alpine`: `LifecycleBusyTTLAndForceDrain`,
+  `LifecycleStartupQuarantine`, `LifecycleDetachedProcessBlocksDrain`,
+  `StreamCancelKillsAgent`, `StreamNormalRunRemovesPidFile` passed, none skipped.
+  `FreshPreemptionKillsProcess` skips without a local `gopod-agent:latest` (unchanged
+  test, same in CI); it passed when run with `GOPOD_TEST_AGENT_IMAGE=redis:7-alpine`.
+- `docker compose -f docker-compose.yml -f deploy/compose.rpi4.yml config --quiet`
+  with a placeholder env file outside the repo: valid; the override yields
+  `cpus: 1`, `pids_limit: 128` and the staged `GOPOD_*` admission values.
+- Independent agent source review: see "Independent review" below.
+- PR final-head test, Docker isolation and analysis checks: recorded on the PR.
+- Main post-merge checks: recorded in HANDOFF after merge.
 - Real Telegram/native-provider acceptance: not performed; separately scoped.
 
 ## Known implementation boundaries
@@ -50,6 +62,30 @@ Root changes: pinned redis Docker lifecycle CI step, real resource environment
 parsing, opt-in deploy/compose.rpi4.yml, strict-memory gate and conservative growth
 reserve tests, main startup wiring. Native-provider parallel resource acceptance
 has not run. See [Pi evidence](2026-11-01-rpi4-resources.md).
+
+## Independent review (Claude session, 2026-11-01)
+
+A separate reviewer agent read the integrated diff against `cee5cac` with the
+focus list from this report. It returned 5 High, 6 Medium and 3 Low findings.
+Dispositions, verified against the source before any change:
+
+| Finding | Disposition |
+|---|---|
+| H: leftover quarantine skipped when restart recovery failed or `GOPOD_LEFTOVER_CLEANUP_DISABLED` is set, so a running old runtime could be re-attached | Fixed: `QuarantineLeftovers` runs the inventory-only pass on both paths; removal stays gated |
+| H: any `SnapshotScope` error dropped a running container from restart targets (pre-existing D046 code) | Fixed: only `ErrStaleScope` means "unrelated"; other errors refuse the restart |
+| H: force path stopped only scope-validated targets, so a quarantined leftover of a retired/unregistered folder could never settle and the global quarantine check blocked every chat | Fixed: `ForceDrain` stops every quarantined gopod-labelled container by exact id before waiting; death is still re-verified. New Docker test `LifecycleForceStopsQuarantinedLeftover` |
+| H: any `ExecStream` error marked the chat execution-unknown even when no exec was created, leaving it blocked until a forced restart | Fixed in the foreground and task paths: the gate release verifies quiescence (`ContainerTop`) and marks unknown only when a process is present or inspection fails |
+| M: `releaseGateWhenSettled` did not add a marker for this folder when another namespace was already unknown | Fixed: the folder marker is always recorded; `unresolved` markers now also clear once the runtime is provably idle, not only once it is dead |
+| M: a batch failing while a drain is pending is finalized `failed` without retry | Kept by design: retrying would delay the restart and replaying started work is excluded by the C contracts. Covered by new `TestDrainTimeFailureFinalizesWithoutRetry` |
+| M: public `Ensure` returned `ErrRecycleNeedsSlot` for any busy folder (login flow) | Fixed: `ErrFolderBusy` names the actual condition |
+| M: every cancel stops the whole runtime container | Kept by design (D054): group signals cannot prove detached children died; the per-chat slot allows one agent process per runtime; covered by Docker tests |
+| M: `RepairControls` held `controlMu` across Telegram edits, stalling live streaming edits | Fixed: the lock covers the live check and lease claim only; the edit runs outside it and the revision CAS keeps newer checkpoints authoritative |
+| L: an uncertain control message is re-edited every 30 s | Kept: Telegram answers "not modified" for identical text; a backoff needs an attempt counter and is deferred |
+| L: `encodeCB` error discarded, leaving an unbound Stop button | Fixed: no keyboard is emitted and the failure is logged |
+| L: `AcknowledgeControlEdit` errors discarded | Fixed: logged at warn |
+
+After these fixes build, vet, the full suite, the race suites and the Docker
+fixtures were rerun; results are recorded in the Gates section above.
 
 ## Review observations and explicit limits
 

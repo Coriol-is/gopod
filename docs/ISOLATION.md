@@ -212,6 +212,19 @@ not restore an old permissive group runtime or replace the live database with an
 old backup merely to recover availability. Verified backup/restore and exact
 runtime release evidence remain separate acceptance gates.
 
+Runtime lifecycle safety ([D054](DECISIONS.md), CP-037 P0): the idle watcher removes
+only containers whose slot is provably idle; a busy or unknown runtime is never
+evicted by the idle timeout. Boot-time cleanup removes proven non-running leftovers;
+a leftover that is still running is quarantined at any version, execution for that
+folder is refused (`ErrExecutionUnproven`) and the Telegram control plane stays up
+so the owner can inspect, force or repair instead of restart-looping. Unknown
+execution keeps holding global capacity until the Docker process inventory proves
+it settled. A normal Stop stops the slot-owned runtime so detached child tools are
+proven dead; the next turn recreates it on the same persistent mounts. Controller
+restart drains active work before stopping containers; only an explicitly confirmed
+`/restart force` cancels running and pending background work, stops quarantined
+leftovers by exact id, and that cancellation is durable so recovery does not replay it.
+
 ## 8. Module layout
 
 - [Store scopes and migration](../internal/store/namespaces.go), [epochs](../internal/store/namespace_epochs.go).
