@@ -6,8 +6,6 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/go-telegram/bot"
-
 	"github.com/Coriol-is/gopod/internal/queue"
 	"github.com/Coriol-is/gopod/internal/store"
 )
@@ -50,6 +48,7 @@ func (b *Bot) recordPlaceholder(ctx context.Context, item queue.Item, msgID int)
 	if item.ID == 0 || msgID == 0 || b.store == nil {
 		return
 	}
+	b.bindControlMessage(ctx, item, msgID)
 	if err := b.store.SetTurnPlaceholder(ctx, item.ID, msgID); err != nil {
 		b.log.Warn("record placeholder", slog.Int64("turn", item.ID), slog.Any("err", err))
 	}
@@ -91,23 +90,7 @@ func (b *Bot) recordReply(ctx context.Context, item queue.Item, msgID int, text 
 // is none or the edit fails (deleted message), in which case the
 // caller sends a fresh placeholder.
 func (b *Bot) reusePlaceholder(ctx context.Context, item queue.Item) int {
-	if !item.Resumed || item.PlaceholderMsgID == 0 || b.api == nil {
-		return 0
-	}
-	_, err := b.api.EditMessageText(ctx, &bot.EditMessageTextParams{
-		ChatID:      item.ChatID,
-		MessageID:   item.PlaceholderMsgID,
-		Text:        resumingBanner,
-		ReplyMarkup: b.turnKeyboard(item.ID), // Stop, when stoppable
-	})
-	if err != nil {
-		b.log.Debug("reuse placeholder failed, sending a new one",
-			slog.Int64("chat_id", item.ChatID),
-			slog.Int("msg_id", item.PlaceholderMsgID),
-			slog.Any("err", err))
-		return 0
-	}
-	return item.PlaceholderMsgID
+	return 0 // prior attempts keep immutable control bindings; a retry gets a new message
 }
 
 // pickBatchItem returns the item the agent runs for: the last one in

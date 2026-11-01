@@ -114,17 +114,15 @@ func TestWaitNoticeEditPathPlaceholderTakenOver(t *testing.T) {
 	}
 }
 
-func TestWaitNoticeResumedTurnEditsItsPlaceholder(t *testing.T) {
+func TestWaitNoticeDoesNotReuseOldAttemptPlaceholder(t *testing.T) {
 	fake := &fakeTelegram{respond: okResponder}
 	b, item := newStreamFixture(t, fake)
 	item.Resumed, item.PlaceholderMsgID = true, 42
 	b.waitNotice(context.Background(), item)(runner.WaitSlot)
-	edits := fake.callsTo("editMessageText")
-	if len(edits) != 1 || edits[0].Form["message_id"] != "42" || edits[0].Form["text"] != waitSlotText {
-		t.Fatalf("edits = %+v", edits)
-	}
-	if n := len(fake.callsTo("sendMessage")) + len(fake.callsTo("sendMessageDraft")); n != 0 {
-		t.Fatalf("extra sends: %d", n)
+	for _, c := range fake.callsTo("editMessageText") {
+		if c.Form["message_id"] == "42" {
+			t.Fatal("old attempt message overwritten")
+		}
 	}
 }
 

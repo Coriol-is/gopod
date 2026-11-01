@@ -130,6 +130,7 @@ type Bot struct {
 	goneThreads map[chatThread]bool
 
 	// inflight maps turn id to its stoppable streaming state (stop.go).
+	controlMu  sync.Mutex // serializes control-message writers and recovery
 	inflightMu sync.Mutex
 	inflight   map[int64]*inflightTurn
 
@@ -326,6 +327,10 @@ func (b *Bot) registerHandlers(api *bot.Bot) {
 // publish failure is logged at warn level and the bot keeps running —
 // command discovery is nice-to-have, not a hard requirement.
 func (b *Bot) Run(ctx context.Context) error {
+	recoveryCtx, cancelRecovery := context.WithCancel(ctx)
+	recoveryDone := make(chan struct{})
+	go func() { defer close(recoveryDone); b.runControlRecovery(recoveryCtx) }()
+	defer func() { cancelRecovery(); <-recoveryDone }()
 	if b.capabilities != nil {
 		// The mention gate needs the bot username: resolve it before polling,
 		// boundedly (about 10 s), and carry on without it if getMe keeps failing.

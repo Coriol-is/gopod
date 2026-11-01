@@ -74,6 +74,16 @@ func (b *Bot) editMessage(ctx context.Context, chatID int64, msgID int, text str
 // turnKeyboard on every edit, so the text and the Stop button change in
 // one call.
 func (b *Bot) editMessageKB(ctx context.Context, chatID int64, msgID int, text string, markup models.ReplyMarkup) error {
+	b.controlMu.Lock()
+	defer b.controlMu.Unlock()
+	return b.editMessageKBLocked(ctx, chatID, msgID, text, markup)
+}
+func (b *Bot) editMessageKBLocked(ctx context.Context, chatID int64, msgID int, text string, markup models.ReplyMarkup) error {
+	if !b.controlEditAllowed(ctx, chatID, msgID, markup) {
+		return nil
+	}
+	text = b.safeControlText(ctx, chatID, msgID, text, markup)
+	b.checkpointControl(ctx, chatID, msgID, text, false, markup)
 	if text == "" {
 		text = "\u2758" // keep cursor visible if empty
 	}
@@ -89,6 +99,9 @@ func (b *Bot) editMessageKB(ctx context.Context, chatID int64, msgID int, text s
 			slog.Int("msg_id", msgID),
 			slog.Any("err", err))
 		return fmt.Errorf("editMessageText: %w", err)
+	}
+	if b.store != nil {
+		_ = b.store.AcknowledgeControlEdit(ctx, chatID, msgID)
 	}
 	return nil
 }
@@ -108,6 +121,16 @@ func (b *Bot) editMessageHTML(ctx context.Context, chatID int64, msgID int, html
 // edit is tried once more without them: a refused keyboard never costs
 // the reply.
 func (b *Bot) editMessageHTMLKB(ctx context.Context, chatID int64, msgID int, html string, markup models.ReplyMarkup) error {
+	b.controlMu.Lock()
+	defer b.controlMu.Unlock()
+	return b.editMessageHTMLKBLocked(ctx, chatID, msgID, html, markup)
+}
+func (b *Bot) editMessageHTMLKBLocked(ctx context.Context, chatID int64, msgID int, html string, markup models.ReplyMarkup) error {
+	if !b.controlEditAllowed(ctx, chatID, msgID, markup) {
+		return nil
+	}
+	html = b.safeControlText(ctx, chatID, msgID, html, markup)
+	b.checkpointControl(ctx, chatID, msgID, html, true, markup)
 	if html == "" {
 		return nil
 	}
@@ -129,13 +152,16 @@ func (b *Bot) editMessageHTMLKB(ctx context.Context, chatID int64, msgID int, ht
 			slog.Int64("chat_id", chatID),
 			slog.Int("msg_id", msgID),
 			slog.Any("err", err))
-		perr := b.editMessageKB(ctx, chatID, msgID, htmlToPlain(html), markup)
+		perr := b.editMessageKBLocked(ctx, chatID, msgID, htmlToPlain(html), markup)
 		if perr != nil && hasButtons(markup) && !isNotModified(perr) {
 			if _, limited := retryAfter(perr); !limited {
-				return b.editMessageHTML(ctx, chatID, msgID, html)
+				return b.editMessageHTMLKBLocked(ctx, chatID, msgID, html, noKeyboard())
 			}
 		}
 		return perr
+	}
+	if b.store != nil {
+		_ = b.store.AcknowledgeControlEdit(ctx, chatID, msgID)
 	}
 	return nil
 }

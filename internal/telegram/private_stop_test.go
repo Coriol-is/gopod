@@ -75,7 +75,7 @@ func TestPrivateStopPlaceholderSurvivesWaitAndStreaming(t *testing.T) {
 			})
 			if stop {
 				b.registerCallbacks()
-				b.callbackHandler(t.Context(), b.api, cbUpdate("stop", item.ChatID, item.ThreadID, 88, "st:1"))
+				b.callbackHandler(t.Context(), b.api, cbUpdate("stop", item.ChatID, item.ThreadID, 88, testStopData(b, item.ID, 88)))
 				if runCtx.Err() == nil {
 					t.Fatal("inline Stop did not cancel")
 				}

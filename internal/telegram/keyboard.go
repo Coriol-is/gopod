@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode/utf16"
 
+	"github.com/Coriol-is/gopod/internal/store"
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
@@ -55,6 +56,11 @@ func (b *Bot) turnKeyboard(turnID int64) models.ReplyMarkup {
 		return nil
 	}
 	kb := stopKeyboard(turnID)
+	b.inflightMu.Lock()
+	if t := b.inflight[turnID]; t != nil {
+		kb.InlineKeyboard[0][0].CallbackData, _ = encodeCB("st", strconv.FormatInt(turnID, 10), t.token)
+	}
+	b.inflightMu.Unlock()
 	return &kb
 }
 
@@ -82,18 +88,36 @@ func (b *Bot) setKeyboard(ctx context.Context, chatID int64, msgID int, markup m
 // still running in the chat the button sits in. A press after the turn
 // ended, a second press, or the data replayed from another chat only
 // toasts.
-func (b *Bot) stopCallback(_ context.Context, q cbQuery) (string, error) {
-	if len(q.Data.Args) != 1 {
+func (b *Bot) stopCallback(ctx context.Context, q cbQuery) (string, error) {
+	if len(q.Data.Args) < 1 || len(q.Data.Args) > 2 {
 		return cbToastExpired, nil
 	}
-	turnID, err := strconv.ParseInt(q.Data.Args[0], 10, 64)
-	if err != nil || turnID <= 0 {
+	id, err := strconv.ParseInt(q.Data.Args[0], 10, 64)
+	if err != nil || id <= 0 {
 		return cbToastExpired, nil
 	}
-	if !b.stopTurn(turnID, q.ChatID) {
-		return stopToastFinished, nil
+	b.inflightMu.Lock()
+	t := b.inflight[id]
+	valid := t != nil && t.home == q.ChatID && t.thread == q.ThreadID && len(q.Data.Args) == 2 && q.Data.Args[1] == t.token && t.messages[q.MessageID]
+	var scope store.ScopeRef
+	if t != nil {
+		scope = t.scope
 	}
-	return stopToastStopping, nil
+	b.inflightMu.Unlock()
+	if valid && b.store != nil {
+		valid = b.store.ValidateScope(ctx, scope) == nil
+	}
+	if valid && t.stop() {
+		return stopToastStopping, nil
+	}
+	status := b.controlTurnStatus(ctx, id, q.ChatID, q.ThreadID, q.MessageID)
+	q.answerNow(status)
+	if b.store != nil {
+		if binding, e := b.store.GetControlMessage(ctx, q.ChatID, q.MessageID); e == nil && binding.TurnID == id && binding.ThreadID == q.ThreadID && b.store.ValidateScope(ctx, binding.Scope) == nil {
+			_ = b.store.RequeueControlRepair(ctx, q.ChatID, q.MessageID, binding.Token)
+		}
+	}
+	return status, nil
 }
 
 // copyTextMax is the Bot API limit for CopyTextButton.text: "1-256
