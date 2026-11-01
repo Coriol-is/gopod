@@ -155,9 +155,8 @@ func run() error {
 		folderHeld  func(string) bool // set once the queue exists (managed tasks)
 		allowlist   *mountsec.Allowlist
 		agentMemory *memory.Memory
-		sessionMode string // store.SessionMapping*; consumed by later wiring
+		sessionMode string // store.SessionMapping*; durable wraps the queue handler
 	)
-	_ = sessionMode // read by Task 3 wiring
 	if !cfg.ContainerEnabled {
 		logger.Warn("runner subsystem skipped: GOPOD_NO_CONTAINER is truthy")
 	} else {
@@ -662,7 +661,13 @@ func run() error {
 		var agentQueue *queue.Queue
 		if agentRunner != nil {
 			queueLog := logger.With(slog.String("subsys", "queue"))
-			agentQueue = queue.New(ctx, tgBot.NewAgentHandler(), queue.DefaultMaxConcurrent,
+			agentHandler := tgBot.NewAgentHandler()
+			if sessionMode == store.SessionMappingDurable {
+				agentHandler = bindingHandler(st,
+					func(folder string) string { return agentRunner.ProviderForChat(folder).Name() },
+					agentRunner.ModelForChat, agentHandler, queueLog)
+			}
+			agentQueue = queue.New(ctx, agentHandler, queue.DefaultMaxConcurrent,
 				turnStoreAdapter{st: st}, queueLog)
 			tgBot.SetQueue(agentQueue)
 			restart.queue = agentQueue
