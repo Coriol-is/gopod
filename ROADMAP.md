@@ -310,6 +310,7 @@ checks do not reopen an implemented proposal; use docs/ACCEPTANCE.md instead.
 | CP-010 | Explicit confirmed quota fallback | Deployed; quota UI/retry A05 pending |
 | CP-013 | Speech transcript source/duration provenance | Deployed; real voice A07 pending |
 | CP-015 | Agent scheduling guide/management/receipts; canonical-JID message delivery; paged task controls | Real receipts/API delivery proved; user task execution and client UI A01/A06 pending |
+| D055 (no CP; owner request 2026-11-01) | `/silent` per-chat progress-only streaming: on/off picker, draft shows header and tool steps only, answer once at the end | Unit and race tests, Sonar; merged `6d11765`, not deployed; real Telegram acceptance pending |
 
 Pending proposals and design-only CP-011/012/014/016–019 are assigned to the
 approved queue above. A saved spec is not an active implementation.

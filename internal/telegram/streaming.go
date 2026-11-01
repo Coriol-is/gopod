@@ -12,6 +12,7 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
+	"github.com/Coriol-is/gopod/internal/control"
 	"github.com/Coriol-is/gopod/internal/queue"
 	"github.com/Coriol-is/gopod/internal/runner"
 )
@@ -245,6 +246,9 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 
 	stop := b.inflightStop(item.ID) // nil: not stoppable, never fires
 	status := b.turnStatus(item)
+	// Silent mode (D055): answer text never reaches the draft or the
+	// placeholder; the view stays on progress until the final message.
+	silent := b.silentMode(ctx, item)
 	stopOpts := draftOpts{CanStop: stop != nil, KeepOnStop: stop != nil}
 	// kb is the edit path's Stop button (nil when not stoppable): on
 	// the placeholder and on every mid-stream edit of it.
@@ -342,8 +346,11 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 	// had to be finished by drainAndSend.
 	addChunk := func(chunk string) bool {
 		status.Set(stThinking)
-		accumulated.WriteString(chunk)
 		full.WriteString(chunk)
+		if silent {
+			return true // kept for a stop only; the view stays on progress
+		}
+		accumulated.WriteString(chunk)
 		answering = true
 		dirty = true
 
@@ -378,7 +385,14 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 		if placeholder == 0 {
 			return b.finishStopped(ctx, item, stream, full.String())
 		}
-		return b.finishStoppedEdit(ctx, item, stream, placeholder, full.String(), overflow, accumulated.String())
+		ov, tail := overflow, accumulated.String()
+		if silent {
+			// The placeholder holds progress, never text: a reply that
+			// does not fit one message goes out separately, and the
+			// placeholder keeps the progress summary (no cursor).
+			ov, tail = full.Len() > editLimit, view()
+		}
+		return b.finishStoppedEdit(ctx, item, stream, placeholder, full.String(), ov, tail)
 	}
 
 	progress := stream.Progress // nil for plain runs: never selected
@@ -538,6 +552,13 @@ loop:
 		finalText = "(empty reply)"
 	}
 
+	// Silent mode never overflowed the placeholder (it holds progress,
+	// not text): a reply that does not fit one message takes the
+	// overflow branch, which sends it as a separate message.
+	if silent && len(finalText) > editLimit {
+		overflow = true
+	}
+
 	// The topic vanished after the placeholder went out: editing it
 	// would deliver nothing, so send the reply (to main) like a draft turn.
 	gone := placeholder != 0 && b.threadGone(item.ChatID, item.ThreadID)
@@ -587,6 +608,9 @@ loop:
 				}
 				break
 			}
+		} else if silent {
+			// Leave the progress summary (no cursor, no Stop button).
+			b.editMessage(ctx, item.ChatID, placeholder, view())
 		} else if kb != nil {
 			b.clearKeyboard(ctx, item.ChatID, placeholder)
 		}
@@ -600,6 +624,22 @@ loop:
 	// Voice reply (must wait for full text).
 	b.maybeVoiceReply(ctx, item, finalText)
 	return nil
+}
+
+// silentMode reports whether the turn's chat has silent mode on
+// (control.SilentStateKey, D055). A lookup failure logs and streams
+// normally.
+func (b *Bot) silentMode(ctx context.Context, item queue.Item) bool {
+	if b.store == nil {
+		return false
+	}
+	v, err := b.store.GetState(ctx, control.SilentStateKey+item.Folder)
+	if err != nil {
+		b.log.Warn("silent mode lookup failed",
+			slog.Int64("chat_id", item.ChatID), slog.String("folder", item.Folder), slog.Any("err", err))
+		return false
+	}
+	return v == "1"
 }
 
 // finalEditLost reports whether the final edit of a turn's placeholder
