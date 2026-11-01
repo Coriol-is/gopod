@@ -137,6 +137,12 @@ func run() error {
 		}
 	}()
 
+	// Apply a requested durable-session adoption before anything reads the
+	// session tables, so an adopted DB starts durable in this same boot.
+	if err := adoptSessionsIfRequested(ctx, st, logger); err != nil {
+		return err
+	}
+
 	// Upgrade logger to also write to SQLite logs table.
 	sqliteHandler := picoclog.NewSQLiteHandler(st.DB(), logger.Handler())
 	defer sqliteHandler.Close()
@@ -434,6 +440,7 @@ func run() error {
 	}
 
 	control.RegisterTriggerCommand(router, st)
+	control.RegisterSessionsCommand(router, control.SessionsDeps{Mode: st.SessionMappingMode, Request: st.RequestSessionAdoption, Count: st.CountSessionRows})
 	control.RegisterWhoami(router, cfg.OwnerChatID)
 	control.RegisterVoiceCommand(router, telegram.SetReplyMode)
 	control.RegisterLogsCommand(router, func(level, subsystem string, limit int) (string, error) {
