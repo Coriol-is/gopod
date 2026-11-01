@@ -13,15 +13,57 @@ import (
 	"github.com/Coriol-is/gopod/internal/runner"
 )
 
-// setSilent turns silent mode on for the fixture's chat (D055).
-func setSilent(t *testing.T, b *Bot, item queue.Item) {
+// Silent mode (D055): answer text never reaches the draft or the
+// placeholder; the chat sees progress until the final message.
+
+// silentFixture is a silent-mode turn streaming a structured run.
+type silentFixture struct {
+	fake *fakeTelegram
+	b    *Bot
+	item queue.Item
+	s    *structuredStream
+	done chan error
+}
+
+// startSilent turns silent mode on for the fixture's chat and starts
+// streamReply on a fresh structured run.
+func startSilent(t *testing.T, fake *fakeTelegram) *silentFixture {
 	t.Helper()
+	b, item := newStreamFixture(t, fake)
 	if err := b.store.SetState(context.Background(), control.SilentStateKey+item.Folder, "1"); err != nil {
 		t.Fatal(err)
 	}
+	f := &silentFixture{fake: fake, b: b, item: item, s: newStructuredStream(), done: make(chan error, 1)}
+	go func() { f.done <- b.streamReply(context.Background(), item, f.s.stream()) }()
+	return f
 }
 
-// anyCallHas reports whether any call to method carries text in its form.
+// step sends one tool step.
+func (f *silentFixture) step(tool, detail string) {
+	f.s.progress <- runner.ProgressEvent{Tool: tool, Detail: detail}
+}
+
+// finish ends the run and returns streamReply's error.
+func (f *silentFixture) finish(text string) error {
+	f.s.finish(text)
+	return <-f.done
+}
+
+// strictEditPathFake is editPathFake (keyboard_test.go) that, like
+// Telegram, rejects a message or edit over 4096 bytes.
+func strictEditPathFake() *fakeTelegram {
+	fake := editPathFake()
+	inner := fake.respond
+	fake.respond = func(method string, form map[string]string) (int, string) {
+		if (method == "sendMessage" || method == "editMessageText") && len(form["text"]) > 4096 {
+			return apiError(http.StatusBadRequest, "Bad Request: message is too long")
+		}
+		return inner(method, form)
+	}
+	return fake
+}
+
+// anyCallHas reports whether any call to method carries text.
 func anyCallHas(fake *fakeTelegram, method, text string) bool {
 	for _, c := range fake.callsTo(method) {
 		if strings.Contains(c.Form["text"], text) {
@@ -31,32 +73,52 @@ func anyCallHas(fake *fakeTelegram, method, text string) bool {
 	return false
 }
 
-// Silent mode: steps keep showing after answer text; the final message
-// carries the answer.
+// placeholderShowing reports whether some edit of the placeholder showed
+// exactly these steps under the header.
+func placeholderShowing(fake *fakeTelegram, steps string) func() bool {
+	return func() bool {
+		for _, c := range fake.callsTo("editMessageText") {
+			if stripHeader(c.Form["text"]) == steps {
+				return true
+			}
+		}
+		return false
+	}
+}
+
+// repliesAfterPlaceholder joins the text of every sendMessage after the
+// first one (the placeholder).
+func repliesAfterPlaceholder(fake *fakeTelegram) string {
+	var sb strings.Builder
+	for _, c := range fake.callsTo("sendMessage")[1:] {
+		sb.WriteString(c.Form["text"])
+	}
+	return sb.String()
+}
+
+// settle lets several ticks (10 ms) run: the only signal when no later
+// step may follow (a step would drop the text as narration, D024).
+func settle() { time.Sleep(100 * time.Millisecond) }
+
 func TestStreamReply_SilentKeepsProgressUntilFinal(t *testing.T) {
 	fake := &fakeTelegram{}
 	okDrafts(fake, "601")
-	b, item := newStreamFixture(t, fake)
-	setSilent(t, b, item)
-	s := newStructuredStream()
-	done := make(chan error, 1)
-	go func() { done <- b.streamReply(context.Background(), item, s.stream()) }()
+	f := startSilent(t, fake)
 
-	s.progress <- runner.ProgressEvent{Tool: "Bash", Detail: "go test ./..."}
+	f.step("Bash", "go test ./...")
 	waitFor(t, "first step", draftShowing(fake, "⚙️ go test ./...\n❘"))
-	s.chunks <- "All tests "
-	s.chunks <- "pass."
+	f.s.chunks <- "All tests "
+	f.s.chunks <- "pass."
 	// The runner hands the step over only after the chunks (Progress is
 	// unbuffered), so the draft that shows it proves ticks ran with text
 	// in hand.
-	s.progress <- runner.ProgressEvent{Tool: "Read", Detail: "/workspace/chat/main.go"}
+	f.step("Read", "/workspace/chat/main.go")
 	waitFor(t, "two steps", draftShowing(fake, "⚙️ go test ./...\n📖 main.go\n❘"))
 	if anyCallHas(fake, "sendMessageDraft", "All tests") {
 		t.Errorf("silent draft showed answer text: %q", lastDraftText(fake))
 	}
-	s.chunks <- " Really."
-	s.finish("All tests pass.")
-	if err := <-done; err != nil {
+	f.s.chunks <- " Really."
+	if err := f.finish("All tests pass."); err != nil {
 		t.Fatalf("streamReply: %v", err)
 	}
 	sends := fake.callsTo("sendMessage")
@@ -69,49 +131,20 @@ func TestStreamReply_SilentKeepsProgressUntilFinal(t *testing.T) {
 	}
 }
 
-// Silent mode on the edit path: the placeholder shows steps only; the
-// final edit is the answer.
+// Edit path: the placeholder shows steps only; the final edit is the answer.
 func TestStreamReply_SilentEditPathShowsStepsOnly(t *testing.T) {
-	fake := &fakeTelegram{}
-	fake.respond = func(method string, _ map[string]string) (int, string) {
-		switch method {
-		case "sendMessageDraft":
-			return apiError(http.StatusBadRequest, "Bad Request: method is not available")
-		case "sendMessage", "editMessageText":
-			return sentMessage("78")
-		}
-		return http.StatusOK, `{"ok":true,"result":true}`
-	}
-	b, item := newStreamFixture(t, fake)
-	setSilent(t, b, item)
-	s := newStructuredStream()
-	done := make(chan error, 1)
-	go func() { done <- b.streamReply(context.Background(), item, s.stream()) }()
+	fake := strictEditPathFake()
+	f := startSilent(t, fake)
 
-	s.progress <- runner.ProgressEvent{Tool: "Edit", Detail: "/workspace/chat/a.go"}
-	waitFor(t, "placeholder with step", func() bool {
-		for _, c := range fake.callsTo("editMessageText") {
-			if stripHeader(c.Form["text"]) == "✏️ a.go\n❘" {
-				return true
-			}
-		}
-		return false
-	})
-	s.chunks <- "**Fixed** a.go"
-	s.progress <- runner.ProgressEvent{Tool: "Bash", Detail: "go vet"}
-	waitFor(t, "second step", func() bool {
-		for _, c := range fake.callsTo("editMessageText") {
-			if stripHeader(c.Form["text"]) == "✏️ a.go\n⚙️ go vet\n❘" {
-				return true
-			}
-		}
-		return false
-	})
+	f.step("Edit", "/workspace/chat/a.go")
+	waitFor(t, "placeholder with step", placeholderShowing(fake, "✏️ a.go\n❘"))
+	f.s.chunks <- "**Fixed** a.go"
+	f.step("Bash", "go vet")
+	waitFor(t, "second step", placeholderShowing(fake, "✏️ a.go\n⚙️ go vet\n❘"))
 	if anyCallHas(fake, "editMessageText", "Fixed") {
 		t.Error("silent placeholder showed answer text before the final edit")
 	}
-	s.finish("**Fixed** a.go")
-	if err := <-done; err != nil {
+	if err := f.finish("**Fixed** a.go"); err != nil {
 		t.Fatal(err)
 	}
 	edits := fake.callsTo("editMessageText")
@@ -124,111 +157,77 @@ func TestStreamReply_SilentEditPathShowsStepsOnly(t *testing.T) {
 	}
 }
 
-// Silent mode with a plain run (no Progress channel): the draft never
-// shows the text; the final message does.
+// A plain run (no Progress channel): the draft never shows the text.
 func TestStreamReply_SilentPlainRunShowsHeaderOnly(t *testing.T) {
 	fake := &fakeTelegram{}
 	okDrafts(fake, "602")
-	b, item := newStreamFixture(t, fake)
-	setSilent(t, b, item)
+	f := startSilent(t, fake) // its structured stream is left unused
 	chunks := make(chan string, 8)
 	result := make(chan runner.RunResult, 1)
-	stream := &runner.AgentStream{Chunks: chunks, Result: result}
 	done := make(chan error, 1)
-	go func() { done <- b.streamReply(context.Background(), item, stream) }()
+	go func() {
+		done <- f.b.streamReply(context.Background(), f.item, &runner.AgentStream{Chunks: chunks, Result: result})
+	}()
 
 	chunks <- "Hello"
-	// No step ever arrives, so the only positive signals are the opening
-	// draft and the final send; a broken silent mode would draft the
-	// chunk on one of the ticks (10 ms) in between.
+	// No step ever arrives: a broken silent mode would draft the chunk on
+	// one of the ticks between the opening draft and the final send.
 	waitFor(t, "opening draft", func() bool { return len(fake.callsTo("sendMessageDraft")) >= 1 })
-	time.Sleep(100 * time.Millisecond)
-	if anyCallHas(fake, "sendMessageDraft", "Hello") {
-		t.Errorf("silent draft showed plain-run text: %q", lastDraftText(fake))
-	}
+	settle()
 	result <- runner.RunResult{FullText: "Hello"}
 	close(result)
 	close(chunks)
 	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
-	sends := fake.callsTo("sendMessage")
-	if len(sends) != 1 || !strings.Contains(sends[0].Form["text"], "Hello") {
-		t.Fatalf("final = %+v, want Hello", sends)
-	}
 	if anyCallHas(fake, "sendMessageDraft", "Hello") {
 		t.Errorf("plain-run text reached a draft: %q", lastDraftText(fake))
 	}
+	if !anyCallHas(fake, "sendMessage", "Hello") {
+		t.Fatalf("final = %+v, want Hello", fake.callsTo("sendMessage"))
+	}
+	f.s.finish("unused")
+	<-f.done
 }
 
-// Stop in silent mode after text arrived delivers that text (D021).
+// Stop after text arrived delivers that text (D021).
 func TestStreamReply_SilentStopDeliversPartialText(t *testing.T) {
 	fake := &fakeTelegram{}
 	okDrafts(fake, "603")
-	b, item := newStreamFixture(t, fake)
-	setSilent(t, b, item)
-	defer b.registerInflight(item.ID, item.ChatID, 0, func() {})()
-	s := newStructuredStream()
-	errc := make(chan error, 1)
-	go func() { errc <- b.streamReply(context.Background(), item, s.stream()) }()
+	f := startSilent(t, fake)
+	defer f.b.registerInflight(f.item.ID, f.item.ChatID, 0, func() {})()
 
-	s.progress <- runner.ProgressEvent{Tool: "Bash", Detail: "ls"}
-	s.progress <- runner.ProgressEvent{Tool: "Bash", Detail: "cat x"}
+	f.step("Bash", "ls")
+	f.step("Bash", "cat x")
 	waitFor(t, "two steps", draftShowing(fake, "⚙️ ls\n⚙️ cat x"))
-	// Text after the last step is the answer (D024); a later step would
-	// drop it as narration, so the ticks (10 ms) are the only signal.
-	s.chunks <- "Half an answer"
-	time.Sleep(100 * time.Millisecond)
+	f.s.chunks <- "Half an answer"
+	settle()
 	if anyCallHas(fake, "sendMessageDraft", "Half") {
 		t.Error("silent draft showed answer text")
 	}
-	b.bindDraft(item.ID, item.ChatID, 4343)
-	b.handleGenerationStopped(context.Background(), stopUpdate(item.ChatID, 4343))
-	if err := <-errc; !errors.Is(err, queue.ErrStopped) {
+	f.b.bindDraft(f.item.ID, f.item.ChatID, 4343)
+	f.b.handleGenerationStopped(context.Background(), stopUpdate(f.item.ChatID, 4343))
+	if err := <-f.done; !errors.Is(err, queue.ErrStopped) {
 		t.Fatalf("err = %v", err)
 	}
-	go s.finish("x")
+	go f.s.finish("x")
 	if got := fake.callsTo("sendMessage")[0].Form["text"]; !strings.Contains(got, "Half an answer") || strings.Contains(got, "⚙️") {
 		t.Errorf("stopped reply = %q", got)
 	}
 }
 
-// Silent mode on the edit path with a reply that does not fit one
-// message: the placeholder keeps the progress summary and the reply
-// goes out as separate messages, nothing is lost to a rejected edit.
+// Edit path, reply longer than one message: the placeholder keeps the
+// progress summary and the reply goes out separately, nothing is lost
+// to a rejected edit.
 func TestStreamReply_SilentEditPathLongReplySentSeparately(t *testing.T) {
-	fake := &fakeTelegram{}
-	fake.respond = func(method string, form map[string]string) (int, string) {
-		switch method {
-		case "sendMessageDraft":
-			return apiError(http.StatusBadRequest, "Bad Request: method is not available")
-		case "sendMessage", "editMessageText":
-			if len(form["text"]) > 4096 {
-				return apiError(http.StatusBadRequest, "Bad Request: message is too long")
-			}
-			return sentMessage("79")
-		}
-		return http.StatusOK, `{"ok":true,"result":true}`
-	}
-	b, item := newStreamFixture(t, fake)
-	setSilent(t, b, item)
-	s := newStructuredStream()
-	done := make(chan error, 1)
-	go func() { done <- b.streamReply(context.Background(), item, s.stream()) }()
+	fake := strictEditPathFake()
+	f := startSilent(t, fake)
 
-	s.progress <- runner.ProgressEvent{Tool: "Bash", Detail: "make"}
-	waitFor(t, "placeholder with step", func() bool {
-		for _, c := range fake.callsTo("editMessageText") {
-			if stripHeader(c.Form["text"]) == "⚙️ make\n❘" {
-				return true
-			}
-		}
-		return false
-	})
+	f.step("Bash", "make")
+	waitFor(t, "placeholder with step", placeholderShowing(fake, "⚙️ make\n❘"))
 	long := strings.Repeat("Line of the answer number one.\n", 200) + "THE END"
-	s.chunks <- long
-	s.finish(long)
-	if err := <-done; err != nil {
+	f.s.chunks <- long
+	if err := f.finish(long); err != nil {
 		t.Fatal(err)
 	}
 	edits := fake.callsTo("editMessageText")
@@ -236,67 +235,34 @@ func TestStreamReply_SilentEditPathLongReplySentSeparately(t *testing.T) {
 	if !strings.Contains(final, "⚙️ make") || strings.Contains(final, "❘") || strings.Contains(final, "Line of") {
 		t.Errorf("placeholder final = %q, want the progress summary without cursor", final)
 	}
-	var sentText strings.Builder
-	sends := fake.callsTo("sendMessage")
-	for _, c := range sends[1:] { // sends[0] is the placeholder
-		sentText.WriteString(c.Form["text"])
-	}
-	if len(sends) < 2 || !strings.Contains(sentText.String(), "THE END") || strings.Count(sentText.String(), "Line of") != 200 {
-		t.Errorf("reply sends = %d, text has %d lines and end=%v; want the whole reply",
-			len(sends)-1, strings.Count(sentText.String(), "Line of"), strings.Contains(sentText.String(), "THE END"))
+	got := repliesAfterPlaceholder(fake)
+	if !strings.Contains(got, "THE END") || strings.Count(got, "Line of") != 200 {
+		t.Errorf("reply has %d lines, end=%v; want the whole reply", strings.Count(got, "Line of"), strings.Contains(got, "THE END"))
 	}
 }
 
-// Stop in silent mode on the edit path with a long partial: same split.
+// Edit path, Stop with a long partial: same split.
 func TestStreamReply_SilentEditPathStopLongPartial(t *testing.T) {
-	fake := &fakeTelegram{}
-	fake.respond = func(method string, form map[string]string) (int, string) {
-		switch method {
-		case "sendMessageDraft":
-			return apiError(http.StatusBadRequest, "Bad Request: method is not available")
-		case "sendMessage", "editMessageText":
-			if len(form["text"]) > 4096 {
-				return apiError(http.StatusBadRequest, "Bad Request: message is too long")
-			}
-			return sentMessage("80")
-		}
-		return http.StatusOK, `{"ok":true,"result":true}`
-	}
-	b, item := newStreamFixture(t, fake)
-	setSilent(t, b, item)
-	defer b.registerInflight(item.ID, item.ChatID, 0, func() {})()
-	s := newStructuredStream()
-	errc := make(chan error, 1)
-	go func() { errc <- b.streamReply(context.Background(), item, s.stream()) }()
+	fake := strictEditPathFake()
+	f := startSilent(t, fake)
+	defer f.b.registerInflight(f.item.ID, f.item.ChatID, 0, func() {})()
 
-	s.progress <- runner.ProgressEvent{Tool: "Bash", Detail: "make"}
-	s.progress <- runner.ProgressEvent{Tool: "Bash", Detail: "make test"}
-	waitFor(t, "two steps", func() bool {
-		for _, c := range fake.callsTo("editMessageText") {
-			if stripHeader(c.Form["text"]) == "⚙️ make\n⚙️ make test\n❘" {
-				return true
-			}
-		}
-		return false
-	})
-	long := strings.Repeat("Partial line.\n", 400) + "PARTIAL END"
-	s.chunks <- long
-	time.Sleep(100 * time.Millisecond)
+	f.step("Bash", "make")
+	f.step("Bash", "make test")
+	waitFor(t, "two steps", placeholderShowing(fake, "⚙️ make\n⚙️ make test\n❘"))
+	f.s.chunks <- strings.Repeat("Partial line.\n", 400) + "PARTIAL END"
+	settle()
 	if anyCallHas(fake, "editMessageText", "Partial line") {
 		t.Error("silent placeholder showed answer text")
 	}
-	if !b.stopTurn(item.ID, item.ChatID) {
+	if !f.b.stopTurn(f.item.ID, f.item.ChatID) {
 		t.Fatal("stopTurn refused")
 	}
-	if err := <-errc; !errors.Is(err, queue.ErrStopped) {
+	if err := <-f.done; !errors.Is(err, queue.ErrStopped) {
 		t.Fatalf("err = %v, want ErrStopped", err)
 	}
-	go s.finish("x")
-	var sentText strings.Builder
-	for _, c := range fake.callsTo("sendMessage")[1:] {
-		sentText.WriteString(c.Form["text"])
-	}
-	if !strings.Contains(sentText.String(), "PARTIAL END") {
-		t.Errorf("stopped reply sends = %q, want the partial text", sentText.String())
+	go f.s.finish("x")
+	if got := repliesAfterPlaceholder(fake); !strings.Contains(got, "PARTIAL END") {
+		t.Errorf("stopped reply sends = %q, want the partial text", got)
 	}
 }
