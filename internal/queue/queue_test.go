@@ -1069,3 +1069,56 @@ func TestNewMessageWaitsAndSurvivesExplicitStop(t *testing.T) {
 		t.Fatal("Stop lost or replayed an input")
 	}
 }
+
+func TestBatchesNeverSpanThreads(t *testing.T) {
+	type batch struct{ thread, n int }
+	var mu sync.Mutex
+	var got []batch
+	release := make(chan struct{})
+	started := make(chan struct{})
+	var once sync.Once
+	handler := func(_ context.Context, items []Item) error {
+		once.Do(func() { close(started); <-release })
+		mu.Lock()
+		got = append(got, batch{items[0].ThreadID, len(items)})
+		for _, it := range items {
+			if it.ThreadID != items[0].ThreadID {
+				t.Errorf("batch spans threads %d and %d", items[0].ThreadID, it.ThreadID)
+			}
+		}
+		mu.Unlock()
+		return nil
+	}
+	q := New(context.Background(), handler, 10, nil, silentLog())
+	ctx := context.Background()
+	// A blocker holds the folder so the three real items queue up behind it.
+	q.Enqueue(ctx, Item{Folder: "alice", ThreadID: 9, Text: "blocker"})
+	<-started
+	q.Enqueue(ctx, Item{Folder: "alice", ThreadID: 0, Text: "a"})
+	q.Enqueue(ctx, Item{Folder: "alice", ThreadID: 5, Text: "b"})
+	q.Enqueue(ctx, Item{Folder: "alice", ThreadID: 0, Text: "c"})
+	close(release)
+
+	deadline := time.After(2 * time.Second)
+	for {
+		mu.Lock()
+		n := len(got)
+		mu.Unlock()
+		if n == 4 {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("timeout; batches so far: %v", got)
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	want := []batch{{9, 1}, {0, 1}, {5, 1}, {0, 1}}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("batches = %v, want %v", got, want)
+		}
+	}
+}

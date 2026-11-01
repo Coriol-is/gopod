@@ -16,13 +16,15 @@ right now" view, see [docs/HANDOFF.md](docs/HANDOFF.md).
 
 ---
 
-## Parallel sessions — CP-037 (P0 accepted, P1+ not started)
+## Parallel sessions — CP-037 (P0 merged, P1 in review, P2+ not started)
 
 🟦 P0 lifecycle safety merged as `5c36b81` via [PR #126](https://github.com/Coriol-is/gopod/pull/126)
 ([D054](docs/DECISIONS.md), [acceptance](docs/reviews/2026-11-01-p0-acceptance.md)):
 no busy-runtime eviction, `/restart` drain, confirmed `/restart force`, startup
 quarantine with a live control plane, durable Stop-control repair, opt-in Pi 4
 profile. Not deployed; real Telegram acceptance open. P1–P7 remain unstarted.
+
+🟦 P1 durable session identity in review on `feat/p1-durable-identity` ([D056](docs/DECISIONS.md)): additive session/binding/claim tables, atomic `/sessions adopt` at next restart, default stays legacy. Not deployed.
 
 Owner reopened design on 2026-11-01: private chats split by thread plus background
 tasks; persistent topic folders and explicitly attached shared projects.

@@ -137,6 +137,12 @@ func run() error {
 		}
 	}()
 
+	// Apply a requested durable-session adoption before anything reads the
+	// session tables, so an adopted DB starts durable in this same boot.
+	if err := adoptSessionsIfRequested(ctx, st, logger); err != nil {
+		return err
+	}
+
 	// Upgrade logger to also write to SQLite logs table.
 	sqliteHandler := picoclog.NewSQLiteHandler(st.DB(), logger.Handler())
 	defer sqliteHandler.Close()
@@ -155,6 +161,7 @@ func run() error {
 		folderHeld  func(string) bool // set once the queue exists (managed tasks)
 		allowlist   *mountsec.Allowlist
 		agentMemory *memory.Memory
+		sessionMode string // store.SessionMapping*; durable wraps the queue handler
 	)
 	if !cfg.ContainerEnabled {
 		logger.Warn("runner subsystem skipped: GOPOD_NO_CONTAINER is truthy")
@@ -250,7 +257,12 @@ func run() error {
 				return fmt.Errorf("init runner: %w", err)
 			}
 			agentRunner = r
-			r.SetStore(st)
+			sessionStore, mode, err := newSessionStateStore(ctx, st, runLog)
+			if err != nil {
+				return fmt.Errorf("init session store: %w", err)
+			}
+			sessionMode = mode
+			r.SetStore(sessionStore)
 			r.SetAdmissionPolicy(cfg.OwnerChatID, st)
 			if cfg.ManagedTasksEnabled {
 				// Before any container use, so the foreground container is already
@@ -428,6 +440,14 @@ func run() error {
 	}
 
 	control.RegisterTriggerCommand(router, st)
+	control.RegisterSessionsCommand(router, control.SessionsDeps{
+		Mode: st.SessionMappingMode, Request: st.RequestSessionAdoption, Count: st.CountSessionRows,
+		Cancel: st.CancelSessionAdoption,
+		Unfinished: func(ctx context.Context) (int, error) {
+			turns, err := st.ListUnfinishedTurns(ctx)
+			return len(turns), err
+		},
+	})
 	control.RegisterWhoami(router, cfg.OwnerChatID)
 	control.RegisterVoiceCommand(router, telegram.SetReplyMode)
 	control.RegisterLogsCommand(router, func(level, subsystem string, limit int) (string, error) {
@@ -675,7 +695,13 @@ func run() error {
 		var agentQueue *queue.Queue
 		if agentRunner != nil {
 			queueLog := logger.With(slog.String("subsys", "queue"))
-			agentQueue = queue.New(ctx, tgBot.NewAgentHandler(), queue.DefaultMaxConcurrent,
+			agentHandler := tgBot.NewAgentHandler()
+			if sessionMode == store.SessionMappingDurable {
+				agentHandler = bindingHandler(st,
+					func(folder string) string { return agentRunner.ProviderForChat(folder).Name() },
+					agentRunner.ModelForChat, agentRunner.ExecutionUncertain, agentHandler, queueLog)
+			}
+			agentQueue = queue.New(ctx, agentHandler, queue.DefaultMaxConcurrent,
 				turnStoreAdapter{st: st}, queueLog)
 			tgBot.SetQueue(agentQueue)
 			restart.queue = agentQueue
@@ -734,6 +760,15 @@ func run() error {
 		// the scheduler hook is registered and before the bot polls.
 		replayed := 0
 		if agentQueue != nil {
+			if sessionMode == store.SessionMappingDurable {
+				// Nothing runs yet: a held claim is a crash leftover. Recover
+				// re-batches turns, so the old holder id would never settle it.
+				n, err := st.ReleaseStaleExecutionClaims(ctx)
+				if err != nil {
+					return fmt.Errorf("release stale execution claims: %w", err)
+				}
+				logger.Info("released stale execution claims", slog.Int("count", n))
+			}
 			n, err := agentQueue.Recover(ctx)
 			if errors.Is(err, queue.ErrHoldsUnknown) {
 				// Serving beside a possibly running task attempt is unsafe.
