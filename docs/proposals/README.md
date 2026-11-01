@@ -120,3 +120,4 @@ not enabling the feature merely by merging that document.
 | [CP-034](CP-034-private-chat-plugin-install.md) | Install official skills and plugins from the private chat; installed set survives container recreation | accepted | M |
 | [CP-036](CP-036-private-chat-stop.md) | Explicit inline Stop and /stop for owner-private answers | done | M |
 | [CP-037](CP-037-parallel-sessions.md) | Parallel private topics and background sessions (P0 lifecycle implementation) | in-progress | L |
+| [CP-038](CP-038-elevated-host-session.md) | Explicitly started elevated host session for the owner's private chat (design only) | proposed | M |
