@@ -1,15 +1,17 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-01 (P0 accepted in PR #126; production unchanged)
+**Last updated:** 2026-11-01 (P0 merged as `5c36b81`; production unchanged)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
 [ACCEPTANCE](ACCEPTANCE.md) for pending real-client verification.
 
-## Resume here — CP-037 P0 accepted, 2026-11-01
+## Resume here — CP-037 P0 merged, 2026-11-01
 
 [PR #126](https://github.com/Coriol-is/gopod/pull/126) (`feat/p0-integration`,
-worktree `gopod-p0-integration`) carries the P0 lifecycle slice: busy/unknown
+worktree `gopod-p0-integration`, branch retained) was admin squash-merged to
+`main` as **`5c36b81`** after green PR CI (test, isolation-spike, Sonar) on its
+final head `47e12a8`. It carries the P0 lifecycle slice: busy/unknown
 runtimes protected from idle eviction, `/restart` drain plus confirmed
 `/restart force`, startup quarantine that keeps the Telegram control plane up,
 durable Stop-control recovery, the opt-in Pi 4 resource profile and the CI
@@ -28,9 +30,10 @@ fails during a drain is not retried). Full table and remaining limits:
 [P0 acceptance report](reviews/2026-11-01-p0-acceptance.md).
 
 **Not deployed.** Pi remains `8a3ce75`; the owner deferred any rollout until the
-whole CP-037 feature is complete. Merge state of #126 is recorded in the PR and
-`git log main`; if this section still says "accepted" but `main` lacks `e428811`,
-check the PR before assuming it merged.
+whole CP-037 feature is complete. The commit ids quoted above (`e428811`,
+`47e12a8`, the worker and integration SHAs) live on the retained
+`feat/p0-integration` branch; `main` carries them only inside squash `5c36b81`.
+Main CI for `5c36b81`: see the Actions run recorded in the PR timeline.
 
 **Next:** P1 durable identity per the [slice plan](superpowers/plans/2026-11-01-parallel-sessions.md)
 once the owner opens it; real Telegram acceptance of `/restart`, `/restart force`

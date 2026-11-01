@@ -18,7 +18,7 @@ right now" view, see [docs/HANDOFF.md](docs/HANDOFF.md).
 
 ## Parallel sessions — CP-037 (P0 accepted, P1+ not started)
 
-🟦 P0 lifecycle safety accepted in [PR #126](https://github.com/Coriol-is/gopod/pull/126)
+🟦 P0 lifecycle safety merged as `5c36b81` via [PR #126](https://github.com/Coriol-is/gopod/pull/126)
 ([D054](docs/DECISIONS.md), [acceptance](docs/reviews/2026-11-01-p0-acceptance.md)):
 no busy-runtime eviction, `/restart` drain, confirmed `/restart force`, startup
 quarantine with a live control plane, durable Stop-control repair, opt-in Pi 4
