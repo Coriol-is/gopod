@@ -63,25 +63,80 @@ func TestAdoptLegacySessionsMapsEveryRow(t *testing.T) {
 	}
 }
 
-func TestAdoptLegacySessionsIsAtomic(t *testing.T) {
+func TestAdoptLegacySessionsSkipsUnregisteredRows(t *testing.T) {
 	st := openTestStore(t)
 	ctx := context.Background()
-	ownerScope(t, st)
+	scope := ownerScope(t, st)
 	if err := st.PutSession(ctx, "owner", 0, "claude", "legacy-owner"); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.PutSession(ctx, "ghost", 0, "claude", "legacy-ghost"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.AdoptLegacySessions(ctx); !errors.Is(err, ErrAdoptionUnregistered) {
-		t.Fatalf("err = %v, want ErrAdoptionUnregistered", err)
+	if err := st.RequestSessionAdoption(ctx); err != nil {
+		t.Fatal(err)
 	}
-	if mode, _, _ := st.SessionMappingMode(ctx); mode != SessionMappingLegacy {
-		t.Fatalf("mode = %q after failed adoption", mode)
+	rep, err := st.AdoptLegacySessions(ctx)
+	if err != nil {
+		t.Fatalf("AdoptLegacySessions: %v", err)
 	}
-	var n int
-	if err := st.db.QueryRowContext(ctx, `SELECT count(*) FROM execution_sessions`).Scan(&n); err != nil || n != 0 {
-		t.Fatalf("execution_sessions = %d, %v", n, err)
+	if rep.Mode != SessionMappingDurable || rep.Skipped != 1 || rep.Sessions != 1 || rep.Contexts != 1 {
+		t.Fatalf("report %+v", rep)
+	}
+	if len(rep.SkippedFolders) != 1 || rep.SkippedFolders[0] != "ghost" {
+		t.Fatalf("skipped folders %v", rep.SkippedFolders)
+	}
+	if mode, requested, _ := st.SessionMappingMode(ctx); mode != SessionMappingDurable || requested {
+		t.Fatalf("mode = %q requested = %v", mode, requested)
+	}
+	b, err := st.ResolveConversation(ctx, scope, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok, err := st.GetNativeContext(ctx, b.ActiveSessionID, 1, "claude"); err != nil || !ok || got != "legacy-owner" {
+		t.Fatalf("owner context = %q %v %v", got, ok, err)
+	}
+}
+
+func TestAdoptLegacySessionsIsAtomic(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	ownerScope(t, st)
+	registerScope(t, st, RegisteredChat{JID: "tg:-2", Folder: "zeta", AddedAt: 2})
+	if err := st.PutSession(ctx, "owner", 0, "claude", "legacy-owner"); err != nil {
+		t.Fatal(err)
+	}
+	// Rows are copied in folder order, so the empty legacy id of "zeta"
+	// violates the native_contexts CHECK after the owner row was already
+	// copied; the whole adoption must roll back.
+	if err := st.PutSession(ctx, "zeta", 0, "claude", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RequestSessionAdoption(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.AdoptLegacySessions(ctx); err == nil {
+		t.Fatal("adoption succeeded over an invalid legacy row")
+	}
+	if mode, requested, _ := st.SessionMappingMode(ctx); mode != SessionMappingLegacy || !requested {
+		t.Fatalf("mode = %q requested = %v after failed adoption", mode, requested)
+	}
+	if n, m, err := st.CountSessionRows(ctx); err != nil || n != 0 || m != 0 {
+		t.Fatalf("execution_sessions = %d native_contexts = %d, %v", n, m, err)
+	}
+}
+
+func TestCancelSessionAdoptionClearsRequest(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.RequestSessionAdoption(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CancelSessionAdoption(ctx); err != nil {
+		t.Fatalf("CancelSessionAdoption: %v", err)
+	}
+	if mode, requested, err := st.SessionMappingMode(ctx); err != nil || mode != SessionMappingLegacy || requested {
+		t.Fatalf("mode=%q requested=%v err=%v", mode, requested, err)
 	}
 }
 

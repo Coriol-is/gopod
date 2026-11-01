@@ -16,12 +16,11 @@ const (
 )
 
 var (
-	ErrConversationRetired  = errors.New("store: conversation binding is retired")
-	ErrStaleContextEpoch    = errors.New("store: attempt context epoch is not current")
-	ErrAttemptBound         = errors.New("store: turn already bound to a different session")
-	ErrSessionBusy          = errors.New("store: session already holds an execution claim")
-	ErrAdoptionBusy         = errors.New("store: unfinished turns exist; adoption needs a quiesced controller")
-	ErrAdoptionUnregistered = errors.New("store: legacy session belongs to an unregistered folder")
+	ErrConversationRetired = errors.New("store: conversation binding is retired")
+	ErrStaleContextEpoch   = errors.New("store: attempt context epoch is not current")
+	ErrAttemptBound        = errors.New("store: turn already bound to a different session")
+	ErrSessionBusy         = errors.New("store: session already holds an execution claim")
+	ErrAdoptionBusy        = errors.New("store: unfinished turns exist; adoption needs a quiesced controller")
 )
 
 // ConversationBinding maps one conversation (registration scope + thread) to

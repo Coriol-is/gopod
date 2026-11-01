@@ -2,16 +2,20 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 )
 
 // AdoptionReport is the outcome of AdoptLegacySessions.
 type AdoptionReport struct {
-	Mode        string // mode after the call
-	Sessions    int    // execution_sessions created
-	Contexts    int    // native_contexts created
-	AlreadyDone bool
+	Mode     string // mode after the call
+	Sessions int    // execution_sessions created
+	Contexts int    // native_contexts created
+	Skipped  int    // legacy rows not copied: folder unregistered or scope invalid
+	// SkippedFolders lists the folder of each skipped row, in row order.
+	SkippedFolders []string
+	AlreadyDone    bool
 }
 
 // SessionMappingMode reports which session table is authoritative and whether
@@ -37,9 +41,19 @@ func (s *Store) RequestSessionAdoption(ctx context.Context) error {
 	return s.SetState(ctx, sessionMappingReqKey, SessionMappingDurable)
 }
 
+// CancelSessionAdoption clears a pending adoption request.
+func (s *Store) CancelSessionAdoption(ctx context.Context) error {
+	if err := s.SetState(ctx, sessionMappingReqKey, ""); err != nil {
+		return fmt.Errorf("cancelling session adoption: %w", err)
+	}
+	return nil
+}
+
 // AdoptLegacySessions maps every legacy sessions row onto a durable binding and
-// native context, then flips the mapping marker, all in one transaction. Any
-// row for an unregistered folder rolls the whole adoption back.
+// native context, then flips the mapping marker, all in one transaction. A row
+// whose folder is unregistered or whose current scope no longer validates is
+// unreachable by any scope: it is skipped and counted, not fatal. Any other
+// failure rolls the whole adoption back.
 func (s *Store) AdoptLegacySessions(ctx context.Context) (AdoptionReport, error) {
 	mode, _, err := s.SessionMappingMode(ctx)
 	if err != nil {
@@ -68,8 +82,18 @@ func (s *Store) AdoptLegacySessions(ctx context.Context) (AdoptionReport, error)
 		now := time.Now().UnixMilli()
 		for _, r := range rows {
 			c, ok := chats[r.folder]
+			if ok {
+				err = validateScopeQ(ctx, q, c.Scope())
+				if errors.Is(err, ErrStaleScope) || errors.Is(err, ErrNamespaceIdentityConflict) {
+					ok = false
+				} else if err != nil {
+					return fmt.Errorf("folder %q: validating scope: %w", r.folder, err)
+				}
+			}
 			if !ok {
-				return fmt.Errorf("folder %q: %w", r.folder, ErrAdoptionUnregistered)
+				rep.Skipped++
+				rep.SkippedFolders = append(rep.SkippedFolders, r.folder)
+				continue
 			}
 			b, created, err := resolveConversationQ(ctx, q, c.Scope(), r.thread)
 			if err != nil {

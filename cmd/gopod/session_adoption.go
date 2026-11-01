@@ -28,10 +28,14 @@ func adoptSessionsIfRequested(ctx context.Context, st *store.Store, log *slog.Lo
 	if err != nil {
 		return fmt.Errorf("session adoption: %w", err)
 	}
+	for _, folder := range rep.SkippedFolders {
+		log.Warn("session adoption skipped legacy row: folder unregistered or scope invalid", slog.String("folder", folder))
+	}
 	log.Info("legacy sessions adopted",
 		slog.String("mode", rep.Mode),
 		slog.Int("sessions", rep.Sessions),
 		slog.Int("contexts", rep.Contexts),
+		slog.Int("skipped", rep.Skipped),
 		slog.Bool("already_done", rep.AlreadyDone))
 	return nil
 }

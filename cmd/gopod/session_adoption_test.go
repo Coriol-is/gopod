@@ -83,3 +83,26 @@ func TestSessionsAdoptRefusedWhileBusy(t *testing.T) {
 		t.Fatalf("mode=%q requested=%v err=%v", mode, requested, err)
 	}
 }
+
+func TestAdoptSessionsIfRequestedSkipsUnregisteredFolder(t *testing.T) {
+	st := adoptionStore(t)
+	ctx := context.Background()
+	if err := st.PutSession(ctx, "owner", 0, "claude", "legacy-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.PutSession(ctx, "ghost", 0, "claude", "legacy-ghost"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RequestSessionAdoption(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := adoptSessionsIfRequested(ctx, st, discardLog()); err != nil {
+		t.Fatalf("unregistered legacy row must not fail startup: %v", err)
+	}
+	if mode, requested, err := st.SessionMappingMode(ctx); err != nil || mode != store.SessionMappingDurable || requested {
+		t.Fatalf("mode=%q requested=%v err=%v", mode, requested, err)
+	}
+	if n, m, err := st.CountSessionRows(ctx); err != nil || n != 1 || m != 1 {
+		t.Fatalf("rows = %d, %d, %v", n, m, err)
+	}
+}

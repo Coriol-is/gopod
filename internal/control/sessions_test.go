@@ -12,9 +12,11 @@ func sessionsCaller(owner bool) Caller {
 
 func sessionsDeps(mode string, requested bool, requests *int) SessionsDeps {
 	return SessionsDeps{
-		Mode:    func(context.Context) (string, bool, error) { return mode, requested, nil },
-		Request: func(context.Context) error { *requests++; return nil },
-		Count:   func(context.Context) (int, int, error) { return 3, 2, nil },
+		Mode:       func(context.Context) (string, bool, error) { return mode, requested, nil },
+		Request:    func(context.Context) error { *requests++; return nil },
+		Count:      func(context.Context) (int, int, error) { return 3, 2, nil },
+		Cancel:     func(context.Context) error { return nil },
+		Unfinished: func(context.Context) (int, error) { return 0, nil },
 	}
 }
 
@@ -91,7 +93,7 @@ func TestSessionsAdoptRefusedWhenDurable(t *testing.T) {
 		}
 	}
 	resp, _ := r.Dispatch(t.Context(), Command{Name: "sessions", Args: []string{"bogus"}, Caller: sessionsCaller(true)})
-	if resp.Code != 1 || resp.Text != "Use /sessions [status|adopt]." {
+	if resp.Code != 1 || resp.Text != "Use /sessions [status|adopt|cancel]." {
 		t.Fatal(resp)
 	}
 }
@@ -106,5 +108,50 @@ func TestSessionsIsOwnerOnly(t *testing.T) {
 	_, err := r.Dispatch(t.Context(), Command{Name: "sessions", Args: []string{"adopt"}, Confirmed: true, Caller: sessionsCaller(false)})
 	if !errors.Is(err, ErrNotAuthorized) || called || n != 0 {
 		t.Fatal(err, called, n)
+	}
+}
+
+func TestSessionsCancelClearsRequest(t *testing.T) {
+	n, cancels := 0, 0
+	d := sessionsDeps("legacy", true, &n)
+	d.Cancel = func(context.Context) error { cancels++; return nil }
+	r := New(nil)
+	RegisterSessionsCommand(r, d)
+	resp, err := r.Dispatch(t.Context(), Command{Name: "sessions", Args: []string{"cancel"}, Caller: sessionsCaller(true)})
+	if err != nil || resp.Code != 0 || resp.Text != "Adoption request cancelled." || cancels != 1 {
+		t.Fatal(resp, err, cancels)
+	}
+	d = sessionsDeps("legacy", false, &n)
+	d.Cancel = func(context.Context) error { cancels++; return nil }
+	r = New(nil)
+	RegisterSessionsCommand(r, d)
+	resp, err = r.Dispatch(t.Context(), Command{Name: "sessions", Args: []string{"cancel"}, Caller: sessionsCaller(true)})
+	if err != nil || resp.Code != 1 || resp.Text != "No adoption requested." || cancels != 1 {
+		t.Fatal(resp, err, cancels)
+	}
+	_, err = r.Dispatch(t.Context(), Command{Name: "sessions", Args: []string{"cancel"}, Caller: sessionsCaller(false)})
+	if !errors.Is(err, ErrNotAuthorized) || cancels != 1 {
+		t.Fatal(err, cancels)
+	}
+}
+
+func TestSessionsStatusShowsDeferral(t *testing.T) {
+	n := 0
+	d := sessionsDeps("legacy", true, &n)
+	d.Unfinished = func(context.Context) (int, error) { return 2, nil }
+	r := New(nil)
+	RegisterSessionsCommand(r, d)
+	resp, err := r.Dispatch(t.Context(), Command{Name: "sessions", Caller: sessionsCaller(true)})
+	want := "Session mapping: legacy. Adoption requested: yes. Durable sessions: 3, native contexts: 2. Deferred: 2 unfinished turns."
+	if err != nil || resp.Text != want {
+		t.Fatalf("%+v, %v", resp, err)
+	}
+	d = sessionsDeps("legacy", false, &n)
+	d.Unfinished = func(context.Context) (int, error) { return 2, nil }
+	r = New(nil)
+	RegisterSessionsCommand(r, d)
+	resp, _ = r.Dispatch(t.Context(), Command{Name: "sessions", Args: []string{"status"}, Caller: sessionsCaller(true)})
+	if resp.Text != "Session mapping: legacy. Adoption requested: no. Durable sessions: 3, native contexts: 2." {
+		t.Fatalf("deferral shown without a request: %q", resp.Text)
 	}
 }

@@ -440,7 +440,14 @@ func run() error {
 	}
 
 	control.RegisterTriggerCommand(router, st)
-	control.RegisterSessionsCommand(router, control.SessionsDeps{Mode: st.SessionMappingMode, Request: st.RequestSessionAdoption, Count: st.CountSessionRows})
+	control.RegisterSessionsCommand(router, control.SessionsDeps{
+		Mode: st.SessionMappingMode, Request: st.RequestSessionAdoption, Count: st.CountSessionRows,
+		Cancel: st.CancelSessionAdoption,
+		Unfinished: func(ctx context.Context) (int, error) {
+			turns, err := st.ListUnfinishedTurns(ctx)
+			return len(turns), err
+		},
+	})
 	control.RegisterWhoami(router, cfg.OwnerChatID)
 	control.RegisterVoiceCommand(router, telegram.SetReplyMode)
 	control.RegisterLogsCommand(router, func(level, subsystem string, limit int) (string, error) {
