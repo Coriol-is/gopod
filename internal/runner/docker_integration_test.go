@@ -20,7 +20,7 @@
 //     GOPOD_TEST_CODEX_IMAGE      image for the Codex test (default gopod-agent-codex:latest)
 //     GOPOD_TEST_CODEX_VERSION    if set, `codex --version` output must contain it
 //
-// Example, after bumping the pins in container/Dockerfile*:
+// Example, after bumping the pins in container/personal/Dockerfile*:
 //
 //     GOPOD_TEST_CLAUDE_VERSION=2.1.310 GOPOD_TEST_CODEX_VERSION=0.164.0 \
 //       go test -tags docker_integration -run 'AgentImage|Codex' ./internal/runner/
@@ -74,7 +74,7 @@ func agentImage() string { return envOr("GOPOD_TEST_AGENT_IMAGE", "gopod-agent:l
 func codexImage() string { return envOr("GOPOD_TEST_CODEX_IMAGE", "gopod-agent-codex:latest") }
 
 // requireImage skips the test when image is not present locally. Agent
-// images are built from container/Dockerfile*, never pulled.
+// images are built from container/personal/Dockerfile*, never pulled.
 func requireImage(t *testing.T, ctx context.Context, d *Docker, image string) {
 	t.Helper()
 	if _, _, err := d.cli.ImageInspectWithRaw(ctx, image); err != nil {
