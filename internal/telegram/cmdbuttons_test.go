@@ -223,3 +223,28 @@ func TestCommandRows_DataUnder64Bytes(t *testing.T) {
 		}
 	}
 }
+
+// TestCallbackCallerCarriesMessageID pins the field that commands fencing
+// replay on a real private message require. Before it was populated every
+// button dispatch arrived with zero, so /restart force's confirmation,
+// /restart status and /restart cancel were all refused by their own handler.
+func TestCallbackCallerCarriesMessageID(t *testing.T) {
+	b, _, _ := newCommandFixture(t)
+	q := cbQuery{
+		ChatKind:  "private",
+		ChatID:    streamChat,
+		ThreadID:  7,
+		MessageID: 4242,
+		UserID:    streamChat,
+	}
+	caller := b.callbackCaller(q)
+	if caller.MessageID != 4242 {
+		t.Fatalf("MessageID = %d, want 4242", caller.MessageID)
+	}
+	if caller.ChatID != streamChat || caller.ThreadID != 7 || !caller.IsOwner {
+		t.Fatalf("unexpected caller: %+v", caller)
+	}
+	if caller.Source != control.SourceTelegram {
+		t.Fatalf("source = %v", caller.Source)
+	}
+}

@@ -69,10 +69,10 @@ Checked in this order, before anything is created:
 
 Step 3 and step 4 are incompatible in the code as it stands: `callbackCaller`
 builds a caller with no `MessageID`, so it is zero on every button dispatch
-(`internal/telegram/cmdbuttons.go:180-191`). The owner's decision is to
-populate it, which lands as the prerequisite slice E-pre (§11) because the same
-gap currently rejects `/restart force`, `/restart status` and `/restart cancel`
-on a deployed build.
+(`internal/telegram/cmdbuttons.go:180-191`). The owner's decision was to
+populate it, and that landed as slice E-pre (§11) ahead of this feature, because
+the same gap was rejecting `/restart force`, `/restart status` and
+`/restart cancel` on a deployed build.
 
 ### 3.2 Input that must never reach the session
 
@@ -156,6 +156,19 @@ this is modal by necessity, and the owner chose it knowing that ordinary
 conversation pauses for the duration. The marker (§7) is what makes the mode
 visible, and the explicit close is what ends it. The ordinary topic's history,
 session row and provider choice are untouched throughout.
+
+Routing moves the owner's *input*; it does not move anything the host delivers
+on its own. Scheduled task results, proactive digests and outbox sends continue
+to arrive in the same private chat while a session is live, because they are
+produced by their own folders and their own containers and never pass through
+the elevated runtime. They are unaffected in substance and uninfluenced by the
+session, but they land visually in the middle of a host-authority conversation,
+and the reply prefix does not cover them. Two consequences for the
+implementation: the marker's prefix is applied to elevated replies only, so an
+unprefixed message is a reliable sign that something else produced it; and
+nothing in those delivery paths may be re-routed to the reserved folder in an
+attempt to tidy the transcript, because that would hand their output to the
+elevated conversation.
 
 ### 4.4 Commands
 
@@ -425,6 +438,7 @@ appears in any committed file (D012).
 | Container dies on its own | The next turn reports it and closes the session; no silent recreate |
 | Provider login missing in the session | Ordinary provider error inside the session; no fallback to the topic's credential home |
 | Routing state says live but no container exists | Treated as a dead session and closed, so the owner is never silently talking to nothing |
+| A scheduled or proactive delivery lands while a session is live | Delivered unchanged, without the elevated prefix, and never re-routed to the reserved folder (§4.3) |
 
 ## 10. Out of scope
 
@@ -437,12 +451,13 @@ separately authorised and which the owner has deferred until CP-037 is complete.
 
 ## 11. Prerequisite
 
-**E-pre, its own small PR before any of this.** Populate `MessageID` in
-`callbackCaller` (`internal/telegram/cmdbuttons.go:180-191`) and test it. Today
-every button dispatch arrives with `MessageID == 0`, so `/restart force`'s
-confirmation, `/restart status` and `/restart cancel` are all rejected by
-`internal/control/restart.go:28` on the deployed build. The elevated
-confirmation needs the same field, and fixing it once serves both.
+**E-pre is done**, ahead of the rest. `callbackCaller`
+(`internal/telegram/cmdbuttons.go`) now populates `MessageID`, so a button
+dispatch carries the evidence the replay fence asks for. Before it, every press
+arrived with zero and `internal/control/restart.go:28` rejected `/restart force`'s
+confirmation, `/restart status` and `/restart cancel` on the deployed build.
+`/stop` gained the same fence in the same change; the inline Stop control is its
+own `"st"` callback and does not pass through the command handler.
 
 ## 12. Acceptance
 

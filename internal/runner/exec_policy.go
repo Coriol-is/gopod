@@ -43,7 +43,11 @@ func (r ExecRole) Valid() bool {
 }
 
 // policyRevision is bumped whenever a role definition changes, so containers
-// created under an older definition are recycled rather than trusted.
+// created under an older definition are never trusted. Note what that means in
+// practice: decideContainer DENIES a container whose recorded version differs
+// (deny("labels_stale_version")) rather than recycling it, so execution for
+// that folder is refused until the container is gone. Bumping this is a
+// deployment-ordering decision, not a free invalidation.
 const policyRevision = 1
 
 // fingerprintPrefix versions the fingerprint encoding.

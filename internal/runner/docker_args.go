@@ -166,7 +166,7 @@ func BuildContainerArgs(cfg SpawnConfig) (*container.Config, *container.HostConf
 
 		// Drop every Linux capability. If a future skill legitimately
 		// needs one back, that's an ADR not a code patch (see
-		// ISOLATION.md §6.4).
+		// ISOLATION.md §6.1).
 		CapDrop: strslice.StrSlice{"ALL"},
 
 		// no-new-privileges blocks setuid/setgid escalation even if

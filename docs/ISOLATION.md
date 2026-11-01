@@ -123,6 +123,31 @@ Message acceptance is not proof of Telegram delivery; CP-002 remains separate.
 
 ## 6. Resource and execution limits
 
+### 6.1 Hardened agent container profile
+
+The flags every agent container is created with. `BuildContainerArgs`
+(`internal/runner/docker_args.go`) is the single place that sets them, and the
+reuse guard pins them by digest under the managed runtime
+(`internal/runner/exec_guard.go`). This subsection exists because the code
+comments referenced it for months while it did not.
+
+| Setting | Value |
+| --- | --- |
+| User | the host operator's uid:gid, passed at spawn; uid 0 is refused by `SpawnConfig.Validate` |
+| Root filesystem | read-only; every writable path is a bind mount or one of the tmpfs mounts below |
+| Capabilities | `CapDrop: ALL`. Handing one back is an ADR, not a code patch |
+| Privilege escalation | `no-new-privileges:true`; seccomp is left unset so the daemon applies its default profile |
+| Restart policy | `no`, so a crash stays visible instead of being hidden by Docker |
+| Resources | memory, CPU and pids caps, all required to be positive |
+| Tmpfs | `/tmp` 512 MiB, `/home/node` 256 MiB, `/run` 64 MiB, each `mode=1777` so a non-root uid override can write |
+| Name | `gopod-<chat folder>`, deterministic, from `runner.ContainerName` |
+| Labels | `gopod.chat`, `gopod.version`, plus the four `gopod.policy.*` labels merged at create time |
+| Hosts | `host.docker.internal:host-gateway`, required for the agent to reach the host-side Memory API |
+
+Mounts are not chosen here: `BuildMounts` (`internal/runner/mounts.go`) builds
+the per-tier list and §3 is its contract.
+
+
 Untrusted tools have no network or host binds, read-only root, dropped capabilities,
 non-root uid, bounded tmpfs/inodes, a 20-second command deadline and 32 KiB output.
 Snapshots allow at most 8 MiB total and 4 MiB per regular file; traversal, links,

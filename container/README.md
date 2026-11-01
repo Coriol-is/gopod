@@ -11,12 +11,22 @@ of the Dockerfile builds the `frf` CLI from the `skills/frf-tui/`
 git submodule. Run from repo root:
 
 ```sh
-# Claude (default)
-docker build -t gopod-agent:latest -f container/Dockerfile .
-
-# Codex variant (optional)
-docker build -t gopod-agent-codex:latest -f container/Dockerfile.codex .
+sh container/build-profiles.sh
 ```
+
+That builds every maintained profile: `container/personal/Dockerfile` and
+`Dockerfile.codex` for the private chat, and the three `container/group/`
+images. CI builds from the same paths.
+
+**`container/Dockerfile` and `container/Dockerfile.codex` are not build
+inputs.** They are the retained pre-split personal image, and the only thing
+that reads them is `TestGroupImageMatrixPreservesPersonalAndExcludesPersonalTools`
+(`internal/runner/provider_group_test.go`), which diffs the maintained profiles
+against them to prove the CP-020 split preserved the personal image except for
+the npm supply-chain hardening (`--ignore-scripts`) and the native-binary
+verification. Because that test compares file contents, these two files must not
+be edited at all, not even to add a comment, and building them would produce an
+image without that hardening.
 
 If the submodule was not pulled at clone time, run
 `git submodule update --init --recursive` first — otherwise stage 1

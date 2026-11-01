@@ -14,7 +14,7 @@ func TestStopCommandPermissionAndScope(t *testing.T) {
 		threads = append(threads, thread)
 		return len(chats) == 1
 	})
-	cmd := Command{Name: "stop", Caller: Caller{Source: SourceTelegram, ChatKind: "private", ChatID: 123, ThreadID: 7}}
+	cmd := Command{Name: "stop", Caller: Caller{Source: SourceTelegram, ChatKind: "private", ChatID: 123, ThreadID: 7, MessageID: 42}}
 	if _, err := r.Dispatch(t.Context(), cmd); !errors.Is(err, ErrNotAuthorized) {
 		t.Fatal(err)
 	}
@@ -31,6 +31,14 @@ func TestStopCommandPermissionAndScope(t *testing.T) {
 		t.Fatal(res)
 	}
 	cmd.Caller.Source = SourceTelegram
+	// A caller without a real private message is refused, the same fence
+	// /restart applies. The inline Stop control is its own callback and does
+	// not reach this handler.
+	cmd.Caller.MessageID = 0
+	if res, _ := r.Dispatch(t.Context(), cmd); res.Code != 1 {
+		t.Fatal(res)
+	}
+	cmd.Caller.MessageID = 42
 	cmd.Args = []string{"all"}
 	if res, _ := r.Dispatch(t.Context(), cmd); res.Code != 1 {
 		t.Fatal(res)

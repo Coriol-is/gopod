@@ -40,12 +40,46 @@ only under `GOPOD_MANAGED_TASKS`, off by default. There is no session entity to 
 so the runtime binds to one reserved `elevated` chat folder. Boot removal belongs between
 `restart.recycle` and `CleanupLeftovers`, or a survivor blocks all execution.
 
-**Noted, deliberately not done.** Code comments cite `docs/ISOLATION.md §6.1`
-(`internal/runner/docker_args.go:36`, `:41`, `:102`, `:202`) for a section that no longer
-exists; the comment at `internal/runner/exec_policy.go:45-46` says "recycled" where the
-code denies; the top-level `container/Dockerfile` is stale and built by nothing; and
-`/stop` omits the `MessageID` check that `/restart` applies. All are recorded in the
-CP-038 plan's `E5`, none were touched.
+**Gaps closed in a follow-up.** `E-pre` and the drift the review found are implemented;
+see the next section. The remaining CP-038 slices (`E0`-`E6`) are untouched and still need
+owner acceptance of the CP.
+
+## Gap closure after the CP-038 design, 2026-11-01
+
+Follow-up to the design merge. Implements CP-038 slice `E-pre` and clears the drift
+the review surfaced. No CP-038 feature slice is started and no flag exists.
+
+- **Button presses now carry `MessageID`** (`internal/telegram/cmdbuttons.go`). This
+  repairs `/restart force`'s confirmation, `/restart status` and `/restart cancel`, which
+  `internal/control/restart.go:28` rejected on the deployed build because every press
+  arrived with zero. `/root` will need the same field.
+- **`/stop` gained the same message fence** it was missing next to `/restart`. The inline
+  Stop control is its own `"st"` callback, not a Router command button, so it does not
+  pass through the command handler and is unaffected.
+- **`docs/ISOLATION.md` §6.1 now exists** and documents the hardened container profile
+  the code actually builds. The comments in `internal/runner/docker_args.go` cited that
+  subsection while it did not exist; the `§6.4` reference is folded into it.
+- **`internal/runner/exec_policy.go`'s `policyRevision` comment** said containers created
+  under an older definition are "recycled". The guard denies them, which blocks execution
+  for the folder until the container is gone; the comment now says so.
+- **The top-level `container/Dockerfile` and `container/Dockerfile.codex` are left
+  exactly as they are.** Removing them was the first attempt and it broke
+  `TestGroupImageMatrixPreservesPersonalAndExcludesPersonalTools`: the test reads them as
+  the retained pre-split baseline it diffs the maintained profiles against. So nothing
+  builds them but something does read them. Each now carries a header saying it is that
+  baseline. A header comment broke it too, because the test compares file contents, so
+  the files are left byte-for-byte untouched and explained in `container/README.md`
+  instead. The real defect was the build instructions: both `README.md` and
+  `container/README.md` told readers to build from these files even though they lack the
+  `--ignore-scripts` npm install and the native-binary verification. Both now run
+  `container/build-profiles.sh`, and comments in `version.go`,
+  `docker_integration_test.go` plus a ROADMAP row point at the maintained paths.
+- **The spec's routing gap is closed.** Modal routing moves the owner's input only;
+  scheduled results, proactive digests and outbox sends keep arriving in the same private
+  chat, unprefixed, and must never be re-routed to the reserved folder.
+
+Still open and not closable here: M9 credential derivation stays the owner's decision, so
+a first elevated session would require an interactive provider sign-in.
 
 ## Previous — CP-037 P0 merged, 2026-11-01
 
