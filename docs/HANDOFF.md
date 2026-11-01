@@ -1,23 +1,50 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-01 (P0 implementation authorized; production unchanged)
+**Last updated:** 2026-11-01 (P0 accepted in PR #126; production unchanged)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
 [ACCEPTANCE](ACCEPTANCE.md) for pending real-client verification.
 
-## Resume here — Claude acceptance handoff, 2026-11-01
+## Resume here — CP-037 P0 accepted, 2026-11-01
 
-**Latest owner instruction:** let the agents finish; perform combined acceptance in
-Claude. Do not continue new implementation phases, open/merge PRs or deploy in this
-Codex turn. **Deployment only after the entire feature is complete**, not after P0.
-Remote/main baseline is still `cee5cac`; Pi remains `8a3ce75`.
+[PR #126](https://github.com/Coriol-is/gopod/pull/126) (`feat/p0-integration`,
+worktree `gopod-p0-integration`) carries the P0 lifecycle slice: busy/unknown
+runtimes protected from idle eviction, `/restart` drain plus confirmed
+`/restart force`, startup quarantine that keeps the Telegram control plane up,
+durable Stop-control recovery, the opt-in Pi 4 resource profile and the CI
+Docker lifecycle fixture. Accepted behavior is [D054](DECISIONS.md); the command
+is in [CONTROL.md §5.3](CONTROL.md) and the runtime rules in [ISOLATION.md §7](ISOLATION.md).
 
-Start in `/Users/spaceinvaderz/_code/coriolis/gopod-p0-integration`, branch
-`feat/p0-integration`. It combines the specs, worker commits, CI Docker fixture and
-Pi resource profile. This is a local integration branch, **not accepted or merged**.
-Read [P0 acceptance report](reviews/2026-11-01-p0-acceptance.md) for exact checks,
-known limitations and the next commands. All worktrees/branches are retained.
+Claude acceptance on the final head: build/vet, full suite, race suites for
+runner/queue/telegram/store/control/scheduler/cmd, 7/7 Docker fixtures and the
+Compose override check passed. An independent reviewer agent returned 5 High,
+6 Medium, 3 Low; `e428811` fixes the Highs (force now settles quarantined
+leftovers of retired folders, quarantine inventory runs even when removal is
+skipped, ExecStream failures verify quiescence instead of marking unknown,
+restart-target scope errors are no longer swallowed) and the accepted Mediums/Lows.
+Two Mediums were kept by design (Stop stops the runtime container; a batch that
+fails during a drain is not retried). Full table and remaining limits:
+[P0 acceptance report](reviews/2026-11-01-p0-acceptance.md).
+
+**Not deployed.** Pi remains `8a3ce75`; the owner deferred any rollout until the
+whole CP-037 feature is complete. Merge state of #126 is recorded in the PR and
+`git log main`; if this section still says "accepted" but `main` lacks `e428811`,
+check the PR before assuming it merged.
+
+**Next:** P1 durable identity per the [slice plan](superpowers/plans/2026-11-01-parallel-sessions.md)
+once the owner opens it; real Telegram acceptance of `/restart`, `/restart force`
+and Stop-control repair (C01–C14, C18–C29) stays open and is not inferred from CI.
+Known P0 limits: no C9 Continue/Start UI, no stream reattachment, no automatic
+replay of started work, uncertain control messages re-edited every 30 s, Pi
+memory values are admission inputs only (no memory cgroup).
+
+### Integration provenance
+
+Worker source commits: lifecycle `37f3efd`, Telegram `05f39fa`, restart `c17f99d`.
+Integration counterparts: `ee5d582`, `00b014a`, `b5e9961`; root resources `6f32bea`
+and startup wiring `e980ad9`. Restart follow-up `cc29c97` is also cherry-picked: quarantine keeps Telegram
+available; startup UI repair is bounded to 10 seconds. All worktrees/branches are retained.
 
 Worker source commits: lifecycle `37f3efd`, Telegram `05f39fa`, restart `c17f99d`.
 Integration counterparts: `ee5d582`, `00b014a`, `b5e9961`; root resources `6f32bea`
