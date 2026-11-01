@@ -16,13 +16,15 @@ right now" view, see [docs/HANDOFF.md](docs/HANDOFF.md).
 
 ---
 
-## Parallel sessions — CP-037 (P0 accepted, P1+ not started)
+## Parallel sessions — CP-037 (P0 merged, P1 in review, P2+ not started)
 
 🟦 P0 lifecycle safety merged as `5c36b81` via [PR #126](https://github.com/Coriol-is/gopod/pull/126)
 ([D054](docs/DECISIONS.md), [acceptance](docs/reviews/2026-11-01-p0-acceptance.md)):
 no busy-runtime eviction, `/restart` drain, confirmed `/restart force`, startup
 quarantine with a live control plane, durable Stop-control repair, opt-in Pi 4
 profile. Not deployed; real Telegram acceptance open. P1–P7 remain unstarted.
+
+🟦 P1 durable session identity in review on `feat/p1-durable-identity` ([D056](docs/DECISIONS.md)): additive session/binding/claim tables, atomic `/sessions adopt` at next restart, default stays legacy. Not deployed.
 
 Owner reopened design on 2026-11-01: private chats split by thread plus background
 tasks; persistent topic folders and explicitly attached shared projects.
@@ -32,6 +34,23 @@ Lifecycle safety P0 precedes parallel execution; ordinary restart drains, explic
 in contract D. These remain specifications only.
 Owner authorized P0 code, parallel worktrees, acceptance and automatic merge.
 T5/T5b parallel-runtime implementation remains paused; deployment and T9 reboot are not authorized.
+
+## Elevated host session — CP-038 (design only)
+
+⬜ Design merged as `2ca967c` via [PR #128](https://github.com/Coriol-is/gopod/pull/128).
+Nothing implemented, no feature flag, not deployed. [CP-038](docs/proposals/CP-038-elevated-host-session.md)
+stays `proposed` and needs owner acceptance before any code.
+
+An explicitly started owner-private conversation with host authority on the Pi:
+`Privileged: true` plus host PID/network/IPC, the Docker socket and the host root at
+`/host`, its own container profile and policy role, bounded by explicit close rather than
+a timer. [Spec](docs/superpowers/specs/2026-11-01-elevated-host-session.md) ·
+[Plan](docs/superpowers/plans/2026-11-01-elevated-host-session.md).
+
+Slice `E-pre` is done and was independent of acceptance: button presses carried no
+`MessageID`, so `/restart force|status|cancel` were refused on `main` (`5c36b81`, not
+deployed; the Pi's `8a3ce75` registers no argument forms). The hardened chat and group
+profiles are not touched by any slice.
 
 ## Private-chat Stop — CP-036
 
@@ -236,7 +255,7 @@ See [docs/GATEWAY.md](docs/GATEWAY.md) for full design.
 | G2 | `internal/gateway/ca` — Certificate authority: self-signed root CA generation + per-host leaf certs (ECDSA P-256), cert cache (24h TTL), root CA persisted to `${DATA_DIR}/gateway/` | ⬜ | `crypto/x509` + `crypto/ecdsa`, no CGO. CA cert mounted into containers for trust |
 | G3 | `internal/gateway` scaffold — HTTP CONNECT proxy: TCP listener, Proxy-Authorization Basic extraction, agent_token lookup, plain TCP tunnel for unknown hosts. No MITM yet | ⬜ | Depends on G1 for token→chat resolution. Test: proxy curl through it, verify tunnel works |
 | G4 | MITM TLS interception + header injection — terminate agent TLS with leaf cert from G2, parse HTTP request, apply injection rules (SetHeader/ReplaceHeader by host+path pattern), forward to upstream over fresh TLS, stream response back | ⬜ | Depends on G2+G3. Core of the gateway. Test: inject a fake header, verify upstream receives it |
-| G5 | Container wiring — `agent_token` column on `registered_chats`, `ProxyEnvVars()` on AgentProvider, CA cert bind mount, `update-ca-certificates` / `NODE_EXTRA_CA_CERTS` in Dockerfile, remove secret env vars when gateway active | ⬜ | Depends on G4. Modifies `docker_args.go`, `mounts.go`, `container/Dockerfile` |
+| G5 | Container wiring — `agent_token` column on `registered_chats`, `ProxyEnvVars()` on AgentProvider, CA cert bind mount, `update-ca-certificates` / `NODE_EXTRA_CA_CERTS` in Dockerfile, remove secret env vars when gateway active | ⬜ | Depends on G4. Modifies `docker_args.go`, `mounts.go`, `container/personal/Dockerfile` |
 | G6 | `internal/gateway/policy` — scoped secret resolution: per-chat overrides shadow shared secrets, resolution cache (60s TTL), rate limiting (optional token bucket per agent+host), block rules | ⬜ | Depends on G4. Test: per-chat override shadows shared, unknown host tunnels |
 | G7 | Control plane — `/secrets list\|add\|remove\|rotate-token\|test\|status` commands via Router, all OwnerOnly. `/secrets add` prompts for value interactively (like /login flow) | ⬜ | Depends on G5+G6. Telegram-mediated secret management |
 | G8 | SQLite fallback backends — Vault Transit encryption (Vault provides encrypt/decrypt, SQLite stores ciphertext), local AES-256-GCM fallback (dev only, key from `GOPOD_SECRET_KEY`). `secrets` table in schema | ⬜ | Depends on G6. For deployments where full Vault KV is overkill |

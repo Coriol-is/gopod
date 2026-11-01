@@ -1,12 +1,33 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-01 (`/silent` merged as `6d11765`; production unchanged)
+**Last updated:** 2026-11-01 (`/silent` `6d11765`, CP-038 design `2ca967c` and gap closure `9ccfba4` merged; CP-037 P1 durable identity in PR #133; production unchanged)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
 [ACCEPTANCE](ACCEPTANCE.md) for pending real-client verification.
 
-## Resume here — `/silent` progress-only streaming merged, 2026-11-01
+## Resume here — CP-037 P1 durable identity in review, 2026-11-01
+
+P1 adds durable session identity ([D056](DECISIONS.md)): additive store tables
+for execution sessions, conversation bindings, native contexts, attempt
+bindings and per-session execution claims, a runner adapter that resolves the
+native context through the binding, queue binding that refuses a stale epoch,
+and an owner-only `/sessions [status|adopt|cancel]` command. Adoption of legacy
+`sessions` rows is one transaction at the next controller startup, deferred
+while unfinished turns exist. It lives on branch `feat/p1-durable-identity` in
+worktree `gopod-p1-identity`, [PR #133](https://github.com/Coriol-is/gopod/pull/133). The default mapping mode stays
+`legacy`, so nothing changes on the Pi until `/sessions adopt` plus a restart;
+not deployed. Rollback to pre-adoption code after durable writes needs explicit
+reconciliation (the old `sessions` table is frozen at adoption). Open: real
+native resume after adoption on the Pi ([ACCEPTANCE](ACCEPTANCE.md)).
+The final whole-branch review's C1 (continuity through the durable adapter),
+C2 (stale claims released at startup, terminal/unknown takeover), I1 (adoption
+skips unreachable rows, `/sessions cancel`) and I2 (`execution_unknown`
+recorded from the runner's proof) were fixed before the PR.
+
+Next: P2 scoped controls (`/clear`, `/new` epochs) per the slice plan.
+
+## Previous — `/silent` progress-only streaming merged, 2026-11-01
 
 [PR #130](https://github.com/Coriol-is/gopod/pull/130) (`feat/silent-mode`,
 worktree `gopod-silent`, branch retained locally) was admin squash-merged to
@@ -31,6 +52,86 @@ the acceptance.
 
 Noted, out of scope: `gofmt -l` lists `internal/runner/auth.go`, `compact.go`,
 `provider_claude.go` on `main` (pre-existing, CI has no gofmt gate).
+
+## Also current — CP-038 elevated host session designed, 2026-11-01
+
+[CP-038](proposals/CP-038-elevated-host-session.md) is **design only** and merged to
+`main` as **`2ca967c`** ([PR #128](https://github.com/Coriol-is/gopod/pull/128), green
+test/isolation-spike/Sonar, worktree removed, branch deleted). Status stays `proposed`:
+no code, no feature flag, nothing deployed. The owner asked to plan the feature, not
+build it, so **implementation needs their acceptance of the CP first**.
+
+What it designs: an explicitly started agent conversation with host authority on the
+Pi. `Privileged: true` plus host PID/network/IPC, the Docker socket and the host root
+at `/host`, started by `/root` with a provider picker, owner-private only, bounded by
+explicit close rather than a timer. Contract in the
+[spec](superpowers/specs/2026-11-01-elevated-host-session.md), slices `E-pre`-`E6` in the
+[plan](superpowers/plans/2026-11-01-elevated-host-session.md). Container profile is a
+separate builder and a separate policy role; the hardened chat profile is not
+parameterised and not relaxed.
+
+**The button defect review found is fixed**, not pending. `callbackCaller` populated no
+`MessageID` and `internal/control/restart.go:28` refuses a caller without one, so
+`/restart force`'s confirmation, `/restart status` and `/restart cancel` were all
+refused. Scope it precisely: those argument forms and their buttons arrived with
+`RegisterRestartLifecycle` in `5c36b81`, which is **not deployed**. The Pi runs
+`8a3ce75`, which wires `RegisterRestartCommand` with no arguments and no buttons, so
+production was never affected. Slice `E-pre` is the fix; see the gap-closure section.
+
+**Corrections already made — do not re-derive them.** Spec section 13 records what the
+first draft got wrong about the source. A stale policy version *denies*
+(`internal/runner/exec_guard.go:211-213`), it does not recycle, and no `policyRevision`
+bump is needed because `Fingerprint` hashes only the policy's own role and scope. The
+guard does need new logic: a role mismatch currently reaches `actRecreate`, and
+`ContainerFacts` never inspects `PidMode`/`NetworkMode`/`IpcMode`. The policy digest runs
+only under `GOPOD_MANAGED_TASKS`, off by default. There is no session entity to extend,
+so the runtime binds to one reserved `elevated` chat folder. Boot removal belongs between
+`restart.recycle` and `CleanupLeftovers`, or a survivor blocks all execution.
+
+**Gaps closed in a follow-up.** `E-pre` and the drift the review found are implemented;
+see the next section. The remaining CP-038 slices (`E0`-`E6`) are untouched and still need
+owner acceptance of the CP.
+
+## Gap closure after the CP-038 design, 2026-11-01
+
+Follow-up to the design merge. Implements CP-038 slice `E-pre` and clears the drift
+the review surfaced. No CP-038 feature slice is started and no flag exists.
+
+- **Button presses now carry `MessageID`** (`internal/telegram/cmdbuttons.go`). This
+  repairs `/restart force`'s confirmation, `/restart status` and `/restart cancel`, which
+  `internal/control/restart.go:28` refused because every press arrived with zero. Those
+  argument forms shipped in `5c36b81` and are not deployed: the Pi's `8a3ce75` wires
+  `RegisterRestartCommand`, no arguments and no buttons, so production was never
+  affected. A future `/root` needs the same field. Covered by two tests: a unit test on
+  `callbackCaller` and an end-to-end one that types `/restart`, presses Status, then
+  confirms `/restart force` through the Router and asserts each press arrived with a
+  message id.
+- **`/stop` gained the same message fence** it was missing next to `/restart`. The inline
+  Stop control is its own `"st"` callback, not a Router command button, so it does not
+  pass through the command handler and is unaffected.
+- **`docs/ISOLATION.md` §6.1 now exists** and documents the hardened container profile
+  the code actually builds. The comments in `internal/runner/docker_args.go` cited that
+  subsection while it did not exist; the `§6.4` reference is folded into it.
+- **`internal/runner/exec_policy.go`'s `policyRevision` comment** said containers created
+  under an older definition are "recycled". The guard denies them, which blocks execution
+  for the folder until the container is gone; the comment now says so.
+- **The top-level `container/Dockerfile` and `container/Dockerfile.codex` are left
+  exactly as they are.** Removing them was the first attempt and it broke
+  `TestGroupImageMatrixPreservesPersonalAndExcludesPersonalTools`: the test reads them as
+  the retained pre-split baseline it diffs the maintained profiles against. So nothing
+  builds them but something does read them. Each now carries a header saying it is that
+  baseline. The test compares file contents, so even an explanatory header broke it; the
+  files are left byte-for-byte untouched and explained in `container/README.md` instead. The real defect was the build instructions: both `README.md` and
+  `container/README.md` told readers to build from these files even though they lack the
+  `--ignore-scripts` npm install and the native-binary verification. Both now run
+  `container/build-profiles.sh`, and comments in `version.go`,
+  `docker_integration_test.go` plus a ROADMAP row point at the maintained paths.
+- **The spec's routing gap is closed.** Modal routing moves the owner's input only;
+  scheduled results, proactive digests and outbox sends keep arriving in the same private
+  chat, unprefixed, and must never be re-routed to the reserved folder.
+
+Still open and not closable here: M9 credential derivation stays the owner's decision, so
+a first elevated session would require an interactive provider sign-in.
 
 ## Previous state — CP-037 P0 merged, 2026-11-01
 
@@ -251,6 +352,9 @@ A08/A10 real-client checks remain open.
 4. Continue the [approved roadmap](../ROADMAP.md): CP-033 remaining slices, CP-003 agent image
    instructions/foreground cutover and backup gates; deferred task adapter remains deferred.
    CP-034 and CP-028 require their design/owner gates before implementation.
+5. ~~Fix the button `MessageID` fence~~ done in `E-pre`: `/restart force|status|cancel`
+   work again on `main` (`5c36b81`, not deployed; the Pi's `8a3ce75` has no argument
+   forms). Everything else in CP-038 waits for the owner to accept the CP.
 
 ## Decisions already taken — do not re-ask
 
@@ -262,6 +366,13 @@ A08/A10 real-client checks remain open.
 - CP-034: official-source skill/plugin installation from private chat only, auto-update on, never groups.
 - CP-028 direction: Go/gotd, read and write, private chat only; its seven spec questions remain open in PR #108.
 - No automatic paid fallback. T9 memory-cgroup/reboot and parallel implementation remain paused; CP-037 design is reopened.
+- CP-038 elevated session, decided 2026-11-01: `Privileged: true` plus host PID/network/IPC (not a
+  narrower capability set); its own command and conversation (not a mode of the current topic);
+  explicit close as the only bound, so no TTL or idle timer; confirmation, exec journal, chat marker
+  and a separate `exec_guard` profile all required; modal routing while a session is live; the journal
+  records only host-performed `docker exec` rows and makes no claim to record the agent's own host
+  commands. The owner accepts that the container is host root and that content read inside it acts
+  with that authority.
 
 ## Open gates and boundaries
 
