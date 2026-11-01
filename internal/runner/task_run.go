@@ -223,9 +223,10 @@ func (r *Runner) RunTaskStream(ctx context.Context, req TaskRunRequest) (*AgentS
 	if err != nil {
 		cancel()
 		finishOperation()
-		r.markExecutionUnknown(folder, id)
-		// The marker is committed and exec creation may have reached the daemon:
-		// no exit evidence, so the ledger holds the attempt as unknown.
+		// The marker is committed and exec creation may have reached the daemon.
+		// The deferred gate release verifies quiescence and marks the runtime
+		// unknown only when a process is present or inspection fails; the
+		// ledger still holds the attempt as unknown until exit evidence exists.
 		return nil, fmt.Errorf("runner: task exec stream: %w", err)
 	}
 	started, gateHeld = true, false

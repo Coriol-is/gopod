@@ -14,6 +14,10 @@ import (
 // ErrDraining is a pre-dispatch refusal. Callers must retain accepted input.
 var ErrDraining = errors.New("runner: restart drain in progress")
 
+// ErrFolderBusy: a slot-free caller (login, public Ensure) found an agent or
+// background operation holding the folder; nothing was recycled or started.
+var ErrFolderBusy = errors.New("runner: folder has an active agent")
+
 // BeginDrain closes admission without cancelling any operation already admitted.
 func (r *Runner) BeginDrain() {
 	r.agentSlotsMu.Lock()
@@ -76,6 +80,14 @@ func (r *Runner) WaitDrained(ctx context.Context) error {
 // admission. It never converts an unproven cleanup into successful termination.
 func (r *Runner) ForceDrain(ctx context.Context) error {
 	r.CancelActive()
+	if r.d != nil {
+		// A quarantined leftover for a retired or unregistered folder has no
+		// scope the controller could validate; force is the only way to settle
+		// it, and the global quarantine check would otherwise block forever.
+		if err := r.d.stopQuarantined(ctx); err != nil {
+			return fmt.Errorf("%w: %v", ErrExecutionUnproven, err)
+		}
+	}
 	return r.WaitDrained(ctx)
 }
 
@@ -210,12 +222,16 @@ func (r *Runner) reconcileExited(ctx context.Context) {
 	r.agentSlotsMu.Unlock()
 	for folder, id := range copy {
 		if id == "unresolved" {
+			// An inspection failure left no process evidence either way. The
+			// marker clears once the runtime is gone or provably idle.
 			actual, err := r.d.inspectByName(ctx, ContainerName(folder))
 			if err != nil {
 				continue
 			}
 			if actual != "" && !r.d.containerDead(ctx, actual) {
-				continue
+				if idle, err := r.d.quiescent(ctx, actual); err != nil || !idle {
+					continue
+				}
 			}
 		} else if !r.d.containerDead(ctx, id) {
 			continue
@@ -303,12 +319,43 @@ func (r *Runner) verifyQuiescent(ctx context.Context, folder string) error {
 	if id == "" || r.d.containerDead(ctx, id) {
 		return nil
 	}
-	top, err := r.d.cli.ContainerTop(ctx, id, []string{"-eo", "pid"})
-	if err != nil || len(top.Processes) != 1 {
+	if idle, err := r.d.quiescent(ctx, id); err != nil || !idle {
 		r.markExecutionUnknown(folder, id)
 		return ErrExecutionUnproven
 	}
 	return nil
+}
+
+// quiescent reports whether only the runtime's PID 1 (sleep) is alive.
+func (d *Docker) quiescent(ctx context.Context, id string) (bool, error) {
+	top, err := d.cli.ContainerTop(ctx, id, []string{"-eo", "pid"})
+	if err != nil {
+		return false, err
+	}
+	return len(top.Processes) == 1, nil
+}
+
+// stopQuarantined terminates every quarantined leftover. Only a forced restart
+// calls it: the inventory came from gopod-labelled containers, and the folder
+// may be retired or unregistered, so no scope snapshot can authorize the stop.
+// Death evidence is still checked by quarantined() before admission resumes.
+func (d *Docker) stopQuarantined(ctx context.Context) error {
+	d.quarantineMu.Lock()
+	ids := make(map[string]string, len(d.quarantine))
+	for folder, id := range d.quarantine {
+		ids[folder] = id
+	}
+	d.quarantineMu.Unlock()
+	var first error
+	for folder, id := range ids {
+		if d.containerDead(ctx, id) {
+			continue
+		}
+		if err := d.Stop(ctx, id, DefaultStopGrace); err != nil && first == nil {
+			first = fmt.Errorf("stop quarantined %s: %w", folder, err)
+		}
+	}
+	return first
 }
 
 // releaseGateWhenSettled retains global resource accounting for an exec whose
@@ -318,10 +365,14 @@ func (r *Runner) releaseGateWhenSettled(ctx context.Context, folder string, rele
 	probe, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 	if err := r.verifyQuiescent(probe, folder); err != nil {
-		// Inspection failure without an ID is still unresolved capacity.
+		// Inspection failure without an ID is still unresolved capacity for
+		// this folder, whatever other namespaces are already holding.
 		r.agentSlotsMu.Lock()
-		if len(r.unknownExecutions) == 0 {
-			r.unknownExecutions = map[string]string{folder: "unresolved"}
+		if r.unknownExecutions == nil {
+			r.unknownExecutions = make(map[string]string)
+		}
+		if r.unknownExecutions[folder] == "" {
+			r.unknownExecutions[folder] = "unresolved"
 		}
 		r.agentSlotsMu.Unlock()
 	}

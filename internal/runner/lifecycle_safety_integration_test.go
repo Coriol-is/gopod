@@ -83,6 +83,43 @@ func TestIntegrationLifecycleStartupQuarantine(t *testing.T) {
 	release()
 }
 
+// A quarantined leftover whose folder is retired or unregistered has no scope a
+// controller could validate. A forced restart must still settle it; otherwise
+// the global quarantine check blocks every chat until a host operator acts.
+func TestIntegrationLifecycleForceStopsQuarantinedLeftover(t *testing.T) {
+	d := mkDocker(t)
+	name := "gopod-inttest-lifecycle-orphan"
+	id := startShContainer(t, d, name)
+	if err := d.QuarantineLeftovers(t.Context()); !errors.Is(err, ErrExecutionUnproven) {
+		t.Fatal(err)
+	}
+	if d.containerDead(t.Context(), id) {
+		t.Fatal("quarantine inventory stopped the leftover")
+	}
+	r := integrationStreamRunner(d)
+	if _, err := r.acquireAgentSlot(t.Context(), "some-other-chat"); !errors.Is(err, ErrExecutionUnproven) {
+		t.Fatalf("global quarantine admission: %v", err)
+	}
+	wait, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer cancel()
+	r.BeginDrain()
+	if err := r.WaitDrained(wait); !errors.Is(err, ErrExecutionUnproven) {
+		t.Fatalf("graceful drain must not settle quarantine: %v", err)
+	}
+	r.CancelDrain()
+	force, stop := context.WithTimeout(t.Context(), 30*time.Second)
+	defer stop()
+	if err := r.ForceDrain(force); err != nil {
+		t.Fatal(err)
+	}
+	if !d.containerDead(force, id) {
+		t.Fatal("force did not stop the quarantined leftover")
+	}
+	if d.hasQuarantine(force) {
+		t.Fatal("quarantine retained after proven death")
+	}
+}
+
 func TestIntegrationLifecycleDetachedProcessBlocksDrain(t *testing.T) {
 	d := mkDocker(t)
 	folder := "inttest-lifecycle-detached"

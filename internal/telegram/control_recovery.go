@@ -133,17 +133,25 @@ func (b *Bot) RepairControls(ctx context.Context) error {
 		if c.RetryAt > time.Now().UnixMilli() {
 			continue
 		}
+		// The lock covers only the live check and the lease claim; the network
+		// edit runs outside it so streaming edits of other turns never stall
+		// behind repair I/O. A turn that resumes meanwhile re-edits its own
+		// placeholder on its next progress, and the revision CAS in
+		// FinishControlRepair keeps a newer checkpoint authoritative.
 		b.controlMu.Lock()
 		b.inflightMu.Lock()
 		live := b.inflight[c.TurnID] != nil
 		b.inflightMu.Unlock()
+		lease := b.store.FinishControlRepair(ctx, c, false, time.Now().Add(30*time.Second).UnixMilli())
+		b.controlMu.Unlock()
+		if lease != nil {
+			b.log.Warn("control repair lease failed", "turn", c.TurnID, "error", lease)
+			continue
+		}
 		if live {
-			_ = b.store.FinishControlRepair(ctx, c, false, time.Now().Add(30*time.Second).UnixMilli())
-			b.controlMu.Unlock()
 			continue
 		}
 		err = b.repairControl(ctx, c)
-		b.controlMu.Unlock()
 		if err != nil {
 			b.log.Warn("control repair pending", "turn", c.TurnID, "error", err)
 		}

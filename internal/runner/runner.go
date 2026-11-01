@@ -224,7 +224,7 @@ func (r *Runner) Ensure(
 		if err != nil {
 			return "", err
 		}
-		return "", ErrRecycleNeedsSlot
+		return "", ErrFolderBusy
 	}
 	defer release()
 	defer r.touch(chatFolder)
@@ -632,7 +632,9 @@ func (r *Runner) startStream(
 	}
 	handle, err := r.ex.ExecStream(ctx, id, wrapWithPidFile(pidFile, cmd), env)
 	if err != nil {
-		r.markExecutionUnknown(chatFolder, id)
+		// Exec creation may or may not have reached the daemon. Releasing the
+		// gate verifies the runtime is quiescent and marks it unknown only when
+		// a process is actually present or inspection fails.
 		release()
 		r.releaseGateWhenSettled(ctx, chatFolder, releaseGate)
 		return nil, fmt.Errorf("runner: exec stream: %w", err)

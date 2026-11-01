@@ -101,7 +101,9 @@ func (b *Bot) editMessageKBLocked(ctx context.Context, chatID int64, msgID int, 
 		return fmt.Errorf("editMessageText: %w", err)
 	}
 	if b.store != nil {
-		_ = b.store.AcknowledgeControlEdit(ctx, chatID, msgID)
+		if err := b.store.AcknowledgeControlEdit(ctx, chatID, msgID); err != nil {
+			b.log.Warn("control edit acknowledge failed", slog.Int64("chat_id", chatID), slog.Int("msg_id", msgID), slog.Any("err", err))
+		}
 	}
 	return nil
 }
@@ -161,7 +163,9 @@ func (b *Bot) editMessageHTMLKBLocked(ctx context.Context, chatID int64, msgID i
 		return perr
 	}
 	if b.store != nil {
-		_ = b.store.AcknowledgeControlEdit(ctx, chatID, msgID)
+		if err := b.store.AcknowledgeControlEdit(ctx, chatID, msgID); err != nil {
+			b.log.Warn("control edit acknowledge failed", slog.Int64("chat_id", chatID), slog.Int("msg_id", msgID), slog.Any("err", err))
+		}
 	}
 	return nil
 }

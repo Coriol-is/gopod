@@ -331,9 +331,12 @@ func (r *controllerRestart) personalTarget(ctx context.Context, c container.Summ
 		return nil, nil
 	}
 	sc, err := r.st.SnapshotScope(ctx, folder)
+	if errors.Is(err, store.ErrStaleScope) {
+		return nil, nil // unrelated controller/retired namespace
+	}
 	if err != nil {
-		return nil, nil
-	} // unrelated controller/retired namespace
+		return nil, errors.New("Restart unavailable: scope lookup failed.")
+	}
 	personal := sc.JID == fmt.Sprintf("tg:%d", r.ownerID)
 	if !personal && c.Labels["gopod.group-native"] == sc.NamespaceID {
 		return nil, errors.New("Restart refused: an active group runtime requires its own recovery procedure.")

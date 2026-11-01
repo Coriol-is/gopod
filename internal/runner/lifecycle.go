@@ -28,6 +28,18 @@ const idleTickInterval = 1 * time.Minute
 // leftover has no live controller claim and is quarantined, regardless of its
 // image/version label. Neither label equality nor dev mode proves safe reuse.
 func (d *Docker) CleanupLeftovers(ctx context.Context, currentVersion string) (int, error) {
+	return d.inventoryLeftovers(ctx, true)
+}
+
+// QuarantineLeftovers records running leftovers without removing anything. It
+// runs when removal is disabled or restart recovery left unproven state, so a
+// still-running old runtime can never be re-attached as if it were idle.
+func (d *Docker) QuarantineLeftovers(ctx context.Context) error {
+	_, err := d.inventoryLeftovers(ctx, false)
+	return err
+}
+
+func (d *Docker) inventoryLeftovers(ctx context.Context, remove bool) (int, error) {
 	list, err := d.ListGopodContainers(ctx)
 	if err != nil {
 		return 0, err
@@ -44,6 +56,9 @@ func (d *Docker) CleanupLeftovers(ctx context.Context, currentVersion string) (i
 			d.quarantineMu.Unlock()
 			blocked = true
 			d.log.Warn("running leftover quarantined; execution must be reconciled", slog.String("chat", c.Labels[LabelChat]), slog.String("version", c.Labels[LabelVersion]))
+			continue
+		}
+		if !remove {
 			continue
 		}
 		if err := d.Remove(ctx, c.ID); err != nil {

@@ -209,6 +209,16 @@ func run() error {
 					runLog.Info("leftover cleanup complete",
 						slog.Int("cleaned", n))
 				}
+			} else {
+				// Removal is skipped, but a running leftover must still be
+				// quarantined: re-attaching it would resume an unproven agent.
+				err := d.QuarantineLeftovers(ctx)
+				if errors.Is(err, runner.ErrExecutionUnproven) {
+					restartRecoveryErr = err
+					runLog.Warn("running leftovers quarantined; execution blocked", slog.Any("err", err))
+				} else if err != nil {
+					return fmt.Errorf("leftover inventory failed; admission refused: %w", err)
+				}
 			}
 
 			// Build the high-level Runner facade. UID/GID come from the

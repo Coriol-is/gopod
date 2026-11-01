@@ -57,10 +57,18 @@ func (b *Bot) turnKeyboard(turnID int64) models.ReplyMarkup {
 	}
 	kb := stopKeyboard(turnID)
 	b.inflightMu.Lock()
-	if t := b.inflight[turnID]; t != nil {
-		kb.InlineKeyboard[0][0].CallbackData, _ = encodeCB("st", strconv.FormatInt(turnID, 10), t.token)
-	}
+	t := b.inflight[turnID]
 	b.inflightMu.Unlock()
+	if t != nil {
+		data, err := encodeCB("st", strconv.FormatInt(turnID, 10), t.token)
+		if err != nil {
+			// A Stop button that cannot carry its attempt token would be a
+			// dead control; show none rather than one that silently fails.
+			b.log.Warn("stop callback encode failed", slog.Int64("turn", turnID), slog.Any("err", err))
+			return nil
+		}
+		kb.InlineKeyboard[0][0].CallbackData = data
+	}
 	return &kb
 }
 

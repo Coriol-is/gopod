@@ -110,3 +110,32 @@ func TestForcePersistFailureDoesNotSignal(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A batch that fails while a drain is pending is finalized at once instead of
+// entering the retry/backoff loop, so WaitDrained returns and the restart can
+// proceed. Nothing is replayed automatically after the restart.
+func TestDrainTimeFailureFinalizesWithoutRetry(t *testing.T) {
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var n atomic.Int32
+	q := New(t.Context(), func(ctx context.Context, items []Item) error {
+		if n.Add(1) == 1 {
+			close(entered)
+			<-release
+		}
+		return errors.New("agent failed")
+	}, 1, nil, nil)
+	defer q.Close()
+	q.Enqueue(t.Context(), Item{Folder: "owner", Text: "first"})
+	<-entered
+	q.BeginDrain()
+	close(release)
+	c, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	if err := q.WaitDrained(c); err != nil {
+		t.Fatalf("drain did not complete after failure: %v", err)
+	}
+	if n.Load() != 1 {
+		t.Fatalf("failed batch retried during drain: %d runs", n.Load())
+	}
+}
