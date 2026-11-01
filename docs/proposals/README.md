@@ -122,3 +122,4 @@ not enabling the feature merely by merging that document.
 | [CP-037](CP-037-parallel-sessions.md) | Parallel private topics and background sessions (P0 lifecycle implementation) | in-progress (P0 and P1 merged, deployed in legacy mapping) | L |
 | [CP-038](CP-038-elevated-host-session.md) | Explicitly started elevated host session for the owner's private chat (design only) | proposed | M |
 | [CP-039](CP-039-full-backup-restore-migration.md) | Automatic full backup/restore (files, sessions, auth) and device migration (draft) | proposed | L |
+| [CP-040](CP-040-agent-attachments.md) | Agent attachments: discoverable file delivery from the agent on top of CP-003; honest refusal while dark; document presentation; activation | proposed | M |
