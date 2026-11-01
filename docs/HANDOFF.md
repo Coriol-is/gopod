@@ -1,12 +1,58 @@
 # gopod — current handoff
 
-**Last updated:** 2026-10-31 (private Stop merged and deployed)
+**Last updated:** 2026-11-01 (P0 implementation authorized; production unchanged)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
 [ACCEPTANCE](ACCEPTANCE.md) for pending real-client verification.
 
-## Resume here — private Stop deployed, 2026-10-31
+## Resume here — P0 implementation, 2026-11-01
+
+Owner authorized parallel agents in separate worktrees, acceptance and automatic
+merge after review/green CI. Scope: P0 lifecycle safety, graceful/forced restart
+and Telegram status recovery. No deployment is authorized by this step.
+Workers: feat/p0-lifecycle (runner), feat/p0-restart (queue/control/controller),
+feat/p0-telegram (Telegram/status persistence). Integration will run full build,
+vet/tests/race and Docker checks, then independent source review before merge.
+Later session parallelism/autoscaling remains outside P0.
+
+## Design context — 2026-11-01
+
+Owner requested design only, then selected private chats plus background tasks,
+per-topic folders plus shared projects, and explicit chat/thread separation.
+[CP-037 draft](superpowers/specs/2026-11-01-parallel-sessions.md) proposes dedicated
+active-session containers, persistent native context/workspaces and bounded
+single-host admission. Design authorization does not accept every architectural
+choice or authorize implementation. No code or runtime changes made.
+
+Owner subsequently requested implementation specs, another review, and no abrupt
+planned restart; explicitly requested `/restart force` cancelling background work.
+Saved contracts A/B/C/D and delivery slices linked from the architecture. Ordinary
+restart drains; force cancels active foreground and background plus pending
+background occurrences, preserving schedules and queued foreground. These are
+specifications, not shipped behavior.
+
+[Second review](reviews/2026-11-01-parallel-sessions-spec-review.md) found current
+idle eviction, root cancellation on restart and stale startup cleanup can interrupt
+work. Existing focused runner/cmd/queue tests pass; no live interruption test ran.
+P0 must fix lifecycle safety before parallel activation.
+Owner-requested follow-up recorded in contracts C6/A5: partial force failure,
+cancel-drain UI/races, external-effect settlement and archive access/export/purge.
+Archive command/API detail remains a separate follow-up; P0 scope stays lifecycle.
+Consolidated routing/mixed-provider behavior in contract D, A6/B5/C7 and plan P3b.
+Third self-review covers account bounds, A/B/A handoff cursors, provider-blocked
+queue eligibility, control-operation races and quota/fallback versus restart.
+Automatic task fallback remains deferred; current tests do not prove new contracts.
+Owner added emergency Telegram Stop/status repair: contract C8/A7 and C18-C26.
+P0 covers durable existing-placeholder repair; P5 covers generation/fallback races.
+Unknown execution must not render as stopped, obsolete callbacks cannot stop a
+new attempt, and failed edits remain durable without blocking runtime shutdown. Review is by the author,
+not independent approval. Next: implement and accept P0;
+provider credential/home migration, CP-004/007 and host qualification gates remain.
+T5/T5b implementation and T9 reboot remain paused.
+CP-035 is reserved in the separate CLI-hooks research worktree.
+
+## Previous state — private Stop deployed, 2026-10-31
 
 [CP-036](proposals/CP-036-private-chat-stop.md) is merged in
 [PR #124](https://github.com/Coriol-is/gopod/pull/124), **`8a3ce75`**, and deployed
@@ -137,7 +183,7 @@ A08/A10 real-client checks remain open.
   are outside preset quiet hours. Presets ship off by default; do not reset owner settings.
 - CP-034: official-source skill/plugin installation from private chat only, auto-update on, never groups.
 - CP-028 direction: Go/gotd, read and write, private chat only; its seven spec questions remain open in PR #108.
-- No automatic paid fallback. T9 memory-cgroup/reboot and parallel threads remain paused.
+- No automatic paid fallback. T9 memory-cgroup/reboot and parallel implementation remain paused; CP-037 design is reopened.
 
 ## Open gates and boundaries
 
@@ -175,3 +221,10 @@ preserves detailed implementation/review/deployment history, including supersede
 The [older snapshot](history/HANDOFF-2026-10-25-before-housekeeping.md) remains available.
 Current source, tests and timestamped deployment evidence outrank historical status prose;
 [DECISIONS](DECISIONS.md) remains the ADR authority.
+
+## Latest specification consolidation
+
+C9 adds the canonical execution-state -> Telegram text/actions -> recovery matrix,
+including not-started versus interrupted, safe Start/Continue and stale Stop
+acknowledgement independent of edit success. C27-C29 supplement C18-C26. All remain
+specification-only; source behavior and deployment are unchanged.
