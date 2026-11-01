@@ -198,8 +198,13 @@ func run() error {
 			d.RequirePolicyLabels(cfg.ManagedTasksEnabled)
 			if cfg.LeftoverCleanupEnabled && restartRecoveryErr == nil {
 				n, err := d.CleanupLeftovers(ctx, buildVersion())
-				if err != nil {
-					return fmt.Errorf("leftover cleanup failed; admission refused: %w", err)
+				if errors.Is(err, runner.ErrExecutionUnproven) {
+					// The Docker facade retains quarantine; only execution is
+					// blocked. Keep Telegram status/force/repair reachable.
+					restartRecoveryErr = err
+					runLog.Warn("running leftovers quarantined; execution blocked", slog.Any("err", err))
+				} else if err != nil {
+					return fmt.Errorf("leftover inventory failed; admission refused: %w", err)
 				} else {
 					runLog.Info("leftover cleanup complete",
 						slog.Int("cleaned", n))
@@ -713,9 +718,11 @@ func run() error {
 
 		// Status repair is best-effort and must not delay execution safety recovery.
 		if repair, ok := any(tgBot).(interface{ RepairControls(context.Context) error }); ok {
-			if err := repair.RepairControls(ctx); err != nil {
+			repairCtx, repairCancel := context.WithTimeout(ctx, 10*time.Second)
+			if err := repair.RepairControls(repairCtx); err != nil {
 				logger.Warn("Telegram control repair pending", slog.Any("err", err))
 			}
+			repairCancel()
 		}
 
 		// Start polling only after Recover, so the first poll cannot
