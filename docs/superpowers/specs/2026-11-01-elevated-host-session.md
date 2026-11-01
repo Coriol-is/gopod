@@ -67,12 +67,12 @@ Checked in this order, before anything is created:
    Router, so steps 2 and 3 run again on it.
 5. No elevated session is already live (§4.2).
 
-Step 3 and step 4 are incompatible in the code as it stands: `callbackCaller`
-builds a caller with no `MessageID`, so it is zero on every button dispatch
-(`internal/telegram/cmdbuttons.go:180-191`). The owner's decision was to
-populate it, and that landed as slice E-pre (§11) ahead of this feature, because
-the same gap was rejecting `/restart force`, `/restart status` and
-`/restart cancel` on a deployed build.
+Step 3 and step 4 were incompatible when this was designed: `callbackCaller`
+built a caller with no `MessageID`, so it was zero on every button dispatch. The
+owner's decision was to populate it, and that landed as slice E-pre (§11) ahead
+of this feature, because the same gap was refusing `/restart force`,
+`/restart status` and `/restart cancel`. Those argument forms arrived in
+`5c36b81` and are not deployed, so the Pi was never affected.
 
 ### 3.2 Input that must never reach the session
 
@@ -454,10 +454,13 @@ separately authorised and which the owner has deferred until CP-037 is complete.
 **E-pre is done**, ahead of the rest. `callbackCaller`
 (`internal/telegram/cmdbuttons.go`) now populates `MessageID`, so a button
 dispatch carries the evidence the replay fence asks for. Before it, every press
-arrived with zero and `internal/control/restart.go:28` rejected `/restart force`'s
-confirmation, `/restart status` and `/restart cancel` on the deployed build.
-`/stop` gained the same fence in the same change; the inline Stop control is its
-own `"st"` callback and does not pass through the command handler.
+arrived with zero and `internal/control/restart.go:28` refused `/restart force`'s
+confirmation, `/restart status` and `/restart cancel`. Those argument forms
+shipped in `5c36b81` and are not deployed; the Pi's `8a3ce75` wires
+`RegisterRestartCommand`, which takes no arguments and renders no buttons, so
+production was never affected. `/stop` gained the same fence in the same change;
+the inline Stop control is its own `"st"` callback and does not pass through the
+command handler.
 
 ## 12. Acceptance
 

@@ -248,3 +248,67 @@ func TestCallbackCallerCarriesMessageID(t *testing.T) {
 		t.Fatalf("source = %v", caller.Source)
 	}
 }
+
+// TestRestartLifecycleButtonsCarryMessageID is the end-to-end half of the
+// MessageID fix: a press must reach a command that fences replay on a real
+// private message. /restart's handler refuses a caller with MessageID <= 0, so
+// before callbackCaller populated the field its Status, Cancel and the Yes of
+// its force confirmation were all refused. Reaching the stub at all is the
+// assertion for Confirmed too: an unconfirmed /restart force returns the
+// confirmation instead of calling through.
+func TestRestartLifecycleButtonsCarryMessageID(t *testing.T) {
+	b, fake, r := newCommandFixture(t)
+	type dispatched struct {
+		caller   control.Caller
+		dispatch string
+	}
+	var got []dispatched
+	control.RegisterRestartLifecycle(r, func(_ context.Context, c control.Caller, d string) (string, error) {
+		got = append(got, dispatched{c, d})
+		return "restart " + d, nil
+	})
+	ctx := context.Background()
+
+	// Bare /restart drains and offers Status / Cancel restart.
+	b.dispatchSlash(ctx, slashMsg(streamChat, 0, "/restart"), "/restart")
+	if len(got) != 1 || got[0].dispatch != "" || got[0].caller.MessageID != 300 {
+		t.Fatalf("typed /restart dispatched %+v", got)
+	}
+	sent := lastCall(t, fake, "sendMessage")
+	b.callbackHandler(ctx, b.api, cbUpdate("q1", streamChat, 0, 500, buttonData(t, sent, "Status")))
+	answeredOnce(t, fake, "q1")
+	if len(got) != 2 {
+		t.Fatalf("Status press did not reach the handler: %+v", got)
+	}
+	if got[1].dispatch != "status:300" {
+		t.Errorf("Status dispatch = %q, want status:300", got[1].dispatch)
+	}
+	if got[1].caller.MessageID == 0 {
+		t.Error("Status press carried no MessageID, so the handler would refuse it")
+	}
+
+	// /restart force asks for confirmation; only the press calls through.
+	b.dispatchSlash(ctx, slashMsg(streamChat, 0, "/restart force"), "/restart force")
+	if len(got) != 2 {
+		t.Fatalf("unconfirmed force called through: %+v", got)
+	}
+	confirm := lastCall(t, fake, "sendMessage")
+	yes := buttonData(t, confirm, "Yes")
+	if !strings.HasPrefix(yes, "cf:") {
+		t.Fatalf("confirm button data %q", yes)
+	}
+	b.callbackHandler(ctx, b.api, cbUpdate("q2", streamChat, 0, 501, yes))
+	answeredOnce(t, fake, "q2")
+	if len(got) != 3 {
+		t.Fatalf("confirmed force did not reach the handler: %+v", got)
+	}
+	if got[2].dispatch != "force" {
+		t.Errorf("force dispatch = %q", got[2].dispatch)
+	}
+	if got[2].caller.MessageID == 0 {
+		t.Error("confirmation press carried no MessageID, so the handler would refuse it")
+	}
+	if !got[2].caller.IsOwner || got[2].caller.ChatKind != "private" {
+		t.Errorf("caller = %+v", got[2].caller)
+	}
+}

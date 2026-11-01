@@ -198,8 +198,8 @@ func BuildContainerArgs(cfg SpawnConfig) (*container.Config, *container.HostConf
 			PidsLimit: &pidsLimit,
 		},
 
-		// Tmpfs mounts. ISOLATION.md §6.1 names three; we add one
-		// more (/home/node) once end-to-end testing of M6d showed
+		// Tmpfs mounts, the three ISOLATION.md §6.1 lists. /home/node
+		// is one of them because end-to-end testing of M6d showed
 		// that Claude Code needs a writable HOME to store its
 		// per-instance state (`$HOME/.claude.json` plus npm/node
 		// scratch). The /home/node tmpfs sits below the

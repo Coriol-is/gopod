@@ -9,7 +9,7 @@ through every slice, so nothing here changes a running deployment.
 
 | Slice | Scope | Depends on | Checks that must pass |
 |---|---|---|---|
-| ~~E-pre button fence~~ **done** | Populate `MessageID` in `internal/telegram/cmdbuttons.go` `callbackCaller`; test that a press reaches the Router with it. Landed with the `/stop` fence and the drift clearing | — | A press carries a non-zero `MessageID`; `/restart force` confirmation, `/restart status` and `/restart cancel` are accepted where they are currently rejected; no other caller field changes |
+| ~~E-pre button fence~~ **done** | Populate `MessageID` in `internal/telegram/cmdbuttons.go` `callbackCaller`; unit-test the caller and end-to-end test a `/restart force` confirm plus a Status press through the Router. Landed with the `/stop` fence and the drift clearing | — | A press carries a non-zero `MessageID`; `/restart force` confirmation, `/restart status` and `/restart cancel` are accepted where they are currently rejected; no other caller field changes |
 | E0 images | `container/elevated/Dockerfile` and `Dockerfile.codex`, both added to `container/build-profiles.sh`; arm64 build; base pinned by digest; Docker CLI checked against the Pi's daemon | — | Both images build for arm64; `docker`, `nsenter`, `ps`, `ip`, `lsof`, `sqlite3`, `jq` present and runnable; `container/personal` and `container/group` images unchanged |
 | E1 profile and guard | `ElevatedSpawnConfig` and its builder; `RoleElevatedHost` in `Valid()` and `roleGrants`; reserved `ScopeRef` constant; role compared before fingerprint in `decideContainer`; `PidMode`/`NetworkMode`/`IpcMode` added to `ContainerFacts`, the inspection and `hardening` as `omitempty`; elevated ensure wired to the Docker facade's `containerEngine`, not to `r.managed` | E0 | Spec B: `BuildContainerArgs` output byte-identical to the pre-change fixture; an existing chat container's recorded digest still matches after the `hardening` change; a role the plan did not request is denied; no `policyRevision` bump anywhere in the diff |
 | E2 folder and journal | Reserved `elevated` folder, bootstrap directories, registration rejection, idle-watcher and task-creation exclusions; exec journal table with journal-first ordering, 4 KiB argv cap and redaction | E1 | Registration and task creation refuse the folder by name; the idle watcher leaves the folder alone past the timeout; the intent row precedes the exec and is settled after; a refused journal write refuses the exec |
@@ -21,8 +21,9 @@ through every slice, so nothing here changes a running deployment.
 Notes.
 
 - E-pre is done. It shipped on its own because it repairs `/restart`'s buttons
-  on the deployed build, and E3 could not be accepted without it. The same
-  change set closed the review's drift findings and the routing gap in the spec.
+  on `main` (`5c36b81`, undeployed; the Pi's `8a3ce75` has no argument forms),
+  and E3 could not be accepted without it. The same change set closed the
+  review's drift findings and the routing gap in the spec.
 - E1 is where a mistake is expensive: it touches the file every ordinary turn
   goes through and the digest every existing container is compared against. Its
   first two tests — the byte-identical builder fixture and the unchanged digest

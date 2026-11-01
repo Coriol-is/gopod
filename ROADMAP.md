@@ -45,9 +45,10 @@ An explicitly started owner-private conversation with host authority on the Pi:
 a timer. [Spec](docs/superpowers/specs/2026-11-01-elevated-host-session.md) ·
 [Plan](docs/superpowers/plans/2026-11-01-elevated-host-session.md).
 
-Slice `E-pre` is independent of acceptance: button presses carry no `MessageID`, so
-`/restart force|status|cancel` are rejected on the deployed build. The hardened chat and
-group profiles are not touched by any slice.
+Slice `E-pre` is done and was independent of acceptance: button presses carried no
+`MessageID`, so `/restart force|status|cancel` were refused on `main` (`5c36b81`, not
+deployed; the Pi's `8a3ce75` registers no argument forms). The hardened chat and group
+profiles are not touched by any slice.
 
 ## Private-chat Stop — CP-036
 

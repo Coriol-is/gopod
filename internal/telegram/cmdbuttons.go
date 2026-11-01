@@ -183,7 +183,7 @@ func (b *Bot) callbackCaller(q cbQuery) control.Caller {
 		ChatID:   q.ChatID,
 		ThreadID: q.ThreadID,
 		// The message carrying the button. Commands that fence replay on a
-		// real private message (`/restart`, `/root`) reject a zero value, so
+		// real private message (`/restart`, `/stop`) reject a zero value, so
 		// omitting it here made every button dispatch for those commands fail.
 		MessageID: q.MessageID,
 		UserID:    q.UserID,

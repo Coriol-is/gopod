@@ -49,12 +49,13 @@ explicit close rather than a timer. Contract in the
 separate builder and a separate policy role; the hardened chat profile is not
 parameterised and not relaxed.
 
-**Act on this first, independently of CP-038.** An independent review found a defect in
-shipped code: `callbackCaller` sets no `MessageID` (`internal/telegram/cmdbuttons.go:180-191`),
-and `internal/control/restart.go:28` rejects a caller without one. So `/restart force`'s
-confirmation, `/restart status` and `/restart cancel` are all rejected on the deployed
-build. Slice `E-pre` is that one-field fix plus a test; the owner chose to populate the
-field rather than weaken the check. Worth merging whether or not CP-038 is ever built.
+**The button defect review found is fixed**, not pending. `callbackCaller` populated no
+`MessageID` and `internal/control/restart.go:28` refuses a caller without one, so
+`/restart force`'s confirmation, `/restart status` and `/restart cancel` were all
+refused. Scope it precisely: those argument forms and their buttons arrived with
+`RegisterRestartLifecycle` in `5c36b81`, which is **not deployed**. The Pi runs
+`8a3ce75`, which wires `RegisterRestartCommand` with no arguments and no buttons, so
+production was never affected. Slice `E-pre` is the fix; see the gap-closure section.
 
 **Corrections already made — do not re-derive them.** Spec section 13 records what the
 first draft got wrong about the source. A stale policy version *denies*
@@ -77,8 +78,13 @@ the review surfaced. No CP-038 feature slice is started and no flag exists.
 
 - **Button presses now carry `MessageID`** (`internal/telegram/cmdbuttons.go`). This
   repairs `/restart force`'s confirmation, `/restart status` and `/restart cancel`, which
-  `internal/control/restart.go:28` rejected on the deployed build because every press
-  arrived with zero. `/root` will need the same field.
+  `internal/control/restart.go:28` refused because every press arrived with zero. Those
+  argument forms shipped in `5c36b81` and are not deployed: the Pi's `8a3ce75` wires
+  `RegisterRestartCommand`, no arguments and no buttons, so production was never
+  affected. A future `/root` needs the same field. Covered by two tests: a unit test on
+  `callbackCaller` and an end-to-end one that types `/restart`, presses Status, then
+  confirms `/restart force` through the Router and asserts each press arrived with a
+  message id.
 - **`/stop` gained the same message fence** it was missing next to `/restart`. The inline
   Stop control is its own `"st"` callback, not a Router command button, so it does not
   pass through the command handler and is unaffected.
@@ -93,9 +99,8 @@ the review surfaced. No CP-038 feature slice is started and no flag exists.
   `TestGroupImageMatrixPreservesPersonalAndExcludesPersonalTools`: the test reads them as
   the retained pre-split baseline it diffs the maintained profiles against. So nothing
   builds them but something does read them. Each now carries a header saying it is that
-  baseline. A header comment broke it too, because the test compares file contents, so
-  the files are left byte-for-byte untouched and explained in `container/README.md`
-  instead. The real defect was the build instructions: both `README.md` and
+  baseline. The test compares file contents, so even an explanatory header broke it; the
+  files are left byte-for-byte untouched and explained in `container/README.md` instead. The real defect was the build instructions: both `README.md` and
   `container/README.md` told readers to build from these files even though they lack the
   `--ignore-scripts` npm install and the native-binary verification. Both now run
   `container/build-profiles.sh`, and comments in `version.go`,
@@ -326,9 +331,9 @@ A08/A10 real-client checks remain open.
 4. Continue the [approved roadmap](../ROADMAP.md): CP-033 remaining slices, CP-003 agent image
    instructions/foreground cutover and backup gates; deferred task adapter remains deferred.
    CP-034 and CP-028 require their design/owner gates before implementation.
-5. Fix the button `MessageID` fence (CP-038 slice `E-pre`): it repairs `/restart force|status|cancel`
-   on the deployed build and does not depend on CP-038 acceptance. Everything else in CP-038
-   waits for the owner to accept the CP.
+5. ~~Fix the button `MessageID` fence~~ done in `E-pre`: `/restart force|status|cancel`
+   work again on `main` (`5c36b81`, not deployed; the Pi's `8a3ce75` has no argument
+   forms). Everything else in CP-038 waits for the owner to accept the CP.
 
 ## Decisions already taken — do not re-ask
 

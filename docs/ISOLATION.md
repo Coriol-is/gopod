@@ -126,10 +126,14 @@ Message acceptance is not proof of Telegram delivery; CP-002 remains separate.
 ### 6.1 Hardened agent container profile
 
 The flags every agent container is created with. `BuildContainerArgs`
-(`internal/runner/docker_args.go`) is the single place that sets them, and the
-reuse guard pins them by digest under the managed runtime
-(`internal/runner/exec_guard.go`). This subsection exists because the code
-comments referenced it for months while it did not.
+(`internal/runner/docker_args.go`) is the single place that sets them.
+
+Under the managed runtime the reuse guard pins a subset of them by digest:
+`configDigest` covers the bind mounts, the credential env names, and `User`,
+`ReadonlyRootfs`, `Privileged`, `CapDrop` and `SecurityOpt`
+(`internal/runner/exec_guard.go`). The tmpfs set, the resource caps, the restart
+policy, the labels and `ExtraHosts` are **not** in the digest, so drift in those
+is not detected by container reuse.
 
 | Setting | Value |
 | --- | --- |
@@ -147,6 +151,10 @@ comments referenced it for months while it did not.
 Mounts are not chosen here: `BuildMounts` (`internal/runner/mounts.go`) builds
 the per-tier list and §3 is its contract.
 
+### 6.2 Untrusted tools and admission budgets
+
+The limits below apply to group tool execution, not to the agent container of
+§6.1, which requires outbound network for its provider.
 
 Untrusted tools have no network or host binds, read-only root, dropped capabilities,
 non-root uid, bounded tmpfs/inodes, a 20-second command deadline and 32 KiB output.

@@ -16,7 +16,8 @@ sh container/build-profiles.sh
 
 That builds every maintained profile: `container/personal/Dockerfile` and
 `Dockerfile.codex` for the private chat, and the three `container/group/`
-images. CI builds from the same paths.
+images. CI builds only two of them, `container/group/Dockerfile.codex` and
+`Dockerfile.tools` (`.github/workflows/ci.yml`).
 
 **`container/Dockerfile` and `container/Dockerfile.codex` are not build
 inputs.** They are the retained pre-split personal image, and the only thing
