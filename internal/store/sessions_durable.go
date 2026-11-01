@@ -175,6 +175,23 @@ func ownedActiveSessionQ(ctx context.Context, q taskSQL, scope ScopeRef, session
 	return e, nil
 }
 
+// ownedTurnQ refuses a turn that is missing or belongs to another folder, so a
+// session can only be linked to turns of its own chat.
+func ownedTurnQ(ctx context.Context, q taskSQL, scope ScopeRef, turnID int64) error {
+	var folder string
+	err := q.QueryRowContext(ctx, `SELECT chat_folder FROM turns WHERE id=?`, turnID).Scan(&folder)
+	if errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("turn %d not found: %w", turnID, ErrStaleScope)
+	}
+	if err != nil {
+		return fmt.Errorf("reading turn %d owner: %w", turnID, err)
+	}
+	if folder != scope.Folder {
+		return fmt.Errorf("turn %d belongs to another folder: %w", turnID, ErrStaleScope)
+	}
+	return nil
+}
+
 // GetNativeContext returns the provider-native context id for one session epoch.
 func (s *Store) GetNativeContext(ctx context.Context, sessionID string, epoch int64, provider string) (string, bool, error) {
 	var id string
@@ -233,6 +250,9 @@ func (s *Store) BindAttempt(ctx context.Context, scope ScopeRef, b AttemptBindin
 		if err != nil {
 			return err
 		}
+		if err = ownedTurnQ(ctx, q, scope, b.TurnID); err != nil {
+			return err
+		}
 		if b.ContextEpoch != e.ContextEpoch {
 			return ErrStaleContextEpoch
 		}
@@ -285,6 +305,9 @@ func (s *Store) GetAttemptBinding(ctx context.Context, turnID int64) (AttemptBin
 func (s *Store) AcquireExecutionClaim(ctx context.Context, scope ScopeRef, sessionID string, turnID int64) error {
 	_, err := s.withTx(ctx, func(q taskSQL) error {
 		if _, err := ownedActiveSessionQ(ctx, q, scope, sessionID); err != nil {
+			return err
+		}
+		if err := ownedTurnQ(ctx, q, scope, turnID); err != nil {
 			return err
 		}
 		var holder int64

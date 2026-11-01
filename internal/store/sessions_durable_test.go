@@ -298,3 +298,41 @@ func TestCountSessionRows(t *testing.T) {
 		t.Fatalf("CountSessionRows = %d, %d, %v", n, m, err)
 	}
 }
+
+func TestBindAttemptRejectsForeignTurn(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	scope := ownerScope(t, st)
+	registerScope(t, st, RegisteredChat{JID: "tg:-2", Folder: "group-b", AddedAt: 2})
+	b, err := st.ResolveConversation(ctx, scope, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foreign := insertTestTurn(t, st, "group-b", "2:1", TurnDone)
+	err = st.BindAttempt(ctx, scope, AttemptBinding{TurnID: foreign, SessionID: b.ActiveSessionID, ContextEpoch: 1})
+	if !errors.Is(err, ErrStaleScope) {
+		t.Fatalf("err = %v, want ErrStaleScope", err)
+	}
+	if _, ok, err := st.GetAttemptBinding(ctx, foreign); err != nil || ok {
+		t.Fatalf("foreign bind persisted ok=%v err=%v", ok, err)
+	}
+}
+
+func TestExecutionClaimRejectsForeignTurn(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	scope := ownerScope(t, st)
+	registerScope(t, st, RegisteredChat{JID: "tg:-2", Folder: "group-b", AddedAt: 2})
+	b, err := st.ResolveConversation(ctx, scope, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foreign := insertTestTurn(t, st, "group-b", "2:1", TurnDone)
+	if err = st.AcquireExecutionClaim(ctx, scope, b.ActiveSessionID, foreign); !errors.Is(err, ErrStaleScope) {
+		t.Fatalf("err = %v, want ErrStaleScope", err)
+	}
+	var n int
+	if err = st.db.QueryRowContext(ctx, `SELECT count(*) FROM execution_claims`).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("execution_claims = %d, %v", n, err)
+	}
+}
