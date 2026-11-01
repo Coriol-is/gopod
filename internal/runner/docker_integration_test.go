@@ -423,23 +423,21 @@ func TestIntegrationCleanupLeftovers(t *testing.T) {
 	})
 
 	cleaned, err := d.CleanupLeftovers(ctx, currentVersion)
-	if err != nil {
+	if !errors.Is(err, ErrExecutionUnproven) {
 		t.Fatalf("CleanupLeftovers: %v", err)
 	}
-	// Stale container should be cleaned; keep container should not. But
-	// depending on leftover state from other tests there may be more
-	// gopod-prefixed containers around — we assert AT LEAST 1.
-	if cleaned < 1 {
-		t.Errorf("cleaned = %d, want >= 1", cleaned)
-	}
+	t.Logf("cleaned proven non-running leftovers: %d", cleaned)
 
 	// keepID must still exist.
 	if _, err := d.cli.ContainerInspect(ctx, keepID); err != nil {
 		t.Errorf("keep container no longer exists after cleanup: %v", err)
 	}
 
-	// staleID must be gone.
-	if _, err := d.cli.ContainerInspect(ctx, staleID); err == nil {
-		t.Error("stale container still exists after cleanup")
+	// Version mismatch is not authority to interrupt a running process.
+	if _, err := d.cli.ContainerInspect(ctx, staleID); err != nil {
+		t.Fatalf("running stale removed: %v", err)
+	}
+	if !d.quarantined(ctx, "inttest-stale") {
+		t.Fatal("stale runtime not quarantined")
 	}
 }

@@ -113,6 +113,14 @@ type Runner struct {
 	agentSlots         map[string]chan struct{}
 	backgroundCancels  map[string]context.CancelFunc
 	interactiveWaiters map[string]int
+	draining           bool
+	forcing            bool
+	slotsChanged       chan struct{}
+	unknownExecutions  map[string]string
+	operationSequence  uint64
+	operationCancels   map[uint64]context.CancelFunc
+
+	pendingGateReleases []func()
 
 	// gate is the global agent admission gate (gate.go); nodeHeapMB
 	// caps Claude agents' V8 heap (0 = off). Set by SetAgentLimits.
@@ -205,12 +213,30 @@ func (r *Runner) Ensure(
 	tier Tier,
 	allowlist *mountsec.Allowlist,
 ) (string, error) {
+	if r.ExecutionUncertain(ctx, chatFolder) {
+		return "", ErrExecutionUnproven
+	}
+	release, ok := r.tryIdleSlot(chatFolder)
+	if !ok {
+		r.agentSlotsMu.Lock()
+		err := r.admissionErrorLocked(chatFolder)
+		r.agentSlotsMu.Unlock()
+		if err != nil {
+			return "", err
+		}
+		return "", ErrRecycleNeedsSlot
+	}
+	defer release()
+	defer r.touch(chatFolder)
 	// A public caller holds no slot, so the managed guard will not recycle a
 	// running container for it; with the runtime off nothing differs.
 	return r.ensureContainer(ctx, chatFolder, tier, allowlist, false, false)
 }
 
 func (r *Runner) ensureContainer(ctx context.Context, chatFolder string, tier Tier, allowlist *mountsec.Allowlist, reconcile, slotHeld bool) (string, error) {
+	if r.ExecutionUncertain(ctx, chatFolder) {
+		return "", ErrExecutionUnproven
+	}
 	if err := r.authorizeOwner(ctx, chatFolder); err != nil {
 		return "", err
 	}
@@ -315,6 +341,8 @@ func (r *Runner) Run(
 		return "", err
 	}
 	defer releaseSlot()
+	ctx, finishOperation := r.operationContext(ctx)
+	defer finishOperation()
 	id, prov, releaseRuntime, err := r.turnRuntime(ctx, chatFolder, thread, tier, allowlist)
 	if err != nil {
 		return "", fmt.Errorf("runner: ensure %q: %w", chatFolder, err)
@@ -352,11 +380,11 @@ func (r *Runner) Run(
 		return "", err
 	}
 	if err := r.recordConversationRequest(ctx, chatFolder, thread, prompt); err != nil {
-		releaseGate()
+		r.releaseGateWhenSettled(ctx, chatFolder, releaseGate)
 		return "", err
 	}
 	res, err := r.execAgentWithCancel(ctx, id, chatFolder, thread, prov, cmd, true)
-	releaseGate()
+	r.releaseGateWhenSettled(ctx, chatFolder, releaseGate)
 	if announcesNewSession(prov, ref) {
 		var stderr string
 		if res != nil {
@@ -468,6 +496,9 @@ func (r *Runner) RunStream(
 	if err != nil {
 		return nil, err
 	}
+	ctx, finishSetup := r.operationContext(ctx)
+	setupRelease := releaseSlot
+	releaseSlot = func() { finishSetup(); setupRelease() }
 	transferred := false
 	defer func() {
 		if !transferred {
@@ -541,6 +572,12 @@ func (r *Runner) startStream(
 			retErr = groupPublicError(retErr)
 		}
 	}()
+	ctx, finishOperation := r.operationContext(ctx)
+	defer func() {
+		if retErr != nil {
+			finishOperation()
+		}
+	}()
 	chatFolder := conv.folder
 	var releaseSlot func()
 	var err error
@@ -584,19 +621,20 @@ func (r *Runner) startStream(
 
 	pidFile, err := newAgentPidFile()
 	if err != nil {
-		releaseGate()
+		r.releaseGateWhenSettled(ctx, chatFolder, releaseGate)
 		return nil, err
 	}
 	env, release := r.agentExecEnv(chatFolder, conv.thread, prov, true)
 	if err := r.recordConversationRequest(ctx, chatFolder, conv.thread, prompt); err != nil {
 		release()
-		releaseGate()
+		r.releaseGateWhenSettled(ctx, chatFolder, releaseGate)
 		return nil, err
 	}
 	handle, err := r.ex.ExecStream(ctx, id, wrapWithPidFile(pidFile, cmd), env)
 	if err != nil {
+		r.markExecutionUnknown(chatFolder, id)
 		release()
-		releaseGate()
+		r.releaseGateWhenSettled(ctx, chatFolder, releaseGate)
 		return nil, fmt.Errorf("runner: exec stream: %w", err)
 	}
 
@@ -631,6 +669,7 @@ func (r *Runner) startStream(
 			defer close(progress)
 		}
 		defer handle.Close()
+		defer finishOperation()
 		defer releaseSlot()
 		defer release() // capability dies with the exec, not the handler
 
@@ -668,11 +707,15 @@ func (r *Runner) startStream(
 		if err := <-handle.Done; err != nil {
 			execErr = err
 		}
+		var exitErr *ExecError
+		if execErr != nil && ctx.Err() == nil && !errors.As(execErr, &exitErr) {
+			r.markExecutionUnknown(chatFolder, id)
+		}
 		close(finished)
 		if !<-killed {
 			r.removePidFile(ctx, id, pidFile)
 		}
-		releaseGate() // the agent process is gone (exited or killed)
+		r.releaseGateWhenSettled(ctx, chatFolder, releaseGate) // the agent process is gone (exited or killed)
 		if capture {
 			r.captureSession(ctx, chatFolder, conv.thread, prov, stderr)
 		}
@@ -867,6 +910,8 @@ func (r *Runner) RunFresh(
 		return "", err
 	}
 	defer releaseSlot()
+	ctx, finishOperation := r.operationContext(ctx)
+	defer finishOperation()
 	id, prov, releaseRuntime, err := r.turnRuntime(ctx, chatFolder, 0, tier, allowlist)
 	if err != nil {
 		return "", fmt.Errorf("runner: ensure %q: %w", chatFolder, err)
@@ -878,7 +923,7 @@ func (r *Runner) RunFresh(
 		return "", err
 	}
 	res, err := r.execAgentWithCancel(ctx, id, chatFolder, 0, prov, prov.RunFreshCmd(prompt), false)
-	releaseGate()
+	r.releaseGateWhenSettled(ctx, chatFolder, releaseGate)
 	if err != nil {
 		return "", err
 	}
@@ -987,24 +1032,11 @@ func (r *Runner) ProviderForChat(chatFolder string) AgentProvider {
 	return r.provider
 }
 
-// SetChatProvider restores an override during boot and removes an old image.
-// Runtime commands must use SwitchChatProvider for persistence and serialization.
+// SetChatProvider restores configuration only. Runtime commands must use
+// SwitchChatProvider, whose execution slot guards any required recycling.
+// Boot-time configuration restore is never permission to stop a live container.
 func (r *Runner) SetChatProvider(chatFolder string, p AgentProvider) {
 	r.setChatProviderOverride(chatFolder, p)
-
-	if r.d == nil {
-		return
-	} // subprocess/test runner has no Docker container
-	// Kill the existing container — it has the wrong image.
-	name := ContainerName(chatFolder)
-	ctx := context.Background()
-	if id, _ := r.d.inspectByName(ctx, name); id != "" {
-		r.d.Stop(ctx, id, 5*time.Second)
-		r.d.Remove(ctx, id)
-		r.log.Info("killed container for provider switch",
-			slog.String("chat", chatFolder),
-			slog.String("new_provider", p.Name()))
-	}
 }
 
 func (r *Runner) setChatProviderOverride(chatFolder string, p AgentProvider) {
@@ -1037,6 +1069,8 @@ func (r *Runner) CheckAuth(ctx context.Context, chatFolder string, tier Tier, al
 		return AuthStatus{}, err
 	}
 	defer release()
+	ctx, finishOperation := r.operationContext(ctx)
+	defer finishOperation()
 	id, err := r.ensure(ctx, chatFolder, tier, allowlist)
 	if err != nil {
 		return AuthStatus{}, err
@@ -1254,6 +1288,9 @@ func (r *Runner) ActiveChats() []string {
 // be killed by the idle watcher mid-flight.
 func (r *Runner) touch(chatFolder string) {
 	r.activityMu.Lock()
+	if r.activity == nil {
+		r.activity = make(map[string]time.Time)
+	}
 	r.activity[chatFolder] = time.Now()
 	r.activityMu.Unlock()
 }

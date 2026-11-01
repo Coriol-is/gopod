@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
-	"sync"
 	"time"
 )
 
@@ -104,16 +103,19 @@ func (r *Runner) killAgent(ctx context.Context, containerID, chatFolder, pidFile
 	kctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), agentKillTimeout)
 	defer cancel()
 	res, err := r.ex.Exec(kctx, containerID, killAgentCmd(pidFile, agentKillGrace), nil)
-	if err != nil {
-		r.log.Error("stopping cancelled agent failed",
-			slog.String("chat", chatFolder), slog.Any("err", err))
-		return
+	killed := err == nil && res != nil && res.ExitCode == 0
+	// Group signals cannot prove detached children died. Stop the slot-owned
+	// runtime even when the kill exec failed, then ask Docker for death evidence.
+	if r.d != nil {
+		stopErr := r.d.Stop(kctx, containerID, DefaultStopGrace)
+		killed = r.d.containerDead(kctx, containerID)
+		if stopErr != nil && !killed {
+			r.log.Error("runtime stop failed", slog.Any("err", stopErr))
+		}
 	}
-	if res.ExitCode != 0 {
-		r.log.Error("stopping cancelled agent failed",
-			slog.String("chat", chatFolder),
-			slog.Int("exit", res.ExitCode),
-			slog.String("stderr", tailString(res.Stderr, 300)))
+	if !killed {
+		r.markExecutionUnknown(chatFolder, containerID)
+		r.log.Error("cancelled agent exit unproven", slog.String("chat", chatFolder))
 		return
 	}
 	r.log.Info("cancelled agent stopped", slog.String("chat", chatFolder))
@@ -146,6 +148,12 @@ func (r *Runner) acquireBackgroundSlot(ctx context.Context, folder string, cance
 // A foreground waiter cancels only background work in the same chat. Its
 // successor cannot take the slot until background process cleanup has finished.
 func (r *Runner) acquireSlot(ctx context.Context, chatFolder string, backgroundCancel context.CancelFunc) (func(), error) {
+	if r.d != nil && r.d.hasQuarantine(ctx) {
+		return nil, ErrExecutionUnproven
+	}
+	if r.ExecutionUncertain(ctx, chatFolder) {
+		return nil, ErrExecutionUnproven
+	}
 	interactive := backgroundCancel == nil
 	if interactive {
 		r.agentSlotsMu.Lock()
@@ -168,6 +176,10 @@ func (r *Runner) acquireSlot(ctx context.Context, chatFolder string, backgroundC
 			return nil, fmt.Errorf("runner: acquiring agent slot: %w", err)
 		}
 		r.agentSlotsMu.Lock()
+		if err := r.admissionErrorLocked(chatFolder); err != nil {
+			r.agentSlotsMu.Unlock()
+			return nil, err
+		}
 		if r.agentSlots == nil {
 			r.agentSlots = make(map[string]chan struct{})
 		}
@@ -175,6 +187,10 @@ func (r *Runner) acquireSlot(ctx context.Context, chatFolder string, backgroundC
 			r.agentSlotsMu.Unlock()
 			return nil, fmt.Errorf("runner: background yielded to user: %w", context.Canceled)
 		}
+		if r.slotsChanged == nil {
+			r.slotsChanged = make(chan struct{})
+		}
+		changed := r.slotsChanged
 		busy, ok := r.agentSlots[chatFolder]
 		if !ok {
 			done := make(chan struct{})
@@ -186,16 +202,12 @@ func (r *Runner) acquireSlot(ctx context.Context, chatFolder string, backgroundC
 				r.backgroundCancels[chatFolder] = backgroundCancel
 			}
 			r.agentSlotsMu.Unlock()
-			var once sync.Once
-			return func() {
-				once.Do(func() {
-					r.agentSlotsMu.Lock()
-					delete(r.agentSlots, chatFolder)
-					delete(r.backgroundCancels, chatFolder)
-					r.agentSlotsMu.Unlock()
-					close(done)
-				})
-			}, nil
+			release := r.slotReleaser(chatFolder, done, true)
+			if err := r.verifyQuiescent(ctx, chatFolder); err != nil {
+				release()
+				return nil, err
+			}
+			return release, nil
 		}
 		cancel := r.backgroundCancels[chatFolder]
 		r.agentSlotsMu.Unlock()
@@ -204,6 +216,7 @@ func (r *Runner) acquireSlot(ctx context.Context, chatFolder string, backgroundC
 		}
 		select {
 		case <-busy:
+		case <-changed:
 		case <-ctx.Done():
 			return nil, fmt.Errorf("runner: waiting for previous agent in %q: %w", chatFolder, ctx.Err())
 		}

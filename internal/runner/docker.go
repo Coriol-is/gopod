@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -35,6 +36,8 @@ type Docker struct {
 	cli *client.Client
 	log *slog.Logger
 
+	quarantineMu        sync.Mutex
+	quarantine          map[string]string
 	requirePolicyLabels bool // managed runtime: unlabeled leftovers are stale
 }
 
@@ -107,6 +110,9 @@ func (*ImageMismatchError) Error() string {
 }
 
 func (d *Docker) ensureRunning(ctx context.Context, name string, cfg *container.Config, host *container.HostConfig, reconcile bool) (string, error) {
+	if d.quarantined(ctx, cfg.Labels[LabelChat]) {
+		return "", ErrExecutionUnproven
+	}
 	existing, err := d.inspectByName(ctx, name)
 	if err != nil {
 		return "", err

@@ -24,90 +24,35 @@ const DefaultIdleTimeout = 30 * time.Minute
 // promptly after a chat goes idle.
 const idleTickInterval = 1 * time.Minute
 
-// CleanupLeftovers walks every container with the gopod.chat label
-// and decides what to do with each one. Called once at gopod
-// startup before the runner starts spawning new containers for this
-// process.
-//
-// Rules:
-//
-//   - currentVersion == "dev": EVERY gopod container is removed,
-//     running or not. Dev builds (`go run` and untagged `go build`)
-//     all share version=dev, so version comparison is useless for
-//     them — gopod cannot tell whether a leftover is from a build
-//     with the same source as the current one. Removing all of them
-//     is the only safe option, and it lets `gopod restart` pick
-//     up code changes without an explicit `docker rm` step.
-//   - Any gopod container tagged with a version label OTHER than
-//     currentVersion is considered stale. New gopod build should not
-//     trust state from the old one; stop and remove.
-//   - Any gopod container whose state is already Exited or Dead is
-//     removed regardless of version.
-//   - A running container tagged with currentVersion (and currentVersion
-//     is not "dev") is LEFT ALONE — the new gopod process re-attaches
-//     to it as-is. This supports hot-restarting a tagged release build
-//     without interrupting in-flight agent turns.
-//
-// Returns the number of containers cleaned up (stopped + removed).
+// CleanupLeftovers removes only proven non-running containers. A running
+// leftover has no live controller claim and is quarantined, regardless of its
+// image/version label. Neither label equality nor dev mode proves safe reuse.
 func (d *Docker) CleanupLeftovers(ctx context.Context, currentVersion string) (int, error) {
 	list, err := d.ListGopodContainers(ctx)
 	if err != nil {
 		return 0, err
 	}
-
-	devMode := currentVersion == "dev"
-
-	var cleaned int
+	cleaned := 0
+	blocked := false
 	for _, c := range list {
-		chat := c.Labels[LabelChat]
-		version := c.Labels[LabelVersion]
-		running := c.State == "running"
-
-		stale := leftoverStale(version, currentVersion, c.Labels, d.requirePolicyLabels)
-		exited := !running
-
-		// Running container at the current TAGGED version is kept so a
-		// hot-restart of gopod doesn't interrupt in-flight agent
-		// turns. Dev builds skip this branch — see the package comment.
-		if running && !stale && !devMode {
-			d.log.Info("leftover container kept (current version, running)",
-				slog.String("chat", chat),
-				slog.String("id", c.ID[:12]),
-				slog.String("version", version))
+		if c.State != "exited" && c.State != "dead" && c.State != "created" {
+			d.quarantineMu.Lock()
+			if d.quarantine == nil {
+				d.quarantine = make(map[string]string)
+			}
+			d.quarantine[c.Labels[LabelChat]] = c.ID
+			d.quarantineMu.Unlock()
+			blocked = true
+			d.log.Warn("running leftover quarantined; execution must be reconciled", slog.String("chat", c.Labels[LabelChat]), slog.String("version", c.Labels[LabelVersion]))
 			continue
 		}
-
-		// Everything else gets cleaned up.
-		reason := "version mismatch"
-		switch {
-		case devMode:
-			reason = "dev build (version=dev cannot be trusted across restarts)"
-		case exited && stale:
-			reason = "exited + version mismatch"
-		case exited && !stale:
-			reason = "exited"
-		case running && stale:
-			reason = "running but wrong version"
-		}
-
-		d.log.Info("cleaning up leftover container",
-			slog.String("chat", chat),
-			slog.String("id", c.ID[:12]),
-			slog.String("reason", reason),
-			slog.String("state", c.State))
-
-		if running {
-			if err := d.Stop(ctx, c.ID, DefaultStopGrace); err != nil {
-				// Log and keep going — we still want to try to remove.
-				d.log.Warn("stop failed during cleanup",
-					slog.String("id", c.ID[:12]),
-					slog.Any("err", err))
-			}
-		}
 		if err := d.Remove(ctx, c.ID); err != nil {
-			return cleaned, fmt.Errorf("cleanup: remove %s: %w", c.ID[:12], err)
+			return cleaned, fmt.Errorf("cleanup: remove: %w", err)
 		}
 		cleaned++
+	}
+	if blocked {
+		return cleaned, ErrExecutionUnproven
 	}
 	return cleaned, nil
 }
@@ -137,12 +82,8 @@ func (d *Docker) RequirePolicyLabels(on bool) { d.requirePolicyLabels = on }
 // single goroutine sidesteps the race a per-chat watcher would have
 // with EnsureRunning re-spawning a chat right as its watcher fires.
 //
-// In-flight prompts are NOT specifically protected: if a single
-// prompt takes longer than the idle timeout, the watcher will kill
-// the container mid-flight. The default 30-minute timeout is far
-// longer than any reasonable claude -p invocation, so this is
-// acceptable for v0; a heartbeat refresh during long prompts can
-// land in a follow-up if it ever matters.
+// Busy operations are protected by the same slot used for admission, including
+// silent/long-running prompts. TTL starts again when the final claim releases.
 func (r *Runner) StartIdleWatcher(ctx context.Context, timeout time.Duration) {
 	if timeout <= 0 {
 		timeout = DefaultIdleTimeout
@@ -181,6 +122,10 @@ func (r *Runner) idleWatcherSweep(ctx context.Context, now time.Time, timeout ti
 		if idle < timeout {
 			continue
 		}
+		release, ok := r.tryIdleSlot(chatFolder)
+		if !ok {
+			continue
+		}
 		// Per-chat lock so we don't race a fresh Ensure call that
 		// just spawned the container at the very moment we decided
 		// to kill it.
@@ -192,6 +137,7 @@ func (r *Runner) idleWatcherSweep(ctx context.Context, now time.Time, timeout ti
 			r.killIdleChat(ctx, chatFolder)
 		}
 		r.unlockChat(chatFolder)
+		release()
 	}
 }
 
@@ -200,6 +146,10 @@ func (r *Runner) idleWatcherSweep(ctx context.Context, now time.Time, timeout ti
 // are logged at warn but otherwise swallowed (we'll try again next
 // tick).
 func (r *Runner) killIdleChat(ctx context.Context, chatFolder string) {
+	if err := r.verifyQuiescent(ctx, chatFolder); err != nil {
+		r.log.Warn("idle cleanup blocked by unregistered execution", slog.String("chat", chatFolder))
+		return
+	}
 	containers, err := r.d.ListGopodContainers(ctx)
 	if err != nil {
 		r.log.Warn("idle: list failed", slog.Any("err", err))
