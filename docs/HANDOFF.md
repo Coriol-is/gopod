@@ -12,14 +12,18 @@ P1 adds durable session identity ([D055](DECISIONS.md)): additive store tables
 for execution sessions, conversation bindings, native contexts, attempt
 bindings and per-session execution claims, a runner adapter that resolves the
 native context through the binding, queue binding that refuses a stale epoch,
-and an owner-only `/sessions [status|adopt]` command. Adoption of legacy
-`sessions` rows is one transaction at the next controller startup, refused
+and an owner-only `/sessions [status|adopt|cancel]` command. Adoption of legacy
+`sessions` rows is one transaction at the next controller startup, deferred
 while unfinished turns exist. It lives on branch `feat/p1-durable-identity` in
 worktree `gopod-p1-identity`, `PR #TBD`. The default mapping mode stays
 `legacy`, so nothing changes on the Pi until `/sessions adopt` plus a restart;
 not deployed. Rollback to pre-adoption code after durable writes needs explicit
 reconciliation (the old `sessions` table is frozen at adoption). Open: real
 native resume after adoption on the Pi ([ACCEPTANCE](ACCEPTANCE.md)).
+The final whole-branch review's C1 (continuity through the durable adapter),
+C2 (stale claims released at startup, terminal/unknown takeover), I1 (adoption
+skips unreachable rows, `/sessions cancel`) and I2 (`execution_unknown`
+recorded from the runner's proof) were fixed before the PR.
 
 Next: P2 scoped controls (`/clear`, `/new` epochs) per the slice plan.
 

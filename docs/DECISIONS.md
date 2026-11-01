@@ -1959,7 +1959,7 @@ contexts by folder only and cannot express this.
   `native_contexts`, `attempt_bindings` and `execution_claims` are added
   without touching `sessions`. `ResolveConversation` creates the binding and
   session at context epoch 1 (workspace `legacy:<folder>`) and retires older
-  epoch bindings of the same namespace. `turns.id` stays the monotonic
+  namespace-epoch bindings of the same namespace. `turns.id` stays the monotonic
   per-conversation ingress sequence and `UNIQUE(source, source_id)` the dedup
   key; no new sequencing is introduced.
 - *Scope on every write.* Each write validates the registration `ScopeRef` in
@@ -1968,26 +1968,44 @@ contexts by folder only and cannot express this.
 - *Marker read once.* `session_mapping` in `router_state` (default `legacy`)
   selects the mode at startup only. In `durable` mode the runner's
   `GetSession/PutSession/DeleteSession` resolve through the binding (Delete
-  removes only the current epoch's native context of that provider); in
+  removes only the current epoch's native context of that provider) and the
+  continuity methods (handoff transcript, provider choice, `/clear`) delegate
+  to the store; `/clear` deletes every provider's native context of the
+  current context epoch and never writes the frozen `sessions` table. In
   `legacy` mode the plain store is used unchanged.
 - *Atomic adoption when quiesced.* `/sessions adopt` (owner-only, D028
   confirmation) only records a request. Adoption runs at the next controller
-  startup right after the store opens, in one transaction: refused while
-  unfinished turns exist (`ErrAdoptionBusy` is logged and the request kept,
-  other errors are fatal) and failing whole if a legacy row belongs to an
-  unregistered folder. The same boot starts in durable mode. Default stays
-  legacy, so nothing changes until adopted.
-- *Binding and claims.* In durable mode every interactive batch is bound to
-  its session and epoch before running; a recovered turn bound to a superseded
-  epoch or session is finished as stopped (`ErrContextEpochChanged`) without
-  running. One execution claim per session is taken for the batch and settled
-  afterwards; `execution_unknown` is retained and still blocks. Managed task
-  attempts pass through untouched.
-- *Controller ruling on unknown claims.* In P1 re-execution of a turn whose
-  claim is `execution_unknown` is gated by the runner's process proof from P0
+  startup right after the store opens, in one transaction. While unfinished
+  turns exist it is deferred (`ErrAdoptionBusy` is logged, legacy kept, the
+  request retained, and `/sessions status` shows the deferral); other errors
+  are fatal. A legacy row whose folder is unregistered or whose current scope
+  no longer validates is unreachable by any scope: it is skipped, counted and
+  logged at Warn, not fatal. `/sessions cancel` (owner-only) withdraws a
+  pending request. The same boot starts in durable mode. Default stays legacy,
+  so nothing changes until adopted.
+- *Binding and claims.* In durable mode every non-managed queue batch
+  (interactive turns, and legacy scheduled `task` items, which may coalesce
+  with other `task` items of the same thread) is bound to its session and
+  epoch before running; a recovered turn bound to a superseded epoch or
+  session is finished as stopped without running, and the superseded turn id
+  is logged. One execution claim per session is taken for the batch, keyed by
+  its last turn, and settled afterwards. The claim is settled
+  `execution_unknown` when the runner reports `ErrExecutionUnproven` or its
+  process proof (`ExecutionUncertain`) says the exit is unproven. Only managed
+  task attempts are singleton batches; they pass through untouched.
+- *P1 deviation from the literal A1 wording: an unknown claim is evidence, not
+  a lock.* In P1 an `execution_unknown` claim is durable evidence and may be
+  taken over by another turn, as may a claim whose holder turn is terminal
+  (`done`, `failed`, `stopped`); the takeover is logged at Warn with the
+  previous holder. Re-execution stays gated by the runner's P0 process proof
   (`acquireSlot`/`ExecutionUncertain` refuse while exit is unproven;
-  `reconcileExited` clears on proven death or idle). The store claim is the
-  durable record; P5 adds claim reconciliation.
+  `reconcileExited` clears on proven death or idle). Stale `held` claims are
+  released at controller startup before queue recovery, when nothing can be
+  running, because recovery re-batches turns and the old holder id would never
+  settle. Without a reconciler a blocking claim would wedge a conversation;
+  the cost is that a turn whose exit the runner wrongly proved could run twice
+  (the same exposure as P0). P5 adds the claim reconciler that turns an
+  unknown claim into a real lock.
 - *Rollback.* Rolling back to pre-adoption code after durable writes needs
   explicit reconciliation: the old `sessions` table is frozen at adoption time
   and does not see later native context changes.

@@ -57,6 +57,9 @@ func bindingHandler(st sessionBinder, provider, model func(folder string) string
 				return fmt.Errorf("read attempt binding for turn %d: %w", it.ID, err)
 			}
 			if bound && (prev.ContextEpoch != b.ContextEpoch || prev.SessionID != b.ActiveSessionID) {
+				log.Info("refusing turn bound to a superseded context epoch", "turn", it.ID,
+					"session", prev.SessionID, "epoch", prev.ContextEpoch,
+					"active_session", b.ActiveSessionID, "active_epoch", b.ContextEpoch)
 				// ErrStopped makes the queue finish the batch without a rerun.
 				return fmt.Errorf("%w: %w: turn %d", queue.ErrStopped, ErrContextEpochChanged, it.ID)
 			}
