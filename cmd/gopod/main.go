@@ -672,7 +672,7 @@ func run() error {
 			if sessionMode == store.SessionMappingDurable {
 				agentHandler = bindingHandler(st,
 					func(folder string) string { return agentRunner.ProviderForChat(folder).Name() },
-					agentRunner.ModelForChat, agentHandler, queueLog)
+					agentRunner.ModelForChat, agentRunner.ExecutionUncertain, agentHandler, queueLog)
 			}
 			agentQueue = queue.New(ctx, agentHandler, queue.DefaultMaxConcurrent,
 				turnStoreAdapter{st: st}, queueLog)
@@ -733,6 +733,15 @@ func run() error {
 		// the scheduler hook is registered and before the bot polls.
 		replayed := 0
 		if agentQueue != nil {
+			if sessionMode == store.SessionMappingDurable {
+				// Nothing runs yet: a held claim is a crash leftover. Recover
+				// re-batches turns, so the old holder id would never settle it.
+				n, err := st.ReleaseStaleExecutionClaims(ctx)
+				if err != nil {
+					return fmt.Errorf("release stale execution claims: %w", err)
+				}
+				logger.Info("released stale execution claims", slog.Int("count", n))
+			}
 			n, err := agentQueue.Recover(ctx)
 			if errors.Is(err, queue.ErrHoldsUnknown) {
 				// Serving beside a possibly running task attempt is unsafe.

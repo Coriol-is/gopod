@@ -21,6 +21,8 @@ type fakeBinder struct {
 	bindings []store.AttemptBinding
 	acqErr   error
 	settled  []bool
+	holder   int64
+	hstate   string
 }
 
 func (f *fakeBinder) SnapshotScope(_ context.Context, folder string) (store.ScopeRef, error) {
@@ -56,6 +58,13 @@ func (f *fakeBinder) SettleExecutionClaim(_ context.Context, sid string, id int6
 	return nil
 }
 
+func (f *fakeBinder) ExecutionClaimHolder(_ context.Context, sid string) (int64, string, bool, error) {
+	f.calls = append(f.calls, "holder:"+sid)
+	return f.holder, f.hstate, f.holder != 0, nil
+}
+
+func notUncertain(context.Context, string) bool { return false }
+
 func newBindingFixture() (*fakeBinder, func(string) string, func(string) string, *slog.Logger) {
 	f := &fakeBinder{binding: store.ConversationBinding{ActiveSessionID: "s1", ContextEpoch: 2}}
 	return f, func(string) string { return "claude" }, func(string) string { return "m1" },
@@ -65,7 +74,7 @@ func newBindingFixture() (*fakeBinder, func(string) string, func(string) string,
 func TestBindingHandlerBindsEveryItemAndClaimsLast(t *testing.T) {
 	f, prov, mod, log := newBindingFixture()
 	var nextCalls int
-	h := bindingHandler(f, prov, mod, func(context.Context, []queue.Item) error {
+	h := bindingHandler(f, prov, mod, notUncertain, func(context.Context, []queue.Item) error {
 		nextCalls++
 		f.calls = append(f.calls, "next")
 		return nil
@@ -74,7 +83,7 @@ func TestBindingHandlerBindsEveryItemAndClaimsLast(t *testing.T) {
 	if err := h(t.Context(), items); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"snapshot", "resolve:5", "get:1", "bind:1", "get:2", "bind:2", "get:3", "bind:3", "acquire:s1:3", "next", "settle:s1:3"}
+	want := []string{"snapshot", "resolve:5", "get:1", "bind:1", "get:2", "bind:2", "get:3", "bind:3", "holder:s1", "acquire:s1:3", "next", "settle:s1:3"}
 	if !reflect.DeepEqual(f.calls, want) {
 		t.Fatalf("calls = %v, want %v", f.calls, want)
 	}
@@ -91,7 +100,7 @@ func TestBindingHandlerBindsEveryItemAndClaimsLast(t *testing.T) {
 func TestBindingHandlerRefusesStaleEpoch(t *testing.T) {
 	f, prov, mod, log := newBindingFixture()
 	f.bound = map[int64]store.AttemptBinding{1: {TurnID: 1, SessionID: "s1", ContextEpoch: 1}}
-	h := bindingHandler(f, prov, mod, func(context.Context, []queue.Item) error {
+	h := bindingHandler(f, prov, mod, notUncertain, func(context.Context, []queue.Item) error {
 		t.Error("next called for stale epoch")
 		return nil
 	}, log)
@@ -106,7 +115,7 @@ func TestBindingHandlerRefusesStaleEpoch(t *testing.T) {
 
 func TestBindingHandlerSettlesUnknownOnUnprovenExit(t *testing.T) {
 	f, prov, mod, log := newBindingFixture()
-	h := bindingHandler(f, prov, mod, func(context.Context, []queue.Item) error {
+	h := bindingHandler(f, prov, mod, notUncertain, func(context.Context, []queue.Item) error {
 		return fmt.Errorf("run: %w", runner.ErrExecutionUnproven)
 	}, log)
 	err := h(t.Context(), []queue.Item{{ID: 7, Folder: "a"}})
@@ -121,7 +130,7 @@ func TestBindingHandlerSettlesUnknownOnUnprovenExit(t *testing.T) {
 func TestBindingHandlerPassesManagedThrough(t *testing.T) {
 	f, prov, mod, log := newBindingFixture()
 	var nextCalls int
-	h := bindingHandler(f, prov, mod, func(context.Context, []queue.Item) error { nextCalls++; return nil }, log)
+	h := bindingHandler(f, prov, mod, notUncertain, func(context.Context, []queue.Item) error { nextCalls++; return nil }, log)
 	if err := h(t.Context(), []queue.Item{{ID: 1, Folder: "a", Source: "task", AttemptID: "att-1", RunID: "r1"}}); err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +142,7 @@ func TestBindingHandlerPassesManagedThrough(t *testing.T) {
 func TestBindingHandlerRetriesOnBusyClaim(t *testing.T) {
 	f, prov, mod, log := newBindingFixture()
 	f.acqErr = store.ErrSessionBusy
-	h := bindingHandler(f, prov, mod, func(context.Context, []queue.Item) error {
+	h := bindingHandler(f, prov, mod, notUncertain, func(context.Context, []queue.Item) error {
 		t.Error("next called while claim is busy")
 		return nil
 	}, log)
@@ -143,5 +152,82 @@ func TestBindingHandlerRetriesOnBusyClaim(t *testing.T) {
 	}
 	if len(f.settled) != 0 {
 		t.Errorf("settled %v without a claim", f.settled)
+	}
+}
+
+func TestBindingHandlerSettlesUnknownWhenRunnerUncertain(t *testing.T) {
+	f, prov, mod, log := newBindingFixture()
+	var asked []string
+	uncertain := func(_ context.Context, folder string) bool { asked = append(asked, folder); return true }
+	// The Telegram handler replies to the user and returns nil, so the runner
+	// error never reaches the wrapper; the runner's proof still does.
+	h := bindingHandler(f, prov, mod, uncertain, func(context.Context, []queue.Item) error { return nil }, log)
+	if err := h(t.Context(), []queue.Item{{ID: 7, Folder: "a"}}); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(f.settled, []bool{true}) || !reflect.DeepEqual(asked, []string{"a"}) {
+		t.Errorf("settled = %v asked = %v, want [true] [a]", f.settled, asked)
+	}
+}
+
+func TestBindingHandlerTakesOverClaimAfterCrash(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		crash func(t *testing.T, st *store.Store, sid string, turn int64)
+	}{
+		{"held claim released at startup", func(t *testing.T, st *store.Store, _ string, _ int64) {
+			if n, err := st.ReleaseStaleExecutionClaims(t.Context()); err != nil || n != 1 {
+				t.Fatalf("released %d, %v", n, err)
+			}
+		}},
+		{"execution_unknown claim taken over", func(t *testing.T, st *store.Store, sid string, turn int64) {
+			if err := st.SettleExecutionClaim(t.Context(), sid, turn, true); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			st, _ := sessionFixture(t)
+			var ids []int64
+			for i := 5; i <= 7; i++ {
+				id, _, err := st.InsertTurn(ctx, store.Turn{Source: "telegram", SourceID: fmt.Sprintf("1:%d", i), ChatFolder: "owner", ChatID: 1, Text: "x", Status: store.TurnInterrupted})
+				if err != nil {
+					t.Fatal(err)
+				}
+				ids = append(ids, id)
+			}
+			scope, err := st.SnapshotScope(ctx, "owner")
+			if err != nil {
+				t.Fatal(err)
+			}
+			b := bindingFor(t, ctx, st, "owner", 0)
+			// The crashed run claimed the session for its batch [5,6]; recovery
+			// now re-batches [5,6,7], so the last id differs from the holder.
+			if err := st.AcquireExecutionClaim(ctx, scope, b.ActiveSessionID, ids[1]); err != nil {
+				t.Fatal(err)
+			}
+			tc.crash(t, st, b.ActiveSessionID, ids[1])
+			var during int64
+			h := bindingHandler(st, func(string) string { return "claude" }, func(string) string { return "" }, notUncertain,
+				func(ctx context.Context, items []queue.Item) error {
+					holder, _, _, err := st.ExecutionClaimHolder(ctx, b.ActiveSessionID)
+					if err != nil {
+						t.Fatal(err)
+					}
+					during = holder
+					return nil
+				}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			items := []queue.Item{{ID: ids[0], Folder: "owner"}, {ID: ids[1], Folder: "owner"}, {ID: ids[2], Folder: "owner"}}
+			if err := h(ctx, items); err != nil {
+				t.Fatalf("recovered batch refused: %v", err)
+			}
+			if during != ids[2] {
+				t.Fatalf("claim holder during run = %d, want %d", during, ids[2])
+			}
+			if _, _, ok, err := st.ExecutionClaimHolder(ctx, b.ActiveSessionID); err != nil || ok {
+				t.Fatalf("claim not settled: ok=%v err=%v", ok, err)
+			}
+		})
 	}
 }

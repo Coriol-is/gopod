@@ -232,8 +232,9 @@ func TestExecutionClaimIsUniquePerSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	sid := b.ActiveSessionID
-	turnA := insertTestTurn(t, st, "owner", "1:1", TurnDone)
-	turnB := insertTestTurn(t, st, "owner", "1:2", TurnDone)
+	turnA := insertTestTurn(t, st, "owner", "1:1", TurnRunning)
+	turnB := insertTestTurn(t, st, "owner", "1:2", TurnPending)
+	turnC := insertTestTurn(t, st, "owner", "1:3", TurnPending)
 	if err = st.AcquireExecutionClaim(ctx, scope, sid, turnA); err != nil {
 		t.Fatalf("acquire A: %v", err)
 	}
@@ -241,23 +242,81 @@ func TestExecutionClaimIsUniquePerSession(t *testing.T) {
 		t.Fatalf("acquire A again: %v", err)
 	}
 	if err = st.AcquireExecutionClaim(ctx, scope, sid, turnB); !errors.Is(err, ErrSessionBusy) {
-		t.Fatalf("acquire B err = %v, want ErrSessionBusy", err)
+		t.Fatalf("acquire B over held non-terminal A err = %v, want ErrSessionBusy", err)
 	}
+	if holder, state, ok, err := st.ExecutionClaimHolder(ctx, sid); err != nil || !ok || holder != turnA || state != "held" {
+		t.Fatalf("holder = %d %q %v %v", holder, state, ok, err)
+	}
+	// execution_unknown is recorded evidence, not a lock: another turn takes over.
 	if err = st.SettleExecutionClaim(ctx, sid, turnA, true); err != nil {
 		t.Fatalf("settle unknown: %v", err)
 	}
-	var state string
-	if err = st.db.QueryRowContext(ctx, `SELECT state FROM execution_claims WHERE session_id=?`, sid).Scan(&state); err != nil || state != "execution_unknown" {
+	if _, state, _, err := st.ExecutionClaimHolder(ctx, sid); err != nil || state != "execution_unknown" {
 		t.Fatalf("state = %q, %v", state, err)
 	}
-	if err = st.AcquireExecutionClaim(ctx, scope, sid, turnB); !errors.Is(err, ErrSessionBusy) {
-		t.Fatalf("acquire B after unknown err = %v, want ErrSessionBusy", err)
+	if err = st.AcquireExecutionClaim(ctx, scope, sid, turnB); err != nil {
+		t.Fatalf("acquire B over execution_unknown A: %v", err)
 	}
-	if err = st.SettleExecutionClaim(ctx, sid, turnA, false); err != nil {
+	var n int
+	if err = st.db.QueryRowContext(ctx, `SELECT count(*) FROM execution_claims WHERE session_id=?`, sid).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("claims for session = %d, %v", n, err)
+	}
+	if holder, state, ok, err := st.ExecutionClaimHolder(ctx, sid); err != nil || !ok || holder != turnB || state != "held" {
+		t.Fatalf("after takeover holder = %d %q %v %v", holder, state, ok, err)
+	}
+	if err = st.AcquireExecutionClaim(ctx, scope, sid, turnC); !errors.Is(err, ErrSessionBusy) {
+		t.Fatalf("acquire C over held pending B err = %v, want ErrSessionBusy", err)
+	}
+	// A held claim whose turn already finished is stale and may be taken over.
+	if err = st.MarkTurnFinished(ctx, turnB, TurnDone, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err = st.AcquireExecutionClaim(ctx, scope, sid, turnC); err != nil {
+		t.Fatalf("acquire C over finished B: %v", err)
+	}
+	if holder, _, _, err := st.ExecutionClaimHolder(ctx, sid); err != nil || holder != turnC {
+		t.Fatalf("holder = %d, %v, want C", holder, err)
+	}
+	if err = st.SettleExecutionClaim(ctx, sid, turnC, false); err != nil {
 		t.Fatalf("settle: %v", err)
 	}
-	if err = st.AcquireExecutionClaim(ctx, scope, sid, turnB); err != nil {
-		t.Fatalf("acquire B after settle: %v", err)
+	if _, _, ok, err := st.ExecutionClaimHolder(ctx, sid); err != nil || ok {
+		t.Fatalf("claim survived settle: ok=%v err=%v", ok, err)
+	}
+}
+
+func TestReleaseStaleExecutionClaimsDeletesHeldOnly(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	scope := ownerScope(t, st)
+	b0, err := st.ResolveConversation(ctx, scope, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b1, err := st.ResolveConversation(ctx, scope, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	held := insertTestTurn(t, st, "owner", "1:1", TurnRunning)
+	unknown := insertTestTurn(t, st, "owner", "1:2", TurnRunning)
+	if err = st.AcquireExecutionClaim(ctx, scope, b0.ActiveSessionID, held); err != nil {
+		t.Fatal(err)
+	}
+	if err = st.AcquireExecutionClaim(ctx, scope, b1.ActiveSessionID, unknown); err != nil {
+		t.Fatal(err)
+	}
+	if err = st.SettleExecutionClaim(ctx, b1.ActiveSessionID, unknown, true); err != nil {
+		t.Fatal(err)
+	}
+	n, err := st.ReleaseStaleExecutionClaims(ctx)
+	if err != nil || n != 1 {
+		t.Fatalf("released = %d, %v, want 1", n, err)
+	}
+	if _, _, ok, err := st.ExecutionClaimHolder(ctx, b0.ActiveSessionID); err != nil || ok {
+		t.Fatalf("held claim survived: ok=%v err=%v", ok, err)
+	}
+	if holder, state, ok, err := st.ExecutionClaimHolder(ctx, b1.ActiveSessionID); err != nil || !ok || holder != unknown || state != "execution_unknown" {
+		t.Fatalf("unknown claim = %d %q %v %v, want kept", holder, state, ok, err)
 	}
 }
 

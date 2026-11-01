@@ -301,7 +301,11 @@ func (s *Store) GetAttemptBinding(ctx context.Context, turnID int64) (AttemptBin
 }
 
 // AcquireExecutionClaim gives turnID the single execution claim on a session.
-// Re-acquiring for the same turn is idempotent; another turn gets ErrSessionBusy.
+// Re-acquiring for the same turn is idempotent. Another turn takes the claim
+// over when the holder turn is terminal (done, failed, stopped) or the claim is
+// execution_unknown: in P1 an unknown claim is recorded evidence and the
+// runner's process proof gates re-execution (D055). Otherwise it gets
+// ErrSessionBusy.
 func (s *Store) AcquireExecutionClaim(ctx context.Context, scope ScopeRef, sessionID string, turnID int64) error {
 	_, err := s.withTx(ctx, func(q taskSQL) error {
 		if _, err := ownedActiveSessionQ(ctx, q, scope, sessionID); err != nil {
@@ -311,12 +315,20 @@ func (s *Store) AcquireExecutionClaim(ctx context.Context, scope ScopeRef, sessi
 			return err
 		}
 		var holder int64
-		err := q.QueryRowContext(ctx, `SELECT turn_id FROM execution_claims WHERE session_id=?`, sessionID).Scan(&holder)
+		var state, holderStatus string
+		err := q.QueryRowContext(ctx, `SELECT c.turn_id,c.state,IFNULL(t.status,'') FROM execution_claims c LEFT JOIN turns t ON t.id=c.turn_id WHERE c.session_id=?`,
+			sessionID).Scan(&holder, &state, &holderStatus)
 		switch {
 		case err == nil && holder == turnID:
 			return nil
 		case err == nil:
-			return ErrSessionBusy
+			terminal := holderStatus == TurnDone || holderStatus == TurnFailed || holderStatus == TurnStopped
+			if state != "execution_unknown" && !terminal {
+				return ErrSessionBusy
+			}
+			if _, err = q.ExecContext(ctx, `DELETE FROM execution_claims WHERE session_id=?`, sessionID); err != nil {
+				return fmt.Errorf("taking over execution claim from turn %d: %w", holder, err)
+			}
 		case !errors.Is(err, sql.ErrNoRows):
 			return err
 		}
@@ -330,8 +342,36 @@ func (s *Store) AcquireExecutionClaim(ctx context.Context, scope ScopeRef, sessi
 	return nil
 }
 
+// ExecutionClaimHolder reports the turn and state of a session's claim, if any.
+func (s *Store) ExecutionClaimHolder(ctx context.Context, sessionID string) (turnID int64, state string, ok bool, err error) {
+	err = s.taskDB(ctx).QueryRowContext(ctx, `SELECT turn_id,state FROM execution_claims WHERE session_id=?`, sessionID).Scan(&turnID, &state)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, "", false, nil
+	}
+	if err != nil {
+		return 0, "", false, fmt.Errorf("reading execution claim holder: %w", err)
+	}
+	return turnID, state, true, nil
+}
+
+// ReleaseStaleExecutionClaims deletes every held claim. Call it only at
+// startup before queue recovery, when nothing can be running: a held claim
+// then belongs to a process that crashed between acquire and settle.
+// execution_unknown claims are kept as evidence.
+func (s *Store) ReleaseStaleExecutionClaims(ctx context.Context) (int, error) {
+	res, err := s.taskDB(ctx).ExecContext(ctx, `DELETE FROM execution_claims WHERE state='held'`)
+	if err != nil {
+		return 0, fmt.Errorf("releasing stale execution claims: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("counting released execution claims: %w", err)
+	}
+	return int(n), nil
+}
+
 // SettleExecutionClaim releases the claim, or with unknown=true marks it
-// execution_unknown and keeps it so the session stays blocked.
+// execution_unknown as durable evidence that the run's exit is unproven.
 func (s *Store) SettleExecutionClaim(ctx context.Context, sessionID string, turnID int64, unknown bool) error {
 	stmt := `DELETE FROM execution_claims WHERE session_id=? AND turn_id=?`
 	if unknown {

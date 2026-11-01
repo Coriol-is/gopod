@@ -27,12 +27,16 @@ type sessionBinder interface {
 	GetAttemptBinding(ctx context.Context, turnID int64) (store.AttemptBinding, bool, error)
 	AcquireExecutionClaim(ctx context.Context, scope store.ScopeRef, sessionID string, turnID int64) error
 	SettleExecutionClaim(ctx context.Context, sessionID string, turnID int64, unknown bool) error
+	ExecutionClaimHolder(ctx context.Context, sessionID string) (turnID int64, state string, ok bool, err error)
 }
 
 // bindingHandler wraps next so every legacy queue batch is bound to the
 // conversation's active session and context epoch and holds an execution claim
 // while it runs. Managed task attempts pass through: the CP-004 ledger owns them.
-func bindingHandler(st sessionBinder, provider, model func(folder string) string, next queue.Handler, log *slog.Logger) queue.Handler {
+// uncertain is the runner's process proof (Runner.ExecutionUncertain): when it
+// reports an unproven exit after the run, the claim is settled
+// execution_unknown even if the handler swallowed the runner error.
+func bindingHandler(st sessionBinder, provider, model func(folder string) string, uncertain func(ctx context.Context, folder string) bool, next queue.Handler, log *slog.Logger) queue.Handler {
 	return func(ctx context.Context, items []queue.Item) error {
 		if len(items) == 0 || items[0].Managed() {
 			return next(ctx, items)
@@ -65,13 +69,21 @@ func bindingHandler(st sessionBinder, provider, model func(folder string) string
 			}
 		}
 		last := items[len(items)-1].ID
+		prevTurn, prevState, held, err := st.ExecutionClaimHolder(ctx, b.ActiveSessionID)
+		if err != nil {
+			return fmt.Errorf("read execution claim of session %s: %w", b.ActiveSessionID, err)
+		}
 		if err := st.AcquireExecutionClaim(ctx, scope, b.ActiveSessionID, last); err != nil {
 			return fmt.Errorf("claim session %s for turn %d: %w", b.ActiveSessionID, last, err)
+		}
+		if held && prevTurn != last {
+			log.Warn("execution claim taken over", "session", b.ActiveSessionID, "turn", last,
+				"previous_turn", prevTurn, "previous_state", prevState)
 		}
 		runErr := next(ctx, items)
 		sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), claimSettleTimeout)
 		defer cancel()
-		unknown := errors.Is(runErr, runner.ErrExecutionUnproven)
+		unknown := errors.Is(runErr, runner.ErrExecutionUnproven) || uncertain(sctx, folder)
 		if err := st.SettleExecutionClaim(sctx, b.ActiveSessionID, last, unknown); err != nil {
 			log.Warn("settle execution claim failed", "session", b.ActiveSessionID, "turn", last, "unknown", unknown, "err", err)
 		}
