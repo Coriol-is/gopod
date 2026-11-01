@@ -1944,7 +1944,23 @@ runtimes, the autoscaler and provider failover are not part of this decision.
 Real Telegram and native-provider acceptance remain separate gates
 ([P0 acceptance](reviews/2026-11-01-p0-acceptance.md)).
 
-## D055 — Durable session identity behind an atomic adoption marker
+## D055 — Silent mode: progress-only streaming per chat
+
+**Date:** 2026-11-01
+**Status:** Accepted
+**Extends:** D024 (tool progress in the draft), D021 (native streaming and Stop)
+
+**Context.** A streamed turn shows the agent's text deltas in the draft as soon as they arrive (D021), and D024 only drops the text that precedes a later tool step. On long coding turns the owner sees narration, half-written answers and tool steps alternating in the draft, and asked for a mode in which the chat shows only the progress of the work and receives the finished answer once.
+
+**Decision.**
+- `/silent` is a `ChatLocal` Router command (owner-only in groups, like `/model`). With no argument it shows `Silent mode: on|off` with an `on`/`off` picker (D028); `/silent on|off` sets it. The flag is per chat (every thread), persisted as `silent:<chatFolder>` in `router_state` (`"1"` on, empty or absent off), default off, read once at the start of each streamed turn.
+- In silent mode `streamReply` never switches the draft or the edit-path placeholder to answer text: chunks accumulate only for a Stop, and the view stays the status header plus the last five tool steps until the final message. A run without steps (plain runs, `GOPOD_PROGRESS=0`) shows the elapsed-time header alone after `headerQuiet`. Draft overflow cannot occur because the draft carries no text.
+- The final reply goes out as before (draft path: one `sendMessage`; edit path: the placeholder becomes the reply when it fits), with one addition on the edit path: because the placeholder never held text, a reply or a stopped partial longer than one message (`editLimit`) takes the existing overflow branch, which edits the placeholder to the progress summary (no cursor, no Stop button) and sends the reply as separate messages. D025 long-code handling, the sync path and the voice reply are unchanged. Stop keeps D021 semantics: the text received since the last tool step is the reply, `(stopped)` when there is none.
+
+**Consequences.** The owner sees the answer only when the turn ends; a turn that produces no tool steps shows a bare timer for its whole length. The flag is not per thread (CP-018 would be the place for that). A failed `router_state` read logs a warning and streams normally.
+
+
+## D056 — Durable session identity behind an atomic adoption marker
 
 **Status:** accepted 2026-11-01 (CP-037 P1)
 

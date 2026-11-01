@@ -303,7 +303,7 @@ func (s *Store) GetAttemptBinding(ctx context.Context, turnID int64) (AttemptBin
 // Re-acquiring for the same turn is idempotent. Another turn takes the claim
 // over when the holder turn is terminal (done, failed, stopped) or the claim is
 // execution_unknown: in P1 an unknown claim is recorded evidence and the
-// runner's process proof gates re-execution (D055). Otherwise it gets
+// runner's process proof gates re-execution (D056). Otherwise it gets
 // ErrSessionBusy.
 func (s *Store) AcquireExecutionClaim(ctx context.Context, scope ScopeRef, sessionID string, turnID int64) error {
 	_, err := s.withTx(ctx, func(q taskSQL) error {
@@ -319,6 +319,10 @@ func (s *Store) AcquireExecutionClaim(ctx context.Context, scope ScopeRef, sessi
 			sessionID).Scan(&holder, &state, &holderStatus)
 		switch {
 		case err == nil && holder == turnID:
+			// A retry of the same turn re-arms its claim: a live run holds it.
+			if _, err = q.ExecContext(ctx, `UPDATE execution_claims SET state='held' WHERE session_id=? AND turn_id=?`, sessionID, turnID); err != nil {
+				return fmt.Errorf("re-arming execution claim for turn %d: %w", turnID, err)
+			}
 			return nil
 		case err == nil:
 			terminal := holderStatus == TurnDone || holderStatus == TurnFailed || holderStatus == TurnStopped

@@ -254,6 +254,16 @@ func TestExecutionClaimIsUniquePerSession(t *testing.T) {
 	if _, state, _, err := st.ExecutionClaimHolder(ctx, sid); err != nil || state != "execution_unknown" {
 		t.Fatalf("state = %q, %v", state, err)
 	}
+	// The same turn retrying re-arms its own claim as held.
+	if err = st.AcquireExecutionClaim(ctx, scope, sid, turnA); err != nil {
+		t.Fatalf("re-acquire A over its unknown claim: %v", err)
+	}
+	if _, state, _, err := st.ExecutionClaimHolder(ctx, sid); err != nil || state != "held" {
+		t.Fatalf("state after same-turn re-acquire = %q, %v", state, err)
+	}
+	if err = st.SettleExecutionClaim(ctx, sid, turnA, true); err != nil {
+		t.Fatalf("settle unknown again: %v", err)
+	}
 	if err = st.AcquireExecutionClaim(ctx, scope, sid, turnB); err != nil {
 		t.Fatalf("acquire B over execution_unknown A: %v", err)
 	}

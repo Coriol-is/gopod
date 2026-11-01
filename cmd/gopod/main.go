@@ -551,6 +551,26 @@ func run() error {
 				return nil
 			}, chatFolderLookup)
 
+		// /silent (D055): per-chat progress-only streaming, persisted like /model.
+		control.RegisterSilentCommand(router,
+			func(chatFolder string) bool {
+				v, err := st.GetState(context.Background(), control.SilentStateKey+chatFolder)
+				if err != nil {
+					logger.Warn("silent mode lookup failed", slog.String("folder", chatFolder), slog.Any("err", err))
+				}
+				return v == "1"
+			},
+			func(chatFolder string, on bool) error {
+				v := ""
+				if on {
+					v = "1"
+				}
+				if err := st.SetState(context.Background(), control.SilentStateKey+chatFolder, v); err != nil {
+					return fmt.Errorf("persist silent mode: %w", err)
+				}
+				return nil
+			}, chatFolderLookup)
+
 		control.RegisterProviderCommand(router, func(ctx context.Context, chatFolder, name string) (string, error) {
 			p, ok := providers[name]
 			if !ok {

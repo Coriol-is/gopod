@@ -192,6 +192,7 @@ all DB queries by `cmd.Caller.ChatID`.
 | `/clear` | — | ChatLocal | Clear this conversation's context; asks to confirm (§6.1) |
 | `/model [name\|default]` | — | ChatLocal | Show (picker) or set this chat's model |
 | `/provider [claude\|codex]` | — | ChatLocal | Show (picker) or switch this chat's provider; a switch asks to confirm |
+| `/silent [on\|off]` | — | ChatLocal | Show (picker) or toggle silent mode ([D055](DECISIONS.md)): the draft shows only progress (elapsed time, last tool steps); the answer arrives as one final message |
 | `/remember <text>` | — | ChatLocal | `memory_add` convenience for the calling chat |
 | `/recall <query>` | — | ChatLocal | `memory_search` over the calling chat's memories |
 | `/tasks list` | — | ChatLocal | List scheduled tasks for the calling chat |
@@ -227,7 +228,7 @@ Cross-chat operations and global state.
 | `/system health` | `gopod system health` | OwnerOnly | Container daemon, DB, embedder, scheduler, queue health |
 | `/system uptime` | `gopod system uptime` | OwnerOnly | Process uptime, last restart cause |
 | `/restart [force\|status [<id>]\|cancel [<id>]]` | (Telegram only) | OwnerOnly | Controller restart ([D054](DECISIONS.md)). Bare `/restart` records a durable drain request: new dispatch stops, queued input is retained, active replies and tasks finish, then the gateway and authorized personal containers restart; the reply carries **Status** / **Cancel restart** buttons bound to that request id. `force` asks for a confirmation button, then cancels the active reply and all pending/running background work, records the cancelled occurrences so recovery does not replay them, and keeps schedules and files. A drain that cannot prove termination stays `blocked` and stops nothing; `cancel` works only while `draining`/`blocked`. Refused outside the owner's private chat. |
-| `/sessions [status\|adopt\|cancel]` | (Telegram only) | OwnerOnly | Durable session identity ([D055](DECISIONS.md)). Bare call shows the session mapping mode (`legacy` or `durable`), row counts and, when legacy and not yet requested, an **Adopt** picker button. `adopt` asks a confirmation button (D028), then records the request; it takes effect at the next restart (adoption runs at controller startup and the same boot starts in durable mode). `cancel` withdraws a pending request without confirmation (`No adoption requested.` when there is none). At restart, adoption is deferred (legacy kept, request retained, logged) while unfinished turns exist; status shows the deferral. Legacy rows of unregistered folders are skipped and logged. |
+| `/sessions [status\|adopt\|cancel]` | (Telegram only) | OwnerOnly | Durable session identity ([D056](DECISIONS.md)). Bare call shows the session mapping mode (`legacy` or `durable`), row counts and, when legacy and not yet requested, an **Adopt** picker button. `adopt` asks a confirmation button (D028), then records the request; it takes effect at the next restart (adoption runs at controller startup and the same boot starts in durable mode). `cancel` withdraws a pending request without confirmation (`No adoption requested.` when there is none). At restart, adoption is deferred (legacy kept, request retained, logged) while unfinished turns exist; status shows the deferral. Legacy rows of unregistered folders are skipped and logged. |
 | `/debug ...` | `gopod debug ...` | OwnerOnly | Free-form diagnostics (per-subcommand) |
 | `/proactive [gmail\|calendar [<preset> [on\|off\|freq <v>\|time <HHMM>\|lead <min>\|reset]]]`, `/proactive tz [<IANA>]`, `/proactive hours [<HHMM-HHMM>]`, `/proactive quiet [<HHMM-HHMM>\|off]`, `/proactive off\|on` | (Telegram only) | OwnerOnly | Built-in recurring Gmail and Calendar presets (CP-033, [spec](superpowers/specs/2026-10-30-proactive-presets.md)). No argument shows the overview; every screen is a picker (current choice `✓`, message edited in place) and each button re-dispatches the command, so the Router re-checks `OwnerOnly` on the presser. Refused in groups for everyone, the owner included. Turning a preset on while the connector status is unknown asks for a Yes; `reset` (discard edits made in `/tasks`) confirms. `check`, `guide` and `offer` are not built yet |
 
@@ -340,8 +341,9 @@ toasts «Кнопка устарела».
 
 Pickers: `/model` with no args offers the provider's model names (Claude:
 `fable`, `opus`, `sonnet`, `haiku`; Codex: none, any id is typed) plus
-`default`; `/provider` with no args offers `claude`, `codex`. The current
-one is marked `✓` and styled `primary`.
+`default`; `/provider` with no args offers `claude`, `codex`; `/silent`
+with no args offers `on`, `off`. The current one is marked `✓` and styled
+`primary`.
 
 Confirmations (owner Q6): `/clear` and `/provider <name>` answer `CodeConfirm` with Yes (`danger`) / Cancel; a
 provider picked from the picker is confirmed the same way. `/chats
