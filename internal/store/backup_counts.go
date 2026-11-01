@@ -31,6 +31,12 @@ var rowCountSQL = map[string]string{
 	// proactive presets (CP-033)
 	"proactive_presets":  "SELECT count(*) FROM proactive_presets",
 	"proactive_settings": "SELECT count(*) FROM proactive_settings",
+	// durable session identity (CP-037 P1)
+	"execution_sessions":    "SELECT count(*) FROM execution_sessions",
+	"conversation_bindings": "SELECT count(*) FROM conversation_bindings",
+	"native_contexts":       "SELECT count(*) FROM native_contexts",
+	"attempt_bindings":      "SELECT count(*) FROM attempt_bindings",
+	"execution_claims":      "SELECT count(*) FROM execution_claims",
 	// memory
 	"memories": "SELECT count(*) FROM memories",
 	// delivery and outbox
