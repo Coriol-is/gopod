@@ -49,12 +49,15 @@ explicit close rather than a timer. Contract in the
 separate builder and a separate policy role; the hardened chat profile is not
 parameterised and not relaxed.
 
-**Act on this first, independently of CP-038.** An independent review found a defect in
-shipped code: `callbackCaller` sets no `MessageID` (`internal/telegram/cmdbuttons.go:180-191`),
-and `internal/control/restart.go:28` rejects a caller without one. So `/restart force`'s
-confirmation, `/restart status` and `/restart cancel` are all rejected on the deployed
-build. Slice `E-pre` is that one-field fix plus a test; the owner chose to populate the
-field rather than weaken the check. Worth merging whether or not CP-038 is ever built.
+**Act on this first, independently of CP-038.** An independent review found a defect on
+`main`: `callbackCaller` sets no `MessageID` (`internal/telegram/cmdbuttons.go:180-191`),
+and `internal/control/restart.go:28` rejects a caller without one, so `/restart force`'s
+confirmation, `/restart status` and `/restart cancel` are all refused. Scope precisely:
+those forms and their buttons arrived with `RegisterRestartLifecycle` in `5c36b81`, which
+is **not deployed**. The Pi runs `8a3ce75`, which wires `RegisterRestartCommand` — no
+arguments, no buttons — so the Pi is unaffected and nothing in production is broken.
+Slice `E-pre` is that one-field fix plus a test; the owner chose to populate the field
+rather than weaken the check. Worth merging whether or not CP-038 is ever built.
 
 **Corrections already made — do not re-derive them.** Spec section 13 records what the
 first draft got wrong about the source. A stale policy version *denies*
@@ -70,8 +73,8 @@ so the runtime binds to one reserved `elevated` chat folder. Boot removal belong
 (`internal/runner/docker_args.go:36`, `:41`, `:102`, `:202`) for a section that no longer
 exists; the comment at `internal/runner/exec_policy.go:45-46` says "recycled" where the
 code denies; the top-level `container/Dockerfile` is stale and built by nothing; and
-`/stop` omits the `MessageID` check that `/restart` applies. All are recorded in the
-CP-038 plan's `E5`, none were touched.
+`/stop` omits the `MessageID` check that `/restart` applies. Only the §6.1 drift is in
+the CP-038 plan's `E5`; the other three are not in any slice. None were touched.
 
 ## Previous state — CP-037 P0 merged, 2026-11-01
 
@@ -292,9 +295,10 @@ A08/A10 real-client checks remain open.
 4. Continue the [approved roadmap](../ROADMAP.md): CP-033 remaining slices, CP-003 agent image
    instructions/foreground cutover and backup gates; deferred task adapter remains deferred.
    CP-034 and CP-028 require their design/owner gates before implementation.
-5. Fix the button `MessageID` fence (CP-038 slice `E-pre`): it repairs `/restart force|status|cancel`
-   on the deployed build and does not depend on CP-038 acceptance. Everything else in CP-038
-   waits for the owner to accept the CP.
+5. Fix the button `MessageID` fence (CP-038 slice `E-pre`): it repairs
+   `/restart force|status|cancel` on `main` (`5c36b81`, not deployed; the Pi's `8a3ce75`
+   has no argument forms) and does not depend on CP-038 acceptance. Everything else in
+   CP-038 waits for the owner to accept the CP.
 
 ## Decisions already taken — do not re-ask
 
