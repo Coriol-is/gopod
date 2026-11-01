@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-01 (`/silent` merged as `6d11765`; production unchanged)
+**Last updated:** 2026-11-01 (`/silent` merged as `6d11765`, CP-038 design merged as `2ca967c`; production unchanged)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -31,6 +31,50 @@ the acceptance.
 
 Noted, out of scope: `gofmt -l` lists `internal/runner/auth.go`, `compact.go`,
 `provider_claude.go` on `main` (pre-existing, CI has no gofmt gate).
+
+## Also current — CP-038 elevated host session designed, 2026-11-01
+
+[CP-038](proposals/CP-038-elevated-host-session.md) is **design only** and merged to
+`main` as **`2ca967c`** ([PR #128](https://github.com/Coriol-is/gopod/pull/128), green
+test/isolation-spike/Sonar, worktree removed, branch deleted). Status stays `proposed`:
+no code, no feature flag, nothing deployed. The owner asked to plan the feature, not
+build it, so **implementation needs their acceptance of the CP first**.
+
+What it designs: an explicitly started agent conversation with host authority on the
+Pi. `Privileged: true` plus host PID/network/IPC, the Docker socket and the host root
+at `/host`, started by `/root` with a provider picker, owner-private only, bounded by
+explicit close rather than a timer. Contract in the
+[spec](superpowers/specs/2026-11-01-elevated-host-session.md), slices `E-pre`-`E6` in the
+[plan](superpowers/plans/2026-11-01-elevated-host-session.md). Container profile is a
+separate builder and a separate policy role; the hardened chat profile is not
+parameterised and not relaxed.
+
+**Act on this first, independently of CP-038.** An independent review found a defect on
+`main`: `callbackCaller` sets no `MessageID` (`internal/telegram/cmdbuttons.go:180-191`),
+and `internal/control/restart.go:28` rejects a caller without one, so `/restart force`'s
+confirmation, `/restart status` and `/restart cancel` are all refused. Scope precisely:
+those forms and their buttons arrived with `RegisterRestartLifecycle` in `5c36b81`, which
+is **not deployed**. The Pi runs `8a3ce75`, which wires `RegisterRestartCommand` — no
+arguments, no buttons — so the Pi is unaffected and nothing in production is broken.
+Slice `E-pre` is that one-field fix plus a test; the owner chose to populate the field
+rather than weaken the check. Worth merging whether or not CP-038 is ever built.
+
+**Corrections already made — do not re-derive them.** Spec section 13 records what the
+first draft got wrong about the source. A stale policy version *denies*
+(`internal/runner/exec_guard.go:211-213`), it does not recycle, and no `policyRevision`
+bump is needed because `Fingerprint` hashes only the policy's own role and scope. The
+guard does need new logic: a role mismatch currently reaches `actRecreate`, and
+`ContainerFacts` never inspects `PidMode`/`NetworkMode`/`IpcMode`. The policy digest runs
+only under `GOPOD_MANAGED_TASKS`, off by default. There is no session entity to extend,
+so the runtime binds to one reserved `elevated` chat folder. Boot removal belongs between
+`restart.recycle` and `CleanupLeftovers`, or a survivor blocks all execution.
+
+**Noted, deliberately not done.** Code comments cite `docs/ISOLATION.md §6.1`
+(`internal/runner/docker_args.go:36`, `:41`, `:102`, `:202`) for a section that no longer
+exists; the comment at `internal/runner/exec_policy.go:45-46` says "recycled" where the
+code denies; the top-level `container/Dockerfile` is stale and built by nothing; and
+`/stop` omits the `MessageID` check that `/restart` applies. Only the §6.1 drift is in
+the CP-038 plan's `E5`; the other three are not in any slice. None were touched.
 
 ## Previous state — CP-037 P0 merged, 2026-11-01
 
@@ -251,6 +295,10 @@ A08/A10 real-client checks remain open.
 4. Continue the [approved roadmap](../ROADMAP.md): CP-033 remaining slices, CP-003 agent image
    instructions/foreground cutover and backup gates; deferred task adapter remains deferred.
    CP-034 and CP-028 require their design/owner gates before implementation.
+5. Fix the button `MessageID` fence (CP-038 slice `E-pre`): it repairs
+   `/restart force|status|cancel` on `main` (`5c36b81`, not deployed; the Pi's `8a3ce75`
+   has no argument forms) and does not depend on CP-038 acceptance. Everything else in
+   CP-038 waits for the owner to accept the CP.
 
 ## Decisions already taken — do not re-ask
 
@@ -262,6 +310,13 @@ A08/A10 real-client checks remain open.
 - CP-034: official-source skill/plugin installation from private chat only, auto-update on, never groups.
 - CP-028 direction: Go/gotd, read and write, private chat only; its seven spec questions remain open in PR #108.
 - No automatic paid fallback. T9 memory-cgroup/reboot and parallel implementation remain paused; CP-037 design is reopened.
+- CP-038 elevated session, decided 2026-11-01: `Privileged: true` plus host PID/network/IPC (not a
+  narrower capability set); its own command and conversation (not a mode of the current topic);
+  explicit close as the only bound, so no TTL or idle timer; confirmation, exec journal, chat marker
+  and a separate `exec_guard` profile all required; modal routing while a session is live; the journal
+  records only host-performed `docker exec` rows and makes no claim to record the agent's own host
+  commands. The owner accepts that the container is host root and that content read inside it acts
+  with that authority.
 
 ## Open gates and boundaries
 

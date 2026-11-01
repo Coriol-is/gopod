@@ -33,6 +33,23 @@ in contract D. These remain specifications only.
 Owner authorized P0 code, parallel worktrees, acceptance and automatic merge.
 T5/T5b parallel-runtime implementation remains paused; deployment and T9 reboot are not authorized.
 
+## Elevated host session — CP-038 (design only)
+
+⬜ Design merged as `2ca967c` via [PR #128](https://github.com/Coriol-is/gopod/pull/128).
+Nothing implemented, no feature flag, not deployed. [CP-038](docs/proposals/CP-038-elevated-host-session.md)
+stays `proposed` and needs owner acceptance before any code.
+
+An explicitly started owner-private conversation with host authority on the Pi:
+`Privileged: true` plus host PID/network/IPC, the Docker socket and the host root at
+`/host`, its own container profile and policy role, bounded by explicit close rather than
+a timer. [Spec](docs/superpowers/specs/2026-11-01-elevated-host-session.md) ·
+[Plan](docs/superpowers/plans/2026-11-01-elevated-host-session.md).
+
+Slice `E-pre` is independent of acceptance: button presses carry no `MessageID`, so
+`/restart force|status|cancel` are refused on `main` (`5c36b81`, not deployed; the Pi's
+`8a3ce75` registers no argument forms). The hardened chat and group profiles are not
+touched by any slice.
+
 ## Private-chat Stop — CP-036
 
 ✅ Explicit inline Stop and `/stop` for owner-private interactive answers merged
