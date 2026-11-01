@@ -182,9 +182,13 @@ func (b *Bot) callbackCaller(q cbQuery) control.Caller {
 		ChatKind: q.ChatKind,
 		ChatID:   q.ChatID,
 		ThreadID: q.ThreadID,
-		UserID:   q.UserID,
-		Source:   control.SourceTelegram,
-		IsOwner:  b.ownerChatID != 0 && q.ChatID == b.ownerChatID,
+		// The message carrying the button. Commands that fence replay on a
+		// real private message (`/restart`, `/stop`) reject a zero value, so
+		// omitting it here made every button dispatch for those commands fail.
+		MessageID: q.MessageID,
+		UserID:    q.UserID,
+		Source:    control.SourceTelegram,
+		IsOwner:   b.ownerChatID != 0 && q.ChatID == b.ownerChatID,
 		// Group-scoped identity only (D048): the user who pressed.
 		IsGroupOwner: b.isGroupOwnerUser(q.ChatKind, q.ChatID, q.UserID),
 	}
