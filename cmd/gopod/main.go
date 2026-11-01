@@ -213,9 +213,9 @@ func run() error {
 				Image:       cfg.ContainerImage,
 				UID:         os.Getuid(),
 				GID:         os.Getgid(),
-				MemoryBytes: 4 << 30,       // 4 GiB; GOPOD_CONTAINER_MEM later
-				NanoCPUs:    2_000_000_000, // 2 CPUs
-				PidsLimit:   1024,
+				MemoryBytes: cfg.ContainerMemoryBytes,
+				NanoCPUs:    cfg.ContainerNanoCPUs,
+				PidsLimit:   cfg.ContainerPidsLimit,
 			}
 			// Create the agent provider. Currently always Claude;
 			// P3/P4 will add per-chat provider selection.
@@ -259,9 +259,11 @@ func run() error {
 				runLog.Info("managed task runtime enabled (task role denied until a credential adapter is qualified)")
 			}
 			r.SetAgentLimits(runner.AgentLimits{
-				MaxAgents:      cfg.MaxAgents,
-				MinAvailableMB: cfg.MinAvailableMB,
-				NodeHeapMB:     cfg.AgentNodeHeapMB,
+				MaxAgents:       cfg.MaxAgents,
+				MinAvailableMB:  cfg.MinAvailableMB,
+				NodeHeapMB:      cfg.AgentNodeHeapMB,
+				StrictMemory:    cfg.StrictMemoryAdmission,
+				GrowthReserveMB: cfg.AgentGrowthReserveMB,
 			})
 			runLog.Info("agent admission",
 				slog.Int("max_agents", cfg.MaxAgents),
