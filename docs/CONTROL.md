@@ -192,6 +192,7 @@ all DB queries by `cmd.Caller.ChatID`.
 | `/clear` | — | ChatLocal | Clear this conversation's context; asks to confirm (§6.1) |
 | `/model [name\|default]` | — | ChatLocal | Show (picker) or set this chat's model |
 | `/provider [claude\|codex]` | — | ChatLocal | Show (picker) or switch this chat's provider; a switch asks to confirm |
+| `/silent [on\|off]` | — | ChatLocal | Show (picker) or toggle silent mode ([D055](DECISIONS.md)): the draft shows only progress (elapsed time, last tool steps); the answer arrives as one final message |
 | `/remember <text>` | — | ChatLocal | `memory_add` convenience for the calling chat |
 | `/recall <query>` | — | ChatLocal | `memory_search` over the calling chat's memories |
 | `/tasks list` | — | ChatLocal | List scheduled tasks for the calling chat |
@@ -339,8 +340,9 @@ toasts «Кнопка устарела».
 
 Pickers: `/model` with no args offers the provider's model names (Claude:
 `fable`, `opus`, `sonnet`, `haiku`; Codex: none, any id is typed) plus
-`default`; `/provider` with no args offers `claude`, `codex`. The current
-one is marked `✓` and styled `primary`.
+`default`; `/provider` with no args offers `claude`, `codex`; `/silent`
+with no args offers `on`, `off`. The current one is marked `✓` and styled
+`primary`.
 
 Confirmations (owner Q6): `/clear` and `/provider <name>` answer `CodeConfirm` with Yes (`danger`) / Cancel; a
 provider picked from the picker is confirmed the same way. `/chats
