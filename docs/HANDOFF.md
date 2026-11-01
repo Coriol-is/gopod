@@ -394,9 +394,10 @@ A08/A10 real-client checks remain open.
 
 ## Open gates and boundaries
 
-- Artifacts and managed-task flags remain off. Artifact activation needs matched DB/artifact backup,
-  restore qualification, and artifact leases if using online matched backups; decide whether to
-  separate image delivery from code/voice activation.
+- Artifact delivery defaults to on since [D057](DECISIONS.md) (`GOPOD_OUTBOX_ARTIFACTS=0` disables);
+  it is live only after the next deployment. Managed-task flag remains off. Scratch restore of a set
+  with an artifact, artifact-store retention and artifact leases for online matched backups remain open;
+  the agent-facing contract is CP-040.
 - Managed tasks cannot execute with the current unqualified task credential adapter. Before enabling,
   qualify native subscription use and an actual Pi Docker create/inspect/reuse role round trip.
 - Account login/refresh, paid inference/TTS, T9 reboot, deliberate schedule changes, feature activation,

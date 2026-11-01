@@ -813,7 +813,7 @@ func run() error {
 			if owner, err := acquireOutboxOwner(ctx, st, 10*time.Second, 500*time.Millisecond); err != nil {
 				outboxLog.Error("outbox dispatcher DISABLED: could not take the exclusive outbox lock", slog.Any("err", err))
 			} else {
-				// CP-003 artifact snapshots: off unless GOPOD_OUTBOX_ARTIFACTS=1.
+				// CP-003 artifact snapshots: on by default (D057), off with GOPOD_OUTBOX_ARTIFACTS=0.
 				// A failure to open the store leaves uploads refused, not the bot down.
 				var opener telegram.ArtifactOpener
 				var closeArtifacts func()

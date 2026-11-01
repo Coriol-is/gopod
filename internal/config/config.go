@@ -151,10 +151,11 @@ type Config struct {
 
 	// OutboxArtifactsEnabled accepts strict V1 IPC requests with file
 	// attachments, snapshotted into an immutable host-private store and sent by
-	// the outbox dispatcher (CP-003 PR 4). Default false. GOPOD_OUTBOX_ARTIFACTS=1
-	// takes effect only while the dispatcher and the durable IPC route run.
-	// Enablement is gated on a verified matched DB/artifact backup and restore
-	// (CP-007), which this flag does not check; see D039.
+	// the outbox dispatcher (CP-003 PR 4). Default true since D057 (owner
+	// decision 2026-11-02); GOPOD_OUTBOX_ARTIFACTS=0 switches it off. It takes
+	// effect only while the dispatcher and the durable IPC route run. The
+	// matched artifact backup gate of D039 is satisfied by `matched_stopped`
+	// sets, which include artifact blobs; this flag does not check it.
 	OutboxArtifactsEnabled bool
 
 	// RecoveryQuarantine starts only the control plane: no Telegram polling,
@@ -225,7 +226,7 @@ func Load(loadDotenv bool) (Config, error) {
 		OutboxDispatcherEnabled: envFlag("GOPOD_OUTBOX_DISPATCHER"),
 		ManagedTasksEnabled:     envFlag("GOPOD_MANAGED_TASKS"),
 		OutboxIPCEnabled:        envFlag("GOPOD_OUTBOX_IPC"),
-		OutboxArtifactsEnabled:  envFlag("GOPOD_OUTBOX_ARTIFACTS"),
+		OutboxArtifactsEnabled:  !envOff("GOPOD_OUTBOX_ARTIFACTS"),
 		RecoveryQuarantine:      envFlag("GOPOD_RECOVERY_QUARANTINE"),
 		CompactAfter:            compactAfter,
 		CompactInterval:         os.Getenv("GOPOD_COMPACT_INTERVAL"),

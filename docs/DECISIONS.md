@@ -2031,3 +2031,35 @@ of P1) and P4 can build on execution claims. There is no behavior change
 until the owner adopts and restarts. Adoption is one-way in practice because
 of the rollback caveat. Real native resume after adoption on the Pi remains an
 open acceptance row ([ACCEPTANCE](ACCEPTANCE.md)).
+
+## D057 — Artifact delivery is on by default
+
+**Status:** accepted 2026-11-02 (owner decision). Supersedes the "default off"
+flag setting of D039; D039's preparation, authorization and upload rules are
+unchanged.
+
+**Context.** CP-003 PRs 4–5 shipped the immutable artifact pipeline behind
+`GOPOD_OUTBOX_ARTIFACTS` (default off) pending a matched artifact backup gate.
+Since CP-007 PR 1 a `matched_stopped` set includes artifact blobs, and the
+2026-11-01 rollout verified such a set. Meanwhile the owner hit the user-facing
+cost of the dark feature: an agent that produced a PDF could not attach it
+(CP-040). The owner asked for the flag to default to on.
+
+**Decision.** `OutboxArtifactsEnabled` defaults to true; `GOPOD_OUTBOX_ARTIFACTS=0`
+(or `false`/`no`/`off`) switches it off. Everything else in D039 holds: strict
+V1 requests, per-run capability, owner-personal-chat destination only, rooted
+no-follow snapshots, quotas (`min(files x 20 MiB, 40 MiB)` per request,
+512 MiB per namespace, 2 GiB global), quarantine on mismatch. The pipeline still
+only runs while the outbox dispatcher and the durable IPC route are on. A
+failure to open the artifact store at startup disables uploads for that
+process and logs `artifact delivery DISABLED`; it never takes the bot down.
+
+**Consequences.** After the next deployment an agent in the owner's private
+chat can attach files through the IPC V1 request without any flag change on
+the Pi. The agent-facing contract (how the agent learns to do that) and
+document presentation remain CP-040 work; until it lands, attachments work
+only for an agent that already knows the IPC request shape. Rollback is
+`GOPOD_OUTBOX_ARTIFACTS=0` plus a restart; snapshots already taken stay in the
+host-private store under the existing retention. The matched backup gate is
+treated as met for the database and blobs; native homes and workspaces remain
+outside backups (CP-039).

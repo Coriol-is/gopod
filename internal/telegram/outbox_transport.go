@@ -105,7 +105,7 @@ type outboxAPI interface {
 // ArtifactOpener resolves an immutable artifact reference to the exact bytes to
 // upload. The bytes are verified against the inventory before they are returned,
 // so the transport never reopens a mutable pathname. Without an opener uploads
-// are refused (the default; artifact delivery is behind GOPOD_OUTBOX_ARTIFACTS).
+// are refused (artifact delivery is off when GOPOD_OUTBOX_ARTIFACTS=0).
 type ArtifactOpener interface {
 	OpenArtifact(ctx context.Context, ref, namespaceID string, epoch int64) (name string, data io.Reader, err error)
 }

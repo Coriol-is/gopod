@@ -14,8 +14,8 @@ type ArtifactIssuer interface {
 	IssueArtifact(folder string, thread int) (token string, end func())
 }
 
-// SetArtifactIssuer wires the issuer. Nil (the default, and always while
-// GOPOD_OUTBOX_ARTIFACTS is off) means no exec gets a capability.
+// SetArtifactIssuer wires the issuer. Nil (the zero value, and always while
+// GOPOD_OUTBOX_ARTIFACTS=0) means no exec gets a capability.
 //
 // It is safe to call while turns are running: the wiring in cmd/gopod happens
 // after the queue workers and the scheduler have started.
