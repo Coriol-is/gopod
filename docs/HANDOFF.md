@@ -6,15 +6,37 @@ Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
 [ACCEPTANCE](ACCEPTANCE.md) for pending real-client verification.
 
-## Resume here — P0 implementation, 2026-11-01
+## Resume here — Claude acceptance handoff, 2026-11-01
 
-Owner authorized parallel agents in separate worktrees, acceptance and automatic
-merge after review/green CI. Scope: P0 lifecycle safety, graceful/forced restart
-and Telegram status recovery. No deployment is authorized by this step.
-Workers: feat/p0-lifecycle (runner), feat/p0-restart (queue/control/controller),
-feat/p0-telegram (Telegram/status persistence). Integration will run full build,
-vet/tests/race and Docker checks, then independent source review before merge.
-Later session parallelism/autoscaling remains outside P0.
+**Latest owner instruction:** let the agents finish; perform combined acceptance in
+Claude. Do not continue new implementation phases, open/merge PRs or deploy in this
+Codex turn. **Deployment only after the entire feature is complete**, not after P0.
+Remote/main baseline is still `cee5cac`; Pi remains `8a3ce75`.
+
+Start in `/Users/spaceinvaderz/_code/coriolis/gopod-p0-integration`, branch
+`feat/p0-integration`. It combines the specs, worker commits, CI Docker fixture and
+Pi resource profile. This is a local integration branch, **not accepted or merged**.
+Read [P0 acceptance report](reviews/2026-11-01-p0-acceptance.md) for exact checks,
+known limitations and the next commands. All worktrees/branches are retained.
+
+Worker source commits: lifecycle `37f3efd`, Telegram `05f39fa`, restart `c17f99d`.
+Integration counterparts: `ee5d582`, `00b014a`, `b5e9961`; root resources `6f32bea`
+and startup wiring `e980ad9`. Restart follow-up `cc29c97` is also cherry-picked: quarantine keeps Telegram
+available; startup UI repair is bounded to 10 seconds. Inspect the integration log
+for its cherry-pick SHA and the final documentation checkpoint.
+
+Pi was inspected read-only: 4 CPUs, 3796 MiB RAM, 1754 MiB available with current
+containers already included, 2063 MiB swap used, 36 GiB disk free. Memory cgroup is
+absent; CPU/PID enforcement is available. [Measurements and staged limits](reviews/2026-11-01-rpi4-resources.md).
+Owner explicitly wants parallel capability: opt-in Pi profile max=2 with strict
+memory admission and growth reserve; at observed headroom only one start fits.
+No live profile, reboot, container mutation or inference probe was performed.
+
+P0 implements lifecycle/restart/control recovery only. Per-thread parallelism,
+new/clear session generations and mixed-provider failover remain later slices.
+Credential/native-home qualification, CP-004/007 and measured real-provider load
+remain gates for the complete feature. All earlier deployment evidence below is
+historical production state, not evidence for this local branch.
 
 ## Design context — 2026-11-01
 
