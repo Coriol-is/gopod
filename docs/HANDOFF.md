@@ -15,7 +15,7 @@ native context through the binding, queue binding that refuses a stale epoch,
 and an owner-only `/sessions [status|adopt|cancel]` command. Adoption of legacy
 `sessions` rows is one transaction at the next controller startup, deferred
 while unfinished turns exist. It lives on branch `feat/p1-durable-identity` in
-worktree `gopod-p1-identity`, `PR #TBD`. The default mapping mode stays
+worktree `gopod-p1-identity`, [PR #133](https://github.com/Coriol-is/gopod/pull/133). The default mapping mode stays
 `legacy`, so nothing changes on the Pi until `/sessions adopt` plus a restart;
 not deployed. Rollback to pre-adoption code after durable writes needs explicit
 reconciliation (the old `sessions` table is frozen at adoption). Open: real
