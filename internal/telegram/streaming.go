@@ -385,7 +385,14 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 		if placeholder == 0 {
 			return b.finishStopped(ctx, item, stream, full.String())
 		}
-		return b.finishStoppedEdit(ctx, item, stream, placeholder, full.String(), overflow, accumulated.String())
+		ov, tail := overflow, accumulated.String()
+		if silent {
+			// The placeholder holds progress, never text: a reply that
+			// does not fit one message goes out separately, and the
+			// placeholder keeps the progress summary (no cursor).
+			ov, tail = full.Len() > editLimit, view()
+		}
+		return b.finishStoppedEdit(ctx, item, stream, placeholder, full.String(), ov, tail)
 	}
 
 	progress := stream.Progress // nil for plain runs: never selected
@@ -545,6 +552,13 @@ loop:
 		finalText = "(empty reply)"
 	}
 
+	// Silent mode never overflowed the placeholder (it holds progress,
+	// not text): a reply that does not fit one message takes the
+	// overflow branch, which sends it as a separate message.
+	if silent && len(finalText) > editLimit {
+		overflow = true
+	}
+
 	// The topic vanished after the placeholder went out: editing it
 	// would deliver nothing, so send the reply (to main) like a draft turn.
 	gone := placeholder != 0 && b.threadGone(item.ChatID, item.ThreadID)
@@ -594,6 +608,9 @@ loop:
 				}
 				break
 			}
+		} else if silent {
+			// Leave the progress summary (no cursor, no Stop button).
+			b.editMessage(ctx, item.ChatID, placeholder, view())
 		} else if kb != nil {
 			b.clearKeyboard(ctx, item.ChatID, placeholder)
 		}
