@@ -155,7 +155,9 @@ func run() error {
 		folderHeld  func(string) bool // set once the queue exists (managed tasks)
 		allowlist   *mountsec.Allowlist
 		agentMemory *memory.Memory
+		sessionMode string // store.SessionMapping*; consumed by later wiring
 	)
+	_ = sessionMode // read by Task 3 wiring
 	if !cfg.ContainerEnabled {
 		logger.Warn("runner subsystem skipped: GOPOD_NO_CONTAINER is truthy")
 	} else {
@@ -250,7 +252,12 @@ func run() error {
 				return fmt.Errorf("init runner: %w", err)
 			}
 			agentRunner = r
-			r.SetStore(st)
+			sessionStore, mode, err := newSessionStateStore(ctx, st, runLog)
+			if err != nil {
+				return fmt.Errorf("init session store: %w", err)
+			}
+			sessionMode = mode
+			r.SetStore(sessionStore)
 			r.SetAdmissionPolicy(cfg.OwnerChatID, st)
 			if cfg.ManagedTasksEnabled {
 				// Before any container use, so the foreground container is already
