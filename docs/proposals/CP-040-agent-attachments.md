@@ -46,10 +46,11 @@ turn the CP-003 pipeline on behind it:
    photo presentation with the existing document fallback; `as` lets the agent
    force a document. Delivery stays per-chat/topic, owner-private first; group
    delivery follows CP-019's target rules.
-4. **Activation.** Enable `GOPOD_OUTBOX_ARTIFACTS` on the Pi once the CP-003
-   gates hold: a `matched_stopped` set that includes artifact blobs (already
-   true), a scratch restore of one set with an artifact, a retention/quota check
-   for the artifact store, and a rollback note. Record it as a deployment.
+4. **Activation.** Done by default since [D057](../DECISIONS.md)
+   (2026-11-02): `GOPOD_OUTBOX_ARTIFACTS` is on unless set to `0`. What remains
+   here is the scratch restore of one set with an artifact, a retention/quota
+   check for the artifact store, and the deployment record of the first live
+   attachment.
 
 ## Out of scope
 
