@@ -11,6 +11,8 @@ import (
 const freshRunTimeout = time.Minute
 
 func (r *Runner) execAgentWithCancel(ctx context.Context, id, folder string, thread int, prov AgentProvider, cmd []string, interactive bool) (*ExecResult, error) {
+	ctx, finishOperation := r.operationContext(ctx)
+	defer finishOperation()
 	pidFile, err := newAgentPidFile()
 	if err != nil {
 		return nil, err
@@ -30,6 +32,9 @@ func (r *Runner) execAgentWithCancel(ctx context.Context, id, folder string, thr
 		}
 	}()
 	res, err := r.execAgent(ctx, id, folder, thread, prov, wrapWithPidFile(pidFile, cmd), interactive)
+	if err != nil && res == nil && ctx.Err() == nil {
+		r.markExecutionUnknown(folder, id)
+	}
 	close(finished)
 	killed := <-cleanup
 	if !killed {

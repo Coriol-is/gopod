@@ -198,12 +198,26 @@ func run() error {
 			d.RequirePolicyLabels(cfg.ManagedTasksEnabled)
 			if cfg.LeftoverCleanupEnabled && restartRecoveryErr == nil {
 				n, err := d.CleanupLeftovers(ctx, buildVersion())
-				if err != nil {
-					runLog.Warn("leftover cleanup failed",
-						slog.Any("err", err))
+				if errors.Is(err, runner.ErrExecutionUnproven) {
+					// The Docker facade retains quarantine; only execution is
+					// blocked. Keep Telegram status/force/repair reachable.
+					restartRecoveryErr = err
+					runLog.Warn("running leftovers quarantined; execution blocked", slog.Any("err", err))
+				} else if err != nil {
+					return fmt.Errorf("leftover inventory failed; admission refused: %w", err)
 				} else {
 					runLog.Info("leftover cleanup complete",
 						slog.Int("cleaned", n))
+				}
+			} else {
+				// Removal is skipped, but a running leftover must still be
+				// quarantined: re-attaching it would resume an unproven agent.
+				err := d.QuarantineLeftovers(ctx)
+				if errors.Is(err, runner.ErrExecutionUnproven) {
+					restartRecoveryErr = err
+					runLog.Warn("running leftovers quarantined; execution blocked", slog.Any("err", err))
+				} else if err != nil {
+					return fmt.Errorf("leftover inventory failed; admission refused: %w", err)
 				}
 			}
 
@@ -214,9 +228,9 @@ func run() error {
 				Image:       cfg.ContainerImage,
 				UID:         os.Getuid(),
 				GID:         os.Getgid(),
-				MemoryBytes: 4 << 30,       // 4 GiB; GOPOD_CONTAINER_MEM later
-				NanoCPUs:    2_000_000_000, // 2 CPUs
-				PidsLimit:   1024,
+				MemoryBytes: cfg.ContainerMemoryBytes,
+				NanoCPUs:    cfg.ContainerNanoCPUs,
+				PidsLimit:   cfg.ContainerPidsLimit,
 			}
 			// Create the agent provider. Currently always Claude;
 			// P3/P4 will add per-chat provider selection.
@@ -260,9 +274,11 @@ func run() error {
 				runLog.Info("managed task runtime enabled (task role denied until a credential adapter is qualified)")
 			}
 			r.SetAgentLimits(runner.AgentLimits{
-				MaxAgents:      cfg.MaxAgents,
-				MinAvailableMB: cfg.MinAvailableMB,
-				NodeHeapMB:     cfg.AgentNodeHeapMB,
+				MaxAgents:       cfg.MaxAgents,
+				MinAvailableMB:  cfg.MinAvailableMB,
+				NodeHeapMB:      cfg.AgentNodeHeapMB,
+				StrictMemory:    cfg.StrictMemoryAdmission,
+				GrowthReserveMB: cfg.AgentGrowthReserveMB,
 			})
 			runLog.Info("agent admission",
 				slog.Int("max_agents", cfg.MaxAgents),
@@ -623,7 +639,7 @@ func run() error {
 		}
 
 		restart.notify = tgBot.SendRestartNotice
-		control.RegisterRestartCommand(router, restart.request)
+		control.RegisterRestartLifecycle(router, restart.command)
 		control.RegisterStopCommand(router, tgBot.StopCurrentTurn)
 		control.RegisterTelegramCommands(router, tgBot.TelegramSnapshot, tgBot.RefreshTelegramSnapshot, func(ctx context.Context, id int64) bool {
 			_, err := st.GetRegistered(ctx, fmt.Sprintf("tg:%d", id))
@@ -642,6 +658,9 @@ func run() error {
 			agentQueue = queue.New(ctx, tgBot.NewAgentHandler(), queue.DefaultMaxConcurrent,
 				turnStoreAdapter{st: st}, queueLog)
 			tgBot.SetQueue(agentQueue)
+			restart.queue = agentQueue
+			restart.runtime, _ = any(agentRunner).(restartRuntime)
+			restart.app = ctx
 			// Managed task recovery is inspect-only until execution lands (CP-004
 			// PR 3): no handler, so nothing managed runs, but possibly started
 			// attempts are never replayed and held capacity is rebuilt.
@@ -680,6 +699,15 @@ func run() error {
 		if agentQueue != nil {
 			schedLog := logger.With(slog.String("subsys", "scheduler"))
 			sched = scheduler.New(st, agentQueue, schedLog)
+			if err := sched.SuppressForcedRestart(ctx); err != nil {
+				return fmt.Errorf("force restart occurrence suppression: %w", err)
+			}
+		}
+
+		if agentQueue != nil && restart.runtime != nil {
+			if err := restart.restoreDrain(ctx); err != nil {
+				return fmt.Errorf("restore restart drain: %w", err)
+			}
 		}
 
 		// Recover turns left unfinished by a crash/shutdown. Must run after
@@ -696,6 +724,15 @@ func run() error {
 				logger.Info("queue: recovered unfinished turns", slog.Int("count", n))
 			}
 			replayed = n
+		}
+
+		// Status repair is best-effort and must not delay execution safety recovery.
+		if repair, ok := any(tgBot).(interface{ RepairControls(context.Context) error }); ok {
+			repairCtx, repairCancel := context.WithTimeout(ctx, 10*time.Second)
+			if err := repair.RepairControls(repairCtx); err != nil {
+				logger.Warn("Telegram control repair pending", slog.Any("err", err))
+			}
+			repairCancel()
 		}
 
 		// Start polling only after Recover, so the first poll cannot
@@ -1036,6 +1073,16 @@ func (a turnStoreAdapter) LoadUnfinished(ctx context.Context) ([]queue.Item, err
 	}
 	out := make([]queue.Item, 0, len(turns))
 	for _, t := range turns {
+		if t.AttemptID == "" && t.Attempts > 0 {
+			status, why := store.TurnFailed, "execution_unknown: controller restarted after dispatch; automatic replay refused"
+			if t.ReplyMsgID != 0 {
+				status, why = store.TurnDone, ""
+			}
+			if err := a.st.MarkTurnFinished(ctx, t.ID, status, why); err != nil {
+				return nil, err
+			}
+			continue
+		}
 		out = append(out, turnToItem(t))
 	}
 	return out, nil

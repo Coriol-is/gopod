@@ -7,13 +7,16 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/Coriol-is/gopod/internal/control"
+	"github.com/Coriol-is/gopod/internal/queue"
 	"github.com/Coriol-is/gopod/internal/runner"
+	"github.com/Coriol-is/gopod/internal/scheduler"
 	"github.com/Coriol-is/gopod/internal/store"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/errdefs"
@@ -30,65 +33,248 @@ type restartDocker interface {
 type restartNotice func(context.Context, int64, int, string) error
 
 type controllerRestart struct {
-	st        *store.Store
-	docker    restartDocker
-	chatsDir  string
-	ownerID   int64
-	stop      context.CancelFunc
-	notify    restartNotice
-	log       *slog.Logger
-	hostname  string
-	mu        sync.Mutex
-	requested atomic.Bool
+	st           *store.Store
+	docker       restartDocker
+	chatsDir     string
+	ownerID      int64
+	stop         context.CancelFunc
+	notify       restartNotice
+	log          *slog.Logger
+	hostname     string
+	mu           sync.Mutex
+	requested    atomic.Bool
+	queue        *queue.Queue
+	runtime      restartRuntime
+	app          context.Context
+	drainCancel  context.CancelFunc
+	drainTimeout time.Duration
+}
+
+type restartRuntime interface {
+	BeginDrain()
+	CancelDrain()
+	WaitDrained(context.Context) error
+	ForceDrain(context.Context) error
+	CancelActive()
 }
 
 func (r *controllerRestart) request(ctx context.Context, caller control.Caller) error {
+	return r.requestMode(ctx, caller, false)
+}
+func (r *controllerRestart) requestMode(ctx context.Context, caller control.Caller, force bool) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	if r.docker == nil || r.stop == nil {
-		return errors.New("Restart unavailable: Docker controller is not ready.")
+	if r.docker == nil || r.stop == nil || r.queue == nil || r.runtime == nil {
+		return errors.New("Restart unavailable: drain coordinator is not ready.")
 	}
-	if err := r.supervised(ctx); err != nil {
-		return err
+	if e := r.supervised(ctx); e != nil {
+		return e
 	}
-	targets, err := r.snapshot(ctx)
-	if err != nil {
-		return err
+	// Preflight authority, not the inventory used to stop containers after drain.
+	targets, e := r.snapshotFor(ctx, true)
+	if e != nil {
+		return e
 	}
-	if !r.requested.Load() {
-		previous, readErr := r.st.ReadRestart(ctx)
-		if readErr != nil {
-			return errors.New("Restart state is unavailable; nothing was stopped.")
+	mode := "drain"
+	if force {
+		mode = "force"
+	}
+	record := store.RestartRecord{MessageID: caller.MessageID, ChatID: caller.ChatID, ThreadID: caller.ThreadID, Containers: targets, Mode: mode}
+	if e = r.st.BeginRestart(ctx, record); e != nil {
+		return e
+	}
+	text := "⏳ Restart requested. Waiting for active replies and tasks to finish. New messages remain queued. Use /restart status or /restart cancel."
+	if force {
+		text = "⛔ Forced restart requested. Active replies and background work will stop; queued background work is cancelled. Schedules and files are preserved."
+	}
+	if e = r.notify(ctx, caller.ChatID, caller.ThreadID, text); e != nil {
+		_ = r.abortUnstarted(caller.MessageID, "notice_unknown")
+		return e
+	}
+	// LockTasks prevents a scheduler enqueue crossing the force cutoff.
+	unlock := scheduler.LockTasks(r.st)
+	r.queue.BeginDrain()
+	phase := "draining"
+	if force {
+		phase = "forcing"
+	}
+	if e = r.st.SetRestartPhase(ctx, caller.MessageID, "requested", phase); e != nil {
+		r.queue.CancelDrain()
+		unlock()
+		_ = r.abortUnstarted(caller.MessageID, "aborted")
+		return e
+	}
+	if force {
+		e = r.queue.ForceDrain(ctx, func(items []queue.Item) error {
+			ids := make([]int64, 0, len(items))
+			for _, it := range items {
+				rc, e := r.st.GetByFolder(ctx, it.Folder)
+				if e != nil || !rc.IsOwner {
+					return errors.New("Force restart refused: non-personal queued work needs its own procedure.")
+				}
+				ids = append(ids, it.ID)
+			}
+			return r.st.RecordForcedTurns(ctx, caller.MessageID, ids)
+		})
+		if e != nil {
+			unlock()
+			r.finishPhase(caller.MessageID, phase, "aborted")
+			r.queue.CancelDrain()
+			return e
 		}
-		if previous != nil && time.Now().UnixMilli()-previous.CreatedAt >= time.Minute.Milliseconds() && (previous.Phase == "requested" || previous.Phase == "restarting") {
-			if err := r.abortUnstarted(previous.MessageID, "aborted"); err != nil {
-				return errors.New("Unstarted restart state could not be repaired; nothing was stopped.")
+	}
+	unlock()
+	base := r.app
+	if base == nil {
+		base = context.Background()
+	}
+	dctx, dcancel := context.WithCancel(base)
+	r.drainCancel = dcancel
+	go r.completeDrain(dctx, record, force)
+	return nil
+}
+
+func (r *controllerRestart) completeDrain(ctx context.Context, record store.RestartRecord, force bool) {
+	timeout := r.drainTimeout
+	if timeout <= 0 {
+		timeout = 10 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	phase := "draining"
+	if force {
+		phase = "forcing"
+	}
+	var err error
+	if force {
+		r.runtime.CancelActive()
+		var currentTargets []store.RestartContainer
+		currentTargets, err = r.snapshotFor(ctx, true)
+		if err == nil {
+			err = r.st.UpdateRestartTargets(ctx, record.MessageID, currentTargets)
+		}
+		if err == nil {
+			record.Containers = currentTargets
+		}
+		// Cancellation intent is durable. Stop exact authorized containers to include
+		// detached child tools, then let runner verify all operation claims settled.
+		for _, target := range record.Containers {
+			if err != nil {
+				break
+			}
+			if err = r.stopTarget(ctx, target); err != nil {
+				break
+			}
+		}
+		if err == nil {
+			err = r.runtime.ForceDrain(ctx)
+		}
+		if err == nil {
+			err = r.queue.WaitDrained(ctx)
+		}
+		if err == nil {
+			err = r.settleForced(ctx, record.MessageID)
+		}
+	} else {
+		// Let all already dispatched queue handlers enter the runner and finish before
+		// closing auxiliary admission. Closing runner first can reject such a handler.
+		err = r.queue.WaitDrained(ctx)
+		if err == nil {
+			r.mu.Lock()
+			if ctx.Err() != nil {
+				err = ctx.Err()
+			} else {
+				r.runtime.BeginDrain()
+			}
+			r.mu.Unlock()
+			if err == nil {
+				err = r.runtime.WaitDrained(ctx)
 			}
 		}
 	}
-	record := store.RestartRecord{MessageID: caller.MessageID, ChatID: caller.ChatID, ThreadID: caller.ThreadID, Containers: targets}
-	if err = r.st.BeginRestart(ctx, record); err != nil {
-		if errors.Is(err, store.ErrRestartReplay) {
-			return errors.New("This restart command was already handled; it will not run again.")
+	if err == nil {
+		var targets []store.RestartContainer
+		targets, err = r.snapshot(ctx)
+		if err == nil {
+			err = r.st.UpdateRestartTargets(ctx, record.MessageID, targets)
 		}
-		if errors.Is(err, store.ErrRestartPending) {
-			return errors.New("Restart is already pending or cooling down. Wait one minute.")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	current, readErr := r.st.ReadRestart(context.WithoutCancel(ctx))
+	if readErr != nil || current == nil || current.MessageID != record.MessageID || current.Phase != phase {
+		return
+	}
+	if err != nil {
+		r.finishPhase(record.MessageID, phase, "blocked")
+		nctx, ncancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer ncancel()
+		text := "Restart postponed: active work or termination evidence remains unresolved. Nothing is forcibly stopped by a normal restart. Use /restart status or /restart cancel."
+		if force {
+			text = "Forced cancellation was requested, but restart did not complete. Execution may be unknown; automatic replay is blocked. Use /restart status."
 		}
-		return errors.New("Restart was not recorded; nothing was stopped.")
+		_ = r.notify(nctx, record.ChatID, record.ThreadID, text)
+		return
 	}
-	if err = r.notify(ctx, caller.ChatID, caller.ThreadID, restartAnnounce); err != nil {
-		_ = r.abortUnstarted(caller.MessageID, "notice_unknown")
-		return errors.New("The restart notice was not acknowledged. Restart was not started; check the chat before submitting a new command.")
-	}
-	if err = r.st.SetRestartPhase(ctx, caller.MessageID, "requested", "restarting"); err != nil {
-		_ = r.abortUnstarted(caller.MessageID, "aborted")
-		return errors.New("Restart state could not be committed; no shutdown requested.")
+	if err = r.st.SetRestartPhase(ctx, record.MessageID, phase, "restarting"); err != nil {
+		r.finishPhase(record.MessageID, phase, "blocked")
+		nctx, ncancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer ncancel()
+		_ = r.notify(nctx, record.ChatID, record.ThreadID, "Restart blocked: final durable state could not be committed. No shutdown requested.")
+		return
 	}
 	r.requested.Store(true)
-	r.stop() // graceful app drain, then normal process exit; verified Docker policy restarts it
-	return nil
+	r.stop()
+}
+
+func (r *controllerRestart) command(ctx context.Context, caller control.Caller, action string) (string, error) {
+	action, expected, _ := strings.Cut(action, ":")
+	switch action {
+	case "":
+		return "", r.requestMode(ctx, caller, false)
+	case "force":
+		if resumed, err := r.retryForce(ctx, caller); resumed || err != nil {
+			return "Resuming the recorded forced restart; no new cancellation cutoff was taken.", err
+		}
+		return "", r.requestMode(ctx, caller, true)
+	case "status":
+		rec, e := r.st.ReadRestart(ctx)
+		if e != nil {
+			return "", e
+		}
+		if rec == nil {
+			return "No restart pending.", nil
+		}
+		if expected != "" && strconv.Itoa(rec.MessageID) != expected {
+			return "This restart control is stale.", nil
+		}
+		return fmt.Sprintf("Restart %d: %s (%s).", rec.MessageID, rec.Phase, rec.Mode), nil
+	case "cancel":
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		rec, e := r.st.ReadRestart(ctx)
+		if e != nil {
+			return "", e
+		}
+		if rec != nil && expected != "" && strconv.Itoa(rec.MessageID) != expected {
+			return "This restart control is stale.", nil
+		}
+		if rec == nil || rec.Mode == "force" || (rec.Phase != "draining" && rec.Phase != "blocked") {
+			return "Restart can no longer be cancelled.", nil
+		}
+		if e = r.st.SetRestartPhase(ctx, rec.MessageID, rec.Phase, "cancelled"); e != nil {
+			return "", e
+		}
+		if r.drainCancel != nil {
+			r.drainCancel()
+		}
+		r.runtime.CancelDrain()
+		r.queue.CancelDrain()
+		return "Restart cancelled; queued work may continue.", nil
+	}
+	return "", errors.New("Use /restart [force|status|cancel].")
 }
 
 func (r *controllerRestart) supervised(ctx context.Context) error {
@@ -115,8 +301,11 @@ func restartSupervisor(c container.InspectResponse, hostname string, now time.Ti
 }
 
 func (r *controllerRestart) snapshot(ctx context.Context) ([]store.RestartContainer, error) {
+	return r.snapshotFor(ctx, false)
+}
+func (r *controllerRestart) snapshotFor(ctx context.Context, allowHeld bool) ([]store.RestartContainer, error) {
 	holds, err := r.st.HeldTaskReservations(ctx)
-	if err != nil || len(holds) > 0 {
+	if err != nil || (len(holds) > 0 && !allowHeld) {
 		return nil, errors.New("Restart refused while managed task exit evidence is unresolved.")
 	}
 	list, err := r.docker.ContainerList(ctx, container.ListOptions{All: true})
@@ -142,9 +331,12 @@ func (r *controllerRestart) personalTarget(ctx context.Context, c container.Summ
 		return nil, nil
 	}
 	sc, err := r.st.SnapshotScope(ctx, folder)
+	if errors.Is(err, store.ErrStaleScope) {
+		return nil, nil // unrelated controller/retired namespace
+	}
 	if err != nil {
-		return nil, nil
-	} // unrelated controller/retired namespace
+		return nil, errors.New("Restart unavailable: scope lookup failed.")
+	}
 	personal := sc.JID == fmt.Sprintf("tg:%d", r.ownerID)
 	if !personal && c.Labels["gopod.group-native"] == sc.NamespaceID {
 		return nil, errors.New("Restart refused: an active group runtime requires its own recovery procedure.")
@@ -211,6 +403,16 @@ func (r *controllerRestart) stopTarget(ctx context.Context, target store.Restart
 	grace := 5
 	if err = r.docker.ContainerStop(ctx, target.ID, container.StopOptions{Timeout: &grace}); err != nil {
 		return fmt.Errorf("restart stop: %w", err)
+	}
+	info, err = r.docker.ContainerInspect(ctx, target.ID)
+	if errdefs.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("restart verify stopped: %w", err)
+	}
+	if info.State == nil || info.State.Running {
+		return errors.New("restart stop: container exit unproven")
 	}
 	return nil
 }
@@ -308,4 +510,87 @@ func (r *controllerRestart) abortUnstarted(id int, terminal string) error {
 	}
 	r.log.Warn("unstarted restart receipt repair failed", slog.Any("err", err))
 	return err
+}
+
+// restoreDrain preserves an interrupted control operation's admission barrier.
+// Recovery does not silently reissue termination; explicit force retry reconciles it.
+func (r *controllerRestart) restoreDrain(ctx context.Context) error {
+	rec, err := r.st.ReadRestart(ctx)
+	if err != nil {
+		return err
+	}
+	if rec == nil {
+		return nil
+	}
+	switch rec.Phase {
+	case "requested", "draining", "forcing", "blocked":
+		r.queue.BeginDrain()
+		r.runtime.BeginDrain()
+		if rec.Phase != "blocked" {
+			return r.st.SetRestartPhase(ctx, rec.MessageID, rec.Phase, "blocked")
+		}
+	}
+	return nil
+}
+func (r *controllerRestart) retryForce(ctx context.Context, caller control.Caller) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	rec, err := r.st.ReadRestart(ctx)
+	if err != nil {
+		return false, err
+	}
+	if rec == nil || rec.Mode != "force" || rec.Phase != "blocked" {
+		return false, nil
+	}
+	if r.queue == nil || r.runtime == nil {
+		return true, errors.New("Restart drain coordinator unavailable.")
+	}
+	if err = r.supervised(ctx); err != nil {
+		return true, err
+	}
+	if err = r.st.SetRestartPhase(ctx, rec.MessageID, "blocked", "forcing"); err != nil {
+		return true, err
+	}
+	base := r.app
+	if base == nil {
+		base = context.Background()
+	}
+	go r.completeDrain(base, *rec, true)
+	return true, nil
+}
+func (r *controllerRestart) settleForced(ctx context.Context, id int) error {
+	rec, err := r.st.ReadRestart(ctx)
+	if err != nil {
+		return err
+	}
+	if rec == nil || rec.MessageID != id {
+		return store.ErrRestartReplay
+	}
+	for _, turnID := range rec.ForceTurns {
+		turn, e := r.st.GetTurn(ctx, turnID)
+		if e != nil {
+			return e
+		}
+		if turn.AttemptID == "" {
+			continue
+		}
+		a, e := r.st.GetTaskAttempt(ctx, turn.AttemptID)
+		if e != nil {
+			return e
+		}
+		if a.State == store.ExecCancelRequested || a.State == store.ExecExecutionUnknown || a.State == store.ExecRunning {
+			if _, e = r.st.SettleTaskAttempt(ctx, a.ID, store.Settlement{Kind: store.SettleStopped, Evidence: "local_exit:forced_restart_container_stopped", FailureCode: "forced_restart"}); e != nil {
+				return e
+			}
+		}
+		if a.Reservation == "held" {
+			if e = r.queue.ReleaseHold(ctx, a.ID, queue.ProofLocalExit, "forced restart: scoped container stopped"); e != nil {
+				return e
+			}
+		}
+		if e = r.st.MarkTurnFinished(ctx, turnID, store.TurnStopped, "forced restart: execution terminated"); e != nil {
+			return e
+		}
+	}
+	return r.st.SettleForcedTurns(ctx, id)
 }

@@ -174,6 +174,9 @@ func (r *Runner) RunTaskStream(ctx context.Context, req TaskRunRequest) (*AgentS
 	if err != nil {
 		return nil, err
 	}
+	ctx, finishSetup := r.operationContext(ctx)
+	originalRelease := releaseSlot
+	releaseSlot = func() { finishSetup(); originalRelease() }
 	started := false
 	defer func() {
 		if !started {
@@ -192,7 +195,7 @@ func (r *Runner) RunTaskStream(ctx context.Context, req TaskRunRequest) (*AgentS
 	gateHeld := true
 	defer func() {
 		if gateHeld {
-			releaseGate()
+			r.releaseGateWhenSettled(ctx, folder, releaseGate)
 		}
 	}()
 
@@ -214,12 +217,16 @@ func (r *Runner) RunTaskStream(ctx context.Context, req TaskRunRequest) (*AgentS
 		return nil, err
 	}
 
-	tctx, cancel := context.WithTimeout(ctx, timeout)
+	opCtx, finishOperation := r.operationContext(ctx)
+	tctx, cancel := context.WithTimeout(opCtx, timeout)
 	handle, err := r.ex.ExecStream(withExitGrace(tctx), id, wrapWithPidFile(pidFile, cmd), env)
 	if err != nil {
 		cancel()
-		// The marker is committed and exec creation may have reached the daemon:
-		// no exit evidence, so the ledger holds the attempt as unknown.
+		finishOperation()
+		// The marker is committed and exec creation may have reached the daemon.
+		// The deferred gate release verifies quiescence and marks the runtime
+		// unknown only when a process is present or inspection fails; the
+		// ledger still holds the attempt as unknown until exit evidence exists.
 		return nil, fmt.Errorf("runner: task exec stream: %w", err)
 	}
 	started, gateHeld = true, false
@@ -260,6 +267,7 @@ func (r *Runner) RunTaskStream(ctx context.Context, req TaskRunRequest) (*AgentS
 		defer close(chunks)
 		defer close(result)
 		defer cancel()
+		defer finishOperation()
 		defer handle.Close()
 		defer releaseSlot()
 
@@ -290,7 +298,10 @@ func (r *Runner) RunTaskStream(ctx context.Context, req TaskRunRequest) (*AgentS
 		if !wasKilled {
 			r.removePidFile(tctx, id, pidFile)
 		}
-		releaseGate()
+		if _, observed := handle.ExitObserved(); !observed && tctx.Err() == nil {
+			r.markExecutionUnknown(folder, id)
+		}
+		r.releaseGateWhenSettled(ctx, folder, releaseGate)
 		if code, ok := handle.ExitObserved(); ok {
 			ev := fmt.Sprintf("exec_exit_observed code=%d", code)
 			if wasKilled {

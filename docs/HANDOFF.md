@@ -1,12 +1,107 @@
 # gopod — current handoff
 
-**Last updated:** 2026-10-31 (private Stop merged and deployed)
+**Last updated:** 2026-11-01 (P0 accepted in PR #126; production unchanged)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
 [ACCEPTANCE](ACCEPTANCE.md) for pending real-client verification.
 
-## Resume here — private Stop deployed, 2026-10-31
+## Resume here — CP-037 P0 accepted, 2026-11-01
+
+[PR #126](https://github.com/Coriol-is/gopod/pull/126) (`feat/p0-integration`,
+worktree `gopod-p0-integration`) carries the P0 lifecycle slice: busy/unknown
+runtimes protected from idle eviction, `/restart` drain plus confirmed
+`/restart force`, startup quarantine that keeps the Telegram control plane up,
+durable Stop-control recovery, the opt-in Pi 4 resource profile and the CI
+Docker lifecycle fixture. Accepted behavior is [D054](DECISIONS.md); the command
+is in [CONTROL.md §5.3](CONTROL.md) and the runtime rules in [ISOLATION.md §7](ISOLATION.md).
+
+Claude acceptance on the final head: build/vet, full suite, race suites for
+runner/queue/telegram/store/control/scheduler/cmd, 7/7 Docker fixtures and the
+Compose override check passed. An independent reviewer agent returned 5 High,
+6 Medium, 3 Low; `e428811` fixes the Highs (force now settles quarantined
+leftovers of retired folders, quarantine inventory runs even when removal is
+skipped, ExecStream failures verify quiescence instead of marking unknown,
+restart-target scope errors are no longer swallowed) and the accepted Mediums/Lows.
+Two Mediums were kept by design (Stop stops the runtime container; a batch that
+fails during a drain is not retried). Full table and remaining limits:
+[P0 acceptance report](reviews/2026-11-01-p0-acceptance.md).
+
+**Not deployed.** Pi remains `8a3ce75`; the owner deferred any rollout until the
+whole CP-037 feature is complete. Merge state of #126 is recorded in the PR and
+`git log main`; if this section still says "accepted" but `main` lacks `e428811`,
+check the PR before assuming it merged.
+
+**Next:** P1 durable identity per the [slice plan](superpowers/plans/2026-11-01-parallel-sessions.md)
+once the owner opens it; real Telegram acceptance of `/restart`, `/restart force`
+and Stop-control repair (C01–C14, C18–C29) stays open and is not inferred from CI.
+Known P0 limits: no C9 Continue/Start UI, no stream reattachment, no automatic
+replay of started work, uncertain control messages re-edited every 30 s, Pi
+memory values are admission inputs only (no memory cgroup).
+
+### Integration provenance
+
+Worker source commits: lifecycle `37f3efd`, Telegram `05f39fa`, restart `c17f99d`.
+Integration counterparts: `ee5d582`, `00b014a`, `b5e9961`; root resources `6f32bea`
+and startup wiring `e980ad9`. Restart follow-up `cc29c97` is also cherry-picked: quarantine keeps Telegram
+available; startup UI repair is bounded to 10 seconds. All worktrees/branches are retained.
+
+Worker source commits: lifecycle `37f3efd`, Telegram `05f39fa`, restart `c17f99d`.
+Integration counterparts: `ee5d582`, `00b014a`, `b5e9961`; root resources `6f32bea`
+and startup wiring `e980ad9`. Restart follow-up `cc29c97` is also cherry-picked: quarantine keeps Telegram
+available; startup UI repair is bounded to 10 seconds. Inspect the integration log
+for its cherry-pick SHA and the final documentation checkpoint.
+
+Pi was inspected read-only: 4 CPUs, 3796 MiB RAM, 1754 MiB available with current
+containers already included, 2063 MiB swap used, 36 GiB disk free. Memory cgroup is
+absent; CPU/PID enforcement is available. [Measurements and staged limits](reviews/2026-11-01-rpi4-resources.md).
+Owner explicitly wants parallel capability: opt-in Pi profile max=2 with strict
+memory admission and growth reserve; at observed headroom only one start fits.
+No live profile, reboot, container mutation or inference probe was performed.
+
+P0 implements lifecycle/restart/control recovery only. Per-thread parallelism,
+new/clear session generations and mixed-provider failover remain later slices.
+Credential/native-home qualification, CP-004/007 and measured real-provider load
+remain gates for the complete feature. All earlier deployment evidence below is
+historical production state, not evidence for this local branch.
+
+## Design context — 2026-11-01
+
+Owner requested design only, then selected private chats plus background tasks,
+per-topic folders plus shared projects, and explicit chat/thread separation.
+[CP-037 draft](superpowers/specs/2026-11-01-parallel-sessions.md) proposes dedicated
+active-session containers, persistent native context/workspaces and bounded
+single-host admission. Design authorization does not accept every architectural
+choice or authorize implementation. No code or runtime changes made.
+
+Owner subsequently requested implementation specs, another review, and no abrupt
+planned restart; explicitly requested `/restart force` cancelling background work.
+Saved contracts A/B/C/D and delivery slices linked from the architecture. Ordinary
+restart drains; force cancels active foreground and background plus pending
+background occurrences, preserving schedules and queued foreground. These are
+specifications, not shipped behavior.
+
+[Second review](reviews/2026-11-01-parallel-sessions-spec-review.md) found current
+idle eviction, root cancellation on restart and stale startup cleanup can interrupt
+work. Existing focused runner/cmd/queue tests pass; no live interruption test ran.
+P0 must fix lifecycle safety before parallel activation.
+Owner-requested follow-up recorded in contracts C6/A5: partial force failure,
+cancel-drain UI/races, external-effect settlement and archive access/export/purge.
+Archive command/API detail remains a separate follow-up; P0 scope stays lifecycle.
+Consolidated routing/mixed-provider behavior in contract D, A6/B5/C7 and plan P3b.
+Third self-review covers account bounds, A/B/A handoff cursors, provider-blocked
+queue eligibility, control-operation races and quota/fallback versus restart.
+Automatic task fallback remains deferred; current tests do not prove new contracts.
+Owner added emergency Telegram Stop/status repair: contract C8/A7 and C18-C26.
+P0 covers durable existing-placeholder repair; P5 covers generation/fallback races.
+Unknown execution must not render as stopped, obsolete callbacks cannot stop a
+new attempt, and failed edits remain durable without blocking runtime shutdown. Review is by the author,
+not independent approval. Next: implement and accept P0;
+provider credential/home migration, CP-004/007 and host qualification gates remain.
+T5/T5b implementation and T9 reboot remain paused.
+CP-035 is reserved in the separate CLI-hooks research worktree.
+
+## Previous state — private Stop deployed, 2026-10-31
 
 [CP-036](proposals/CP-036-private-chat-stop.md) is merged in
 [PR #124](https://github.com/Coriol-is/gopod/pull/124), **`8a3ce75`**, and deployed
@@ -137,7 +232,7 @@ A08/A10 real-client checks remain open.
   are outside preset quiet hours. Presets ship off by default; do not reset owner settings.
 - CP-034: official-source skill/plugin installation from private chat only, auto-update on, never groups.
 - CP-028 direction: Go/gotd, read and write, private chat only; its seven spec questions remain open in PR #108.
-- No automatic paid fallback. T9 memory-cgroup/reboot and parallel threads remain paused.
+- No automatic paid fallback. T9 memory-cgroup/reboot and parallel implementation remain paused; CP-037 design is reopened.
 
 ## Open gates and boundaries
 
@@ -175,3 +270,10 @@ preserves detailed implementation/review/deployment history, including supersede
 The [older snapshot](history/HANDOFF-2026-10-25-before-housekeeping.md) remains available.
 Current source, tests and timestamped deployment evidence outrank historical status prose;
 [DECISIONS](DECISIONS.md) remains the ADR authority.
+
+## Latest specification consolidation
+
+C9 adds the canonical execution-state -> Telegram text/actions -> recovery matrix,
+including not-started versus interrupted, safe Start/Continue and stale Stop
+acknowledgement independent of edit success. C27-C29 supplement C18-C26. All remain
+specification-only; source behavior and deployment are unchanged.

@@ -109,6 +109,9 @@ func (s *Scheduler) Start(ctx context.Context) {
 }
 
 func (s *Scheduler) poll(ctx context.Context) {
+	if s.queue.Draining() {
+		return
+	}
 	now := time.Now().UnixMilli()
 	tasks, err := s.store.GetDueTasks(ctx, now)
 	if err != nil {
@@ -128,6 +131,9 @@ func (s *Scheduler) poll(ctx context.Context) {
 func (s *Scheduler) runTask(ctx context.Context, t store.TaskRecord, now int64) {
 	release := LockTasks(s.store)
 	defer release()
+	if s.queue.Draining() {
+		return
+	}
 	current, err := s.store.GetTask(ctx, t.ID)
 	if err != nil || current.Status != "active" || current.NextRun <= 0 || current.NextRun > now {
 		return

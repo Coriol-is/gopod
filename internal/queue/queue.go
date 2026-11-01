@@ -123,10 +123,14 @@ type Queue struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 
-	mu     sync.Mutex
-	chats  map[string]*chatState // keyed by folder
-	onDone []func(Item, error)
-	closed bool // set by Close; schedule refuses new work afterwards
+	mu        sync.Mutex
+	chats     map[string]*chatState // keyed by folder
+	onDone    []func(Item, error)
+	closed    bool // set by Close; schedule refuses new work afterwards
+	draining  bool
+	forcing   bool
+	running   map[string]*activeBatch
+	drainWake chan struct{}
 
 	// Managed task dispatch state (managed.go); all nil/zero without SetManaged.
 	managed   *ManagedRuntime
@@ -137,10 +141,11 @@ type Queue struct {
 }
 
 type chatState struct {
-	pending []Item
-	active  bool
-	retries int
-	held    int // capacity holds blocking this folder (managed.go)
+	pending          []Item
+	active           bool
+	retries          int
+	resumeAfterDrain bool
+	held             int // capacity holds blocking this folder (managed.go)
 }
 
 // DefaultMaxConcurrent is the default global cap on simultaneous
@@ -255,7 +260,7 @@ func (q *Queue) schedule(item Item) bool {
 		q.chats[item.Folder] = cs
 	}
 	cs.pending = append(cs.pending, item)
-	if cs.active || cs.held > 0 {
+	if cs.active || cs.held > 0 || q.draining {
 		q.mu.Unlock()
 		return true // worker already running, it will drain pending
 	}
@@ -393,13 +398,19 @@ func (q *Queue) worker(ctx context.Context, folder string) {
 			q.deactivate(folder) // unknown managed execution holds this folder
 			return
 		}
-		items := q.drainPending(folder)
+		q.endBatch(folder)
+		items, runCtx := q.beginBatch(ctx, folder)
 		if len(items) == 0 {
 			q.deactivate(folder)
 			return
 		}
+		if runCtx.Err() != nil {
+			q.finish(items, StatusStopped, ErrForcedRestart)
+			q.deactivate(folder)
+			return
+		}
 		if len(items) == 1 && items[0].Managed() {
-			switch q.runManaged(ctx, folder, items[0]) {
+			switch q.runManaged(runCtx, folder, items[0]) {
 			case stepNext:
 				continue
 			case stepHold:
@@ -417,8 +428,18 @@ func (q *Queue) worker(ctx context.Context, folder string) {
 		// New messages arriving during backoff append to pending
 		// and get picked up in the NEXT outer-loop iteration.
 		for {
+			if runCtx.Err() != nil {
+				q.finish(items, StatusStopped, ErrForcedRestart)
+				q.deactivate(folder)
+				return
+			}
 			q.markRunning(ctx, items)
-			err := q.handler(ctx, items)
+			err := q.handler(runCtx, items)
+			if q.batchForced(folder) {
+				q.finish(items, StatusFailed, errors.New("execution_unknown: forced restart cancellation requested"))
+				q.deactivate(folder)
+				return
+			}
 			if ctx.Err() != nil {
 				// Shutdown, not a failure. Checked before err == nil
 				// because a handler may swallow the cancellation and
@@ -445,6 +466,11 @@ func (q *Queue) worker(ctx context.Context, folder string) {
 				break // terminal, not a failure: no retry
 			}
 
+			if q.Draining() {
+				q.finish(items, StatusFailed, err)
+				q.deactivate(folder)
+				return
+			}
 			retries := q.incrementRetries(folder)
 			if retries > q.maxRetries {
 				q.log.Error("queue: max retries exceeded, batch failed; remaining pending items kept",
@@ -463,7 +489,20 @@ func (q *Queue) worker(ctx context.Context, folder string) {
 				slog.Any("err", err))
 			select {
 			case <-time.After(backoff):
+				if q.Draining() {
+					q.finish(items, StatusFailed, err)
+					q.deactivate(folder)
+					return
+				}
 				// retry same items
+			case <-runCtx.Done():
+				if q.batchForced(folder) {
+					q.finish(items, StatusFailed, errors.New("execution_unknown: forced restart cancellation requested"))
+				} else {
+					q.finish(items, StatusInterrupted, runCtx.Err())
+				}
+				q.deactivate(folder)
+				return
 			case <-ctx.Done():
 				q.finish(items, StatusInterrupted, ctx.Err())
 				q.deactivate(folder)
@@ -563,8 +602,12 @@ func sameBatch(a, b Item) bool {
 func (q *Queue) drainPending(folder string) []Item {
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	return q.drainPendingLocked(folder)
+}
+
+func (q *Queue) drainPendingLocked(folder string) []Item {
 	cs := q.chats[folder]
-	if cs == nil || len(cs.pending) == 0 {
+	if q.draining || cs == nil || len(cs.pending) == 0 {
 		return nil
 	}
 	// Take only the leading run sharing one ThreadID: a batch is one
@@ -583,11 +626,18 @@ func (q *Queue) drainPending(folder string) []Item {
 }
 
 func (q *Queue) deactivate(folder string) {
+	q.endBatch(folder) // release this batch before another worker can own the folder
 	q.mu.Lock()
-	defer q.mu.Unlock()
+	resume := false
 	if cs, ok := q.chats[folder]; ok {
 		cs.active = false
 		cs.retries = 0
+		resume = cs.resumeAfterDrain
+		cs.resumeAfterDrain = false
+	}
+	q.mu.Unlock()
+	if resume {
+		q.kick(folder)
 	}
 }
 

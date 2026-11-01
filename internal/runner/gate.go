@@ -82,12 +82,14 @@ const (
 // cancelled waiter just leaves the queue; there is no hand-off that
 // could give a slot to a caller that is gone.
 type agentGate struct {
-	max        int
-	minAvailMB int64
-	readMem    func() (int64, bool) // MemAvailable in MiB; nil or !ok = sufficient
-	poll       time.Duration
-	memMaxWait time.Duration
-	log        *slog.Logger
+	strictMemory    bool
+	growthReserveMB int64
+	max             int
+	minAvailMB      int64
+	readMem         func() (int64, bool) // MemAvailable in MiB; nil or !ok = sufficient
+	poll            time.Duration
+	memMaxWait      time.Duration
+	log             *slog.Logger
 
 	mu      sync.Mutex
 	running int
@@ -175,7 +177,15 @@ func (g *agentGate) tryAdmit(w *gateWaiter) (WaitReason, <-chan struct{}, bool) 
 	if g.head() != w || g.running >= g.max {
 		return WaitSlot, g.wake, false
 	}
-	if g.minAvailMB > 0 && g.readMem != nil {
+	if g.strictMemory && g.minAvailMB > 0 {
+		if g.readMem == nil {
+			return WaitMemory, g.wake, false
+		}
+		if avail, ok := g.readMem(); !ok || avail < g.minAvailMB+int64(g.running)*g.growthReserveMB {
+			return WaitMemory, g.wake, false
+		}
+	}
+	if !g.strictMemory && g.minAvailMB > 0 && g.readMem != nil {
 		if avail, ok := g.readMem(); ok && avail < g.minAvailMB {
 			waited := time.Since(w.since)
 			if g.running > 0 || waited < g.memMaxWait {

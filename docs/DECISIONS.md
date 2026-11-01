@@ -1873,3 +1873,73 @@ is not proof of process death: D033 best-effort cleanup and native session-write
 limitations still apply. Other chats retain their current presentation and controls.
 
 [CP-036](proposals/CP-036-private-chat-stop.md), [spec](superpowers/specs/2026-10-31-private-chat-stop.md).
+
+## D054 — Controller restart drains or explicitly forces; busy runtimes are never evicted
+
+**Status:** accepted 2026-11-01 (CP-037 P0 lifecycle slice). Supersedes the
+"cancel the application context after a bare acknowledgement" sequence of D046;
+D046's supervision checks, durable restart receipt, scoped container stop,
+replay suppression and ready/degraded notice remain in force.
+
+**Context.** The CP-037 spec review found three ways the serial deployment
+could interrupt work it had not finished: the idle watcher evicted containers
+by last-activity time rather than by occupancy, `/restart` cancelled the root
+context while replies and tasks were running, and boot-time cleanup could stop a
+still-running leftover and then release its slot without proof the process was
+gone. The owner required that no planned restart, image update or container
+release cut off an in-flight reply or background task, and asked for a separate
+forced mode that cancels background work on purpose.
+
+**Decision.**
+- *Occupancy, not activity.* The idle timeout applies only to a runtime whose
+  slot is provably idle. Busy and unknown runtimes are protected. Unknown
+  execution holds global capacity until the Docker process inventory proves it
+  settled; a normal Stop stops the slot-owned runtime so detached child tools
+  are provably dead, and the next turn recreates it on the same persistent mounts.
+- *Quarantine keeps the control plane.* Boot-time cleanup removes only proven
+  non-running leftovers; when removal is disabled or restart recovery left
+  unproven state, the inventory still runs so nothing running is re-attached.
+  A leftover still running at any version is quarantined:
+  execution for that folder is refused with `ErrExecutionUnproven`, the owner
+  warmup is skipped, and Telegram stays up so `/restart status|force` and
+  control repair remain reachable. The controller does not exit, so there is
+  no restart loop.
+- *`/restart` drains.* Owner-private, Router `PermOwnerOnly`. The request is
+  recorded in `router_state` with mode `drain`; scheduler enqueue is locked,
+  the queue stops dispatching but retains queued input, dispatched handlers and
+  active runtime operations finish (default drain window ten minutes), the
+  authorized personal containers are snapshotted, `restarting` is persisted and
+  only then is the application context cancelled. If termination cannot be
+  proven the request becomes `blocked`, nothing is stopped and the owner is
+  told. `/restart status [<id>]` and `/restart cancel [<id>]` act only on the
+  request with that message id; cancel is valid while `draining` or `blocked`.
+- *`/restart force` is explicit and durable.* It needs the confirmation button
+  (D028). It is refused while non-personal queued work exists. Before any
+  cutoff the queued owner turns and pending background occurrences are recorded
+  as forced; then the active reply and background work are cancelled, the exact
+  authorized containers are stopped, the runner verifies every operation claim
+  settled and the cancelled occurrences are marked so startup recovery does not
+  replay them. Force also stops every quarantined leftover by exact container
+  id, including one whose folder is retired or unregistered and therefore has
+  no scope to validate; it is the only path that can settle such a leftover.
+  Schedules and files are preserved. A partial failure stays `blocked` with
+  replay disabled; repeating `/restart force` resumes the recorded request
+  without taking a new cutoff.
+- *Stop controls survive crashes.* Each owner-private Stop placeholder is bound
+  in `control_messages` to its attempt and scope. A stale callback cannot stop a
+  newer attempt; an attempt whose outcome is unknown is never rendered as
+  stopped; failed edits are retried from durable state and never block runtime
+  shutdown. `RepairControls` runs at startup within ten seconds and every thirty
+  seconds while the bot runs.
+- *Host profile is opt-in.* `deploy/compose.rpi4.yml` carries the measured Pi 4
+  limits (`GOPOD_MAX_AGENTS=2`, strict memory admission, growth reserve,
+  container memory/CPU/PID caps). The Pi kernel has no memory cgroup, so memory
+  values there are admission inputs, not enforcement.
+
+**Consequences.** A long reply or task is no longer cut by idle eviction or a
+planned restart; the price is that a restart can wait up to the drain window or
+park as `blocked` until the owner decides. The C9 Continue/Start recovery UI,
+live stream reattachment, automatic replay of started work, per-thread parallel
+runtimes, the autoscaler and provider failover are not part of this decision.
+Real Telegram and native-provider acceptance remain separate gates
+([P0 acceptance](reviews/2026-11-01-p0-acceptance.md)).

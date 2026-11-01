@@ -16,6 +16,8 @@ package telegram
 
 import (
 	"context"
+	"github.com/Coriol-is/gopod/internal/store"
+	"github.com/google/uuid"
 	"log/slog"
 	"sync"
 
@@ -24,9 +26,12 @@ import (
 
 // inflightTurn is one streaming turn that can be stopped.
 type inflightTurn struct {
-	cancel  context.CancelFunc
-	stopped chan struct{} // closed on the first stop
-	once    sync.Once
+	scope    store.ScopeRef
+	token    string
+	messages map[int]bool
+	cancel   context.CancelFunc
+	stopped  chan struct{} // closed on the first stop
+	once     sync.Once
 
 	// home is the chat the turn answers in; only a button in that chat
 	// may stop it (stopTurn).
@@ -47,7 +52,7 @@ func (b *Bot) registerInflight(turnID int64, chatID int64, threadID int, cancel 
 	if turnID == 0 {
 		return func() {}
 	}
-	t := &inflightTurn{cancel: cancel, stopped: make(chan struct{}), home: chatID, thread: threadID}
+	t := &inflightTurn{token: uuid.NewString(), messages: make(map[int]bool), cancel: cancel, stopped: make(chan struct{}), home: chatID, thread: threadID}
 	b.inflightMu.Lock()
 	if b.inflight == nil {
 		b.inflight = make(map[int64]*inflightTurn)

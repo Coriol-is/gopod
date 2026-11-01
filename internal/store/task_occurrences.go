@@ -194,10 +194,26 @@ func (s *Store) AdmitTaskOccurrence(ctx context.Context, req AdmissionRequest) (
 }
 
 func (s *Store) admitQ(ctx context.Context, q taskSQL, req AdmissionRequest) (Admission, error) {
+	restart, err := readRestartQ(ctx, q)
+	if err != nil {
+		return Admission{}, err
+	}
+	if restart != nil && restartActive(restart.Phase) {
+		return Admission{}, ErrRestartPending
+	}
 	t, err := readManagedTaskQ(ctx, q, req.TaskID)
 	if err != nil {
 		return Admission{}, err
 	}
+	var suppressed int64
+	if err = q.QueryRowContext(ctx, `SELECT COALESCE((SELECT CAST(value AS INTEGER) FROM router_state WHERE key=?),0)`, forceSuppressionKey+":"+t.Conversation.Scope.JID).Scan(&suppressed); err != nil {
+		return Admission{}, err
+	}
+	if req.NominalAt > 0 && req.NominalAt <= suppressed {
+		req.Decisions = append(req.Decisions, SlotDecision{NominalAt: req.NominalAt, Decision: DecisionSkipped, Reason: "forced_restart"})
+		req.NominalAt = 0
+	}
+
 	switch {
 	case t.Tombstoned():
 		return Admission{}, ErrTaskTombstoned

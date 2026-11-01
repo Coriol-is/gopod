@@ -87,6 +87,8 @@ func (r *Runner) WithChatSlot(ctx context.Context, folder string, operation func
 		return "", err
 	}
 	defer release()
+	ctx, finish := r.operationContext(ctx)
+	defer finish()
 	return operation(ctx)
 }
 

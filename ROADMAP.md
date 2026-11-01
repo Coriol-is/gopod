@@ -16,6 +16,23 @@ right now" view, see [docs/HANDOFF.md](docs/HANDOFF.md).
 
 ---
 
+## Parallel sessions — CP-037 (P0 accepted, P1+ not started)
+
+🟦 P0 lifecycle safety accepted in [PR #126](https://github.com/Coriol-is/gopod/pull/126)
+([D054](docs/DECISIONS.md), [acceptance](docs/reviews/2026-11-01-p0-acceptance.md)):
+no busy-runtime eviction, `/restart` drain, confirmed `/restart force`, startup
+quarantine with a live control plane, durable Stop-control repair, opt-in Pi 4
+profile. Not deployed; real Telegram acceptance open. P1–P7 remain unstarted.
+
+Owner reopened design on 2026-11-01: private chats split by thread plus background
+tasks; persistent topic folders and explicitly attached shared projects.
+[Architecture and implementation contracts](docs/superpowers/specs/2026-11-01-parallel-sessions.md).
+Lifecycle safety P0 precedes parallel execution; ordinary restart drains, explicit
+`/restart force` cancels background work. Mixed-provider routing, model changes and explicit quota fallback are consolidated
+in contract D. These remain specifications only.
+Owner authorized P0 code, parallel worktrees, acceptance and automatic merge.
+T5/T5b parallel-runtime implementation remains paused; deployment and T9 reboot are not authorized.
+
 ## Private-chat Stop — CP-036
 
 ✅ Explicit inline Stop and `/stop` for owner-private interactive answers merged

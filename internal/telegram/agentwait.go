@@ -60,11 +60,6 @@ func (b *Bot) waitNotice(ctx context.Context, item queue.Item) runner.WaitNotice
 			b.editMessageKB(ctx, item.ChatID, ph, text, b.turnKeyboard(item.ID))
 			return
 		}
-		if item.Resumed && item.PlaceholderMsgID != 0 {
-			// streamReply reuses the interrupted attempt's placeholder.
-			b.editMessageKB(ctx, item.ChatID, item.PlaceholderMsgID, text, b.turnKeyboard(item.ID))
-			return
-		}
 		if b.draftsSupported(item.ChatID) {
 			stoppable := b.inflightStop(item.ID) != nil
 			id := b.newDraftID()

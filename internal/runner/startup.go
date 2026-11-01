@@ -34,6 +34,8 @@ func (r *Runner) StartupCheck(ctx context.Context, folder string, tier Tier, all
 		return report
 	}
 	defer release()
+	ctx, finishSetup := r.operationContext(ctx)
+	defer finishSetup()
 	if r.selectionBlocked(folder) {
 		report.Container = "selection_unavailable"
 		return report
@@ -111,6 +113,8 @@ func startupFailure(ctx context.Context) string {
 // restores config, mints credentials or classifies model errors recursively.
 // Cancellation waits for a bounded process-group cleanup attempt before return.
 func (r *Runner) execLocalProbe(ctx context.Context, id string, cmd []string) (*ExecResult, error) {
+	ctx, finishOperation := r.operationContext(ctx)
+	defer finishOperation()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -144,6 +148,7 @@ func (r *Runner) execLocalProbe(ctx context.Context, id string, cmd []string) (*
 	result, execErr := r.ex.Exec(ctx, id, wrapWithPidFile(pid, cmd), nil)
 	finished <- execErr != nil
 	if err := <-cleaned; err != nil {
+		r.markContainerUnknown(ctx, id)
 		return nil, err
 	}
 	if err := ctx.Err(); err != nil {
