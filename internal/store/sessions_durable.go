@@ -354,3 +354,41 @@ func (s *Store) CountSessionRows(ctx context.Context) (sessions, contexts int, e
 	}
 	return sessions, contexts, nil
 }
+
+// ClearDurableConversationContinuity is ClearConversationContinuity for the
+// durable mapping: it clears the replay transcript, writes the same seeded and
+// session_adopted markers, and deletes every provider's native context for the
+// active session's current context epoch, all in one transaction. The legacy
+// sessions table is frozen after adoption and is never touched here.
+func (s *Store) ClearDurableConversationContinuity(ctx context.Context, scope ScopeRef, thread int) error {
+	_, err := s.withTx(ctx, func(q taskSQL) error {
+		b, _, err := resolveConversationQ(ctx, q, scope, thread)
+		if err != nil {
+			return err
+		}
+		folder := scope.Folder
+		if _, err = q.ExecContext(ctx, `DELETE FROM conversation_history WHERE chat_folder=? AND thread_id=?`, folder, thread); err != nil {
+			return fmt.Errorf("deleting conversation history: %w", err)
+		}
+		const mark = `INSERT INTO router_state(key,value) VALUES(?,'1') ON CONFLICT(key) DO NOTHING`
+		if _, err = q.ExecContext(ctx, mark, continuityKey(folder, thread, "seeded")); err != nil {
+			return fmt.Errorf("marking continuity seeded: %w", err)
+		}
+		if thread == 0 {
+			// Prevent a previously unused provider from re-adopting an old main session.
+			for _, p := range []string{"claude", "codex"} {
+				if _, err = q.ExecContext(ctx, mark, "session_adopted:"+folder+":"+p); err != nil {
+					return fmt.Errorf("marking session adopted: %w", err)
+				}
+			}
+		}
+		if _, err = q.ExecContext(ctx, `DELETE FROM native_contexts WHERE session_id=? AND context_epoch=?`, b.ActiveSessionID, b.ContextEpoch); err != nil {
+			return fmt.Errorf("deleting native contexts: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("clearing durable conversation continuity: %w", err)
+	}
+	return nil
+}

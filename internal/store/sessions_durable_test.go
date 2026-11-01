@@ -336,3 +336,48 @@ func TestExecutionClaimRejectsForeignTurn(t *testing.T) {
 		t.Fatalf("execution_claims = %d, %v", n, err)
 	}
 }
+
+func TestClearDurableConversationContinuityClearsAllProvidersKeepsSessionsTable(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	scope := ownerScope(t, st)
+	b, err := st.ResolveConversation(ctx, scope, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for p, id := range map[string]string{"claude": "c-1", "codex": "x-1"} {
+		if err = st.PutNativeContext(ctx, scope, b.ActiveSessionID, b.ContextEpoch, p, id); err != nil {
+			t.Fatalf("PutNativeContext(%s): %v", p, err)
+		}
+	}
+	if err = st.PutSession(ctx, "owner", 0, "claude", "legacy-frozen"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = st.db.ExecContext(ctx, `INSERT INTO conversation_history(chat_folder,thread_id,role,content) VALUES('owner',0,'user','hi')`); err != nil {
+		t.Fatal(err)
+	}
+	if err = st.ClearDurableConversationContinuity(ctx, scope, 0); err != nil {
+		t.Fatalf("ClearDurableConversationContinuity: %v", err)
+	}
+	for _, p := range []string{"claude", "codex"} {
+		if _, ok, err := st.GetNativeContext(ctx, b.ActiveSessionID, b.ContextEpoch, p); err != nil || ok {
+			t.Fatalf("%s context still present: ok=%v err=%v", p, ok, err)
+		}
+	}
+	after, err := st.ResolveConversation(ctx, scope, 0)
+	if err != nil || after != b {
+		t.Fatalf("binding changed: %+v -> %+v (%v)", b, after, err)
+	}
+	if id, ok, err := st.GetSession(ctx, "owner", 0, "claude"); err != nil || !ok || id != "legacy-frozen" {
+		t.Fatalf("legacy sessions row = %q %v %v, want untouched", id, ok, err)
+	}
+	var n int
+	if err = st.db.QueryRowContext(ctx, `SELECT count(*) FROM conversation_history WHERE chat_folder='owner'`).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("history rows = %d, %v", n, err)
+	}
+	for _, k := range []string{"continuity:owner:0:seeded", "session_adopted:owner:claude", "session_adopted:owner:codex"} {
+		if v, err := st.GetState(ctx, k); err != nil || v != "1" {
+			t.Fatalf("marker %s = %q, %v", k, v, err)
+		}
+	}
+}

@@ -90,3 +90,46 @@ func (d *durableSessionStore) DeleteSession(ctx context.Context, folder string, 
 	}
 	return nil
 }
+
+// runnerContinuityStore mirrors runner's unexported continuityStore. The
+// runner type-asserts its state store to it for provider handoff, transcript
+// recording, provider switches and /clear, so the durable adapter must keep
+// satisfying it.
+type runnerContinuityStore interface {
+	ConversationHandoff(ctx context.Context, folder string, thread int, provider string) (string, error)
+	CompleteConversation(ctx context.Context, folder string, thread int, provider, reply string) error
+	RecordConversationRequest(ctx context.Context, folder string, thread int, prompt string) error
+	ClearConversationContinuity(ctx context.Context, folder string, thread int) error
+	PersistProviderChoice(ctx context.Context, folder, provider string) error
+}
+
+var (
+	_ runnerStateStore      = &durableSessionStore{}
+	_ runnerContinuityStore = &durableSessionStore{}
+)
+
+func (d *durableSessionStore) ConversationHandoff(ctx context.Context, folder string, thread int, provider string) (string, error) {
+	return d.st.ConversationHandoff(ctx, folder, thread, provider)
+}
+
+func (d *durableSessionStore) CompleteConversation(ctx context.Context, folder string, thread int, provider, reply string) error {
+	return d.st.CompleteConversation(ctx, folder, thread, provider, reply)
+}
+
+func (d *durableSessionStore) RecordConversationRequest(ctx context.Context, folder string, thread int, prompt string) error {
+	return d.st.RecordConversationRequest(ctx, folder, thread, prompt)
+}
+
+func (d *durableSessionStore) PersistProviderChoice(ctx context.Context, folder, provider string) error {
+	return d.st.PersistProviderChoice(ctx, folder, provider)
+}
+
+// ClearConversationContinuity clears every provider's native context for the
+// conversation's current context epoch; the frozen legacy table is untouched.
+func (d *durableSessionStore) ClearConversationContinuity(ctx context.Context, folder string, thread int) error {
+	scope, err := d.st.SnapshotScope(ctx, folder)
+	if err != nil {
+		return fmt.Errorf("snapshot scope for %q: %w", folder, err)
+	}
+	return d.st.ClearDurableConversationContinuity(ctx, scope, thread)
+}

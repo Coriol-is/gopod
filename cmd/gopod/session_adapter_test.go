@@ -5,9 +5,13 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/Coriol-is/gopod/internal/runner"
 	"github.com/Coriol-is/gopod/internal/store"
 )
 
@@ -58,6 +62,7 @@ func TestDurableAdapterRoundTripsThroughBinding(t *testing.T) {
 func TestDurableAdapterDeleteRemovesOnlyProviderContext(t *testing.T) {
 	ctx := t.Context()
 	st, ad := sessionFixture(t)
+	fakeDockerDaemon(t)
 	for p, id := range map[string]string{"claude": "c-1", "codex": "x-1"} {
 		if err := ad.PutSession(ctx, "owner", 0, p, id); err != nil {
 			t.Fatalf("put %s: %v", p, err)
@@ -111,4 +116,74 @@ func TestNewSessionStateStoreSelectsByMarker(t *testing.T) {
 	if _, ok := got.(*durableSessionStore); !ok || mode != store.SessionMappingDurable {
 		t.Fatalf("durable got %T mode %q", got, mode)
 	}
+}
+
+func TestDurableAdapterImplementsContinuity(t *testing.T) {
+	ctx := t.Context()
+	st, ad := sessionFixture(t)
+	fakeDockerDaemon(t)
+	for p, id := range map[string]string{"claude": "c-1", "codex": "x-1"} {
+		if err := ad.PutSession(ctx, "owner", 0, p, id); err != nil {
+			t.Fatalf("put %s: %v", p, err)
+		}
+	}
+	if err := st.PutSession(ctx, "owner", 0, "claude", "legacy-frozen"); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	paths := runner.Paths{RepoRoot: dir, DataDir: dir, ChatsDir: dir, ContainerSkillsDir: dir, EmptyFile: filepath.Join(dir, "empty")}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	d, err := runner.NewDocker(ctx, log)
+	if err != nil {
+		t.Fatalf("NewDocker against fake daemon: %v", err)
+	}
+	t.Cleanup(func() { _ = d.Close() })
+	r, err := runner.New(d, runner.NewClaudeProvider("img"), paths, runner.SpawnDefaults{}, nil, "test", log)
+	if err != nil {
+		t.Fatalf("runner.New: %v", err)
+	}
+	r.SetStore(ad)
+	r.SetAdmissionPolicy(1, st)
+	// Without continuity support the runner falls back to the legacy path,
+	// which execs a clear in a container (unexpected docker call) and clears
+	// only the active provider; both contexts gone proves the assertion.
+	if err := r.ClearSession(ctx, "owner", 0, runner.TierOwner, nil); err != nil {
+		t.Fatalf("ClearSession: %v", err)
+	}
+	for _, p := range []string{"claude", "codex"} {
+		if _, ok, err := ad.GetSession(ctx, "owner", 0, p); err != nil || ok {
+			t.Fatalf("%s context survived /clear: ok=%v err=%v", p, ok, err)
+		}
+	}
+	if id, ok, err := st.GetSession(ctx, "owner", 0, "claude"); err != nil || !ok || id != "legacy-frozen" {
+		t.Fatalf("legacy sessions row = %q %v %v, want untouched", id, ok, err)
+	}
+	if v, err := st.GetState(ctx, "continuity:owner:0:seeded"); err != nil || v != "1" {
+		t.Fatalf("seeded marker = %q %v", v, err)
+	}
+}
+
+// fakeDockerDaemon points DOCKER_HOST at an HTTP server that answers the ping
+// and reports no containers, so the runner's slot and quiescence checks run
+// without a real daemon.
+func fakeDockerDaemon(t *testing.T) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Api-Version", "1.47")
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/_ping"):
+			_, _ = io.WriteString(w, "OK")
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			_, _ = io.WriteString(w, "[]")
+		default:
+			t.Errorf("unexpected docker call %s %s", r.Method, r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("DOCKER_HOST", "tcp://"+strings.TrimPrefix(srv.URL, "http://"))
+	t.Setenv("DOCKER_TLS_VERIFY", "")
+	t.Setenv("DOCKER_CERT_PATH", "")
+	t.Setenv("DOCKER_API_VERSION", "")
 }
