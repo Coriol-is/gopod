@@ -22,6 +22,10 @@ func groupPublicError(err error) error {
 	if err == nil {
 		return nil
 	}
+	var freezeErr *ResultFreezeError
+	if errors.As(err, &freezeErr) {
+		return &ResultFreezeError{Err: ErrGroupOperationUnavailable}
+	}
 	switch {
 	case errors.Is(err, ErrUsageLimit):
 		var usage *UsageLimitError

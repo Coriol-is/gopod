@@ -318,6 +318,9 @@ func (r *Runner) Run(
 	allowlist *mountsec.Allowlist,
 	prompt string,
 ) (reply string, retErr error) {
+	if err := validateResultFreeze(ctx, chatFolder, thread); err != nil {
+		return "", err
+	}
 	_, group, lookupErr := r.groupRegistration(ctx, chatFolder)
 	if lookupErr != nil {
 		return "", lookupErr
@@ -374,7 +377,9 @@ func (r *Runner) Run(
 	if err != nil {
 		return "", err
 	}
-	cmd := withModel(prov.RunCmd(agentPrompt, opts.AppendSystemPrompt, ref), prov, r.ModelForChat(chatFolder))
+	model := r.ModelForChat(chatFolder)
+	ctx = freezeModel(ctx, model)
+	cmd := withModel(prov.RunCmd(agentPrompt, opts.AppendSystemPrompt, ref), prov, model)
 	releaseGate, err := r.admit(ctx, chatFolder, ClassInteractive)
 	if err != nil {
 		return "", err
@@ -398,7 +403,7 @@ func (r *Runner) Run(
 	if err := validateExecution(ctx, prov); err != nil {
 		return "", err
 	}
-	if err := r.markConversationProvider(ctx, chatFolder, thread, prov.Name(), groupOutputText(prov, strings.TrimSpace(res.Stdout))); err != nil {
+	if err := r.completeResult(ctx, chatFolder, thread, prov.Name(), groupOutputText(prov, strings.TrimSpace(res.Stdout))); err != nil {
 		return "", err
 	}
 	reply = groupOutputText(prov, strings.TrimSpace(res.Stdout))
@@ -471,6 +476,9 @@ func (r *Runner) RunStream(
 	allowlist *mountsec.Allowlist,
 	prompt string,
 ) (stream *AgentStream, retErr error) {
+	if err := validateResultFreeze(ctx, chatFolder, thread); err != nil {
+		return nil, err
+	}
 	_, group, lookupErr := r.groupRegistration(ctx, chatFolder)
 	if lookupErr != nil {
 		return nil, lookupErr
@@ -532,6 +540,7 @@ func (r *Runner) RunStream(
 		return nil, err
 	}
 	model := r.ModelForChat(chatFolder)
+	ctx = freezeModel(ctx, model)
 	mkCmd := func(ref SessionRef) []string {
 		return withModel(prov.RunCmd(agentPrompt, systemPrompt, ref), prov, model)
 	}
@@ -770,7 +779,7 @@ func (r *Runner) startStream(
 			result <- RunResult{Err: outwardProviderError(prov, err)}
 			return
 		}
-		if err := r.markConversationProvider(ctx, chatFolder, conv.thread, prov.Name(), fullText); err != nil {
+		if err := r.completeResult(ctx, chatFolder, conv.thread, prov.Name(), fullText); err != nil {
 			result <- RunResult{Err: outwardProviderError(prov, err)}
 			return
 		}
