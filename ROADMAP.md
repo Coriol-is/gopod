@@ -24,7 +24,7 @@ no busy-runtime eviction, `/restart` drain, confirmed `/restart force`, startup
 quarantine with a live control plane, durable Stop-control repair, opt-in Pi 4
 profile. Deployed in `be7575f` on 2026-11-01; real Telegram acceptance open. P2–P7 remain unstarted.
 
-🟦 P1 durable session identity merged as `3409907` ([PR #133](https://github.com/Coriol-is/gopod/pull/133), [D056](docs/DECISIONS.md)) and deployed with mapping `legacy`: additive session/binding/claim tables, atomic `/sessions adopt` at next restart, default stays legacy. Not deployed.
+🟦 P1 durable session identity merged as `3409907` ([PR #133](https://github.com/Coriol-is/gopod/pull/133), [D056](docs/DECISIONS.md)) and deployed with mapping `legacy`: additive session/binding/claim tables, atomic `/sessions adopt` at next restart, default stays legacy; real native resume after adoption remains open.
 
 Owner reopened design on 2026-11-01: private chats split by thread plus background
 tasks; persistent topic folders and explicitly attached shared projects.
@@ -90,9 +90,9 @@ Done implementation must not remain "in progress" just because a live check is
 pending. Host memory-cgroup changes/reboot (T9) and parallel execution (T5/T5b)
 remain paused operational/research items, not implicit deployment steps.
 
-## Next iteration — status as of 2026-10-31
+## Next iteration — status as of 2026-11-02
 
-Done since 2026-10-27 (all merged to `main`; production runs `e3b5401`; outbox IPC/dispatcher on, artifacts/managed tasks off): CP-002 PR 1-5
+Done since 2026-10-27 (all merged to `main`; production runs `8a4f55a`; outbox IPC/dispatcher and artifacts on, managed tasks off): CP-002 PR 1-5
 (store, dispatcher, durable personal text IPC, immutable artifacts, voice/code preparation),
 CP-004 PR 1-3 (storage, managed dispatch, policy-guarded execution), CP-007 backup foundation,
 rich-message formatting P1 (D045), supervised owner `/restart` (CP-031).
@@ -108,6 +108,13 @@ rich-message formatting P1 (D045), supervised owner `/restart` (CP-031).
 | Deferred | CP-014 media, CP-018 per-thread providers, T9 cgroup reboot, observability | Owner re-prioritises |
 
 Open owner decisions: branch protection requiring `test` + `isolation-spike` (a ruleset requiring one approval exists; admin squash-merge is the working path); whether to add a CD workflow.
+
+The owner resumed queue streams 1–3 in parallel on 2026-11-02. The current
+implementation wave starts CP-002 PR 6 result-freeze integration and CP-016
+deletion lifecycle groundwork, alongside release qualification. CP-018 follows
+CP-016 inside stream 3; its older deferral in the iteration table is superseded
+by this instruction. Partial foundations do not complete either proposal.
+Deployment and destructive live acceptance remain separate gates.
 
 ## Planning candidates — 2026-10-26
 
@@ -313,7 +320,7 @@ checks do not reopen an implemented proposal; use docs/ACCEPTANCE.md instead.
 | CP-010 | Explicit confirmed quota fallback | Deployed; quota UI/retry A05 pending |
 | CP-013 | Speech transcript source/duration provenance | Deployed; real voice A07 pending |
 | CP-015 | Agent scheduling guide/management/receipts; canonical-JID message delivery; paged task controls | Real receipts/API delivery proved; user task execution and client UI A01/A06 pending |
-| D055 (no CP; owner request 2026-11-01) | `/silent` per-chat progress-only streaming: on/off picker, draft shows header and tool steps only, answer once at the end | Unit and race tests, Sonar; merged `6d11765`, not deployed; real Telegram acceptance pending |
+| D055 (no CP; owner request 2026-11-01) | `/silent` per-chat progress-only streaming: on/off picker, draft shows header and tool steps only, answer once at the end | Unit and race tests, Sonar; merged `6d11765`, deployed in `be7575f`; real Telegram acceptance pending |
 
 Pending proposals and design-only CP-011/012/014/016–019 are assigned to the
 approved queue above. A saved spec is not an active implementation.
@@ -340,7 +347,7 @@ approved queue above. A saved spec is not an active implementation.
 
 | Proposal | Status | Implementation scope |
 |---|---|---|
-| CP-016 topic deletion | ⬜ | Explicit confirmed private-topic deletion, durable retirement and safe session cleanup; no deleted-topic event assumed |
+| CP-016 topic deletion | 🟦 | Store retirement foundation in PR #144; command, runtime/output/recovery fences and client acceptance still open; no deleted-topic event assumed |
 | CP-017 Telegram diagnostics | ✅ | Separate Telegram settings, subscriptions, code support and contextual rights; owner doctor and scoped help; [execution plan](docs/superpowers/plans/2026-10-25-telegram-capability-diagnostics.md) implemented for private DMs; group reports/notices deferred |
 | CP-018 per-thread providers | ⬜ | Chat default plus topic overrides, provider-specific models and scoped confirmed quota fallback |
 | CP-019 ephemeral command/service/error replies | ⬜ | Public conversational messages unchanged; private delivery never falls back to public |
