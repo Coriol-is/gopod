@@ -1,12 +1,25 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-01 (`main` `be7575f` deployed to the Pi at 18:37:46 UTC: CP-037 P0+P1, `/silent`, CP-038 gap closure)
+**Last updated:** 2026-11-02 (`d8866c9` deployed to the Pi at 00:04:53 UTC: artifact delivery on by default, D057)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
 [ACCEPTANCE](ACCEPTANCE.md) for pending real-client verification.
 
-## Resume here — `be7575f` deployed, 2026-11-01
+## Resume here — `d8866c9` deployed, 2026-11-02
+
+`main` `d8866c9` runs on the Pi since **2026-11-02 00:04:53 UTC** (image
+`5e75c582…`, restart count 0, no errors): `GOPOD_OUTBOX_ARTIFACTS` now defaults to
+on ([D057](DECISIONS.md)), the artifact store opened (`/opt/gopod/data/artifacts`).
+Evidence, backups (`20261101T235844Z-db-7d82b4d7`, `20261102T000419Z-ms-67366fa1`)
+and rollback tag `gopod-gopod:rollback-pre-artifacts-20261102`:
+[deployment report](deployments/2026-11-02-artifacts-default-on.md).
+In flight on branches: CP-040 agent attachments (spec/plan/implementation,
+`feat/cp040-agent-attachments`) and a SonarCloud triage of `main`
+(`docs/sonar-triage-20261102`; main's gate is red on security rating E, 11
+vulnerabilities to verdict). Real-client acceptance list unchanged below.
+
+## Previous — `be7575f` deployed, 2026-11-01
 
 `main` `be7575f` runs on the Pi since **2026-11-01 18:37:46 UTC** (image
 `45ffd4e9…`, restart count 0, no errors after startup, session mapping
