@@ -268,16 +268,16 @@ func New(token string, deps Deps) (*Bot, error) {
 	client := &http.Client{Timeout: time.Minute}
 	b.capabilities = newCapabilityCache(newCapabilityFetcher(token, client), time.Now)
 	opts := append(b.botOptions(), bot.WithSkipGetMe(), bot.WithHTTPClient(time.Minute, client))
-	// Load last processed update offset for cursor backfill (M8a).
-	// On restart, this tells Telegram to deliver any updates that
-	// arrived while gopod was down.
+	// The stored cursor is the next update ID to request (M8a). The SDK
+	// takes the last seen ID and adds one when polling, so convert at
+	// this boundary without changing the persisted next-offset format.
 	if deps.Store != nil {
 		offsetStr, _ := deps.Store.GetState(context.Background(), "telegram_update_offset")
 		if offsetStr != "" {
 			var offset int64
 			fmt.Sscanf(offsetStr, "%d", &offset)
 			if offset > 0 {
-				opts = append(opts, bot.WithInitialOffset(offset))
+				opts = append(opts, bot.WithInitialOffset(offset-1))
 				deps.Log.Info("telegram: resuming from stored offset",
 					slog.Int64("offset", offset))
 			}
