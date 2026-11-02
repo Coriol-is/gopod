@@ -107,8 +107,8 @@ func TestAttachmentAcceptedSendsNoNotice(t *testing.T) {
 
 func TestAttachmentNoticeSanitizesAndBoundsPaths(t *testing.T) {
 	long := "/workspace/chat/" + strings.Repeat("я", 300) + ".pdf"
-	text := attachmentNotice([]artifactFile{{Path: "/workspace/chat/a‮fdp.exe\n"}, {Path: long}, {Path: ""}}, "made_up_code")
-	if strings.ContainsAny(text, "‮") || strings.Contains(text, "exe\n\n") {
+	text := attachmentNotice([]artifactFile{{Path: "/workspace/chat/a\u202efdp.exe\n"}, {Path: long}, {Path: ""}}, "made_up_code")
+	if strings.ContainsAny(text, "\u202e") || strings.Contains(text, "exe\n\n") {
 		t.Fatalf("control or bidi characters survived: %q", text)
 	}
 	if strings.Contains(text, long) || !strings.Contains(text, "…") {
