@@ -52,7 +52,7 @@ func (r *Runner) authorizeProfile(ctx context.Context, folder string) error {
 	}
 	chats, err := r.profilePolicy.registrations.ListRegistered(ctx)
 	if err != nil {
-		return ErrProfileUnavailable
+		return registrationReadError(err)
 	}
 	ownerJID := fmt.Sprintf("tg:%d", r.profilePolicy.ownerID)
 	count := 0
@@ -81,4 +81,17 @@ func containerEnvAllow(tier Tier, prov AgentProvider, extra []string) []string {
 	}
 	result := append([]string(nil), prov.RequiredEnvVars()...)
 	return append(result, extra...)
+}
+
+// registrationReadError keeps cancellation distinguishable from an unavailable
+// profile. Every read failure still refuses execution; other database details
+// remain hidden behind the admission error.
+func registrationReadError(err error) error {
+	if errors.Is(err, context.Canceled) {
+		return context.Canceled
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return context.DeadlineExceeded
+	}
+	return ErrProfileUnavailable
 }
