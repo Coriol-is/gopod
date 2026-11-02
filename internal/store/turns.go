@@ -66,7 +66,14 @@ const turnColumns = `id, source, source_id, chat_folder, chat_id, tg_message_id,
 // constraint makes this idempotent: a duplicate returns (0, true, nil)
 // and writes nothing.
 func (s *Store) InsertTurn(ctx context.Context, t Turn) (int64, bool, error) {
-	return insertTurnQ(ctx, s.db, t)
+	var id int64
+	var dup bool
+	_, err := s.withTx(ctx, func(q taskSQL) error {
+		var err error
+		id, dup, err = insertTurnQ(ctx, q, t)
+		return err
+	})
+	return id, dup, err
 }
 
 // insertTurnQ is the handle-explicit form of InsertTurn, so a caller that
@@ -78,6 +85,9 @@ func insertTurnQ(ctx context.Context, q taskSQL, t Turn) (int64, bool, error) {
 	}
 	if t.ChatFolder == "" {
 		return 0, false, errors.New("store: InsertTurn: empty ChatFolder")
+	}
+	if err := topicFolderAdmissionQ(ctx, q, t.ChatFolder, t.ThreadID); err != nil {
+		return 0, false, err
 	}
 	if t.Status == "" {
 		t.Status = TurnPending

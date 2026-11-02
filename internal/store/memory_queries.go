@@ -270,8 +270,9 @@ func SanitizeMemoryFTS(s string) string {
 		if w == "" {
 			continue
 		}
-		// Wrap in double quotes for literal FTS5 matching.
-		clean = append(clean, `"`+w+`"`)
+		// Escape embedded quotes before wrapping the token; otherwise user text
+		// can end the FTS5 phrase and introduce operators or column filters.
+		clean = append(clean, `"`+strings.ReplaceAll(w, `"`, `""`)+`"`)
 	}
 	return strings.Join(clean, " ")
 }

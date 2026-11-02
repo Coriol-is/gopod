@@ -87,6 +87,9 @@ func resolveConversationQ(ctx context.Context, q taskSQL, scope ScopeRef, thread
 	if err := validateScopeQ(ctx, q, scope); err != nil {
 		return ConversationBinding{}, false, err
 	}
+	if err := topicAdmissionQ(ctx, q, scope, thread); err != nil {
+		return ConversationBinding{}, false, err
+	}
 	b, err := readBindingQ(ctx, q, scope.NamespaceID, scope.NamespaceEpoch, thread)
 	if err == nil {
 		if b.Lifecycle != "active" {
@@ -170,6 +173,9 @@ func ownedActiveSessionQ(ctx context.Context, q taskSQL, scope ScopeRef, session
 	}
 	if e.Lifecycle != "active" || e.NamespaceID != scope.NamespaceID || e.NamespaceEpoch != scope.NamespaceEpoch {
 		return ExecutionSession{}, fmt.Errorf("execution session %q is not active in this scope: %w", sessionID, ErrStaleScope)
+	}
+	if err := topicAdmissionQ(ctx, q, scope, e.ThreadID); err != nil {
+		return ExecutionSession{}, err
 	}
 	return e, nil
 }
