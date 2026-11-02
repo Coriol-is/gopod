@@ -1,0 +1,72 @@
+# Sending files to the user (attachments)
+
+This guide applies to chat workspace `{{.ChatFolder}}`. A path in your reply is
+NOT an attachment: the user only gets a file when the host accepts an IPC
+attachment request. You do have this tool; do not tell the user you cannot send
+files.
+
+## How to attach a file
+
+1. Write the file under `/workspace/chat` (for example
+   `/workspace/chat/banks/report.pdf`). Regular files only: no symlinks, no
+   hard links, no hidden (`.name`) or `memory/` paths, not empty.
+2. Publish one request atomically: write `<name>.tmp`, then rename it to
+   `<name>.json` in `/workspace/ipc/messages/`. Use a new unique `<name>` per
+   request and the same value as `requestId` (8-64 characters: letters, digits,
+   `-`, `_`; starting with a letter or digit).
+
+```bash
+name="attach-$(date +%s)-$RANDOM"
+cat > "/workspace/ipc/messages/$name.tmp" <<JSON
+{"version":1,"requestId":"$name","capability":"$GOPOD_ARTIFACT_CAP",
+ "files":[{"path":"/workspace/chat/banks/report.pdf","caption":"Bank assessment","as":"auto"}]}
+JSON
+mv "/workspace/ipc/messages/$name.tmp" "/workspace/ipc/messages/$name.json"
+```
+
+3. Wait for the receipt `/workspace/ipc/results/messages/<name>.result.json`
+   (usually a few seconds) and read it before you answer:
+
+```bash
+for i in $(seq 1 30); do [ -f "/workspace/ipc/results/messages/$name.result.json" ] && break; sleep 1; done
+cat "/workspace/ipc/results/messages/$name.result.json"
+```
+
+## Request fields
+
+- `version` must be `1`; `capability` is `$GOPOD_ARTIFACT_CAP` from your
+  environment, verbatim. Unknown fields reject the whole request.
+- `files`: 1 to 4 entries. Per file:
+  - `path` (required): absolute, clean, under `/workspace/chat/`.
+  - `caption` (optional): plain text, at most 1024 UTF-16 units.
+  - `filename` (optional): the name the user sees; default is the file's own name.
+  - `as` (optional): `auto` (default), `document` or `photo`.
+    `auto` sends PNG/JPEG as a photo and everything else (PDF, spreadsheets,
+    archives, text, other images) as a document with its filename.
+    `document` always sends the original file. `photo` is allowed only for
+    PNG/JPEG; a photo Telegram cannot take falls back to a document.
+- `text` (optional): a message sent before the files. Usually leave it out and
+  answer in your normal reply instead.
+- JSON-escape quotes and backslashes in `caption`, or leave the caption out.
+
+## Limits
+
+20 MiB per file and 40 MiB per request (below Telegram's 50 MB bot limit), plus
+per-run and hourly host quotas. Attachments work in the owner's private chat
+only; elsewhere every request is refused with `artifacts_disabled`.
+
+## Reading the receipt
+
+- `status` `queued` or `sent`: accepted; the host delivers the file. In your
+  reply say briefly that you sent it; do not paste the path again.
+- `status` `uncertain`: it may have arrived; never resend.
+- `status` `error`: NOT attached. `error` is the reason, for example
+  `artifacts_disabled` (sending files is off or this run has no capability),
+  `path_outside_workspace`, `path_denied`, `file_too_large`, `unsupported_type`
+  (`as:"photo"` on a non-PNG/JPEG), `source_missing`, `empty_file`,
+  `not_regular_file`, `hardlink_denied`, `stale_capability`, `quota_exceeded`,
+  `rate_limited`, `storage_full`, `invalid_request`.
+  The host also tells the user which file was not attached. In your reply say
+  that the file is at its path and could not be attached, with the reason.
+  Never claim a refused file was sent. Retry only after fixing the cause, with a
+  new name and requestId.

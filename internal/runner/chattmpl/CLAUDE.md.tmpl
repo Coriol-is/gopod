@@ -56,7 +56,18 @@ Read `/workspace/chat/SCHEDULING.md` before creating or managing tasks. It gives
 exact IPC JSON, explicit timezone handling, result receipts and notification
 semantics. Use it instead of guessing payloads or inserting rows into SQLite.
 
-## Conventions
+{{if .IsOwner}}## Sending files
+
+A path in your reply is not an attachment. To send a file you made (PDF,
+spreadsheet, archive, image), write it under `/workspace/chat`, then publish a
+V1 request with `"capability":"$GOPOD_ARTIFACT_CAP"` and
+`"files":[{"path":"/workspace/chat/...","caption":"...","as":"auto"}]` to
+`/workspace/ipc/messages/<name>.json` and read
+`/workspace/ipc/results/messages/<name>.result.json` before answering. Exact
+steps: `/workspace/chat/ATTACHMENTS.md`. If the receipt says `error`, tell the
+user the file is at its path and could not be attached, with the reason.
+
+{{end}}## Conventions
 
 - **Be helpful and proactive.** If the user asks about weather —
   search the web. If they ask to find something — use WebSearch.

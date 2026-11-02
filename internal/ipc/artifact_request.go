@@ -45,6 +45,15 @@ const (
 	codeVoiceNA         = "voice_unavailable"
 	codeTooManyParts    = "too_many_parts"
 	codePreparationFail = "preparation_failed"
+
+	// CP-040 agent attachment codes. artifacts_disabled: the request carries
+	// files but this run has no artifact route or capability.
+	// path_outside_workspace: the path is not a clean absolute path under
+	// /workspace/chat. unsupported_type: as:"photo" on a file that is not named
+	// or typed as PNG/JPEG.
+	codeArtifactsDisabled = "artifacts_disabled"
+	codePathOutside       = "path_outside_workspace"
+	codeUnsupportedType   = "unsupported_type"
 )
 
 // artifactError carries a sanitized code for the receipt.
@@ -68,6 +77,9 @@ type artifactFile struct {
 	Mime         string `json:"mime"`
 	Caption      string `json:"caption"`
 	Presentation string `json:"presentation"`
+	// As is the CP-040 agent-facing presentation: "auto" (default), "document"
+	// or "photo". It and the older Presentation are mutually exclusive.
+	As string `json:"as"`
 }
 
 type artifactRequest struct {
@@ -109,8 +121,13 @@ func parseArtifactRequest(raw []byte) (artifactRequest, error) {
 	switch {
 	case req.Version != 1,
 		!requestIDPattern.MatchString(req.RequestID),
-		req.Capability == "" || len(req.Capability) > maxCapabilityTokenSize,
+		len(req.Capability) > maxCapabilityTokenSize,
 		!utf8.ValidString(req.Text) || len(req.Text) > maxArtifactText:
+		return req, reject(codeInvalidRequest)
+	case req.Capability == "" && len(req.Files) > 0:
+		// No GOPOD_ARTIFACT_CAP in this run: say so instead of "invalid".
+		return req, reject(codeArtifactsDisabled)
+	case req.Capability == "":
 		return req, reject(codeInvalidRequest)
 	}
 	if strings.TrimSpace(req.Text) == "" && len(req.Files) == 0 && !req.Voice {
@@ -142,8 +159,60 @@ func parseArtifactRequest(raw []byte) (artifactRequest, error) {
 		default:
 			return req, reject(codeInvalidRequest)
 		}
+		switch f.As {
+		case "", "auto", "document":
+		case "photo":
+			if !photoCandidate(f) {
+				return req, reject(codeUnsupportedType)
+			}
+		default:
+			return req, reject(codeInvalidRequest)
+		}
+		if f.As != "" && f.Presentation != "" {
+			return req, reject(codeInvalidRequest)
+		}
 	}
 	return req, nil
+}
+
+// photoCandidate reports whether a file is named or typed as PNG/JPEG, the only
+// formats the transport sends with sendPhoto. It reads agent claims only; the
+// transport still checks the snapshot bytes and falls back to a document.
+func photoCandidate(f artifactFile) bool {
+	switch f.Mime {
+	case "image/png", "image/jpeg":
+		return true
+	}
+	switch strings.ToLower(path.Ext(sanitizeFilename(f.Filename, path.Base(f.Path)))) {
+	case ".png", ".jpg", ".jpeg":
+		return true
+	}
+	return false
+}
+
+// uploadPresentation resolves the store marker for one file. The legacy
+// presentation field keeps D052 semantics (empty means document). The CP-040
+// field "as" defaults to auto: a PNG/JPEG-named or -typed file is offered as a
+// photo (the transport falls back to a document when the bytes do not fit) and
+// everything else goes as a document with its original filename. Nothing an
+// agent writes selects the host-only voice marker.
+func uploadPresentation(f artifactFile) string {
+	if f.Presentation != "" {
+		if f.Presentation == "photo" {
+			return store.UploadPresentationPhoto
+		}
+		return ""
+	}
+	switch f.As {
+	case "document":
+		return ""
+	case "photo":
+		return store.UploadPresentationPhoto
+	}
+	if photoCandidate(f) {
+		return store.UploadPresentationPhoto
+	}
+	return ""
 }
 
 const maxRelPathBytes = 1100
@@ -198,10 +267,8 @@ func artifactParts(req artifactRequest, artifactIDs []string) ([]store.DeliveryP
 	}
 	for i, f := range req.Files {
 		part := store.DeliveryPart{Kind: store.PartUpload, ArtifactRef: store.ArtifactRef(artifactIDs[i]), Payload: []byte(f.Caption)}
-		if f.Presentation == "photo" {
-			// A hint: the transport sends a document when the file cannot be a photo.
-			part.ParseMode = store.UploadPresentationPhoto
-		}
+		// A hint: the transport sends a document when the file cannot be a photo.
+		part.ParseMode = uploadPresentation(f)
 		parts = append(parts, part)
 	}
 	if len(parts) == 0 || len(parts) > store.MaxDeliveryParts {

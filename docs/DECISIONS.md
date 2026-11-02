@@ -2063,3 +2063,31 @@ only for an agent that already knows the IPC request shape. Rollback is
 host-private store under the existing retention. The matched backup gate is
 treated as met for the database and blobs; native homes and workspaces remain
 outside backups (CP-039).
+
+## D058 — Agent attachments: `as` presentation with auto photo, named refusals and a user notice
+
+**Status:** accepted 2026-11-02 (CP-040, accepted by the owner and built autonomously). Refines
+[D052](#d052--an-agent-may-request-a-photo-presentation-captions-are-bounded-in-utf-16-units): its sentence "the host
+never infers a photo from an image MIME or extension" no longer holds for the new `as` field; the legacy
+`presentation` field keeps D052 exactly. D039 path, authorization and quota rules and D057 flag semantics are unchanged.
+
+**Decision.** (1) A V1 file entry takes an optional `as`: `auto` (default), `document` or `photo`; any other value is
+`invalid_request`, and `as` together with `presentation` is `invalid_request`. `auto` offers a photo when the agent's
+`mime` is `image/png`/`image/jpeg` or the sanitized filename ends in `.png`/`.jpg`/`.jpeg`, otherwise a document with the
+original filename; `photo` on anything else is refused as `unsupported_type`. The claim cannot widen what is sent: the
+upload is the verified snapshot and the transport still checks the bytes before `sendPhoto`, falling back to a document.
+There is no content-type allowlist. (2) New codes: `artifacts_disabled` (a V1 request with files that cannot reach the
+artifact route — flag off, outbox or durable route not running, non-owner folder — or carries no capability),
+`path_outside_workspace` (the clean/prefix check of `Grant.MapPath`, previously `path_denied`; `ErrPathOutsideWorkspace`
+wraps `ErrPathDenied`), `unsupported_type`. CP-040's `too_large` is the existing `file_too_large`, not renamed.
+(3) A V1 request with files that cannot reach the artifact route is refused (`.failed`, receipt) instead of being sent
+as text without its files, as the legacy path used to. (4) The first terminal refusal of a request that names files
+sends one plain-text Russian notice ("Не удалось приложить файл <path> … Причина: … (<code>)") to the chat the IPC
+folder is registered to, through the existing IPC message sink (thread 0, best effort, logged on failure). Paths are
+display-only, stripped of control/bidi characters and bounded. The receipt carries attachment help. (5) The contract
+reaches agents through an owner-only `AttachmentsPolicy` in the per-turn system prompt (both providers, existing
+workspaces), a seeded owner `ATTACHMENTS.md`, the owner `CLAUDE.md` template and `container/skills/attachments`.
+
+**Consequences.** A group or non-owner agent that tries to attach now produces a visible refusal in its own chat
+instead of a text-only send. An image request that omits `as` and `presentation` becomes a photo hint (previously a
+document). Spec: [agent attachments](superpowers/specs/2026-11-02-agent-attachments.md).

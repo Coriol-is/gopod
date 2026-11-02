@@ -258,6 +258,11 @@ private chat and answer the group with a one-line acknowledgement. `/logs`, `/re
   (e.g. `/whoami` makes no sense on a shell). The reverse is rare.
 - The skills CLI subcommands defined in [SKILLS.md §5](SKILLS.md) are
   reabsorbed here — they go through `internal/control` like everything else.
+- Agent attachments (CP-040, [D058](DECISIONS.md)) are not a command: the agent
+  sends a file through the IPC V1 request
+  ([spec](superpowers/specs/2026-11-02-agent-attachments.md)), authorized by the
+  per-run capability, not by `Perm`. There is no slash command to send or list
+  attachments; delivery state is in the IPC receipt and the outbox.
 
 ---
 

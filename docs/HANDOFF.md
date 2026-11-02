@@ -1,12 +1,23 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-02 (`d8866c9` deployed to the Pi at 00:04:53 UTC: artifact delivery on by default, D057)
+**Last updated:** 2026-11-02 (CP-040 agent attachments PR; `d8866c9` deployed to the Pi at 00:04:53 UTC: artifact delivery on by default, D057)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
 [ACCEPTANCE](ACCEPTANCE.md) for pending real-client verification.
 
-## Resume here — `d8866c9` deployed, 2026-11-02
+## Resume here — CP-040 agent attachments in review, 2026-11-02
+
+CP-040 is implemented on `feat/cp040-agent-attachments` (worktree
+`gopod-cp040-impl`, one PR): owner-only `AttachmentsPolicy` + seeded
+`ATTACHMENTS.md` + `container/skills/attachments`, the V1 `as` field
+(`auto`/`document`/`photo`), refusal codes `artifacts_disabled`,
+`path_outside_workspace`, `unsupported_type` with a host notice to the chat
+([D058](DECISIONS.md), [spec](superpowers/specs/2026-11-02-agent-attachments.md)).
+Next: CI green, review and squash-merge by a separate session, deploy when the
+owner authorizes, then real-client rows A22–A25 in [ACCEPTANCE](ACCEPTANCE.md).
+
+## Also current — `d8866c9` deployed, 2026-11-02
 
 `main` `d8866c9` runs on the Pi since **2026-11-02 00:04:53 UTC** (image
 `5e75c582…`, restart count 0, no errors): `GOPOD_OUTBOX_ARTIFACTS` now defaults to
