@@ -39,7 +39,7 @@ func (r *Runner) groupRegistration(ctx context.Context, folder string) (store.Re
 	}
 	rows, err := r.profilePolicy.registrations.ListRegistered(ctx)
 	if err != nil {
-		return store.RegisteredChat{}, false, ErrProfileUnavailable
+		return store.RegisteredChat{}, false, registrationReadError(err)
 	}
 	var found store.RegisteredChat
 	count := 0
@@ -95,7 +95,10 @@ func (r *Runner) WithChatSlot(ctx context.Context, folder string, operation func
 // authorizeOwner requires positive host identity, never the absence of a group.
 func (r *Runner) authorizeOwner(ctx context.Context, folder string) error {
 	c, _, err := r.groupRegistration(ctx, folder)
-	if err != nil || r.profilePolicy.ownerID <= 0 || !c.IsOwner || c.JID != fmt.Sprintf("tg:%d", r.profilePolicy.ownerID) {
+	if err != nil {
+		return err
+	}
+	if r.profilePolicy.ownerID <= 0 || !c.IsOwner || c.JID != fmt.Sprintf("tg:%d", r.profilePolicy.ownerID) {
 		return ErrProfileUnavailable
 	}
 	return nil
