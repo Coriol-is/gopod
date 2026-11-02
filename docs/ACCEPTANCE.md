@@ -1,6 +1,6 @@
 # Live acceptance register
 
-Last reconciled: 2026-11-02. Application deployed: `8a4f55a` (CP-040).
+Last reconciled: 2026-11-02. Application deployed: `a0de4dc` (reliability foundations and restart cursor fix).
 Read-only runtime recheck: [2026-11-02 qualification](reviews/2026-11-02-release-qualification.md).
 Code merged/deployed is distinct from a real-client scenario being accepted.
 Items below are pending unless explicit evidence is linked. Do not infer a pass
@@ -12,6 +12,7 @@ from unit tests, CLI --help/version, startup notices or a green CI job.
 - CP-031: owner reported `/restart` checked on 2026-10-29. Baseline accepted by owner; negative cases and specific topic/provider scenarios remain unqualified.
 
 ## Verified operational baseline
+- [2026-11-02 reliability rollout](deployments/2026-11-02-reliability-streams.md): exact main CI, verified backups, healthy startup and unchanged registration/session/task hashes. First command queued during downtime answered without retry after cursor correction; stored and first processed update IDs match. IPC receipt/archive race remains open; this does not accept full crash recovery or provider turns.
 - [Rich IPC/restart rollout](deployments/2026-10-29-8bdff46.md): gateway/owner startup, two acknowledged HTML sends, preserved schedules/counts/config and initial online backup verification.
 - [Private-login rollout](deployments/2026-10-25-01c18fe.md): image/startup/polling and immediate before/after state preserved. No live OAuth flow invoked; actual owner-DM/client proof stays A20.
 - [Doctor output rollout](deployments/2026-10-25-ea38581.md): running/startup/polling and state preservation verified. Corrected client rendering remains to be observed; group operation after privacy re-add confirmed by owner separately.

@@ -6,7 +6,21 @@ Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
 [ACCEPTANCE](ACCEPTANCE.md) for pending real-client verification.
 
-## Resume here — parallel queue streams 1–3, 2026-11-02
+## Resume here — deployed a0de4dc, 2026-11-02
+
+Owner authorized deploy/merge/accept. PRs #143–148 are merged; Pi runs `a0de4dc`
+since 18:40:15 UTC. [Deployment evidence](deployments/2026-11-02-reliability-streams.md)
+records exact image, verified online/matched backups, rollback tags, preserved
+registrations/sessions/tasks and five bounded command probes. The rollout exposed
+a next-offset/SDK mismatch; #148 fixes it. A command queued during downtime was
+answered without retry, with stored offset equal to first processed update.
+
+Next: address the independently reproduced [IPC receipt/archive race](reviews/2026-11-02-task-ipc-replay-race.md), then continue the CP-002/CP-016 integration gates below.
+CP-038 elevated E0–E6 remain unstarted/proposed; E-pre alone is deployed.
+Real provider/client acceptance remains bounded by [ACCEPTANCE](ACCEPTANCE.md).
+All worktrees, rollback images and backups are preserved; mapping stays legacy.
+
+## Recovered parallel queue streams 1–3, 2026-11-02
 
 The owner asked Claude to run approved queue items **1–3 in parallel**: release
 qualification, reliability, and conversation management. Recovered session
@@ -21,7 +35,7 @@ Codex resumed the work from clean `main` `2d24266`; its
   open. FTS quote escaping is fixed in [PR #143](https://github.com/Coriol-is/gopod/pull/143);
   cancellation misclassified as profile unavailability is fixed in
   [PR #146](https://github.com/Coriol-is/gopod/pull/146), merged as `5b0e362`
-  (not deployed). Use SSH to
+  (now deployed). Use SSH to
   `100.123.150.53` with strict host checking: the saved IP works, whereas the
   `rpi4` hostname failed host-key lookup. No SSH settings/key changes are needed.
 - **Reliability:** [PR #145](https://github.com/Coriol-is/gopod/pull/145),
@@ -42,17 +56,17 @@ The FTS fix is merged as `69cb0a9`; all four implementation PRs (#143–146) pas
 `test`, Docker `isolation-spike` and Sonar before squash merge. Full local
 build/vet/tests and affected race tests passed. The cross-stream runner/store
 checks are recorded in [integration evidence](reviews/2026-11-02-stream-integration.md).
-No new code has been deployed; the Pi remains on `8a4f55a`.
+These changes are now deployed in `a0de4dc`; see the current rollout above.
 
 The task-role credential adapter, CP-038 E0–E6, host reboot/cgroup changes and
-production deployment remain outside this wave. Existing worktrees and branches
+elevated activation remain outside this wave. Existing worktrees and branches
 are preserved. Session mapping remains legacy until separately adopted.
 
 Older sections below are historical checkpoints. For current deployed state,
 use the latest deployment and the [acceptance report](reviews/2026-11-02-release-qualification.md) rather than older
 “not deployed” or “next” statements.
 
-## Latest deployment — `8a4f55a`, 2026-11-02
+## Previous deployment — `8a4f55a`, 2026-11-02
 
 `main` `8a4f55a` (CP-040 agent attachments, [D058](DECISIONS.md), PR #140 merged after
 an independent review) runs on the Pi since **2026-11-02 10:17:49 UTC**; evidence,
