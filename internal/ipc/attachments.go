@@ -102,13 +102,18 @@ func v1FilePaths(raw []byte) []string {
 func (w *Watcher) refuseDisabled(ctx context.Context, folder, filePath string, paths []string) bool {
 	done := w.finishRejected(folder, filePath, codeArtifactsDisabled)
 	if done {
-		files := make([]artifactFile, len(paths))
-		for i, p := range paths {
-			files[i].Path = p
-		}
-		w.noticeAttachmentRefused(ctx, folder, files, codeArtifactsDisabled)
+		w.noticeAttachmentRefused(ctx, folder, pathsAsFiles(paths), codeArtifactsDisabled)
 	}
 	return done
+}
+
+// pathsAsFiles wraps display paths for the notice.
+func pathsAsFiles(paths []string) []artifactFile {
+	files := make([]artifactFile, len(paths))
+	for i, p := range paths {
+		files[i].Path = p
+	}
+	return files
 }
 
 // noticeAttachmentRefused sends one best-effort plain-text notice to the chat

@@ -64,7 +64,8 @@ V1 request with `"capability":"$GOPOD_ARTIFACT_CAP"` and
 `"files":[{"path":"/workspace/chat/...","caption":"...","as":"auto"}]` to
 `/workspace/ipc/messages/<name>.json` and read
 `/workspace/ipc/results/messages/<name>.result.json` before answering. Exact
-steps: `/workspace/chat/ATTACHMENTS.md`. If the receipt says `error`, tell the
+steps: `/workspace/chat/ATTACHMENTS.md`. If the receipt says `retrying`, it is
+deferred: do not resend; re-read the receipt later. If it says `error`, tell the
 user the file is at its path and could not be attached, with the reason.
 
 {{end}}## Conventions

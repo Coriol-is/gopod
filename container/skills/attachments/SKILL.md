@@ -20,12 +20,15 @@ anywhere else the request is refused with `artifacts_disabled`.
 
 ```bash
 name="attach-$(date +%s)-$RANDOM"
-cat > "/workspace/ipc/messages/$name.tmp" <<JSON
-{"version":1,"requestId":"$name","capability":"$GOPOD_ARTIFACT_CAP",
- "files":[{"path":"/workspace/chat/report.pdf","caption":"Report","as":"auto"}]}
-JSON
+printf '{"version":1,"requestId":"%s","capability":"%s","files":[{"path":"%s","caption":"%s","as":"auto"}]}\n' \
+  "$name" "$GOPOD_ARTIFACT_CAP" '/workspace/chat/report.pdf' 'Report' \
+  > "/workspace/ipc/messages/$name.tmp"
 mv "/workspace/ipc/messages/$name.tmp" "/workspace/ipc/messages/$name.json"
 ```
+
+Pass the path and caption as single-quoted `printf` arguments so the shell
+does not expand them; avoid `$`, backticks and `$(...)` in captions, and
+JSON-escape `"` and `\`.
 
 3. Read the receipt before answering:
 
@@ -41,7 +44,8 @@ cat "/workspace/ipc/results/messages/$name.result.json"
   `as`: `auto` (default; PNG/JPEG as a photo, everything else as a document
   with its filename), `document` (always the original file) or `photo`
   (PNG/JPEG only, otherwise `unsupported_type`).
-- Unknown fields reject the whole request. JSON-escape quotes in captions.
+- Unknown fields reject the whole request. JSON-escape quotes in captions;
+  avoid `$` and backticks in them.
 - 20 MiB per file, 40 MiB per request (Telegram's bot limit is 50 MB), plus
   per-run and hourly quotas.
 
@@ -50,6 +54,8 @@ cat "/workspace/ipc/results/messages/$name.result.json"
 - `queued` or `sent`: accepted. Say briefly that you sent the file; do not
   paste its path again.
 - `uncertain`: it may have arrived; do not resend.
+- `retrying`: deferred by the host (storage or quota pressure); do not
+  resend; re-read the receipt later. It ends as `queued` or `error`.
 - `error`: NOT attached; the `error` field is the reason (`artifacts_disabled`,
   `path_outside_workspace`, `path_denied`, `file_too_large`,
   `unsupported_type`, `source_missing`, `empty_file`, `stale_capability`, ...).

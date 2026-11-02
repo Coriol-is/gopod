@@ -128,7 +128,13 @@ func (w *Watcher) processArtifactRequest(ctx context.Context, folder, filePath s
 	req, err := parseArtifactRequest(raw)
 	if err != nil {
 		code, _ := errCode(err)
-		return w.refuseArtifact(ctx, src, folder, filePath, id, code, req.Files)
+		files := req.Files
+		if lenient := v1FilePaths(raw); len(lenient) > len(files) {
+			// The strict decode stopped before (or inside) files: name the
+			// paths from a lenient read so the user notice is not skipped.
+			files = pathsAsFiles(lenient)
+		}
+		return w.refuseArtifact(ctx, src, folder, filePath, id, code, files)
 	}
 	mtime, _ := w.requestModTime(folder, filePath)
 	written := w.writtenBound(filePath, mtime)

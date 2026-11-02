@@ -303,7 +303,7 @@ func TestAttachmentsGuideIsOwnerOnlyAndStatesTheContract(t *testing.T) {
 	}
 	guide := string(b)
 	for _, want := range []string{
-		`"version":1`, `"capability":"$GOPOD_ARTIFACT_CAP"`, `"as":"auto"`, "/workspace/ipc/messages/",
+		`"version":1`, `"capability":"%s"`, `"$GOPOD_ARTIFACT_CAP"`, `"as":"auto"`, "/workspace/ipc/messages/",
 		"/workspace/ipc/results/messages/", "artifacts_disabled", "path_outside_workspace", "file_too_large",
 		"unsupported_type", "20 MiB", "50 MB", "no symlinks", "NOT an attachment", "could not be attached",
 		"Never claim a refused file was sent",

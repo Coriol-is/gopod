@@ -2069,7 +2069,7 @@ outside backups (CP-039).
 **Status:** accepted 2026-11-02 (CP-040, accepted by the owner and built autonomously). Refines
 [D052](#d052--an-agent-may-request-a-photo-presentation-captions-are-bounded-in-utf-16-units): its sentence "the host
 never infers a photo from an image MIME or extension" no longer holds for the new `as` field; the legacy
-`presentation` field keeps D052 exactly. D039 path, authorization and quota rules and D057 flag semantics are unchanged.
+`presentation` field keeps D052 semantics when `presentation` is present. D039 path, authorization and quota rules and D057 flag semantics are unchanged.
 
 **Decision.** (1) A V1 file entry takes an optional `as`: `auto` (default), `document` or `photo`; any other value is
 `invalid_request`, and `as` together with `presentation` is `invalid_request`. `auto` offers a photo when the agent's

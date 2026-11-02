@@ -38,7 +38,9 @@ only produce refusals.
 ## Request (the only format; IPC V1)
 
 Publish atomically to `/workspace/ipc/messages/<name>.json` (write `<name>.tmp`,
-then rename; the watcher reads only `*.json`). `<name>` is unique and is reused as
+then rename; the watcher reads only `*.json`). The agent texts build the JSON with `printf` and
+single-quoted path/caption arguments (no unquoted heredoc), and tell the agent to
+avoid `$` and backticks in captions, so the shell never expands them. `<name>` is unique and is reused as
 `requestId`.
 
 ```json
@@ -82,7 +84,7 @@ Decision recorded in D058: `auto` infers a photo from the agent's name/MIME
 claim. This supersedes D052's "the host never infers a photo from an image MIME
 or extension" for the `as` field only. It cannot widen what is sent: the bytes
 are the verified snapshot either way and the transport checks them before
-`sendPhoto`. The legacy `presentation` field keeps D052 behavior exactly. The
+`sendPhoto`. The legacy `presentation` field keeps D052 behavior when it is present. The
 voice marker stays host-only.
 
 No content-type allowlist is added: Telegram documents accept any type, and D039
@@ -129,8 +131,9 @@ except `invalid_request`, `recipient_unavailable`, `request_expired`,
 
 ### User-visible notice
 
-When a request that names at least one file reaches a terminal refusal for the
-first time (not on replay of an already refused request), the host sends one
+When a request that names at least one file (from the strict decode, or from a
+lenient read of `files[].path` when the strict decode stopped early) reaches a
+terminal refusal for the first time (not on replay of an already refused request), the host sends one
 plain-text message to the chat the IPC folder is registered to (destination from
 the folder, never from the request), in Russian:
 
@@ -149,6 +152,8 @@ nothing else: its `text` is not sent without its files.
 ### What the agent is told to reply
 
 On `queued`/`sent`: say briefly that the file was sent; do not repeat the path.
+On `retrying` (quota or storage pressure, bounded host retries): deferred, do not
+resend; re-read the receipt later, it ends as `queued` or `error`.
 On `uncertain`: do not resend. On `error`: say the file is at its path and could
 not be attached, with the reason; never claim it was sent; retry only after
 fixing the cause, with a new name and `requestId`.

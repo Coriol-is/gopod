@@ -14,6 +14,8 @@ CP-040 is implemented on `feat/cp040-agent-attachments` (worktree
 (`auto`/`document`/`photo`), refusal codes `artifacts_disabled`,
 `path_outside_workspace`, `unsupported_type` with a host notice to the chat
 ([D058](DECISIONS.md), [spec](superpowers/specs/2026-11-02-agent-attachments.md)).
+The refusal notice lands in the main thread (thread 0) like every IPC send, and
+a notice lost on a retry is still covered by the `.failed` receipt.
 Next: CI green, review and squash-merge by a separate session, deploy when the
 owner authorizes, then real-client rows A22–A25 in [ACCEPTANCE](ACCEPTANCE.md).
 

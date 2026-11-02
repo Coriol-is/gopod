@@ -118,3 +118,24 @@ func TestAttachmentNoticeSanitizesAndBoundsPaths(t *testing.T) {
 		t.Fatalf("notice = %q", text)
 	}
 }
+
+// A strict-decode failure (unknown field before or inside files) still names
+// the paths in the user notice, read leniently from the request.
+func TestAttachmentParseFailureStillNamesThePaths(t *testing.T) {
+	for name, body := range map[string]map[string]any{
+		"unknown top-level field": {"version": 1, "requestId": "req-00000001", "aaa": 1,
+			"files": []map[string]any{{"path": "/workspace/chat/a.pdf"}}},
+		"typo in a file entry": {"version": 1, "requestId": "req-00000001",
+			"files": []map[string]any{{"path": "/workspace/chat/a.pdf", "captoin": "x"}}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newArtFixture(t)
+			body["capability"] = f.token
+			w := f.watcher()
+			f.sendV1("owner", "0001-p.json", body)
+			f.tick(w)
+			f.wantError("0001-p.json", codeInvalidRequest)
+			f.wantNotice("/workspace/chat/a.pdf", codeInvalidRequest)
+		})
+	}
+}

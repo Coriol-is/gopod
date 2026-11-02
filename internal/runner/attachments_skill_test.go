@@ -20,12 +20,44 @@ func TestAttachmentsContainerSkillStatesTheContract(t *testing.T) {
 		t.Fatalf("skill frontmatter missing or wrong:\n%.200s", skill)
 	}
 	for _, want := range []string{
-		`"version":1`, `"capability":"$GOPOD_ARTIFACT_CAP"`, `"as":"auto"`, "/workspace/ipc/messages/",
+		`"version":1`, `"capability":"%s"`, `"$GOPOD_ARTIFACT_CAP"`, `"as":"auto"`, "/workspace/ipc/messages/",
 		"/workspace/ipc/results/messages/", "NOT an attachment", "artifacts_disabled", "path_outside_workspace",
 		"file_too_large", "unsupported_type", "20 MiB", "could not", "never claim it was sent",
 	} {
 		if !strings.Contains(skill, want) {
 			t.Errorf("skill lacks %q", want)
+		}
+	}
+}
+
+// Review fix: every agent-facing attachment text tells the agent that a
+// retrying receipt is deferred and must not be resent, and none builds the
+// request with an unquoted heredoc that would shell-expand a caption.
+func TestAttachmentTextsDocumentRetryingAndAvoidExpansion(t *testing.T) {
+	read := func(parts ...string) string {
+		b, err := os.ReadFile(filepath.Join(parts...))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	texts := map[string]string{
+		"skill":     read("..", "..", "container", "skills", "attachments", "SKILL.md"),
+		"guide":     read("chattmpl", "ATTACHMENTS.md.tmpl"),
+		"claude.md": read("chattmpl", "CLAUDE.md.tmpl"),
+		"policy":    AttachmentsPolicy,
+	}
+	for name, text := range texts {
+		if !strings.Contains(text, "retrying") || !strings.Contains(text, "do not resend") {
+			t.Errorf("%s does not say retrying means do not resend", name)
+		}
+		if strings.Contains(text, "<<JSON") {
+			t.Errorf("%s uses an unquoted heredoc", name)
+		}
+	}
+	for _, name := range []string{"skill", "guide"} {
+		if !strings.Contains(texts[name], "avoid `$` and backticks") {
+			t.Errorf("%s does not warn about $ and backticks in captions", name)
 		}
 	}
 }

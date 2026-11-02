@@ -17,12 +17,15 @@ files.
 
 ```bash
 name="attach-$(date +%s)-$RANDOM"
-cat > "/workspace/ipc/messages/$name.tmp" <<JSON
-{"version":1,"requestId":"$name","capability":"$GOPOD_ARTIFACT_CAP",
- "files":[{"path":"/workspace/chat/banks/report.pdf","caption":"Bank assessment","as":"auto"}]}
-JSON
+printf '{"version":1,"requestId":"%s","capability":"%s","files":[{"path":"%s","caption":"%s","as":"auto"}]}\n' \
+  "$name" "$GOPOD_ARTIFACT_CAP" '/workspace/chat/banks/report.pdf' 'Bank assessment' \
+  > "/workspace/ipc/messages/$name.tmp"
 mv "/workspace/ipc/messages/$name.tmp" "/workspace/ipc/messages/$name.json"
 ```
+
+Pass the path and caption as single-quoted `printf` arguments so the shell
+does not expand them; avoid `$`, backticks and `$(...)` in captions, and
+JSON-escape `"` and `\`.
 
 3. Wait for the receipt `/workspace/ipc/results/messages/<name>.result.json`
    (usually a few seconds) and read it before you answer:
@@ -47,7 +50,8 @@ cat "/workspace/ipc/results/messages/$name.result.json"
     PNG/JPEG; a photo Telegram cannot take falls back to a document.
 - `text` (optional): a message sent before the files. Usually leave it out and
   answer in your normal reply instead.
-- JSON-escape quotes and backslashes in `caption`, or leave the caption out.
+- JSON-escape quotes and backslashes in `caption`, avoid `$` and backticks, or
+  leave the caption out.
 
 ## Limits
 
@@ -60,6 +64,8 @@ only; elsewhere every request is refused with `artifacts_disabled`.
 - `status` `queued` or `sent`: accepted; the host delivers the file. In your
   reply say briefly that you sent it; do not paste the path again.
 - `status` `uncertain`: it may have arrived; never resend.
+- `status` `retrying`: deferred by the host (storage or quota pressure);
+  do not resend; re-read the receipt later. It ends as `queued` or `error`.
 - `status` `error`: NOT attached. `error` is the reason, for example
   `artifacts_disabled` (sending files is off or this run has no capability),
   `path_outside_workspace`, `path_denied`, `file_too_large`, `unsupported_type`
