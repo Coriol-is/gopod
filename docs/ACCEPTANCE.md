@@ -7,6 +7,7 @@ Items below are pending unless explicit evidence is linked. Do not infer a pass
 from unit tests, CLI --help/version, startup notices or a green CI job.
 
 ## Latest open gates
+- 2026-11-02: five owner-authorized status/picker commands delivered with exact reply IDs and markup evidence in [release qualification](reviews/2026-11-02-release-qualification.md#owner-authorized-command-probes). Task panel returned page 1/5 for 15 tasks; silent was off; model default; session mapping legacy. Rendering, callbacks and provider behavior remain open.
 - Rich IPC P1: inspect Markdown/HTML rendering in the owner client; two API acknowledgements are recorded.
 - CP-031: owner reported `/restart` checked on 2026-10-29. Baseline accepted by owner; negative cases and specific topic/provider scenarios remain unqualified.
 

@@ -4,8 +4,10 @@
 
 Recovered owner request: backlog streams 1–3 in parallel; this is stream 1,
 release qualification. This checkpoint verifies the operational baseline, not
-real-client acceptance. No Telegram messages, provider requests, feature changes,
-restarts, adoption, schedules or destructive tests were performed.
+real-client acceptance. The initial operational checkpoint was read-only. The owner subsequently
+authorized exactly five status/picker commands to the own bot; their evidence
+is recorded below. No provider requests, feature changes, restarts, adoption,
+schedules, button clicks or destructive tests were performed.
 
 At 17:56 UTC the Pi runs the expected CP-040 release. All A01–A25 client gates
 retain their existing partial/open status. This report corrects the stale
@@ -33,6 +35,33 @@ recorded address connected successfully.
   success. These counters do not prove recurring digest delivery A06.
 - No gopod agent container was running at the inventory time. This is not a
   native-provider readiness test. Unrelated service containers were untouched.
+
+## Owner-authorized command probes
+
+At 18:00:15–18:00:37 UTC, sent the five explicitly approved commands to
+`@Nanoclaw_go_bot` and retrieved their exact replies. These message IDs belong
+to the owner account's private history; there are no fabricated public links.
+The standalone Telegram Toolkit CLI performed sends and text retrieval. Its
+text listing omits markup, so the same toolkit client performed a bounded
+read-only `get_messages` of the five reply IDs to inspect button labels.
+
+| Command | Sent → reply ID | Observed result |
+| --- | --- | --- |
+| `/sessions status` | 3175928 → 3175929 | Legacy; adoption not requested; zero durable sessions and native contexts |
+| `/telegram doctor` | 3175930 → 3175931 | Explicitly stale capability/startup snapshot; current health unverified; startup Codex 0.164.0 authenticated; refresh manual |
+| `/tasks` | 3175932 → 3175933 | Page 1/5, 15 total, three entries; Pause and Next buttons attached |
+| `/silent` | 3175934 → 3175935 | Off; buttons `on`, `✓ off` |
+| `/model` | 3175936 → 3175937 | Default; button `✓ default` only |
+
+The initial numeric-target send returned CLI `ValueError`; bounded history
+confirmed no command was delivered before sending once using the resolved bot
+username. No uncertain write was blindly retried. No buttons were clicked.
+
+This proves actual account-side command response delivery and markup presence,
+including task panel pagination metadata for more than three tasks. It does
+not prove native visual rendering, next-page/edit behavior, changed model use,
+callback authorization/expiry or silent streaming. A01/A11/A18/A21 stay partial.
+The doctor's stale result is correct reporting, not a fresh `getMe` check.
 
 ## Observed defects requiring follow-up
 
