@@ -440,6 +440,14 @@ func (q *Queue) worker(ctx context.Context, folder string) {
 				q.deactivate(folder)
 				return
 			}
+			// A post-execution persistence failure must not turn into a model
+			// retry, including when shutdown races with the commit error.
+			var noReplay interface{ NoReplay() bool }
+			if errors.As(err, &noReplay) && noReplay.NoReplay() {
+				q.resetRetries(folder)
+				q.finish(items, StatusFailed, err)
+				break
+			}
 			if ctx.Err() != nil {
 				// Shutdown, not a failure. Checked before err == nil
 				// because a handler may swallow the cancellation and
