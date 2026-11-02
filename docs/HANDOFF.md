@@ -1,12 +1,58 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-02 (`8a4f55a` CP-040 attachments deployed to the Pi at 10:17:49 UTC)
+**Last updated:** 2026-11-02 (Claude session recovered in Codex; approved queue streams 1–3 resumed in parallel)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
 [ACCEPTANCE](ACCEPTANCE.md) for pending real-client verification.
 
-## Resume here — `8a4f55a` deployed, 2026-11-02
+## Resume here — parallel queue streams 1–3, 2026-11-02
+
+The owner asked Claude to run approved queue items **1–3 in parallel**: release
+qualification, reliability, and conversation management. Recovered session
+`f638f77f-451c-49f1-9e36-bc3bced50961` stopped at 17:32:33 UTC on a weekly-limit
+rejection during discovery, before starting child agents or changing files.
+Codex resumed the work from clean `main` `2d24266`; its
+[CI run](https://github.com/Coriol-is/gopod/actions/runs/41428496002) passed.
+
+- **Release qualification:** [live report](reviews/2026-11-02-release-qualification.md)
+  verifies the Pi baseline and five owner-authorized Telegram commands, including
+  reply delivery and button markup. Visual rendering and callback actions stay
+  open. FTS quote escaping is fixed in [PR #143](https://github.com/Coriol-is/gopod/pull/143);
+  cancellation misclassified as profile unavailability is fixed in
+  [PR #146](https://github.com/Coriol-is/gopod/pull/146), merged as `5b0e362`
+  (not deployed). Use SSH to
+  `100.123.150.53` with strict host checking: the saved IP works, whereas the
+  `rpi4` hostname failed host-key lookup. No SSH settings/key changes are needed.
+- **Reliability:** [PR #145](https://github.com/Coriol-is/gopod/pull/145),
+  merged as `b8260ea`, adds the CP-002 PR 6a explicit runner result-freeze hook,
+  captures the executed model and preserves the no-replay error classification.
+  [Integration gates](reviews/2026-11-02-foreground-freeze-foundation.md):
+  production binding, durable recovery, publication and voice/code parity are
+  still required before activation. Later CP-004/007/006 slices remain open.
+- **Conversation management:** [PR #144](https://github.com/Coriol-is/gopod/pull/144)
+  merged as `7bbc7dd`, adds CP-016 durable deletion intent, scoped retirement
+  and store write fences.
+  [Next integration](superpowers/plans/2026-11-02-topic-retirement-foundation.md):
+  command/confirmation, conversation quiescence, output/recovery/callback fences
+  and registration-change reconciliation; then CP-018 per-thread providers.
+  No live topic was deleted.
+
+The FTS fix is merged as `69cb0a9`; all four implementation PRs (#143–146) passed
+`test`, Docker `isolation-spike` and Sonar before squash merge. Full local
+build/vet/tests and affected race tests passed. The cross-stream runner/store
+checks are recorded in [integration evidence](reviews/2026-11-02-stream-integration.md).
+No new code has been deployed; the Pi remains on `8a4f55a`.
+
+The task-role credential adapter, CP-038 E0–E6, host reboot/cgroup changes and
+production deployment remain outside this wave. Existing worktrees and branches
+are preserved. Session mapping remains legacy until separately adopted.
+
+Older sections below are historical checkpoints. For current deployed state,
+use the latest deployment and the [acceptance report](reviews/2026-11-02-release-qualification.md) rather than older
+“not deployed” or “next” statements.
+
+## Latest deployment — `8a4f55a`, 2026-11-02
 
 `main` `8a4f55a` (CP-040 agent attachments, [D058](DECISIONS.md), PR #140 merged after
 an independent review) runs on the Pi since **2026-11-02 10:17:49 UTC**; evidence,
