@@ -25,14 +25,15 @@ func TestSearchMemoryTextTreatsEmbeddedQuotesAsLiteral(t *testing.T) {
 		}
 	}
 	for _, tc := range []struct {
-		query string
-		want  string
+		query     string
+		want      string
+		wantCount int
 	}{
-		{`x"at:y"z`, "x at y z"},
-		{`x"at:missing"z`, ""},
-		{`"alpha beta"`, "alpha beta"},
-		{`at:home`, "at home"},
-		{`alpha"OR"beta`, "alpha OR beta"},
+		{`x"at:y"z`, "x at y z", 1},
+		{`x"at:missing"z`, "", 0},
+		{`"alpha beta"`, "alpha beta", 2},
+		{`at:home`, "at home", 1},
+		{`alpha"OR"beta`, "alpha OR beta", 1},
 	} {
 		t.Run(tc.query, func(t *testing.T) {
 			items, err := s.SearchMemoryText(ctx, "chat", 0, tc.query, 10)
@@ -45,7 +46,7 @@ func TestSearchMemoryTextTreatsEmbeddedQuotesAsLiteral(t *testing.T) {
 					found = true
 				}
 			}
-			if tc.want == "" && len(items) != 0 {
+			if len(items) != tc.wantCount {
 				t.Fatalf("unexpected matches: %v", items)
 			}
 			if tc.want != "" && !found {
