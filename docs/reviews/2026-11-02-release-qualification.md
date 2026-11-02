@@ -77,9 +77,20 @@ The doctor's stale result is correct reporting, not a fresh `getMe` check.
    Follow-up: escape interior quotes and cover an actual store query regression.
 2. At 17:01 UTC, extraction failed with `runner: agent profile unavailable;
    shared-chat isolation is not yet qualified` for the owner folder.
-   The admission policy refuses unresolved/ambiguous/unqualified registrations;
-   this checkpoint did not retrieve identities or infer which predicate failed.
-   Follow-up: inspect sanitized registration/admission facts before changing policy.
+   Sanitized live checks subsequently confirmed a positive configured owner ID,
+   exactly one owner-folder registration, `is_owner=true`, and a JID matching
+   the configured owner; raw identities and credentials were not reported.
+   Timeline: previous scheduled turn finished at 17:01:59.709, the next queued
+   turn started at .909, and extraction failed at .995. A foreground waiter
+   cancels same-folder background work. Registration reads previously converted
+   even `context.Canceled` / `DeadlineExceeded` into `ErrProfileUnavailable`,
+   and owner authorization masked the error again. A deterministic local test
+   reproduces this misclassification by preempting a fresh run while its
+   post-slot registration read is blocked. The local defect is proven; this
+   is the likely explanation of the live warning, whose underlying error was
+   discarded and cannot be proven retrospectively. The focused follow-up
+   preserves only cancellation/deadline errors; ordinary database failures
+   still fail closed and expose no database details. No live policy changed.
 
 ## Remaining qualification plan
 
