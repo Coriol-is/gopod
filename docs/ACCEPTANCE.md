@@ -1,6 +1,7 @@
 # Live acceptance register
 
-Last reconciled: 2026-10-29. Application deployed: `8bdff46`.
+Last reconciled: 2026-11-02. Application deployed: `8a4f55a` (CP-040).
+Read-only runtime recheck: [2026-11-02 qualification](reviews/2026-11-02-release-qualification.md).
 Code merged/deployed is distinct from a real-client scenario being accepted.
 Items below are pending unless explicit evidence is linked. Do not infer a pass
 from unit tests, CLI --help/version, startup notices or a green CI job.
@@ -67,7 +68,7 @@ extraction (fixed/deployed in 18e0c86; real user/model follow-up pending), docum
 | A19 | Startup runtime and management readiness | Restart restores owner provider/model, starts matching container, reports CLI/auth and leaves sessions/history/tasks unchanged. Codex subscription management quota and negative/unknown paths need live evidence; no model request or inferred quota recovery. Selected Claude startup verified by [rollout](deployments/2026-10-25-0a25267.md); live Codex quota/failure paths remain pending |
 | A18 | Telegram capability diagnostics | Owner/private summary + doctor/refresh match read-only getMe; registered nonowner summary/doctor denial; group silence, private menu, stale/cooldown and no-model behavior. Owner supplied a real /telegram doctor report on 2026-10-25 (getMe fresh, expected flags); refresh/nonowner denial/group-silence client checks remain pending. Formatting/runtime-label fixes tracked separately |
 | A17 | Compaction correctness | Confirm source context reaches summarization, restart counters and serialization semantics; investigate old review notes before treating /compact as qualified |
-| A22 | CP-040 agent attaches a PDF (D058; not deployed) | Owner private chat, fresh session on Claude and on Codex with no extra prompting: ask for a short PDF report; the same turn delivers a Telegram document with the right filename and caption; the reply text does not repeat the path; receipt `queued`→`sent` |
+| A22 | CP-040 agent attaches a PDF (D058; deployed `8a4f55a`) | Owner private chat, fresh session on Claude and on Codex with no extra prompting: ask for a short PDF report; the same turn delivers a Telegram document with the right filename and caption; the reply text does not repeat the path; receipt `queued`→`sent` |
 | A23 | CP-040 photo vs document | An image (PNG/JPEG) arrives as a photo with `as` omitted; the same image with `as:"document"` arrives as a file; a PDF never arrives as a photo |
 | A24 | CP-040 named refusals | A 60 MB file and a path outside `/workspace/chat` are refused as `file_too_large` and `path_outside_workspace`: the user sees the host notice with path and reason, the receipt has the code, the agent's reply says the file was not attached |
 | A25 | CP-040 artifacts off | With `GOPOD_OUTBOX_ARTIFACTS=0` and a restart, an attach request yields receipt `artifacts_disabled` and the notice naming the path; nothing else is sent. Restore the flag afterwards; record activation with the CP-003 backup/restore evidence |
