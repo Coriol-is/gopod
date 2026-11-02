@@ -1,10 +1,21 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-01 (`main` `be7575f` deployed to the Pi at 18:37:46 UTC: CP-037 P0+P1, `/silent`, CP-038 gap closure)
+**Last updated:** 2026-11-02 (CP-040 agent attachments PR; `main` `be7575f` deployed to the Pi since 2026-11-01 18:37:46 UTC)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
 [ACCEPTANCE](ACCEPTANCE.md) for pending real-client verification.
+
+## Resume here — CP-040 agent attachments in review, 2026-11-02
+
+CP-040 is implemented on `feat/cp040-agent-attachments` (worktree
+`gopod-cp040-impl`, one PR): owner-only `AttachmentsPolicy` + seeded
+`ATTACHMENTS.md` + `container/skills/attachments`, the V1 `as` field
+(`auto`/`document`/`photo`), refusal codes `artifacts_disabled`,
+`path_outside_workspace`, `unsupported_type` with a host notice to the chat
+([D058](DECISIONS.md), [spec](superpowers/specs/2026-11-02-agent-attachments.md)).
+Next: CI green, review and squash-merge by a separate session, deploy when the
+owner authorizes, then real-client rows A22–A25 in [ACCEPTANCE](ACCEPTANCE.md).
 
 ## Resume here — `be7575f` deployed, 2026-11-01
 

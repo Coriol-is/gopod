@@ -24,8 +24,8 @@ func TestSeedFreshDirCreatesBoth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Seed: %v", err)
 	}
-	if len(created) != 5 {
-		t.Errorf("created %d files, want 5 (CLAUDE.md, AGENTS.md, SCHEDULING.md, INTEGRATIONS.md, MEMORY.md): %v", len(created), created)
+	if len(created) != 6 {
+		t.Errorf("created %d files, want 6 (CLAUDE.md, AGENTS.md, SCHEDULING.md, INTEGRATIONS.md, ATTACHMENTS.md, MEMORY.md): %v", len(created), created)
 	}
 
 	// Verify CLAUDE.md exists, includes the chat folder name and the
@@ -74,9 +74,9 @@ func TestSeedDoesNotOverwrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Seed: %v", err)
 	}
-	// CLAUDE.md was pre-existing; AGENTS.md, SCHEDULING.md, INTEGRATIONS.md and MEMORY.md are created.
-	if len(created) != 4 {
-		t.Errorf("created %d files, want 4 (CLAUDE.md should be left alone): %v", len(created), created)
+	// CLAUDE.md was pre-existing; AGENTS.md, SCHEDULING.md, INTEGRATIONS.md, ATTACHMENTS.md and MEMORY.md are created.
+	if len(created) != 5 {
+		t.Errorf("created %d files, want 5 (CLAUDE.md should be left alone): %v", len(created), created)
 	}
 
 	body, _ := os.ReadFile(filepath.Join(chatDir, "CLAUDE.md"))
@@ -165,7 +165,7 @@ func TestSchedulingGuideAddedToExistingCustomWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(created) != 2 || filepath.Base(created[0]) != "SCHEDULING.md" || filepath.Base(created[1]) != "INTEGRATIONS.md" {
+	if len(created) != 3 || filepath.Base(created[0]) != "SCHEDULING.md" || filepath.Base(created[1]) != "INTEGRATIONS.md" || filepath.Base(created[2]) != "ATTACHMENTS.md" {
 		t.Fatalf("unexpected files: %v", created)
 	}
 	for _, name := range []string{"CLAUDE.md", "AGENTS.md"} {
@@ -282,5 +282,56 @@ func TestIntegrationsGuideCoversTheOutline(t *testing.T) {
 		if strings.Contains(guide, bad) {
 			t.Errorf("guide has %q", bad)
 		}
+	}
+}
+
+// CP-040: the owner workspace gets the attachments guide, also when its
+// identity files predate it, and the guide states the exact request; the owner
+// CLAUDE.md points at it; a restricted workspace gets neither and is told it
+// cannot attach files.
+func TestAttachmentsGuideIsOwnerOnlyAndStatesTheContract(t *testing.T) {
+	chatDir, memoryDir := setupDirs(t)
+	if err := os.WriteFile(filepath.Join(chatDir, "CLAUDE.md"), []byte("old identity"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Seed(chatDir, memoryDir, Vars{ChatFolder: "owner", IsOwner: true}); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(chatDir, "ATTACHMENTS.md"))
+	if err != nil {
+		t.Fatalf("existing owner workspace lacks the attachments guide: %v", err)
+	}
+	guide := string(b)
+	for _, want := range []string{
+		`"version":1`, `"capability":"$GOPOD_ARTIFACT_CAP"`, `"as":"auto"`, "/workspace/ipc/messages/",
+		"/workspace/ipc/results/messages/", "artifacts_disabled", "path_outside_workspace", "file_too_large",
+		"unsupported_type", "20 MiB", "50 MB", "no symlinks", "NOT an attachment", "could not be attached",
+		"Never claim a refused file was sent",
+	} {
+		if !strings.Contains(guide, want) {
+			t.Errorf("attachments guide lacks %q", want)
+		}
+	}
+
+	fresh, freshMem := setupDirs(t)
+	if _, err := Seed(fresh, freshMem, Vars{ChatFolder: "owner", IsOwner: true}); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"CLAUDE.md", "AGENTS.md"} {
+		b, _ := os.ReadFile(filepath.Join(fresh, name))
+		if !strings.Contains(string(b), "## Sending files") || !strings.Contains(string(b), "ATTACHMENTS.md") {
+			t.Errorf("owner %s lacks the sending-files section", name)
+		}
+	}
+
+	group, groupMem := setupDirs(t)
+	if _, err := Seed(group, groupMem, Vars{ChatFolder: "group-a"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(group, "ATTACHMENTS.md")); !os.IsNotExist(err) {
+		t.Fatalf("restricted workspace got the attachments guide: %v", err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(group, "CLAUDE.md")); !strings.Contains(string(b), "cannot receive file attachments") {
+		t.Error("restricted CLAUDE.md does not say attachments are unavailable")
 	}
 }

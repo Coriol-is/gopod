@@ -120,3 +120,23 @@ func TestIntegrationsPolicyPointsAtTheGuideOnlyWhenItExists(t *testing.T) {
 		}
 	}
 }
+
+// CP-040: the attachment contract reaches every owner turn (both providers,
+// both modes, existing workspaces) and no other tier.
+func TestAttachmentsPolicyIsOwnerTurnsOnly(t *testing.T) {
+	for _, prov := range providersUnderTest() {
+		for _, mode := range []string{"Run", "RunStream"} {
+			t.Run(prov.Name()+"/"+mode, func(t *testing.T) {
+				if sp := promptForTier(t, newConvHarness(t, prov), prov, mode, TierRegistered); strings.Contains(sp, "GOPOD_ARTIFACT_CAP") {
+					t.Fatalf("a non-owner turn carries the attachments policy:\n%s", sp)
+				}
+				sp := promptForTier(t, newConvHarness(t, prov), prov, mode, TierOwner)
+				for _, want := range []string{AttachmentsPolicy, "NOT an attachment", "$GOPOD_ARTIFACT_CAP", `"as":"auto"`, "results/messages", "could not be attached"} {
+					if !strings.Contains(sp, want) {
+						t.Fatalf("the owner turn lacks %q", want)
+					}
+				}
+			})
+		}
+	}
+}
