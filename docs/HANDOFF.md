@@ -1,12 +1,30 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-02 (CP-040 agent attachments PR; `d8866c9` deployed to the Pi at 00:04:53 UTC: artifact delivery on by default, D057)
+**Last updated:** 2026-11-02 (`8a4f55a` CP-040 attachments deployed to the Pi at 10:17:49 UTC)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
 [ACCEPTANCE](ACCEPTANCE.md) for pending real-client verification.
 
-## Resume here — CP-040 agent attachments in review, 2026-11-02
+## Resume here — `8a4f55a` deployed, 2026-11-02
+
+`main` `8a4f55a` (CP-040 agent attachments, [D058](DECISIONS.md), PR #140 merged after
+an independent review) runs on the Pi since **2026-11-02 10:17:49 UTC**; evidence,
+backups and rollback tag `gopod-gopod:rollback-pre-cp040-20261102` in
+[the deployment report](deployments/2026-11-02-cp040-attachments.md). Agents in the
+owner chat now get the attachments policy, `ATTACHMENTS.md` and the `attachments`
+skill; real round-trip checks A22–A25 are open ([ACCEPTANCE](ACCEPTANCE.md)).
+
+**Deployment gap found and patched:** container skills are mounted from
+`/opt/gopod/repo/container/skills`, a stale copy from 2026-05-07, not from the
+checkout `~/gopod`; they were synced by hand (see the report). Decide whether to point
+the skills mount at the checkout or keep the rsync as a runbook step.
+
+SonarCloud: `main` analysis is still stale (last success 2026-10-27, ncloc 47,378)
+even after `sonar-project.properties` (#141); the failure reason is visible only in
+the SonarCloud UI. [Triage](reviews/2026-11-02-sonar-triage.md).
+
+## Previous — CP-040 agent attachments merged, 2026-11-02
 
 CP-040 is implemented on `feat/cp040-agent-attachments` (worktree
 `gopod-cp040-impl`, one PR): owner-only `AttachmentsPolicy` + seeded
