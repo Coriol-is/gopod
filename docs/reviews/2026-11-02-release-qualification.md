@@ -74,7 +74,9 @@ The doctor's stale result is correct reporting, not a fresh `getMe` check.
    the live FTS index. This supports a query-sanitization defect, not a missing
    `memories.at` column or a schema migration requirement. The actual private
    triggering text was not retrieved. No production query/data was modified.
-   Follow-up: escape interior quotes and cover an actual store query regression.
+   Fixed in [PR #143](https://github.com/Coriol-is/gopod/pull/143), merged as
+   `69cb0a9`: embedded quotes are escaped and an actual store-query regression
+   covers literal operator semantics. Not deployed.
 2. At 17:01 UTC, extraction failed with `runner: agent profile unavailable;
    shared-chat isolation is not yet qualified` for the owner folder.
    Sanitized live checks subsequently confirmed a positive configured owner ID,
@@ -91,6 +93,12 @@ The doctor's stale result is correct reporting, not a fresh `getMe` check.
    discarded and cannot be proven retrospectively. The focused follow-up
    preserves only cancellation/deadline errors; ordinary database failures
    still fail closed and expose no database details. No live policy changed.
+
+The cancellation classification fix is merged as `5b0e362` in
+[PR #146](https://github.com/Coriol-is/gopod/pull/146), after local build/vet/full
+tests, runner race and green CI. It preserves cancellation/deadline errors while
+ordinary registration failures still refuse execution. This fixes the proven
+local defect; the historical warning remains an inferred instance. Not deployed.
 
 ## Remaining qualification plan
 

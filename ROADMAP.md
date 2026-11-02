@@ -322,8 +322,9 @@ checks do not reopen an implemented proposal; use docs/ACCEPTANCE.md instead.
 | CP-015 | Agent scheduling guide/management/receipts; canonical-JID message delivery; paged task controls | Real receipts/API delivery proved; user task execution and client UI A01/A06 pending |
 | D055 (no CP; owner request 2026-11-01) | `/silent` per-chat progress-only streaming: on/off picker, draft shows header and tool steps only, answer once at the end | Unit and race tests, Sonar; merged `6d11765`, deployed in `be7575f`; real Telegram acceptance pending |
 
-Pending proposals and design-only CP-011/012/014/016–019 are assigned to the
-approved queue above. A saved spec is not an active implementation.
+Pending proposals and design-only CP-011/012/014/018–019 are assigned to the
+approved queue above. CP-016 is in progress; a saved spec alone is not an active
+implementation.
 
 ---
 

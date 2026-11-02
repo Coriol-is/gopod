@@ -20,7 +20,8 @@ Codex resumed the work from clean `main` `2d24266`; its
   reply delivery and button markup. Visual rendering and callback actions stay
   open. FTS quote escaping is fixed in [PR #143](https://github.com/Coriol-is/gopod/pull/143);
   cancellation misclassified as profile unavailability is fixed in
-  [PR #146](https://github.com/Coriol-is/gopod/pull/146) (not deployed). Use SSH to
+  [PR #146](https://github.com/Coriol-is/gopod/pull/146), merged as `5b0e362`
+  (not deployed). Use SSH to
   `100.123.150.53` with strict host checking: the saved IP works, whereas the
   `rpi4` hostname failed host-key lookup. No SSH settings/key changes are needed.
 - **Reliability:** [PR #145](https://github.com/Coriol-is/gopod/pull/145),
@@ -37,7 +38,7 @@ Codex resumed the work from clean `main` `2d24266`; its
   and registration-change reconciliation; then CP-018 per-thread providers.
   No live topic was deleted.
 
-The FTS fix is merged as `69cb0a9`; all three implementation PRs above passed
+The FTS fix is merged as `69cb0a9`; all four implementation PRs (#143–146) passed
 `test`, Docker `isolation-spike` and Sonar before squash merge. Full local
 build/vet/tests and affected race tests passed. The cross-stream runner/store
 checks are recorded in [integration evidence](reviews/2026-11-02-stream-integration.md).
