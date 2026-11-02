@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | accepted |
+| Status | in-progress |
 | Date | 2026-10-25 |
 | Origin | Owner requested implementation specs for deleting topics and retiring sessions |
 | Size | M |
@@ -15,7 +15,12 @@ Current behavior and verified gaps are recorded in the linked specification.
 
 ## Proposal
 Implement the bounded, scoped contract in the specification in separate delivery
-slices. This acceptance is for design; implementation remains deferred.
+slices. The owner resumed implementation on 2026-11-02 as conversation-management
+workstream 3. The first slice implements the store journal, scoped retirement
+transaction and continuity/admission write fences; see the
+[foundation and remaining integration gates](../superpowers/plans/2026-11-02-topic-retirement-foundation.md).
+The command, native quiescence, output/recovery/control fencing and real-client
+acceptance are still pending. No real Telegram topic is deleted by this slice.
 
 ## Out of scope
 Enabling modes, deleting real topics, changing provider routing or adding
