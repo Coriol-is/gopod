@@ -11,7 +11,7 @@ it does not complete the CP-002/CP-016 features or all live-client scenarios.
 All five PRs passed test, Docker isolation-spike and Sonar before merge.
 Integrated build/vet/full tests and race suites for store/runner/queue passed.
 [Main CI 41498601957](https://github.com/Coriol-is/gopod/actions/runs/41498601957)
-passed on the exact deployed source.
+passed on the initial deployed source `81f5f08`.
 
 The preceding main run on `5b0e362` failed the task IPC replay test. Investigation
 found a pre-existing receipt/archive replacement race, deterministically reproduced;

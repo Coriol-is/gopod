@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-02 (Claude session recovered in Codex; approved queue streams 1–3 resumed in parallel)
+**Last updated:** 2026-11-02 (recovered streams deployed as a0de4dc; first queued-command acceptance passed)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
