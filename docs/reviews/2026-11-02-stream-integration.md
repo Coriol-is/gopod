@@ -11,6 +11,7 @@ Base: `2d24266`.
 - `e650de2`: explicit runner result freeze and non-replayable freeze failure.
 - `22c13b7`: escaped embedded quotes in full-text memory queries.
 - `e963b34`: literal operator-query assertions for that memory fix.
+- `ef5662d`: preserve cancellation/deadline errors during registration admission.
 
 The memory test adjustment requires its predecessor `22c13b7`; applying only
 `e963b34` to the base produces a modify/delete conflict because the test file
@@ -42,6 +43,10 @@ Passed on the integrated tree:
 - `go test ./...`
 - `go test -race ./internal/store ./internal/runner ./internal/queue`
 - `git diff --check`
+
+The full command sequence was repeated after adding `ef5662d`; it passed,
+including the new registration-admission cancellation tests and the eight
+runner/retirement cases. Unchanged packages used Go's test cache on this repeat.
 
 No source integration defect was found. These changes remain foundations:
 production does not yet wire the result-freeze seam, and topic deletion has no
