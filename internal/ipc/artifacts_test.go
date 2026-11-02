@@ -353,12 +353,12 @@ func TestArtifacts_PathAttacksRejectedWithoutLeaks(t *testing.T) {
 		{ContainerOutputRoot + "/inside/inner.txt", "path_denied"},
 		{ContainerOutputRoot + "/hard.txt", "hardlink_denied"},
 		{ContainerOutputRoot + "/fifo", "not_regular_file"},
-		{ContainerOutputRoot + "/../outside.txt", "path_denied"},
-		{ContainerOutputRoot + "/sub/../ok.txt", "path_denied"},
-		{"/etc/passwd", "path_denied"},
-		{outside, "path_denied"},
-		{"/workspace/ipc/messages/x.json", "path_denied"},
-		{"relative.txt", "path_denied"},
+		{ContainerOutputRoot + "/../outside.txt", "path_outside_workspace"},
+		{ContainerOutputRoot + "/sub/../ok.txt", "path_outside_workspace"},
+		{"/etc/passwd", "path_outside_workspace"},
+		{outside, "path_outside_workspace"},
+		{"/workspace/ipc/messages/x.json", "path_outside_workspace"},
+		{"relative.txt", "path_outside_workspace"},
 		{ContainerOutputRoot + "/.secret/token.txt", "path_denied"},
 		{ContainerOutputRoot + "/memory/MEMORY.md", "path_denied"},
 		{ContainerOutputRoot + "/state.sqlite", "path_denied"},
@@ -605,7 +605,8 @@ func TestArtifacts_GroupAndOwnerAuthorityDenied(t *testing.T) {
 	w := f.watcher()
 
 	// Only the owner folder reaches the artifact route: a group folder's V1
-	// file keeps the legacy text path (which refuses it: no chatJid).
+	// file request is refused as artifacts_disabled (CP-040) with one notice
+	// to the group's own chat, never through the artifact route.
 	gTok := f.issue("group-a", "tg:-2", store.OwnerLegacyAgentIPC, "run-g")
 	writeIPC(t, f.root, "group-a", "messages", "0001-g.json", map[string]any{"version": 1, "requestId": "req-00000002", "capability": gTok,
 		"files": []map[string]any{{"path": ContainerOutputRoot + "/g.txt"}}})
@@ -628,15 +629,16 @@ func TestArtifacts_GroupAndOwnerAuthorityDenied(t *testing.T) {
 			t.Fatalf("%s: %v", c.name, rc)
 		}
 	}
-	if rc := f.receipt("group-a", "0001-g.result.json"); rc["status"] != "error" {
+	if rc := f.receipt("group-a", "0001-g.result.json"); rc["status"] != "error" || rc["error"] != "artifacts_disabled" {
 		t.Fatalf("group V1 request: %v", rc)
 	}
 	f.assertNoLeak("authority")
 	if f.rows(`SELECT count(*) FROM artifact_reservations`) != 0 {
 		t.Fatal("a group folder reached the artifact route")
 	}
-	if calls := f.sink.callsSnapshot(); len(calls) != 0 {
-		t.Fatalf("direct send %+v", calls)
+	calls := f.sink.callsSnapshot()
+	if len(calls) != 1 || calls[0].chatJID != "tg:-2" || !strings.Contains(calls[0].text, "/workspace/chat/g.txt") {
+		t.Fatalf("want one refusal notice to the group's own chat, got %+v", calls)
 	}
 }
 

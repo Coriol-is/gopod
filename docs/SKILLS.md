@@ -22,6 +22,13 @@ Everything below follows from that line.
 The simplest tier. Drop a directory, restart the chat's container, the agent
 has a new skill.
 
+Shipped container skills: `memory`, `scheduler`, `integrations`, `freefeed`
+and `attachments` (CP-040: how the agent sends a file it made as a Telegram
+attachment through the IPC V1 request; spec
+[agent attachments](superpowers/specs/2026-11-02-agent-attachments.md)). A
+skill only describes a host contract; the attachment pipeline itself is a
+feature in `internal/ipc` and `internal/telegram`.
+
 ### Anatomy
 
 ```

@@ -2,13 +2,13 @@
 
 | | |
 |---|---|
-| Status | proposed (owner request 2026-11-01) |
+| Status | in-progress (accepted by the owner 2026-11-02; implementation on `feat/cp040-agent-attachments`, real-client acceptance A22–A25 pending) |
 | Date | 2026-11-01 |
 | Origin | Owner: the agent produced `banks/preduzetnik-bank-assessment.pdf` in the chat workspace and answered that it has no way to attach it ("нужна поддержка sendDocument в gopod"); a pasted path never becomes a Telegram attachment |
 | Size | M |
 | Touches | `internal/runner/chattmpl/` and `container/skills/` (agent-facing contract), `internal/ipc` (request validation/receipts, document vs photo intent), `internal/telegram` outbox transport (document presentation, size limits), `internal/config`/deploy (activation), `docs/SKILLS.md`, `docs/ACCEPTANCE.md` |
 | Depends on | CP-003 (host artifact pipeline, PRs 4–5 merged, flag `GOPOD_OUTBOX_ARTIFACTS` off, [D039](../DECISIONS.md)); CP-002 outbox; CP-007 matched backups (artifact blobs are already covered by `matched_stopped` sets); CP-019 for group delivery targets |
-| Spec | `—` until written (reuse [immutable artifact delivery](../superpowers/specs/2026-10-26-immutable-artifact-delivery.md) for the host side) |
+| Spec | [agent attachments](../superpowers/specs/2026-11-02-agent-attachments.md) (host side: [immutable artifact delivery](../superpowers/specs/2026-10-26-immutable-artifact-delivery.md)); plan [2026-11-02-agent-attachments](../superpowers/plans/2026-11-02-agent-attachments.md); [D058](../DECISIONS.md) |
 
 ## Problem
 

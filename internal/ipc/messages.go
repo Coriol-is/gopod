@@ -85,6 +85,11 @@ func (w *Watcher) processMessageFile(ctx context.Context, folder, path string) (
 	if w.artifactsEnabled() && folder == w.cfg.OwnerFolder && isArtifactVersion(raw) {
 		return w.processArtifactRequest(ctx, folder, path, raw)
 	}
+	if paths := v1FilePaths(raw); paths != nil {
+		// A file request with no artifact route: refuse it explicitly instead of
+		// sending its text without the files (CP-040).
+		return w.refuseDisabled(ctx, folder, path, paths)
+	}
 	if w.durableEligible(folder, p.ChatJID) {
 		return w.processDurable(ctx, folder, path, raw, p)
 	}

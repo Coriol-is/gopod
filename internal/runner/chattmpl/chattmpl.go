@@ -1,6 +1,6 @@
 // Package chattmpl seeds new gopod chat workspaces with default
 // CLAUDE.md, AGENTS.md (same content, for Codex), SCHEDULING.md, INTEGRATIONS.md
-// (owner only) and MEMORY.md files
+// and ATTACHMENTS.md (owner only) and MEMORY.md files
 // so the agent wakes up with identity,
 // a workspace map, and memory format hints instead of an empty
 // directory.
@@ -40,6 +40,9 @@ var integrationsTmplSrc string
 
 //go:embed MEMORY.md.tmpl
 var memoryTmplSrc string
+
+//go:embed ATTACHMENTS.md.tmpl
+var attachmentsTmplSrc string
 
 //go:embed RESTRICTED.md.tmpl
 var restrictedTmplSrc string
@@ -106,6 +109,14 @@ func Seed(chatDir, memoryDir string, vars Vars) ([]string, error) {
 			return created, err
 		} else if wrote {
 			created = append(created, integrationsPath)
+		}
+		// The attachments guide (CP-040) is owner-only too: only the owner's
+		// private chat gets an artifact capability.
+		attachmentsPath := filepath.Join(chatDir, "ATTACHMENTS.md")
+		if wrote, err := writeIfMissing(attachmentsPath, attachmentsTmplSrc, vars); err != nil {
+			return created, err
+		} else if wrote {
+			created = append(created, attachmentsPath)
 		}
 	}
 

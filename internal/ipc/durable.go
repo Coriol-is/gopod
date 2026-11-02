@@ -229,7 +229,11 @@ func sanitizeCode(s string) string {
 }
 
 func (w *Watcher) finishRejected(folder, path, code string) bool {
-	if !w.writeDurableReceipt(folder, path, durableReceipt{Status: "error", Error: code}) {
+	rc := durableReceipt{Status: "error", Error: code}
+	if isAttachmentCode(code) {
+		rc.Help = attachmentHelp
+	}
+	if !w.writeDurableReceipt(folder, path, rc) {
 		return w.terminalBackoff(path)
 	}
 	return w.archiveTerminal(folder, path, ".failed")
