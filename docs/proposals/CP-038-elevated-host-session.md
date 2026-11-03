@@ -66,8 +66,9 @@ control.
   press; a callback, a group message, an IPC message, a scheduler tick and a
   non-owner chat each fail to start it.
 - The elevated container is created with the elevated policy role, and a
-  container whose recorded role differs from the requested one is denied rather
-  than recycled.
+  container crossing the elevated role boundary is denied rather than recycled,
+  including stopped containers. Ordinary foreground/task recycling is preserved
+  (D059).
 - The container arguments produced for an ordinary turn are byte-identical to
   the pre-change fixture, and no existing container's recorded policy digest
   changes.

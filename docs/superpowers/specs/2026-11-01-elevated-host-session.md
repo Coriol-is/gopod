@@ -256,12 +256,13 @@ wrong.
 **New comparison logic is required.** The first draft claimed none was needed.
 Two additions:
 
-- `decideContainer` must reject a role the plan did not ask for. Today a
+- `decideContainer` must reject a role mismatch involving elevated (D059). Ordinary foreground/task
+  recycling remains unchanged. Today a
   well-formed container whose labels are self-consistent but whose fingerprint
   differs reaches `actRecreate`, "policy_mismatch"
-  (`internal/runner/exec_guard.go:217-219`). For a role difference that is
-  wrong in both directions, so the role is compared before the fingerprint and
-  a mismatch denies.
+  (`internal/runner/exec_guard.go:217-219`). For transitions involving elevated that is
+  wrong in both directions, so that boundary is checked before stopped-state
+  handling and the fingerprint; a mismatch denies.
 - The namespace modes are not inspectable. `ContainerFacts` has no `PidMode`,
   `NetworkMode` or `IpcMode` (`internal/runner/exec_guard.go:52-66`) and
   `InspectContainer` does not read them
@@ -480,7 +481,8 @@ PID/NET/IPC, with `/host` and the socket bound, and the inspection reads the
 namespace modes back. `BuildContainerArgs`'s output for an ordinary turn is
 byte-identical to the pre-change fixture, and an existing chat container's
 recorded config digest still matches after the `hardening` fields are added. A
-container labelled with a role the plan did not request is denied, not recycled.
+container crossing the elevated role boundary is denied, not recycled, even
+when stopped. Ordinary foreground/task recycling remains unchanged (D059).
 
 **C — lifetime and audit.** `/root stop`, `/restart`, `/restart force` and
 controller shutdown each remove the container, close the session and revert
@@ -514,3 +516,15 @@ Kept so the same errors are not re-derived. Each was verified in the source.
 | `jq` is justified by JSON logs | Logs are text by default and also go to SQLite |
 | Removal happens before any other startup work | It must sit between `restart.recycle` and `CleanupLeftovers`, or a survivor blocks all execution |
 | The scheduler refuses the session kind | Nothing is keyed by session kind; the testable property is the reserved folder |
+
+## 14. Owner-required dialogs (2026-11-03, D059)
+
+E3/E4 must provide Russian host-rendered UI with these distinct states:
+provider picker; explicit host-root warning and Confirm/Cancel before creation;
+start notice naming the provider; visible elevated prefix on each answer;
+status with stop/log controls; successful close with ordinary routing restored;
+stale confirmation; Docker unavailable; runtime lost; teardown failed (do not
+claim closure or resume ordinary routing while elevated execution is unproven).
+The warning states that files, processes and other containers can be changed,
+that external content can influence the agent, and that the journal records
+host Docker exec calls rather than every command the agent executes.

@@ -2091,3 +2091,28 @@ workspaces), a seeded owner `ATTACHMENTS.md`, the owner `CLAUDE.md` template and
 **Consequences.** A group or non-owner agent that tries to attach now produces a visible refusal in its own chat
 instead of a text-only send. An image request that omits `as` and `presentation` becomes a photo hint (previously a
 document). Spec: [agent attachments](superpowers/specs/2026-11-02-agent-attachments.md).
+
+## D059 — Elevated role boundary and explicit host-authority dialogs
+
+**Status:** accepted 2026-11-03 (owner decision, CP-038 E1).
+
+**Decision.** Reject a container role mismatch whenever either the recorded or
+requested role is `elevated_host`, including stopped containers. Preserve D044's
+foreground/task recycling, folder-slot and execution-proof checks. Elevated
+reuse additionally requires the requested configuration digest and immutable
+image to match inspection; drift or death never silently recreates a session.
+Ordinary builder output, policy revision and existing profile fingerprints stay
+unchanged. Namespace defaults normalize bridge/default network and private IPC
+to their empty create forms; every other namespace value is pinned.
+
+The owner also requires dialogs and warnings: provider selection precedes an
+explicit confirmation warning that the session has host-root authority and can
+change files, processes and containers. Start, every elevated reply and teardown
+carry host-rendered markers. Cancellation, stale confirmation, unavailable
+Docker, lost runtime and failed teardown have distinct actionable messages.
+No claim of sandboxing or complete agent-command auditing is made. These UI
+requirements are implemented with E3/E4; E1 alone activates no runtime.
+
+**Consequences.** The original CP-038 wording forbidding every role transition is
+narrowed to the elevated boundary; ordinary scheduled work remains compatible.
+Host deployment/activation and provider credential derivation remain separate.
