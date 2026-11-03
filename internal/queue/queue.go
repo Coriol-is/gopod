@@ -33,13 +33,15 @@ import (
 // Item is one enqueued message waiting for an agent turn.
 type Item struct {
 	// Durability fields. Zero when the queue has no TurnStore.
-	ID               int64  // turns.id
-	Source           string // "telegram" | "task"
-	SourceID         string // "<tg_chat_id>:<tg_message_id>" | "<task_id>:<next_run>"
-	Resumed          bool   // set by Recover: this turn was running/interrupted when gopod died
-	Attempts         int    // from the row, for the crash-loop cap
-	PlaceholderMsgID int    // streaming placeholder recorded by a previous attempt
-	ReplyMsgID       int    // final reply recorded by a previous attempt
+	ID       int64  // turns.id
+	Source   string // "telegram" | "task"
+	SourceID string // "<tg_chat_id>:<tg_message_id>" | "<task_id>:<next_run>"
+	// RecoveryHold keeps unfinished work visible but forbids native execution.
+	RecoveryHold     string
+	Resumed          bool // set by Recover: this turn was running/interrupted when gopod died
+	Attempts         int  // from the row, for the crash-loop cap
+	PlaceholderMsgID int  // streaming placeholder recorded by a previous attempt
+	ReplyMsgID       int  // final reply recorded by a previous attempt
 
 	ChatID    int64  // Telegram chat ID (for the reply callback), 0 for tasks
 	MessageID int    // Telegram message ID (for reply threading + reactions)
@@ -152,7 +154,8 @@ type chatState struct {
 	active           bool
 	retries          int
 	resumeAfterDrain bool
-	held             int // capacity holds blocking this folder (managed.go)
+	ordinaryHold     string // boot/publication reconciliation; no native capacity
+	held             int    // ordinary reconciliation plus managed capacity holds
 }
 
 // DefaultMaxConcurrent is the default global cap on simultaneous
@@ -322,6 +325,13 @@ func (q *Queue) Recover(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("%w: %v", ErrHoldsUnknown, err)
 	}
+	// Install all result holds before starting any worker, including older rows
+	// in the same folder. This prevents fresh ingress from overtaking a freeze.
+	for _, it := range items {
+		if !it.Managed() && it.RecoveryHold != "" {
+			q.holdOrdinary(it.Folder, it.RecoveryHold, nil)
+		}
+	}
 	n := 0
 	for _, it := range items {
 		if it.Managed() {
@@ -332,6 +342,10 @@ func (q *Queue) Recover(ctx context.Context) (int, error) {
 					q.forget(it.ID)
 				}
 			}
+			continue
+		}
+		if it.RecoveryHold != "" {
+			q.schedule(it) // retained in Pending and durable idle diagnostics
 			continue
 		}
 		if it.Attempts >= MaxAttempts {
@@ -441,6 +455,11 @@ func (q *Queue) worker(ctx context.Context, folder string) {
 				return
 			}
 			if err := q.awaitBatchStart(runCtx, items); err != nil {
+				var hold interface{ HoldBatch() bool }
+				if errors.As(err, &hold) && hold.HoldBatch() {
+					q.holdOrdinary(folder, "batch requires result/terminal reconciliation", items)
+				}
+
 				// No handler ran for this attempt. Keep durable rows as-is;
 				// pending input is recoverable and started input follows the
 				// existing execution-unknown reconciliation at startup.
@@ -545,6 +564,10 @@ func (q *Queue) awaitBatchStart(ctx context.Context, items []Item) error {
 		if err := q.startBatch(ctx, items); err == nil {
 			return nil
 		} else {
+			var hold interface{ HoldBatch() bool }
+			if errors.As(err, &hold) && hold.HoldBatch() {
+				return err
+			}
 			q.log.Warn("queue: waiting for durable batch start", slog.String("folder", items[0].Folder), slog.Any("err", err))
 		}
 		timer := time.NewTimer(q.BackoffFunc(retry))

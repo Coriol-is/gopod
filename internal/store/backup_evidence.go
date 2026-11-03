@@ -59,7 +59,7 @@ func hasTable(ctx context.Context, db *sql.DB, name string) (bool, error) {
 // store keeps interrupted rows until the next start reconciles them. Counts
 // only; no message or task content is read.
 type WorkEvidence struct {
-	TurnsPending         int64 `json:"turns_pending"`
+	TurnsPending         int64 `json:"turns_pending"` // pending or interrupted; includes held frozen work
 	TurnsRunning         int64 `json:"turns_running"`
 	OutboxPartsInFlight  int64 `json:"outbox_parts_in_flight"` // pending, sending or uncertain
 	DeliveriesUnresolved int64 `json:"deliveries_unresolved"`
@@ -85,7 +85,7 @@ func ReadWorkEvidence(ctx context.Context, path string) (WorkEvidence, error) {
 		query string
 		dst   *int64
 	}{
-		{"turns", `SELECT count(*) FROM turns WHERE status='pending'`, &e.TurnsPending},
+		{"turns", `SELECT count(*) FROM turns WHERE status IN ('pending','interrupted')`, &e.TurnsPending},
 		{"turns", `SELECT count(*) FROM turns WHERE status='running'`, &e.TurnsRunning},
 		{"outbox_parts", `SELECT count(*) FROM outbox_parts WHERE state IN ('pending','sending','uncertain')`, &e.OutboxPartsInFlight},
 		{"delivery_groups", `SELECT count(*) FROM delivery_groups WHERE unresolved=1`, &e.DeliveriesUnresolved},

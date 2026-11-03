@@ -823,7 +823,7 @@ func run() error {
 				// Serving beside a possibly running task attempt is unsafe.
 				return fmt.Errorf("queue recovery: %w", err)
 			} else if err != nil {
-				logger.Error("queue: recover unfinished turns", slog.Any("err", err))
+				return fmt.Errorf("queue recovery classification: %w", err)
 			} else if n > 0 {
 				logger.Info("queue: recovered unfinished turns", slog.Int("count", n))
 			}
@@ -1185,15 +1185,20 @@ func (a turnStoreAdapter) LoadUnfinished(ctx context.Context) ([]queue.Item, err
 	}
 	out := make([]queue.Item, 0, len(turns))
 	for _, t := range turns {
-		if t.AttemptID == "" && t.Attempts > 0 {
-			status, why := store.TurnFailed, "execution_unknown: controller restarted after dispatch; automatic replay refused"
-			if t.ReplyMsgID != 0 {
-				status, why = store.TurnDone, ""
-			}
-			if err := a.st.MarkTurnFinished(ctx, t.ID, status, why); err != nil {
+		if t.AttemptID == "" {
+			plan, err := a.st.RecoverOrdinaryTurn(ctx, t.ID)
+			if err != nil {
 				return nil, err
 			}
-			continue
+			switch plan.Action {
+			case store.OrdinaryFrozen:
+				it := turnToItem(t)
+				it.RecoveryHold = "frozen result awaiting immutable publication: " + plan.ResultID
+				out = append(out, it)
+				continue
+			case store.OrdinaryPublished, store.OrdinarySettled:
+				continue
+			}
 		}
 		out = append(out, turnToItem(t))
 	}
