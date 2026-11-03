@@ -3,11 +3,15 @@ package runner
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
+	"strings"
 	"sync"
 	"time"
 )
+
+var ErrElevatedAlreadyAuthenticated = errors.New("ROOT: профиль уже авторизован")
 
 type elevatedLoginEngine interface {
 	ExecElevatedLogin(context.Context, string, []string, io.ReadCloser, io.Writer) (*ExecResult, error)
@@ -71,6 +75,34 @@ func (e *Elevated) BeginLogin(ctx context.Context) (*ElevatedLogin, error) {
 	if x.session.Provider == "codex" {
 		provider = NewCodexProvider(x.cfg.Image)
 	}
+	// Native login may delete existing credentials before showing its prompt.
+	// Check under the same lease; never launch login over a valid profile.
+	authCtx, endAuth := context.WithTimeout(x.ctx, 15*time.Second)
+	auth, authErr := runElevatedJournaled(authCtx, e.st, x.session.ID, provider.AuthStatusCmd(), func() (*ExecResult, error) {
+		return e.engine.ExecElevated(authCtx, x.id, provider.AuthStatusCmd())
+	})
+	endAuth()
+	var preflightErr error
+	if auth == nil {
+		e.mu.Lock()
+		e.blocked = true
+		e.mu.Unlock()
+		preflightErr = ErrExecutionUnproven
+	} else if authErr != nil || x.ctx.Err() != nil {
+		preflightErr = errors.New("ROOT: проверка авторизации не завершена")
+	} else {
+		status, parseErr := parseElevatedLoginPreflight(provider, auth)
+		if parseErr != nil {
+			preflightErr = errors.New("ROOT: статус авторизации не распознан")
+		} else if status.LoggedIn {
+			preflightErr = ErrElevatedAlreadyAuthenticated
+		}
+	}
+	if preflightErr != nil {
+		x.finish()
+		cancel()
+		return nil, preflightErr
+	}
 	input, inputWriter := io.Pipe()
 	output, outputWriter := io.Pipe()
 	l := &ElevatedLogin{ctx: x.ctx, Provider: provider, reader: bufio.NewScanner(output), output: output, input: inputWriter, cancel: cancel, done: make(chan struct{}), manager: e, generation: x.session.ID}
@@ -115,4 +147,31 @@ func (e *Elevated) BeginLogin(ctx context.Context) (*ElevatedLogin, error) {
 		l.verified = parseErr == nil && status.LoggedIn
 	}()
 	return l, nil
+}
+
+// Only explicit native states authorize a potentially destructive login.
+func parseElevatedLoginPreflight(provider AgentProvider, result *ExecResult) (AuthStatus, error) {
+	if result.ExitCode != 0 && result.ExitCode != 1 {
+		return AuthStatus{}, errors.New("unexpected auth status exit")
+	}
+	text := strings.TrimSpace(result.Stdout + result.Stderr)
+	if provider.Name() == "codex" {
+		switch strings.ToLower(text) {
+		case "not logged in", "logged in using chatgpt", "logged in using api key":
+			return provider.ParseAuthStatus(text)
+		}
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(text), &fields); err != nil {
+		return AuthStatus{}, err
+	}
+	raw, ok := fields["loggedIn"]
+	if !ok || (string(raw) != "true" && string(raw) != "false") {
+		return AuthStatus{}, errors.New("missing explicit auth state")
+	}
+	var status AuthStatus
+	if err := json.Unmarshal([]byte(text), &status); err != nil {
+		return AuthStatus{}, err
+	}
+	return status, nil
 }

@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"errors"
 	"github.com/Coriol-is/gopod/internal/control"
 	"github.com/Coriol-is/gopod/internal/runner"
 	"github.com/go-telegram/bot/models"
@@ -29,6 +30,9 @@ func (b *Bot) LoginElevated(ctx context.Context, cmd control.Command) (control.R
 	handle, err := backend.BeginLogin(context.WithoutCancel(ctx))
 	if err != nil {
 		b.logins.release(c.ChatID)
+		if errors.Is(err, runner.ErrElevatedAlreadyAuthenticated) {
+			return control.Response{Text: "⚠️ ROOT: отдельный профиль уже авторизован. Повторный вход не запущен, текущая авторизация сохранена. Можно отправлять запросы."}, nil
+		}
 		return control.Response{Code: 1, Text: "ROOT: вход не запущен. Сессия должна быть запущена и свободна; /root status."}, nil
 	}
 	m := &models.Message{ID: c.MessageID, Chat: models.Chat{ID: c.ChatID, Type: models.ChatTypePrivate}, From: &models.User{ID: c.UserID}}
