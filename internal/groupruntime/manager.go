@@ -304,7 +304,7 @@ func (m *Manager) Start(ctx context.Context, c store.RegisteredChat, base runner
 	relayHost.ExtraHosts = []string{"host.docker.internal:host-gateway"}
 	relayHost.Mounts = []mount.Mount{{Type: mount.TypeBind, Source: relayFile, Target: "/etc/gopod-group/relay.json", ReadOnly: true}}
 	stage = "relay"
-	relayID, err := m.create(ctx, "gopod-relay-"+leaseID, &container.Config{Image: relayImage.ID, User: m.user(), Entrypoint: []string{"/usr/local/bin/gopod-group-relay"}, Labels: labels, Env: []string{"PATH=/usr/local/bin:/usr/bin:/bin"}}, relayHost, nil)
+	relayID, err := m.create(ctx, "gopod-relay-"+leaseID, &container.Config{Image: relayImage.ID, User: m.user(), Entrypoint: []string{"/usr/local/bin/gopod-group-relay"}, Healthcheck: &container.HealthConfig{Test: []string{"CMD", "/usr/local/bin/gopod-group-relay", "healthcheck"}, Interval: 30 * time.Second, Timeout: 3 * time.Second, StartPeriod: 10 * time.Second, Retries: 3}, Labels: labels, Env: []string{"PATH=/usr/local/bin:/usr/bin:/bin"}}, relayHost, nil)
 	if err != nil {
 		return "", nil, release, ErrUnavailable
 	}

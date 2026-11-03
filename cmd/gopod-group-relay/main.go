@@ -19,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Coriol-is/gopod/internal/control"
 	"github.com/Coriol-is/gopod/internal/isolationproxy"
 )
 
@@ -28,6 +29,12 @@ type relayConfig struct {
 }
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "healthcheck" {
+		if control.CheckHealth(context.Background(), "127.0.0.1:8787") != nil {
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(); err != nil {
 		_, _ = os.Stderr.WriteString("group relay unavailable\n")
 		os.Exit(1)
@@ -81,7 +88,7 @@ func run() error {
 		}
 		proxy.ServeHTTP(w, r)
 	}), observeEvent)
-	srv := &http.Server{Addr: ":8787", Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16384, ErrorLog: log.New(io.Discard, "", 0)}
+	srv := &http.Server{Addr: ":8787", Handler: relayHealth(handler), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16384, ErrorLog: log.New(io.Discard, "", 0)}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 	go func() {

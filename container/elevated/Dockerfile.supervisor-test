@@ -3,3 +3,7 @@ FROM node@sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3b14d159fdb5c7279d
 COPY container/elevated/exec.cjs /usr/local/lib/gopod-elevated-exec.cjs
 USER node
 CMD ["sleep", "infinity"]
+
+# Read-only local prerequisites; does not probe auth or run inference.
+COPY --chmod=0555 container/healthcheck.sh /usr/local/bin/gopod-runtime-healthcheck
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 CMD ["/bin/sh", "/usr/local/bin/gopod-runtime-healthcheck", "supervisor", "/tmp"]

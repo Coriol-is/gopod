@@ -79,3 +79,7 @@ WORKDIR /workspace/chat
 # PID 1 process alive so `docker exec` has somewhere to run. `sleep
 # infinity` is the shortest, clearest way to say that.
 CMD ["sleep", "infinity"]
+
+# Read-only local prerequisites; does not probe auth or run inference.
+COPY --chmod=0555 container/healthcheck.sh /usr/local/bin/gopod-runtime-healthcheck
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 CMD ["/bin/sh", "/usr/local/bin/gopod-runtime-healthcheck", "claude", "/workspace/chat"]
