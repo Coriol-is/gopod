@@ -245,15 +245,9 @@ func RegisterModelCommand(r *Router, currentFn func(chatFolder string) string, s
 				if cur == "" {
 					cur = "default"
 				}
-				var choices []string
-				if choicesFn != nil {
-					// A copy: the "default" appended below must not
-					// write into the caller's slice.
-					choices = append(choices, choicesFn(folder)...)
-				}
 				return Response{
 					Text:    "Current model: " + cur + "\n\nUsage: /model <name> | /model default\nClaude aliases: fable, opus, sonnet, haiku (or a full model id)\nCodex: any model id the account can use (e.g. gpt-5)\nApplies from the next message; unknown names fail on the next turn.",
-					Buttons: pickerButtons("model", append(choices, "default"), cur),
+					Buttons: modelPickerButtons(folder, cur, choicesFn),
 				}, nil
 			}
 			model := cmd.Args[0]
@@ -264,8 +258,21 @@ func RegisterModelCommand(r *Router, currentFn func(chatFolder string) string, s
 			if err != nil {
 				return Response{Text: err.Error(), Code: 1}, nil
 			}
-			return Response{Text: result}, nil
+			cur := currentFn(folder)
+			if cur == "" {
+				cur = "default"
+			}
+			return Response{Text: result, Buttons: modelPickerButtons(folder, cur, choicesFn)}, nil
 		})
+}
+
+func modelPickerButtons(folder, current string, choicesFn func(string) []string) [][]Button {
+	var choices []string
+	if choicesFn != nil {
+		// Copy before appending: the catalog may share its backing array.
+		choices = append(choices, choicesFn(folder)...)
+	}
+	return pickerButtons("model", append(choices, "default"), current)
 }
 
 func versionHandler(_ context.Context, _ Command) (Response, error) {

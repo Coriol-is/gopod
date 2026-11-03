@@ -48,9 +48,13 @@ func RegisterSilentCommand(r *Router, currentFn func(chatFolder string) bool, se
 			if err := setFn(folder, on); err != nil {
 				return Response{Text: err.Error(), Code: 1}, nil
 			}
+			cur := "off"
 			if on {
-				return Response{Text: "Silent mode on. Applies from the next message."}, nil
+				cur = "on"
 			}
-			return Response{Text: "Silent mode off. Applies from the next message."}, nil
+			return Response{
+				Text:    "Silent mode " + cur + ". Applies from the next message.",
+				Buttons: pickerButtons("silent", []string{"on", "off"}, cur),
+			}, nil
 		})
 }
