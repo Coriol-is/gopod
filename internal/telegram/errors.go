@@ -32,6 +32,7 @@ const (
 	errUsageLimit                      // provider allowance exhausted
 	errDelivery                        // the reply could not be delivered
 	errGroupUnavailable                // a group's agent runtime refused the turn (D047)
+	errResultCommit                    // execution completed; no native retry
 	errGroupOwnerNotice                // private owner notice about such a refusal
 )
 
@@ -49,6 +50,8 @@ func (k errKind) String() string {
 		return "delivery"
 	case errGroupUnavailable:
 		return "group_unavailable"
+	case errResultCommit:
+		return "result_commit"
 	case errGroupOwnerNotice:
 		return "group_owner_notice"
 	}
@@ -93,16 +96,20 @@ type errReply struct {
 }
 
 var errReplies = map[errKind]errReply{
-	errAuthExpired: {text: errTextAuthExpired, login: true},
-	errNotLoggedIn: {text: errTextNotLoggedIn, login: true},
-	errUsageLimit:  {text: errTextUsageLimit, retry: true},
-	errAgentFailed: {text: errTextAgentFailed, retry: true},
-	errBusy:        {text: errTextBusy, retry: true},
-	errDelivery:    {text: errTextDelivery, retry: true},
+	errResultCommit: {text: errTextResultCommit},
+	errAuthExpired:  {text: errTextAuthExpired, login: true},
+	errNotLoggedIn:  {text: errTextNotLoggedIn, login: true},
+	errUsageLimit:   {text: errTextUsageLimit, retry: true},
+	errAgentFailed:  {text: errTextAgentFailed, retry: true},
+	errBusy:         {text: errTextBusy, retry: true},
+	errDelivery:     {text: errTextDelivery, retry: true},
 }
 
 // classifyErr maps a failed run's error to what the user is told.
 func classifyErr(err error) errKind {
+	if noReplayError(err) {
+		return errResultCommit
+	}
 	switch {
 	case errors.Is(err, runner.ErrUsageLimit):
 		return errUsageLimit

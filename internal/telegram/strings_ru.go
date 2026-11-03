@@ -52,12 +52,13 @@ const (
 // Error replies (errors.go): what happened and what to do next. Never
 // the error text itself: no stderr, paths or tokens reach the chat.
 const (
-	errTextAuthExpired = "Сессия агента истекла. Нажмите «Войти» или отправьте /login."
-	errTextNotLoggedIn = "Агент не авторизован. Нажмите «Войти» или отправьте /login."
-	errTextUsageLimit  = "Достигнут лимит использования AI-провайдера. Дождитесь сброса лимита и повторите запрос."
-	errTextAgentFailed = "Агент не смог ответить: запуск завершился ошибкой. Можно повторить запрос."
-	errTextBusy        = "Агент сейчас занят. Повторите запрос чуть позже."
-	errTextDelivery    = "Не удалось доставить ответ. Можно повторить запрос."
+	errTextAuthExpired  = "Сессия агента истекла. Нажмите «Войти» или отправьте /login."
+	errTextNotLoggedIn  = "Агент не авторизован. Нажмите «Войти» или отправьте /login."
+	errTextUsageLimit   = "Достигнут лимит использования AI-провайдера. Дождитесь сброса лимита и повторите запрос."
+	errTextResultCommit = "Выполнение завершилось, но сохранить результат не удалось. Автоматически повторять запрос не буду."
+	errTextAgentFailed  = "Агент не смог ответить: запуск завершился ошибкой. Можно повторить запрос."
+	errTextBusy         = "Агент сейчас занят. Повторите запрос чуть позже."
+	errTextDelivery     = "Не удалось доставить ответ. Можно повторить запрос."
 	// Shown in groups when the agent runtime refuses a turn; it names no cause.
 	errTextGroupUnavailable = "Агент в этом чате сейчас недоступен."
 	// groupLoginNeutral is all a group learns about sign-in: no provider,

@@ -296,8 +296,7 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 		}
 	}
 	if draftID == 0 && placeholder == 0 && !startPlaceholder() {
-		b.drainAndSend(ctx, item, stream)
-		return nil
+		return b.drainAndSend(ctx, item, stream)
 	}
 
 	tick := b.streamTick
@@ -344,6 +343,7 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 
 	// addChunk applies one answer chunk. Returns false when the turn
 	// had to be finished by drainAndSend.
+	var drainErr error
 	addChunk := func(chunk string) bool {
 		status.Set(stThinking)
 		full.WriteString(chunk)
@@ -370,7 +370,7 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 		b.editMessage(ctx, item.ChatID, placeholder, accumulated.String())
 		placeholder = b.sendPlaceholder(ctx, item.ChatID, item.ThreadID, 0, kb)
 		if placeholder == 0 {
-			b.drainAndSend(ctx, item, stream)
+			drainErr = b.drainAndSend(ctx, item, stream)
 			return false
 		}
 		b.recordPlaceholder(ctx, item, placeholder)
@@ -404,7 +404,7 @@ loop:
 				break loop // channel closed, agent exited
 			}
 			if !addChunk(chunk) {
-				return nil
+				return drainErr
 			}
 
 		case ev, ok := <-progress:
@@ -422,7 +422,7 @@ loop:
 						break drain // seen again by the outer select
 					}
 					if !addChunk(chunk) {
-						return nil
+						return drainErr
 					}
 				default:
 					break drain
@@ -484,8 +484,7 @@ loop:
 				// placeholder and ends in one reply to main).
 				draftID = useDraft(0)
 				if !startPlaceholder() {
-					b.drainAndSend(ctx, item, stream)
-					return nil
+					return b.drainAndSend(ctx, item, stream)
 				}
 			}
 			// Edit path: a changed view goes out on the tick; a change
@@ -514,7 +513,7 @@ loop:
 			return stopped()
 
 		case <-ctx.Done():
-			return nil
+			return b.discardCancelledStream(item, stream)(nil)
 		}
 	}
 
@@ -533,6 +532,10 @@ loop:
 	case <-stop:
 		return stopped()
 	}
+	if noReplayError(res.Err) {
+		b.handleStreamError(ctx, item, res.Err)
+		return res.Err
+	}
 	select {
 	case <-stop:
 		return stopped()
@@ -544,6 +547,9 @@ loop:
 			b.editMessage(ctx, item.ChatID, placeholder, "")
 		}
 		b.handleStreamError(ctx, item, res.Err)
+		if noReplayError(res.Err) {
+			return res.Err
+		}
 		return nil
 	}
 
@@ -775,11 +781,9 @@ const stoppedEmpty = "(stopped)"
 // as a real message and memoized as the turn's reply. The agent's
 // remaining output is drained in the background and discarded, so the
 // runner's goroutine never blocks on a reader that has gone.
-func (b *Bot) finishStopped(ctx context.Context, item queue.Item, stream *runner.AgentStream, partial string) error {
-	go func() {
-		drainStream(stream)
-		<-stream.Result
-	}()
+func (b *Bot) finishStopped(ctx context.Context, item queue.Item, stream *runner.AgentStream, partial string) (err error) {
+	settle := b.discardCancelledStream(item, stream)
+	defer func() { err = settle(err) }()
 
 	text := strings.TrimSpace(partial)
 	if text == "" {
@@ -799,11 +803,9 @@ func (b *Bot) finishStopped(ctx context.Context, item queue.Item, stream *runner
 // placeholder and the whole stopped text goes out as a new message.
 // Like finishStopped it drains the agent's remaining output in the
 // background and returns queue.ErrStopped.
-func (b *Bot) finishStoppedEdit(ctx context.Context, item queue.Item, stream *runner.AgentStream, placeholder int, partial string, overflow bool, tail string) error {
-	go func() {
-		drainStream(stream)
-		<-stream.Result
-	}()
+func (b *Bot) finishStoppedEdit(ctx context.Context, item queue.Item, stream *runner.AgentStream, placeholder int, partial string, overflow bool, tail string) (err error) {
+	settle := b.discardCancelledStream(item, stream)
+	defer func() { err = settle(err) }()
 
 	text := strings.TrimSpace(partial)
 	if text == "" {
@@ -843,12 +845,15 @@ func (b *Bot) handleStreamError(ctx context.Context, item queue.Item, err error)
 // drainAndSend is the fallback path: drain a streaming AgentStream
 // into a buffer and send the result as a single formatted message.
 // Used when the placeholder can't be sent.
-func (b *Bot) drainAndSend(ctx context.Context, item queue.Item, stream *runner.AgentStream) {
+func (b *Bot) drainAndSend(ctx context.Context, item queue.Item, stream *runner.AgentStream) error {
 	drainStream(stream)
 	res := <-stream.Result
 	if res.Err != nil {
 		b.handleStreamError(ctx, item, res.Err)
-		return
+		if noReplayError(res.Err) {
+			return res.Err
+		}
+		return nil
 	}
 	text := res.FullText
 	if text == "" {
@@ -860,6 +865,7 @@ func (b *Bot) drainAndSend(ctx context.Context, item queue.Item, stream *runner.
 	b.recordReply(ctx, item, sent, text)
 	b.noteReply(ctx, item, sent, text)
 	b.maybeVoiceReply(ctx, item, text)
+	return nil
 }
 
 // drainStream discards a stream's remaining chunks and progress steps

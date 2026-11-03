@@ -473,6 +473,10 @@ func (b *Bot) runAgentSyncContext(ctx, runCtx context.Context, item queue.Item) 
 		}
 	}
 	reply, err := run(runCtx, item.Folder, item.ThreadID, tier, prompt)
+	if noReplayError(err) {
+		b.replyError(ctx, item, err)
+		return err
+	}
 	if handled, stopErr := b.streamNotStarted(ctx, runCtx, item); handled {
 		return stopErr
 	}
@@ -592,6 +596,9 @@ func (b *Bot) NewAgentHandler() queue.Handler {
 			runErr = b.runAgentStreaming(ctx, item)
 		} else {
 			runErr = b.runAgentSync(ctx, item)
+		}
+		if noReplayError(runErr) {
+			return runErr
 		}
 		if err := ctx.Err(); err != nil {
 			// Shutdown cut the run short: report it so the queue marks

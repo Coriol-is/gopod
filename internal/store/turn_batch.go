@@ -23,7 +23,8 @@ type TurnStart struct {
 
 // StartTurnBatch atomically stamps a non-managed batch and returns its committed
 // attempt numbers in input order. Any rejected member rolls back the whole batch.
-// Eligibility/result-publication reconciliation is separate from this stamp.
+// Terminal, acknowledged and result-bearing turns are fenced in the transaction.
+// Reconciliation is separate; a rejected mixed batch is never partially started.
 // This does not freeze or publish a result, or grant permission to replay an
 // interrupted native execution. Startup reconciliation remains the caller's job.
 func (s *Store) StartTurnBatch(ctx context.Context, batch []TurnStart) ([]int, error) {
@@ -39,11 +40,12 @@ func (s *Store) StartTurnBatch(ctx context.Context, batch []TurnStart) ([]int, e
 				return ErrTurnBatchConflict
 			}
 			seen[it.ID] = true
-			var folder, source string
-			var thread, previous, managed int
-			err := q.QueryRowContext(ctx, `SELECT chat_folder,thread_id,source,attempts,
+			var folder, source, status string
+			var thread, previous, managed, reply, frozen int
+			err := q.QueryRowContext(ctx, `SELECT chat_folder,thread_id,source,attempts,status,reply_msg_id,
+    EXISTS(SELECT 1 FROM turn_result_members m WHERE m.turn_id=turns.id),
     EXISTS(SELECT 1 FROM task_attempts a WHERE a.turn_id=turns.id) FROM turns WHERE id=?`, it.ID).
-				Scan(&folder, &thread, &source, &previous, &managed)
+				Scan(&folder, &thread, &source, &previous, &status, &reply, &frozen, &managed)
 			if errors.Is(err, sql.ErrNoRows) {
 				return ErrTurnNotFound
 			}
@@ -52,6 +54,10 @@ func (s *Store) StartTurnBatch(ctx context.Context, batch []TurnStart) ([]int, e
 			}
 			if folder != it.Folder || thread != it.ThreadID || source != it.Source || previous != it.Attempts || managed != 0 {
 				return ErrTurnBatchConflict
+			}
+			neverStartedInterrupted := status == TurnInterrupted && previous == 0
+			if (status != TurnPending && status != TurnRunning && !neverStartedInterrupted) || reply != 0 || frozen != 0 {
+				return &TurnBatchIneligibleError{TurnID: it.ID}
 			}
 			if _, err := q.ExecContext(ctx, `UPDATE turns SET status='running',attempts=attempts+1,started_at=? WHERE id=?`, started, it.ID); err != nil {
 				return err
