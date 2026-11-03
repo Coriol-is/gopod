@@ -42,3 +42,7 @@ COPY --from=build /gopod-group-catalog /usr/local/bin/gopod-group-catalog
 WORKDIR /app
 
 ENTRYPOINT ["gopod"]
+
+# Local readiness only; no provider/auth requests and no database writes.
+ENV GOPOD_HEALTH_ADDR=127.0.0.1:9878
+HEALTHCHECK --interval=30s --timeout=3s --start-period=120s --retries=3 CMD ["gopod", "healthcheck"]

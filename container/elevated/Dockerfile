@@ -35,3 +35,7 @@ RUN mkdir -p /workspace/session /home/node/.claude /home/node/.codex
 USER 0:0
 WORKDIR /workspace/session
 CMD ["sleep", "infinity"]
+
+# Read-only local prerequisites; does not probe auth or run inference.
+COPY --chmod=0555 container/healthcheck.sh /usr/local/bin/gopod-runtime-healthcheck
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 CMD ["/bin/sh", "/usr/local/bin/gopod-runtime-healthcheck", "claude", "/workspace/session"]
