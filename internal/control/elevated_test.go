@@ -61,3 +61,19 @@ func TestRootCancelNeverClaimsActiveSessionWasNotCreated(t *testing.T) {
 		t.Fatal(resp, err)
 	}
 }
+
+func (p *rootProbe) Generation() string {
+	if p.active {
+		return "live-generation"
+	}
+	return ""
+}
+func TestRootStaleCloseButtonCannotCloseNewGeneration(t *testing.T) {
+	r := New(nil)
+	p := &rootProbe{active: true}
+	RegisterElevated(r, 123, p)
+	resp, err := r.Dispatch(t.Context(), Command{Name: "root", Args: []string{"stop", "old-generation"}, Caller: Caller{IsOwner: true, Source: SourceTelegram, ChatKind: "private", ChatID: 123, UserID: 123, MessageID: 12}})
+	if err != nil || !p.active || !strings.Contains(resp.Text, "завершённой") {
+		t.Fatal(resp, err)
+	}
+}

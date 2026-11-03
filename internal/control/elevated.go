@@ -11,6 +11,7 @@ import (
 
 type ElevatedSession interface {
 	Active() bool
+	Generation() string
 	Status() string
 	Start(context.Context, string) (string, error)
 	Close(context.Context, string) error
@@ -32,7 +33,7 @@ func RegisterElevated(r *Router, owner int64, e ElevatedSession) {
 		if len(cmd.Args) > 2 {
 			return Response{Code: 1, Text: "Используйте /root, /root status, /root log или /root stop."}, nil
 		}
-		controls := [][]Button{{{Label: "Статус", Command: "root", Args: []string{"status"}}, {Label: "Журнал", Command: "root", Args: []string{"log"}}, {Label: "Закрыть ROOT", Command: "root", Args: []string{"stop"}, Style: StyleDanger}}}
+		controls := rootControls(e)
 		switch action {
 		case "":
 			if e.Active() {
@@ -65,7 +66,19 @@ func RegisterElevated(r *Router, owner int64, e ElevatedSession) {
 			pending = ""
 			confirmMu.Unlock()
 			return Response{Text: "Запуск ROOT отменён. Новая сессия не создана."}, nil
+		case "interrupt":
+			if len(cmd.Args) == 2 && cmd.Args[1] != e.Generation() {
+				return Response{Text: "⚠️ ROOT: кнопка относится к завершённой сессии."}, nil
+			}
+			text := "⚠️ ROOT: активного ответа нет."
+			if e.StopAnswer() {
+				text = "⚠️ ROOT: остановка ответа запрошена; ожидаю подтверждения. Сессия сохраняется."
+			}
+			return Response{Text: text, Buttons: controls}, nil
 		case "stop":
+			if len(cmd.Args) == 2 && cmd.Args[1] != e.Generation() {
+				return Response{Text: "⚠️ ROOT: кнопка закрытия относится к завершённой сессии. Используйте /root status."}, nil
+			}
 			confirmMu.Lock()
 			pending = ""
 			confirmMu.Unlock()
@@ -103,9 +116,14 @@ func RegisterElevated(r *Router, owner int64, e ElevatedSession) {
 			if err != nil {
 				return Response{Code: 1, Text: "⚠️ " + err.Error()}, nil
 			}
-			return Response{Text: text, Buttons: controls}, nil
+			return Response{Text: text, Buttons: rootControls(e)}, nil
 		default:
 			return Response{Code: 1, Text: "Неизвестное действие. Используйте /root."}, nil
 		}
 	})
+}
+
+func rootControls(e ElevatedSession) [][]Button {
+	generation := e.Generation()
+	return [][]Button{{{Label: "Статус", Command: "root", Args: []string{"status"}}, {Label: "Журнал", Command: "root", Args: []string{"log"}}}, {{Label: "Остановить ответ", Command: "root", Args: []string{"interrupt", generation}}, {Label: "Закрыть ROOT", Command: "root", Args: []string{"stop", generation}, Style: StyleDanger}}}
 }

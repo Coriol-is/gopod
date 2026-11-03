@@ -472,3 +472,5 @@ func (e *Elevated) ForceDrain(ctx context.Context) error {
 
 // SetAdmission wires the shared host resource gate before serving requests.
 func (e *Elevated) SetAdmission(r *Runner) { e.admission = r }
+
+func (e *Elevated) Generation() string { e.mu.Lock(); defer e.mu.Unlock(); return e.session.ID }
