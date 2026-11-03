@@ -85,3 +85,14 @@ A pre-existing managed queue stress failure was reproduced independently on main
 -count=100` failed three iterations with only 8–11 of 12 outcomes settled. The same
 test passed 20 repetitions on this branch; the combined full/race suites passed.
 This is a separate follow-up, not suppressed or rewritten by CP-016.
+
+Active ordinary interactive authentication is an additional explicit blocker:
+quiescence checks the login registry before closing lanes and again before success.
+Matching host-source sessions (including OAuth awaiting a code and main-fallback
+UI) block; unknown ownership/starting reservations conservatively hold the chat.
+Known sibling-topic sessions do not block the target. Device completion owns a
+separate lease through verification; cancellation preserves uncertainty. Ordinary
+interactive login has no durable native-exit journal here: closing an attachment,
+a removed login session or successful auth status is not destructive-operation
+exit proof. Qualifying that evidence remains part of the disabled command's
+native-login reconciliation gate, not an assertion made by this API.

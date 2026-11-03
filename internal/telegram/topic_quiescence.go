@@ -10,6 +10,8 @@ import (
 	"github.com/Coriol-is/gopod/internal/store"
 )
 
+var ErrTopicLoginActive = errors.New("topic login native execution requires reconciliation")
+
 var ErrTopicRestartReconciliation = errors.New("topic intent predates this process; remote outcome requires reconciliation")
 
 type topicFence struct {
@@ -97,11 +99,17 @@ func (b *Bot) QuiesceTopic(ctx context.Context, expected store.TopicDeletion) er
 	if !found || current.IntentID != expected.IntentID || current.State == "refused" || current.State == "retired" {
 		return store.ErrTopicDeletionState
 	}
+	key, err := topicTarget(current)
+	if err != nil {
+		return err
+	}
+	if b.topicLoginActive(key) {
+		return ErrTopicLoginActive
+	}
 	f, err := b.installTopicFence(current, false)
 	if err != nil {
 		return err
 	}
-	key, _ := topicTarget(current)
 	if err = b.topicIngress.Wait(ctx, current.Scope.JID, current.ThreadID); err != nil {
 		return err
 	}
@@ -134,6 +142,9 @@ func (b *Bot) QuiesceTopic(ctx context.Context, expected store.TopicDeletion) er
 	}
 	if err = b.store.TopicDeletionTransportIdle(ctx, current); err != nil {
 		return err
+	}
+	if b.topicLoginActive(key) {
+		return ErrTopicLoginActive
 	}
 	if f.restored {
 		return ErrTopicRestartReconciliation
@@ -225,4 +236,23 @@ func (b *Bot) TopicFenceSummary() []string {
 		out = append(out, fmt.Sprintf("thread %d: %s (restart_reconciliation=%t)", key.thread, f.intent.State, f.restored))
 	}
 	return out
+}
+
+// Ordinary interactive login is not covered by the runner's inference gate.
+// Never infer native exit from a closed attachment or an idle inference lane.
+func (b *Bot) topicLoginActive(key chatThread) bool {
+	if b.logins == nil {
+		return false
+	}
+	b.logins.mu.Lock()
+	defer b.logins.mu.Unlock()
+	if b.logins.starting[key.chat] {
+		return true
+	}
+	session := b.logins.sessions[key.chat]
+	if session == nil {
+		return false
+	}
+	origin := session.topicOrigin
+	return origin.chat == 0 || origin == key
 }

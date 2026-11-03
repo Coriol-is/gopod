@@ -151,3 +151,16 @@ func TestTopicCallbackMainFallbackRetainsHostSource(t *testing.T) {
 		t.Fatalf("fenced fallback %q %d", got, calls)
 	}
 }
+
+func TestTopicQuiescenceRefusesActiveInteractiveLogin(t *testing.T) {
+	b, d := topicFenceFixture(t, &fakeTelegram{})
+	b.logins = newLoginSessions()
+	b.logins.set(streamChat, &loginSession{chatID: streamChat, thread: 0, private: true, awaitsCode: true, topicOrigin: chatThread{streamChat, 7}})
+	if err := b.QuiesceTopic(t.Context(), d); !errors.Is(err, ErrTopicLoginActive) {
+		t.Fatalf("live OAuth native login ignored: %v", err)
+	}
+	b.logins.set(streamChat, &loginSession{chatID: streamChat, thread: 8, private: true, topicOrigin: chatThread{streamChat, 8}})
+	if err := b.QuiesceTopic(t.Context(), d); err != nil {
+		t.Fatalf("unrelated login blocked topic: %v", err)
+	}
+}
