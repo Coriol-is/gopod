@@ -28,12 +28,13 @@ type rootControl struct {
 	login   Handler
 }
 
-func RegisterElevated(r *Router, owner int64, e ElevatedSession, login ...Handler) {
+func RegisterElevated(r *Router, owner int64, e ElevatedSession, login ...Handler) func(Handler) {
 	handler := &rootControl{owner: owner, session: e}
 	if len(login) > 0 {
 		handler.login = login[0]
 	}
 	r.Register("root", "root", "(owner, private) host-root session", PermOwnerOnly, handler.dispatch)
+	return func(login Handler) { handler.mu.Lock(); defer handler.mu.Unlock(); handler.login = login }
 }
 
 func (r *rootControl) dispatch(ctx context.Context, cmd Command) (Response, error) {

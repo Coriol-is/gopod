@@ -465,11 +465,12 @@ func run() error {
 	}
 
 	control.RegisterTriggerCommand(router, st)
+	var bindElevatedLogin func(control.Handler)
 	if cfg.ElevatedEnabled {
 		if elevated == nil {
 			elevated = runner.NewElevated(st, nil, runner.Paths{}, runner.ElevatedSpawnConfig{}, cfg.ElevatedCodexImage)
 		}
-		control.RegisterElevated(router, cfg.OwnerChatID, elevated)
+		bindElevatedLogin = control.RegisterElevated(router, cfg.OwnerChatID, elevated)
 	}
 	if elevated != nil {
 		elevated.SetAdmission(agentRunner)
@@ -723,8 +724,8 @@ func run() error {
 		restart.notify = tgBot.SendRestartNotice
 		control.RegisterRestartLifecycle(router, restart.command)
 		control.RegisterStopCommand(router, tgBot.StopCurrentTurn)
-		if cfg.ElevatedEnabled {
-			control.RegisterElevated(router, cfg.OwnerChatID, elevated, tgBot.LoginElevated)
+		if bindElevatedLogin != nil {
+			bindElevatedLogin(tgBot.LoginElevated)
 		}
 		control.RegisterTelegramCommands(router, tgBot.TelegramSnapshot, tgBot.RefreshTelegramSnapshot, func(ctx context.Context, id int64) bool {
 			_, err := st.GetRegistered(ctx, fmt.Sprintf("tg:%d", id))

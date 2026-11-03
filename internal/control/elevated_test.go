@@ -106,3 +106,24 @@ func TestRootLoginRequiresOwnerActiveSessionAndCurrentGeneration(t *testing.T) {
 		t.Fatal("wrong actor accepted")
 	}
 }
+
+func TestRootLoginLateBindingDoesNotRegisterCommandTwice(t *testing.T) {
+	r := New(nil)
+	p := &rootProbe{active: true}
+	bind := RegisterElevated(r, 123, p)
+	calls := 0
+	bind(func(context.Context, Command) (Response, error) { calls++; return Response{Text: "bound"}, nil })
+	res, err := r.Dispatch(t.Context(), Command{Name: "root", Args: []string{"login"}, Caller: Caller{IsOwner: true, Source: SourceTelegram, ChatKind: "private", ChatID: 123, UserID: 123, MessageID: 10}})
+	if err != nil || res.Text != "bound" || calls != 1 {
+		t.Fatal(res, err, calls)
+	}
+	roots := 0
+	for _, c := range r.List() {
+		if c.Name == "root" {
+			roots++
+		}
+	}
+	if roots != 1 {
+		t.Fatal("root registration count", roots)
+	}
+}

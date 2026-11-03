@@ -6,6 +6,21 @@ Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
 [ACCEPTANCE](ACCEPTANCE.md) for pending real-client verification.
 
+## Startup correction — elevated login rollout
+
+PR #155's first Pi startup exposed duplicate `/root` registration (before and
+after Telegram construction), causing a panic/restart loop. Controller and both
+provider tags were rolled back to the verified pre-login versions; Pi is stable
+on `124bc1a`, source checkout `294e8a7`. No schema rollback was required.
+`fix/elevated-login-registration` changes registration to return a mutex-protected
+late binder and registers the command once. A subprocess fixture now executes
+real `run()` with Telegram/elevated enabled, mock HTTP, a missing Docker socket
+and a disposable store, verifying readiness and clean shutdown. Independent
+review, boot regression and targeted race tests passed; final CI/rollout pending.
+Matched-stopped backup `20261103T122519Z-ms-e5af8b89` verified (43 tables, 8,487
+rows). Owner stopped the long host inspection; `/root stop` removed the runtime
+and all observed Codex/du processes before deployment. Do not resume that scan.
+
 ## Resume here — elevated login implementation, 2026-11-03
 
 `feat/elevated-login` in `gopod-elevated-login` adds explicit `/root login`,
