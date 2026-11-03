@@ -115,3 +115,53 @@ ROOT itself requires explicit close and has no session TTL.
 Exact merged-source [main CI](https://github.com/Coriol-is/gopod/actions/runs/41639154429)
 also passed. Native browser completion and a subsequent bounded authenticated
 reply remain owner-dependent acceptance gates, not inferred from CI or prompts.
+
+## Successful-login notification correction
+
+The owner completed Codex browser authorization from prompt 3176200. Native
+`codex login status` confirmed `Logged in using ChatGPT`, with only service
+`sleep` left in the container, but Telegram 3176201 incorrectly reported output
+unavailable/cancelled. Authorization itself succeeded.
+
+The normal runner completion cancelled the same context watched by Telegram's
+cleanup goroutine. Cleanup could close the reader before the consumer observed
+EOF and verified native auth. PR #158 keeps the UI lifetime separate from exec
+completion: natural completion settles and leaves output readable; consumer
+cleanup closes the UI; Stop/timeout still propagate cancellation.
+
+Regression evidence: a real login handle plus Telegram-style cancellation watcher
+fails deterministically on the old source (`successful exec cancelled UI before
+verification: context canceled`) and passes on the fix. Independent reviewer PASS,
+30 targeted repeated race runs, full build/vet/tests, affected runner/Telegram race
+suites and an isolated real-image boot probe on Pi passed. The probe had no
+network, production data or host mounts and used synthetic credentials.
+
+Sonar CLI for #158: advisory ERROR, maintainability B (threshold A), seven open
+findings: cognitive complexity in existing runner/test functions, interface naming
+and context stored in the handle. Findings were inspected through `sonar api`
+without switching account organization or suppressing issues. Per owner policy,
+Sonar does not block otherwise-green mandatory CI or deployment.
+
+PR #158 merged as `1a3b9e1`; binary `8c21d58` has the identical source tree.
+[PR CI](https://github.com/Coriol-is/gopod/actions/runs/41640154508) and
+[exact main CI](https://github.com/Coriol-is/gopod/actions/runs/41640718593) passed.
+Image `sha256:49b0888029a68dff6d060e9dd5b83a149f01070f06f12167c88a93bb98339f83`
+started on Pi at **13:03:29 UTC**, ready **13:03:36**, with zero restarts/OOM false
+beyond the first minute. Only the controller changed; provider images/auth homes
+were retained. Verified matched-stopped backup `20261103T130254Z-ms-18ad30e6`
+contains 43 tables / 8,742 rows. Retained rollback tag:
+`gopod-gopod:rollback-pre-login-completion-20261103`.
+
+Live Telegram: `/root codex` 3176206, confirmation 3176207, `/root login`
+3176208 → 3176209 correctly reported an already-authenticated profile without
+launching login. Native status remains `Logged in using ChatGPT`. A bounded
+no-tools prompt 3176210 returned `ROOT LOGIN OK` in 3176212. ROOT remains open
+and idle (only service `sleep`), ready for the owner; the old host scan was not
+resumed. Database integrity, registration/session/task hashes, mapping mode and
+pending-adoption values match the pre-rollout snapshot. Six external healthchecks
+remain healthy.
+
+The successful new-login race is covered by the reproducing regression, not by
+forcing another real OAuth cycle on the owner's authenticated profile. Actual
+post-rollout acceptance covers auth preservation, correct already-authenticated
+notification and a native Codex reply. Claude browser completion remains open.

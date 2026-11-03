@@ -1,48 +1,33 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-03 (elevated login merged; auth-preserving guard; Codex authorized; completion notification correction)
+**Last updated:** 2026-11-03 (elevated login merged; auth-preserving guard; Codex authorized; completion notification fixed and deployed)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
 [ACCEPTANCE](ACCEPTANCE.md) for pending real-client verification.
 
-## Current follow-up — successful login completion notification
+## Resume here — elevated login completion fixed and deployed
 
-Owner completed Codex browser authorization; native status is `Logged in using
-ChatGPT` and the login process has exited. Telegram falsely reported output
-unavailable because normal runner completion cancelled the context watched by
-Telegram cleanup, which could close the reader before EOF/verification.
-`fix/elevated-login-completion` separates UI lifetime from execution completion:
-natural completion leaves the stream readable until consumer verification and
-cleanup; Stop/timeout still propagate cancellation. The regression simulates the
-Telegram cleanup watcher using the real login handle and fails on old code.
-Review/CI/deployment are pending. Do not repeat native login or clear credentials.
+PR #158 merged as `1a3b9e1`; controller binary `8c21d58` (identical source tree)
+runs on Pi since 2026-11-03 13:03:29 UTC, ready 13:03:36, zero restarts/OOM false.
+Normal login exec completion no longer cancels Telegram's UI context before
+EOF/verification. Stop/timeout cancellation remains intact. The regression fails
+on old source; independent review, 30 repeated targeted race runs, full local
+build/vet/tests, affected race suites, PR and exact main CI passed. Sonar is
+advisory ERROR (maintainability B, seven open complexity/interface/context findings).
 
-## Resume here — elevated login and credential-preserving preflight
+Owner completed Codex browser login. Authorization survived rollout; Telegram
+`/root login` now correctly reports already authenticated (3176209), without
+starting another login. A bounded no-tools native prompt returned `ROOT LOGIN OK`
+(3176212). ROOT remains open and idle for the owner. Do not restart the old
+owner-stopped Codex/du host scan or repeat native login unnecessarily.
 
-PR #155 (`500a094`, D062) adds `/root login`, `/login elevated` and the login
-button for the explicitly confirmed ROOT provider. PR #156 (`474aac0`) fixes
-duplicate command registration discovered during rollout; an actual startup
-regression and real-image Pi boot check now cover that path. PR #157 (`8412e3b`)
-preflights native auth under the execution lease and refuses existing, ambiguous
-or unproven status before starting potentially destructive native login.
-All three passed independent review and mandatory CI; Sonar CLI gates were OK.
-
-Live Telegram checks confirmed both private prompts, Claude button, Codex alias,
-`/stop` process cancellation and `/root stop` removal. **The Codex re-login probe
-cleared the owner's previous elevated authorization before cancellation.** Owner browser login has since restored authorization. Do not claim native end-to-end completion or
-copy ordinary credentials to repair it. The long owner-stopped Codex/du host scan
-must not be resumed. Test sessions were closed; Codex login from prompt 3176200 is complete. Native status confirms auth;
-Telegram completion notification is being corrected (see above). Controller `f8939b7` / source `8412e3b` runs
-on Pi since 12:52:11 UTC, readiness 12:52:19, restart count zero.
-
-Rollout evidence, backups, rollback, data hashes and the credential-loss incident:
-[deployment report](deployments/2026-11-03-elevated-login.md). The final guard
-rollout is recorded there. The controller default remains off; rpi4 remains on.
-Next: deploy completion notification correction, then check a bounded native
-reply. Claude browser authorization remains open. Container healthchecks remain
-queued. The unrelated pi-agent assistant container was absent before this
-rollout; do not infer its health from the six remaining healthy services.
+The previous misleading cancellation notice is fixed; the actual new-login
+completion race is regression-tested without forcing another browser cycle.
+Claude browser completion remains open. The controller default remains off and
+rpi4 flag remains on. Container healthchecks remain queued. Full rollback,
+backup, incident and acceptance evidence is in the
+[rollout report](deployments/2026-11-03-elevated-login.md).
 
 ## CI policy — Sonar soft gate, 2026-11-03
 
