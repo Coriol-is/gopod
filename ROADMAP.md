@@ -115,6 +115,15 @@ CP-016 inside stream 3; its older deferral in the iteration table is superseded
 by this instruction. Partial foundations do not complete either proposal.
 Deployment and destructive live acceptance remain separate gates.
 
+### Reliability checkpoint — 2026-11-03
+
+CP-002 PR 6b atomic batch attempt recording is being verified on
+`feat/reliable-batch-start`; foreground freeze/publication cutover remains open.
+[Slice boundary](docs/reviews/2026-11-03-batch-start-foundation.md).
+Live acceptance found a silent/model picker regression; fix PR #159 is merged,
+with production retest pending deployment. CP-016 command/runtime/output fences
+remain open after its store foundation.
+
 ## Planning candidates — 2026-10-26
 
 The [codex-agent adoption map](docs/proposals/2026-10-26-codex-agent-adoption.md)

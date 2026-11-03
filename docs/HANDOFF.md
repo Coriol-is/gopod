@@ -13,20 +13,24 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — ordinary Telegram acceptance, 2026-11-03
+## Resume here — CP-002 batch-start prerequisite, 2026-11-03
 
-Autonomous acceptance found that `/silent` and `/model` callbacks edit their
-message but drop the picker instead of retaining the marked selection. The fix
-on `fix/persistent-command-pickers` retains choices after successful selection;
-the callback round-trip regression, full build/vet/tests and independent review
-passed. PR CI and merge are next; deployment/live retest remain separate.
-Then continue CP-002 foreground-freeze and CP-016 retirement integration.
-Task Next/Previous callbacks and a fresh doctor
-refresh passed. Silent mode was restored to off and verified with a new picker.
-The owner's ROOT Codex session remains open/idle; do not route ordinary test
-prompts into it or close it implicitly. [Evidence](reviews/2026-11-03-ordinary-telegram-acceptance.md).
-No code has been deployed in this session. Update handoff and affected docs at
-intermediate checkpoints as well as on completion (owner instruction).
+Picker fix PR #159 passed independent review and green test/isolation/Sonar and
+is merged as `88a9aa3`; live retest needs a later authorized deployment. Ordinary Telegram
+pagination and doctor-refresh evidence is in the
+[acceptance report](reviews/2026-11-03-ordinary-telegram-acceptance.md).
+Silent was restored off; the owner's ROOT session remains open/idle.
+
+`feat/reliable-batch-start` implements atomic ordinary batch attempt recording
+and authoritative counters as CP-002 PR 6b groundwork. Independent review found
+ordering/completion-hook and restart-snapshot hazards in the first draft; the
+revised slice retains the batch on pre-execution recording errors and owns its
+restart snapshot. Eligibility/result/topic preflight remains a separate cutover
+step. [Contract and verification](reviews/2026-11-03-batch-start-foundation.md).
+Full build/vet/tests, affected race suites and independent re-review passed;
+PR CI/merge are next. Continue
+foreground result/publication recovery and CP-016 retirement integration after
+this prerequisite. No deployment or ordinary model test in the open ROOT context.
 
 ## Previous — elevated login completion fixed and deployed
 
