@@ -33,3 +33,15 @@ A01 pagination and A18 refresh have live evidence; other scenarios in those rows
 remain open. A11/A21 picker behavior fails until a corrected build is deployed
 and retested. No ordinary-provider inference, media/Stop/recovery behavior or
 visual client rendering is claimed by these probes.
+
+## Fix verification checkpoint
+
+Branch `fix/persistent-command-pickers` retains the silent and model choices on
+successful selection responses. The model catalog is copied before appending
+default; error and authorization paths are unchanged. The Telegram regression
+`TestSettingPickerRetainsChoicesAfterSelection` exercises both real command
+handlers, callback dispatch and two edits of the same message, including the
+reverse selection and absence of extra sends. Full build/vet/tests passed.
+An independent reviewer passed the diff and reran the focused tests. Custom
+model IDs outside the catalog still have no marked choice (existing behavior).
+CI/merge and live retest of the corrected build are pending at this checkpoint.

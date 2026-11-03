@@ -16,9 +16,12 @@ owner. No acceptance result or deployment status changes with this instruction.
 ## Resume here — ordinary Telegram acceptance, 2026-11-03
 
 Autonomous acceptance found that `/silent` and `/model` callbacks edit their
-message but drop the picker instead of retaining the marked selection. Fix this
-bounded control-plane defect first, then continue CP-002 foreground-freeze and
-CP-016 retirement integration. Task Next/Previous callbacks and a fresh doctor
+message but drop the picker instead of retaining the marked selection. The fix
+on `fix/persistent-command-pickers` retains choices after successful selection;
+the callback round-trip regression, full build/vet/tests and independent review
+passed. PR CI and merge are next; deployment/live retest remain separate.
+Then continue CP-002 foreground-freeze and CP-016 retirement integration.
+Task Next/Previous callbacks and a fresh doctor
 refresh passed. Silent mode was restored to off and verified with a new picker.
 The owner's ROOT Codex session remains open/idle; do not route ordinary test
 prompts into it or close it implicitly. [Evidence](reviews/2026-11-03-ordinary-telegram-acceptance.md).
