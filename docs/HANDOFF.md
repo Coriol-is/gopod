@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-03 (backlog wave and version follow-up deployed and accepted)
+**Last updated:** 2026-11-03 (parallel CP-002 / CP-016 implementation and Telegram acceptance started)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -12,6 +12,24 @@ messages, commands, attachments and supported button interactions, without
 per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older references
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
+
+## Resume here — parallel follow-up, 2026-11-03
+
+Owner approved three parallel streams, with sequential review/integration/deploy.
+Base main `09dbaf4`; production controller `ec51ee6`. Existing worktrees retained.
+
+- `feat/freeze-next` in `../gopod-freeze-next`: CP-002 ordinary eligibility,
+  frozen-result recovery and publication integration; queue/runner adapter ownership.
+- `feat/topic-next` in `../gopod-topic-next`: CP-016 admission/quiescence integration;
+  shared queue/output contracts must be coordinated with the first stream.
+- `docs/acceptance-next` in `../gopod-acceptance-next`: sole Telegram acceptance
+  actor, bounded ordinary Stop/media/continuity probes; no auth changes or live deletion.
+
+Root owns global handoff/roadmap, integration and release. Each stream records
+intermediate evidence in its own review report. Source changes require independent
+review, full checks and exact CI; only bounded small fixes retain the owner's
+no-PR exception. Do not enable `/thread delete` or managed tasks from incomplete
+prerequisites. No new production mutation has occurred in this follow-up yet.
 
 ## Deployment checkpoint — 2026-11-03
 

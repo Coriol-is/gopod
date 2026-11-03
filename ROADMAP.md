@@ -38,7 +38,7 @@ T5/T5b parallel-runtime implementation remains paused; T9 memory-cgroup reboot w
 ## Elevated host session — CP-038 (implementation authorized)
 
 🟦 Design merged as `2ca967c` via [PR #128](https://github.com/Coriol-is/gopod/pull/128).
-E0 images (#150), E1 profile/guard (#151, D059) and E2 journal/reserved identity (#152, D060) are merged and deployed as `75b3be3`; E3–E5 merged in PR #154 (`294e8a7`) after independent review and green CI, and deployed on Pi. E6 host cgroups and lifecycle are qualified on Pi; Telegram lifecycle/callback acceptance passed; authenticated native provider acceptance remains open. Explicit Telegram login merged in PR #155 (`500a094`, D062), startup correction #156 (`474aac0`) and credential-preserving preflight #157 (`8412e3b`), with independent review and CI passed. Live prompt/cancel checks passed; owner restored Codex auth after the re-login incident. Completion notification fix #158 (`1a3b9e1`) is deployed; auth preservation and a bounded native Codex reply passed. Claude browser completion remains open. See [rollout evidence](docs/deployments/2026-11-03-elevated-login.md). Controller flag defaults off; owner-authorized rpi4 configuration is on. Codex ROOT is authorized, open and idle. [CP-038](docs/proposals/CP-038-elevated-host-session.md)
+E0 images (#150), E1 profile/guard (#151, D059) and E2 journal/reserved identity (#152, D060) are merged and deployed as `75b3be3`; E3–E5 merged in PR #154 (`294e8a7`) after independent review and green CI, and deployed on Pi. E6 host cgroups and lifecycle are qualified on Pi; Telegram lifecycle/callback acceptance passed; authenticated native provider acceptance remains open. Explicit Telegram login merged in PR #155 (`500a094`, D062), startup correction #156 (`474aac0`) and credential-preserving preflight #157 (`8412e3b`), with independent review and CI passed. Live prompt/cancel checks passed; owner restored Codex auth after the re-login incident. Completion notification fix #158 (`1a3b9e1`) is deployed; auth preservation and a bounded native Codex reply passed. Claude browser completion remains open. See [rollout evidence](docs/deployments/2026-11-03-elevated-login.md). Controller flag defaults off; owner-authorized rpi4 configuration is on. Codex ROOT is authorized; the idle session closed normally during the backlog rollout and is currently off. [CP-038](docs/proposals/CP-038-elevated-host-session.md)
 is `in-progress`: owner authorized implementation on 2026-11-03.
 
 An explicitly started owner-private conversation with host authority on the Pi:
@@ -86,8 +86,8 @@ has passed. The proposal registry remains the single CP status source;
 | 6 | Platform extensions | CP-011 runtime, CP-012 registry; then additional providers/sandboxes, bounded bot-to-bot experiment if useful; secret gateway/MCP/metrics stay deferred | Design/research/deferred; no new backend or peer enabled |
 
 Done implementation must not remain "in progress" just because a live check is
-pending. Host memory-cgroup changes/reboot (T9) and parallel execution (T5/T5b)
-remain paused operational/research items, not implicit deployment steps.
+pending. Host memory-cgroup changes/reboot (T9) were completed on 2026-11-03; parallel
+execution (T5/T5b) remains deferred and is not an implicit deployment step.
 
 ## Next iteration — status as of 2026-11-02
 
@@ -126,6 +126,11 @@ in PR #161 (`602403a`): unresolved deletion holds pending delivery, refusal
 reopens it, confirmed deletion cancels pending parts. Runtime/network quiescence,
 command/recovery/stream/callback integration remain open. All three PRs passed
 independent review and test/isolation/Sonar. Deployed in `4350e1b`; backups, runtime health and state preservation passed.
+
+Parallel follow-up started from `09dbaf4`: CP-002 ordinary eligibility/frozen
+recovery, CP-016 admission/quiescence and serialized Telegram acceptance in
+separate worktrees. Integration/deploy will be sequential after review and CI.
+No completion or production activation is claimed for these new slices yet.
 
 ## Planning candidates — 2026-10-26
 
