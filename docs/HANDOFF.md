@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-03 (elevated login merged; auth-preserving guard; Codex authorized; completion notification fixed and deployed)
+**Last updated:** 2026-11-03 (autonomous acceptance; picker fix and CP-002/CP-016 prerequisites merged; no deployment in this wave)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -13,7 +13,7 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — CP-016 durable outbox fences, 2026-11-03
+## Resume here — next integration after PRs #159–161, 2026-11-03
 
 Picker fix PR #159 merged as `88a9aa3` after green CI and independent review.
 CP-002 atomic batch-start prerequisite PR #160 is merged as `f5ba97a` after
@@ -21,13 +21,14 @@ independent review, full local checks/races and green test/isolation/Sonar.
 [Evidence](reviews/2026-11-03-batch-start-foundation.md). Full foreground freeze,
 eligibility checks and publication recovery remain the next reliability slice.
 
-`feat/topic-outbox-fence` now connects deletion intents to durable publication,
+CP-016 outbox fences merged in PR #161 as `602403a` after green
+test/isolation/Sonar and independent review. The slice connects deletion intents to durable publication,
 claim selection and plain fallback. Unresolved deletion holds pending parts;
 definite refusal resumes them; confirmed deletion cancels only pending parts.
 Already issued attempts retain truthful settlement. Independent review caught
 a pending tail hidden behind an uncertain head; the fix cancels pending parts
 independently of dispatch eligibility. Full local checks/races and independent
-re-review passed; PR CI/merge are next. [Contract and boundary](reviews/2026-11-03-topic-outbox-fences.md).
+re-review passed; combined queue/store/cmd race suites also passed. [Contract and boundary](reviews/2026-11-03-topic-outbox-fences.md).
 This does not enable `/thread delete`: native/transport quiescence, queue/recovery,
 streaming and callback fences and registration reconciliation remain open.
 
@@ -35,6 +36,20 @@ Ordinary Telegram [acceptance evidence](reviews/2026-11-03-ordinary-telegram-acc
 records working pagination/doctor refresh and the picker defect. Silent restored
 off; owner's ROOT session left open. `/version` reports `dev`, recorded as a
 separate diagnostic follow-up. No deployment or destructive live test.
+
+### Next concrete work
+
+1. CP-002: build explicit eligibility/recovery classification ahead of runner
+   invocation using the now-authoritative batch counters. Resume frozen results
+   through preparation/publication without model replay, preserve NoReplay through
+   Telegram handlers, and qualify preview/final ownership plus voice/code parity.
+2. CP-016: add conversation admission/quiescence orchestration and output/recovery/
+   callback fences before exposing `/thread delete`; include registration-change
+   reconciliation and permanent retired-topic IPC errors. The outbox slice alone
+   does not prevent a previously claimed transport call from starting.
+3. Deploy only when separately authorized; then retest the silent/model picker
+   round trip. Ordinary model/media/Stop checks must not enter the owner's open
+   ROOT modal session. `/version` returning `dev` is a separate diagnostic defect.
 
 ## Previous — elevated login completion fixed and deployed
 

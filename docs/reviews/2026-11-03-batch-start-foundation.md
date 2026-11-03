@@ -39,4 +39,5 @@ Full build/vet/test and race suites for queue/store/cmd passed. Independent
 re-review passed after the narrower scope and concurrency fixes. Added a
 production-adapter test that freezes one coalesced result from the committed
 member counters, plus explicit managed-ledger refusal coverage; their targeted
-race run is recorded before the PR checkpoint. CI and merge remain pending.
+race run passed. PR #160 merged as `f5ba97a` after green test/isolation/Sonar.
+No deployment was performed.
