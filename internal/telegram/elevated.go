@@ -53,7 +53,7 @@ func (b *Bot) handleElevated(ctx context.Context, m *models.Message) bool {
 		b.replyTo(ctx, m.Chat.ID, inboundThreadID(m), m.ID, "⚠️ ROOT: принимаются только новые текстовые запросы. Вложения не импортированы.")
 		return true
 	}
-	b.replyTo(ctx, m.Chat.ID, inboundThreadID(m), m.ID, "⚠️ ROOT: запрос принят к обработке; /stop — остановить ответ.")
+	b.replyTo(ctx, m.Chat.ID, inboundThreadID(m), m.ID, "⚠️ ROOT: проверяю готовность к запросу; /stop — остановить ответ.")
 	reply, err := b.elevated.Run(ctx, text)
 	if err != nil {
 		reply = err.Error()

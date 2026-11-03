@@ -54,6 +54,14 @@ func RegisterElevated(r *Router, owner int64, e ElevatedSession) {
 			return Response{Text: text}, err
 		case "cancel":
 			confirmMu.Lock()
+			if e.Active() {
+				confirmMu.Unlock()
+				return Response{Text: "ROOT уже запущен. Для закрытия используйте /root stop.\n" + e.Status(), Buttons: controls}, nil
+			}
+			if len(cmd.Args) == 2 && cmd.Args[1] != pending {
+				confirmMu.Unlock()
+				return Response{Text: "Это подтверждение ROOT уже устарело."}, nil
+			}
 			pending = ""
 			confirmMu.Unlock()
 			return Response{Text: "Запуск ROOT отменён. Новая сессия не создана."}, nil
@@ -78,7 +86,7 @@ func RegisterElevated(r *Router, owner int64, e ElevatedSession) {
 				confirmMu.Unlock()
 				resp := Confirm(cmd, fmt.Sprintf("⚠️ Запустить ROOT · %s?\nАгент получает полный доступ к хосту: файлам, процессам и контейнерам. Содержимое прочитанных файлов и страниц может повлиять на его действия. Это не песочница.\nЖурнал содержит только docker exec контроллера, не все команды агента, и не защищён от host root.\nОтдельный вход провайдера обязателен; credentials обычного чата не копируются. Новые текстовые сообщения направятся в ROOT до /root stop.", action))
 				resp.Buttons[0][0].Label = "Запустить ROOT"
-				resp.Buttons[0][1] = Button{Label: "Отмена", Command: "root", Args: []string{"cancel"}}
+				resp.Buttons[0][1] = Button{Label: "Отмена", Command: "root", Args: []string{"cancel", cmd.Args[1]}}
 				return resp, nil
 			}
 			confirmMu.Lock()

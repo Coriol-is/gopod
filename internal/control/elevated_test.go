@@ -51,3 +51,13 @@ func TestRootPermissionConfirmationAndStaleFence(t *testing.T) {
 		t.Fatal("stale confirmation reopened", resp, err)
 	}
 }
+
+func TestRootCancelNeverClaimsActiveSessionWasNotCreated(t *testing.T) {
+	r := New(nil)
+	p := &rootProbe{active: true}
+	RegisterElevated(r, 123, p)
+	resp, err := r.Dispatch(t.Context(), Command{Name: "root", Args: []string{"cancel"}, Caller: Caller{IsOwner: true, Source: SourceTelegram, ChatKind: "private", ChatID: 123, UserID: 123, MessageID: 12}})
+	if err != nil || strings.Contains(resp.Text, "не создана") || !strings.Contains(resp.Text, "/root stop") {
+		t.Fatal(resp, err)
+	}
+}

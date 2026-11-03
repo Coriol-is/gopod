@@ -24,6 +24,8 @@ backup = path.with_name('cmdline.txt.pre-memory-' + datetime.datetime.now(dateti
 if backup.exists():
     raise SystemExit('Backup already exists; refusing overwrite')
 shutil.copy2(path, backup)
+with backup.open('rb') as saved:
+    os.fsync(saved.fileno())
 # Firmware partition is FAT; preserve the existing file instead of renaming metadata.
 with path.open('w') as stream:
     stream.write(updated)

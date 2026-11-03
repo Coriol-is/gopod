@@ -66,18 +66,29 @@ func (e *Elevated) TakeNotice() string {
 }
 func (e *Elevated) Status() string {
 	e.mu.Lock()
-	defer e.mu.Unlock()
-	if e.blocked {
+	session, busy, blocked, id := e.session, e.busy, e.blocked, e.container
+	e.mu.Unlock()
+	if blocked {
 		return "⚠️ ROOT: состояние выполнения не подтверждено. Новые запросы заблокированы. Повторите /root stop после восстановления Docker."
 	}
-	if e.session.ID == "" {
+	if session.ID == "" {
 		return "ROOT выключен. Обычная переписка активна."
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	facts, err := e.engine.InspectContainer(ctx, ContainerName(ElevatedFolder))
+	if err != nil || facts == nil || facts.ID != id || !facts.Running {
+		return "⚠️ ROOT: контейнер потерян или недоступен. Новое выполнение будет отклонено. /root stop — проверить и закрыть."
+	}
+	count, err := e.st.ElevatedExecCount(ctx, session.ID)
+	if err != nil {
+		return "⚠️ ROOT: журнал недоступен. /root stop — закрыть."
+	}
 	state := "ожидает сообщения"
-	if e.busy {
+	if busy {
 		state = "выполняет запрос; /stop остановит ответ"
 	}
-	return fmt.Sprintf("⚠️ ROOT · %s · %s\n/root stop — закрыть сессию; /root log — журнал host exec.", e.session.Provider, state)
+	return fmt.Sprintf("⚠️ ROOT · %s · %s\nКонтейнер запущен; начало %s; host exec: %d.\n/root stop — закрыть сессию; /root log — журнал host exec.", session.Provider, state, time.UnixMilli(session.StartedAt).UTC().Format(time.RFC3339), count)
 }
 
 // Recover runs even with the feature flag off, before ordinary leftover inventory.
