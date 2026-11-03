@@ -31,6 +31,9 @@ func (b *Bot) sendPlaceholder(ctx context.Context, chatID int64, thread int, rep
 
 // sendPlaceholderText is sendPlaceholder with a given opening text.
 func (b *Bot) sendPlaceholderText(ctx context.Context, chatID int64, thread int, replyToMsgID int, text string, markup models.ReplyMarkup) int {
+	if b.topicAdmission(ctx, chatID, thread) != nil {
+		return 0
+	}
 	if b.threadGone(chatID, thread) {
 		return 0 // the caller falls back to one final message, sent to main
 	}
@@ -673,6 +676,10 @@ func isNotModified(err error) bool {
 // draft path it returns errReplyUndelivered when nothing went out, so
 // the turn is not marked done with its answer lost.
 func (b *Bot) replyInMain(ctx context.Context, item queue.Item, text string) error {
+	ctx = withTopicOutputOrigin(ctx, item.ChatID, item.ThreadID)
+	if err := b.topicAdmission(ctx, item.ChatID, item.ThreadID); err != nil {
+		return err
+	}
 	sent, err := b.sendFinal(ctx, item.ChatID, 0, 0, threadGoneNote+text, nil)
 	if sent == 0 {
 		b.log.Error("final reply undelivered",

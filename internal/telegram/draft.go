@@ -147,6 +147,9 @@ func isDraftCapabilityError(err error) bool {
 // (threadgone.go) is none of these: it neither counts nor marks the
 // chat, and later drafts into it are skipped.
 func (b *Bot) sendDraftOpts(ctx context.Context, chatID int64, threadID int, draftID int, text string, opts draftOpts) error {
+	if err := b.topicAdmission(ctx, chatID, threadID); err != nil {
+		return err
+	}
 	if b.threadGone(chatID, threadID) {
 		return errThreadGone
 	}

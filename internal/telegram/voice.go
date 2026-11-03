@@ -227,6 +227,9 @@ func (e *ttsStatusError) Error() string {
 // sendVoiceReply sends audio data as a Telegram voice message into
 // thread (0 = main chat).
 func (b *Bot) sendVoiceReply(ctx context.Context, chatID int64, thread int, replyToMsgID int, audioData []byte) error {
+	if err := b.topicAdmission(ctx, chatID, thread); err != nil {
+		return err
+	}
 	params := &bot.SendVoiceParams{
 		ChatID:          chatID,
 		MessageThreadID: thread,

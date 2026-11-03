@@ -200,6 +200,9 @@ func (b *Bot) clock() time.Time {
 // the table holds no markup. Failures are logged only.
 func (b *Bot) sendErrorReply(ctx context.Context, item queue.Item, text string, markup models.ReplyMarkup) {
 	send := func(thread, replyTo int, text string) error {
+		if err := b.topicAdmission(ctx, item.ChatID, item.ThreadID); err != nil {
+			return err
+		}
 		params := &bot.SendMessageParams{
 			ChatID:          item.ChatID,
 			MessageThreadID: thread,

@@ -304,7 +304,7 @@ func (b *Bot) botOptions() []bot.Option {
 	return []bot.Option{
 		bot.WithDefaultHandler(b.defaultHandler),
 		bot.WithNotAsyncHandlers(),
-		bot.WithMiddlewares(b.trackedAsyncMiddleware, b.offsetMiddleware),
+		bot.WithMiddlewares(b.trackedAsyncMiddleware, b.offsetMiddleware, b.topicAdmissionMiddleware),
 		bot.WithAllowedUpdates(allowedUpdates),
 	}
 }

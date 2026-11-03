@@ -184,6 +184,9 @@ func (b *Bot) dispatchCallback(ctx context.Context, cq *models.CallbackQuery, an
 			slog.Int64("chat_id", m.Chat.ID), slog.String("act", data.Act))
 		return cbToastNotRegistered
 	}
+	if err := b.topicAdmission(ctx, m.Chat.ID, inboundThreadID(m)); err != nil {
+		return cbToastExpired
+	}
 	q := cbQuery{
 		ChatKind:  string(m.Chat.Type),
 		ID:        cq.ID,
