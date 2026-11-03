@@ -1,8 +1,8 @@
 # Live acceptance register
 
-Last reconciled: 2026-11-03. Latest deployment: `4350e1b`, verified through
+Last reconciled: 2026-11-03. Latest deployment: `ec51ee6`, verified through
 startup/image and [backlog rollout](deployments/2026-11-03-backlog-wave.md).
-The `/version` identity follow-up is preparing; the previous command reported `dev`.
+Telegram `/version` reply 3176289 returns `gopod ec51ee6 (go1.26.10)`, matching startup.
 Code merged/deployed is distinct from a real-client scenario being accepted.
 Items below are pending unless explicit evidence is linked. Do not infer a pass
 from unit tests, CLI --help/version, startup notices or a green CI job.

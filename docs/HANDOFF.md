@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-03 (backlog wave deployed; small version follow-up preparing)
+**Last updated:** 2026-11-03 (backlog wave and version follow-up deployed and accepted)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -21,10 +21,16 @@ Backups, runtime health and exact state preservation passed. Telegram silent
 on/off and model/default callbacks now retain their pickers; silent restored off.
 ROOT closed normally and is off. [Live rollout record](deployments/2026-11-03-backlog-wave.md).
 
-Resume here: the bounded `/version` fix passed independent review and full local
-build/vet/tests. Push without PR as authorized, wait exact main CI, then deploy
-and verify `/version` against startup. Preserve backups/auth homes and update this
-handoff after each stage. Full CP-002/CP-016 completion remains open.
+Small follow-up `ec51ee6` is deployed without PR as authorized. Independent review,
+full local build/vet/tests, [main CI](https://github.com/Coriol-is/gopod/actions/runs/41649954437)
+(test + Docker isolation), isolated Pi boot, backup and state read-back passed.
+Telegram `/version` reply 3176289 returns `gopod ec51ee6 (go1.26.10)`.
+
+Resume here: continue CP-002 eligibility/recovery and frozen-result publication,
+then CP-016 admission/quiescence integration. Both remain incomplete; `/thread delete`
+is not enabled. Preserve existing worktrees, auth homes, backups and rollback images.
+The bounded review/merge/deploy request is complete; first rollout picker evidence
+and final backup/image IDs are in the live rollout record above.
 
 ## Previous — next integration after PRs #159–161, 2026-11-03
 

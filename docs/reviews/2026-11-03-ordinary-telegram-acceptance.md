@@ -61,3 +61,6 @@ Build `4350e1b`: silent reply 3176275 retained buttons across on/off and restore
 off; model reply 3176277 retained the default picker after selection. ROOT status
 3176279 is off after normal deployment shutdown; session status 3176281 remains
 legacy. See [rollout](../deployments/2026-11-03-backlog-wave.md).
+
+Version diagnostic resolved and deployed in `ec51ee6`: command 3176288 received
+reply 3176289, `gopod ec51ee6 (go1.26.10)`, matching startup identity.

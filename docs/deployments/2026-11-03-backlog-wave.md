@@ -41,9 +41,33 @@ These are actual Telegram callback/edit proofs, not a visual rendering or
 provider-inference qualification. CP-002 freeze/publication and CP-016 complete
 quiescence/deletion remain open.
 
-## Small version follow-up — preparing
+## Small version follow-up — deployed
 
 The owner requested subsequent small fixes without PRs. `/version` now receives
 the application's link-time identity, retaining VCS/dev fallback for standalone
 router callers and removing duplicated `go` in the response. Independent review
-passed; full local build/vet/tests passed. Exact main CI must pass before rollout.
+passed; full local build/vet/tests passed. Exact main CI passed (test and isolation-spike).
+
+Follow-up commit `ec51ee6` is on main. Its exact CI run is
+[41649954437](https://github.com/Coriol-is/gopod/actions/runs/41649954437).
+The ARM64 candidate passed isolated Pi boot. Rollback tag
+`gopod-gopod:rollback-pre-backlog-20261103-ec51ee6` preserves the first rollout.
+
+Matched-stopped backup `20261103T140811Z-ms-029f9b19` verified: 43 tables /
+8,855 rows. Controller `ec51ee6` started at 14:08:46 UTC, ready at 14:08:53,
+image `sha256:ddd3a4ee8533c49292a0fee07eb08d602cee72566a15bd68db36ff0ec8d30c32`.
+Exact pre/post registered-chat/session/scheduled-task fingerprints matched and
+SQLite integrity was OK. No schema/config/provider image/helper changes.
+
+Live Telegram `/version` command 3176288 → reply 3176289 returned exactly
+`gopod ec51ee6 (go1.26.10)`, matching startup. The follow-up is accepted.
+
+Rollback: retain `gopod-gopod:rollback-pre-backlog-20261103-ec51ee6` (4350e1b)
+and both earlier image tags/backups. A rollback uses the same idle gate, retags
+the retained image as `gopod-gopod:latest`, checks out the matching source, and
+runs `docker compose up -d --no-build gopod`. No database restore is needed for
+these controller-only changes. Provider auth homes remain outside backup coverage.
+
+At 14:10:00 UTC (>60 seconds after start): running, zero restarts, OOM false,
+zero warning/error log entries; all six external service healthchecks healthy.
+The post-acceptance ordinary idle gate again reported all seven counters zero.
