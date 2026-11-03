@@ -27,15 +27,22 @@ Base main `09dbaf4`; production controller `ec51ee6`. Existing worktrees retaine
 
 Implementation checkpoint: CP-002 now classifies frozen/published results before
 replay, holds unpublished work visibly, and preserves NoReplay through Telegram;
-regressions are being added. CP-016 ingress/callback/output/native-admission guards
-passed targeted suites; full checks are running. Neither slice enables final
+regressions/full/race checks and independent review passed; PR #164 (`933da28`)
+is waiting for exact-head CI.
+CP-016 PR #163 (`effc746`) passed independent re-review after preserving the
+original topic through final fallback chunks/retries/code uploads and rechecking
+after chat actions. Final-head CI passed and PR #163 merged as `b62eb22`. Neither slice enables final
 foreground ownership or the deletion command.
 
 Acceptance checkpoint: bounded Codex Stop reached durable stopped state and
 native process exit; subsequent nonce recall succeeded. Owner additionally
 requested Telegram Toolkit topic creation: `topics create` implemented, 83 local
-tests passed, live topic `3176309` created for this acceptance wave. PDF probe is
-running there; the topic is retained. Toolkit changes are in its own repository.
+tests passed, live topic `3176309` created for this acceptance wave. PDF arrived
+there and its test bytes were verified. The first source-missing warning leaked
+to main and falsely claimed the file remained; a separate bounded IPC notice fix
+passed review/full/race tests as `f5768ba`, pending integration without PR under
+the owner-approved small-fix exception. Topic retained; Telegram probes are paused. Toolkit main
+`c28367d` is published and installed locally.
 
 Root owns global handoff/roadmap, integration and release. Each stream records
 intermediate evidence in its own review report. Source changes require independent
