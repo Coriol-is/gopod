@@ -401,3 +401,14 @@ Buttons/hooks, inbound/outbound stickers and thread awareness remain separate wo
 ### Reaction reading specification (2026-10-29)
 
 - CP-032: [design](docs/superpowers/specs/2026-10-29-telegram-reaction-reading.md) saved for incoming emoji/custom reactions, scoped message correlation and no-admin capability handling. Private native reaction delivery is unavailable under the documented Bot API admin requirement. No implementation, activation or queue reprioritization.
+
+## Owner TODO — container healthchecks (2026-11-03)
+
+- Add appropriate Docker healthchecks/readiness checks for every gopod-owned
+  container: controller, Claude/Codex personal and group runtimes, elevated
+  runtimes and auxiliary images. Long-running containers must expose meaningful
+  startup/liveness status; define a suitable readiness/exit check for one-shot
+  tools. Checks must not trigger provider inference, credential refresh or writes.
+  Include the health matrix and before/after-reboot verification in the runbook.
+  Requested after observing that gopod/controller and owner agent had no healthcheck.
+  TODO only; not implemented in the elevated completion iteration.

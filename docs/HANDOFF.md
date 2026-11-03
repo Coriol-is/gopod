@@ -15,6 +15,12 @@ all proposed write defaults consistently require confirmation. Documentation-onl
 updates now use the owner-approved exception in CLAUDE.md: no mandatory PR or
 full verification, with diff/link/consistency checks retained.
 
+## Owner follow-up — container healthchecks
+
+Recorded in [ROADMAP](../ROADMAP.md#owner-todo--container-healthchecks-2026-11-03):
+add meaningful health/readiness checks for every gopod-owned container, including
+Claude/Codex elevated images. This is a queued task, not implemented in this iteration.
+
 ## Resume here — integrated elevated completion, 2026-11-03
 
 Owner requested one larger E3–E5 iteration. `feat/elevated-complete` in
