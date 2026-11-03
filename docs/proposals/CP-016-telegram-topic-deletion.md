@@ -30,3 +30,10 @@ parallel runtimes merely by merging this document.
 The spec defines authorization, failure/recovery behavior, migration where
 applicable, tests and real acceptance gates. No unimplemented capability is
 advertised as available.
+
+## Implementation checkpoint — 2026-11-03
+
+The durable outbox slice on `feat/topic-outbox-fence` adds publication/claim and
+plain-fallback fences over the existing deletion journal. Runtime/network
+quiescence and command/recovery/stream/callback integration remain open. See
+[contract and tests](../reviews/2026-11-03-topic-outbox-fences.md).

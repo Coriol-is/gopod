@@ -77,8 +77,20 @@ func (s *Store) ValidateConversation(ctx context.Context, expected ConversationS
 	if !expected.validShape() {
 		return ErrStaleScope
 	}
-	_, err := s.withTx(ctx, func(q taskSQL) error { return validateScopeQ(ctx, q, expected.Scope) })
+	_, err := s.withTx(ctx, func(q taskSQL) error { return validateConversationQ(ctx, q, expected) })
 	return err
+}
+
+// validateConversationQ gates new conversation work, not settlement of an
+// already issued remote attempt. Keep acknowledgements writable after deletion.
+func validateConversationQ(ctx context.Context, q taskSQL, expected ConversationScope) error {
+	if !expected.validShape() {
+		return ErrStaleScope
+	}
+	if err := validateScopeQ(ctx, q, expected.Scope); err != nil {
+		return err
+	}
+	return topicAdmissionQ(ctx, q, expected.Scope, expected.ThreadID)
 }
 
 var savepointSeq atomic.Uint64

@@ -44,4 +44,13 @@ handlers, callback dispatch and two edits of the same message, including the
 reverse selection and absence of extra sends. Full build/vet/tests passed.
 An independent reviewer passed the diff and reran the focused tests. Custom
 model IDs outside the catalog still have no marked choice (existing behavior).
-CI/merge and live retest of the corrected build are pending at this checkpoint.
+PR #159 merged as `88a9aa3` after green test/isolation/Sonar. Live retest of
+the corrected build remains pending deployment.
+
+## Additional diagnostic finding
+
+A subsequent `/version` probe (3176256 → 3176257) returned
+`gopod dev (go go1.26.10)`. It does not identify the deployed revision and cannot
+verify it. This diagnostic discrepancy is noted for a separate fix; no deployment
+was inferred from that output. The last recorded deployment remains the elevated
+login rollout report, not a fresh binary-version verification in this session.
