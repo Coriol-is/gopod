@@ -40,7 +40,7 @@ Non-goals
 - Any group-chat or shared-chat use, bot-to-bot, automatic history ingestion into memory, a generic MTProto shell.
 - CAPTCHA/2FA bypass, phone-number login through the bot chat, scraping other users, bulk messaging.
 
-## 3. Verified current state
+## 3. Verified source snapshot (2026-10-30)
 
 Source read in this repository (code wins over earlier notes):
 - Telegram library is only `go-telegram/bot v1.27.0`; no MTProto library (`go.mod:8`). Go 1.26 (`go.mod:3`).
@@ -120,7 +120,7 @@ container/skills/telegram-account/    agent guide (SKILL.md) + embedded guide fo
 ```
 DB access stays in `internal/store` (CLAUDE.md "Code"); no raw `database/sql` elsewhere.
 
-### 4.2 ADR D053 (proposed, to be added in PR 1): the user session is an encrypted file under `data/`
+### 4.2 session-storage ADR (number assigned at implementation) (proposed, to be added in PR 1): the user session is an encrypted file under `data/`
 
 D012 forbids gopod from writing secret files. The session is an MTProto auth key: whoever holds it is the account.
 Persisting it is unavoidable (otherwise a QR login after every restart). Decision to propose:
@@ -135,13 +135,15 @@ Persisting it is unavoidable (otherwise a QR login after every restart). Decisio
   matching `token|key|secret|password|cookie|auth`; do not rely on it: the session bytes are never passed to slog).
 - Backups do **not** include it (section 4.3). Restore means a fresh QR login.
 - Residual risk, stated honestly: anyone who can read the gopod process environment plus the file can use the
-  account; host root can. The design removes the agent, the containers and the backups from that set.
+  account; host root can. The proposed isolation removes ordinary agent containers and backups from that set only after
+  qualification. CP-038 elevated containers have host-root authority and cannot be excluded by path
+  restrictions or encryption whose key is in the controller environment; no isolation from elevated is claimed.
 
 ### 4.3 Backup treatment (CP-007)
 
 Add `telegram_account_session` to `notCovered()` (`internal/backup/manifest.go:115`) so every set records and
 `verify` prints that the session is excluded, and add a parity test that `data/tgaccount/` is never copied by
-`create`. The three new store tables are database content and are covered like any table (they hold hashes and
+`create`. The four new store tables are database content and are covered like any table (they hold hashes and
 state, no message text after the retention in 12). `internal/store/backup_counts.go` must list each new table
 (the parity test fails otherwise, as learned in CP-033 PR 1).
 
@@ -307,8 +309,8 @@ the owner with `/tg policy` to `direct` or `off`.
 | Class | Operations | Risk | Default | Notes |
 |---|---|---|---|---|
 | `read` | everything in section 7 | privacy only | `direct` | cannot be set to `confirm` (reads are not confirmable per call); can be `off` |
-| `receipt` | mark dialog read | tells the sender you read it; clears unread | `direct` | reversible only by the sender seeing it; never automatic |
-| `react` | add or remove a reaction | visible, reversible | `direct` | |
+| `receipt` | mark dialog read | tells the sender you read it; clears unread | `confirm` | already seen receipts cannot be undone; never automatic |
+| `react` | add or remove a reaction | visible, reversible | `confirm` | |
 | `send` | send text, reply, send file or voice, forward, drafts | visible, irreversible | **`confirm`** | the main risk class |
 | `edit` | edit own message | visible edit mark | `confirm` | |
 | `delete` | delete own message for everyone or only for self | irreversible for others | `confirm` | switching to `direct` shows an extra warning |
@@ -435,8 +437,8 @@ Pending actions: 1   Today: 4 reads sent to agent, 2 writes
 Screen 2, `/tg policy` (pickers; the write classes show `off | ask | direct`):
 ```
 Write policy
-receipt  : direct      [off] [ask] [✓ direct]
-react    : direct      [off] [ask] [✓ direct]
+receipt  : ask         [off] [✓ ask] [direct]
+react    : ask         [off] [✓ ask] [direct]
 send     : ask         [off] [✓ ask] [direct]
 edit     : ask         [off] [✓ ask] [direct]
 delete   : ask         [off] [✓ ask] [direct]   (direct shows a warning)
@@ -480,12 +482,13 @@ Production, the Pi and any real account are not touched by saving this spec.
 
 ## 16. Open questions for the owner
 
-1. **Writes at all, and the default.** Accept `confirm` as the default for `send`, `edit` and `delete` with the taint
+1. **Writes at all, and the default.** Accept `confirm` as the default for every write class (`receipt`, `react`, `send`, `edit` and `delete`) with the taint
    downgrade on, or choose `direct` for any class now? The risk of `direct`: text steered by a read message goes out
    from the real account, and an account restriction (section 9) is possible.
-2. **Which operations beyond the table** (join channels, contacts, drafts, polls, reactions on others' messages) are
-   wanted in version 2? They are `admin` and not built.
-3. **Session encryption key** in `GOPOD_TG_SESSION_KEY` (ADR D053): acceptable, or prefer re-login after each restart
+2. **Which operations beyond the table** (such as join channels and contacts) are
+   wanted in version 2? Account-administration operations remain `admin` and unimplemented.
+   Drafts and reactions are already in the version-1 table; polls need a separate future design.
+3. **Session encryption key** in `GOPOD_TG_SESSION_KEY` (session-storage ADR (number assigned at implementation)): acceptable, or prefer re-login after each restart
    and no file?
 4. **Which account.** Must the connected account always be the owner's own (default, enforced), or may a second
    account be attached (`--allow-other-account` on the terminal)?
@@ -496,7 +499,7 @@ Production, the Pi and any real account are not touched by saving this spec.
 
 ## 17. Implementation outline (small PRs, tests first, no deploy)
 
-1. **ADR and plumbing.** D053, `internal/tgaccount` skeleton, `go.mod` (gotd/td, `rsc.io/qr` direct) with a license
+1. **ADR and plumbing.** Assign the session-storage ADR number, `internal/tgaccount` skeleton, `go.mod` (gotd/td, `rsc.io/qr` direct) with a license
    review, config flag and env names, encrypted session storage and tests, backup `notCovered` entry and parity test,
    protected-root and mount-deny additions. No behavior without the flag.
 2. **Login.** QR flow through the bot (`sendPrivateLoginPhoto`), password step through the CLI/control socket,

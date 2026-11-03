@@ -127,6 +127,7 @@ the user before any spec or code exists for it.
   then squash-merge. Squash title follows `<area>: <imperative summary>`.
   Work is autonomous unless it needs the owner's approval or an
   architectural decision; those stop and ask.
+- **Documentation-only exception (owner-approved 2026-11-03).** Documentation updates may be committed and pushed directly without a PR or full build/vet/test/CI verification. Check `git diff --check`, changed local links and consistency with current project state. Changes to source, dependencies, workflows or executable configuration retain the normal PR/review/CI process. Existing documentation PRs may be merged after these focused checks.
 - **Don't add features the user didn't ask for.** This project's discipline is
   *smaller than NanoClaw*. Resist scope creep aggressively.
 
