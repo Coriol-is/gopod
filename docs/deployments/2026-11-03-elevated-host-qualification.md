@@ -62,3 +62,39 @@ owner-private provider selection and explicit warning confirmation are required.
 Native provider login/new/resume/tool execution and real Telegram callback
 acceptance remain open. No ordinary credentials were copied. Container healthchecks
 are queued separately in ROADMAP.
+
+## Controller rollout and rpi4 activation
+
+PR #154 merged as `294e8a77dc793313ff6b069685ee9b3d87b4d292` after independent
+review and green test/isolation/Sonar checks on `124bc1a`. Exact main CI
+[41622458555](https://github.com/Coriol-is/gopod/actions/runs/41622458555) passed.
+Sonar CLI was used; the quality gate passed, with complexity findings and existing
+touched-file maintainability findings still reported (none suppressed).
+
+Controller built on Pi with version `124bc1a`; `git diff --quiet` verified that
+its source tree equals the squash merge. Checkout is detached at `294e8a7`.
+Image: `sha256:a1bf425003559a85109e43ee5bbb91efe88234a5c00f776c24c6c343107aea46`.
+
+- Online backup `20261103T104727Z-db-29e9eff4` verified: 43 tables, 8,317 rows.
+- Idle gate: all counters zero. Stopped-writer backup initially refused the still
+  live idle owner container; it was explicitly stopped before retrying.
+- Matched-stopped backup `20261103T105305Z-ms-d150a86a` verified: 43 tables,
+  8,322 rows; no config files were declared. Native homes remain outside coverage.
+- Rollback controller tag: `gopod-gopod:rollback-pre-elevated-e3-20261103`.
+  Both provider images retain `rollback-pre-e3-20261103` tags.
+- Controller `.env` saved as `.env.pre-elevated-20261103T105344Z`, mode 0600.
+  Explicitly set `GOPOD_ELEVATED=1` and both dedicated production image names.
+  Repository defaults remain off. Candidate images promoted to `latest`.
+
+Controller started 10:53:46 UTC, restart count zero, OOM false; ordinary owner
+Codex self-check passed, scheduler/outbox/IPC ready, Telegram startup notice sent.
+All nine containers run, all seven configured healthchecks healthy. Memory API,
+Honcho and OneCLI return HTTP 200. Registration/session/task snapshots are
+identical to pre-deploy; SQLite integrity OK. Telegram `getMyCommands` confirms
+`root` in the private menu. Active elevated sessions: zero, as intended.
+
+Enabling the controller flag exposes the owner-private confirmation flow without
+starting root execution. To disable it, set `GOPOD_ELEVATED=0` in the controller
+`.env` and recreate the controller; startup recovery still removes surviving
+root containers. Native login/inference and visual/callback acceptance remain
+open; activation is not evidence that either provider is authenticated.

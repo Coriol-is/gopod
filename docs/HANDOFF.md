@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-03 (integrated E3–E5 implementation reviewed; E6 host gate open)
+**Last updated:** 2026-11-03 (E3–E5 merged/deployed; rpi4 flag enabled; native acceptance open)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -30,7 +30,7 @@ supervised cancellation (D061). Independent review PASS after fixing start/close
 races, inspect-only reuse, renamed survivors, restart snapshots, global admission,
 nil-Docker recovery, private login interception and cancelled-first-turn context.
 Focused tests, build/vet/full suite, affected race suites and real-Docker supervisor
-cancellation passed; PR CI/merge remains. Both ARM64 images built and passed offline smoke checks.
+cancellation passed; PR #154 merged as `294e8a7` after green final-head CI. Both ARM64 images built and passed offline smoke checks.
 
 **E6 host gate qualified:** owner authorized memory-cgroup configuration and a
 whole-Pi reboot. Before/after inventory preserved all nine containers and their
@@ -39,11 +39,17 @@ available. Candidate images pass offline smoke; the opt-in manager lifecycle tes
 uses disposable state, both provider images and fixed read-only host probes.
 See [host qualification](deployments/2026-11-03-elevated-host-qualification.md).
 
-PR #154 is awaiting final updated-head CI and merge. Pi controller still runs
-`75b3be3`; candidate tags do not replace production images. Feature activation,
-separate native provider login, authenticated new/resume/tool checks and real
-Telegram button acceptance remain open. Ordinary credentials were not copied.
-`/login` still means ordinary-chat login. Healthchecks are a separate queued task.
+PR #154 merged as `294e8a7`; exact main CI passed. Pi deployed at 10:53:46 UTC
+with binary version `124bc1a` (verified identical source tree to the squash merge).
+Owner explicitly requested `GOPOD_ELEVATED=1` on rpi4; controller default remains
+off. Telegram API confirms `/root` in the private command menu. No elevated
+session starts automatically; live elevated session count is zero. All nine
+containers run and all seven configured healthchecks pass. Data hashes unchanged.
+[Deployment evidence](deployments/2026-11-03-elevated-host-qualification.md#controller-rollout-and-rpi4-activation).
+
+Next: separate native provider login, authenticated new/resume/tool checks and
+real Telegram confirmation/Stop callback acceptance. Ordinary credentials were
+not copied. `/login` still means ordinary-chat login. Healthchecks remain queued.
 
 ## Previous — E0–E2 deployed, 2026-11-03
 
