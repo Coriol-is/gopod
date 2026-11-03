@@ -40,7 +40,7 @@ not resolve it by silently replacing the intent or discarding its tombstone.
 
 ## Outbox integration checkpoint — 2026-11-03
 
-The next slice is being verified on `feat/topic-outbox-fence`: transactional
+The outbox slice merged in PR #161 (`602403a`): transactional
 publication/validation, held claims during unresolved deletion, pending-only
 cancellation after confirmed deletion, and a plain-fallback fence. Existing
 in-flight remote attempts still require orchestration/quiescence; see the

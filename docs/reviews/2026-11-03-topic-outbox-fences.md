@@ -38,7 +38,8 @@ uncertainty never reopening on refusal, main/other-topic progress, zero attempts
 while held, durable hold after store reopen, pending-only cancellation, truthful
 late acknowledgement and blocked plain fallback. Full build/vet/test and affected
 race suites passed. Independent re-review passed after the cancellation fix.
-PR CI/merge remain pending. Initial review caught a
+PR #161 merged as `602403a` after green test/isolation/Sonar. Combined
+queue/store/cmd race suites passed on top of PR #160. No deployment performed. Initial review caught a
 pending tail hidden behind an uncertain head; the cancellation sweep now runs
 independently of dispatch eligibility and has a sending/uncertain/delayed
 regression. No live topic was deleted.

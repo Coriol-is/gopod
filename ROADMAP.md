@@ -80,7 +80,7 @@ has passed. The proposal registry remains the single CP status source;
 |---|---|---|---|
 | 1 | Qualify the deployed release | Tasks panel, delivery, upgraded CLIs, quota/provider continuity, Stop/recovery and media baseline — A01–A17 | Implemented/deployed baseline; live checks open |
 | 2 | Reliability and diagnostics | CP-017 Telegram diagnosis -> CP-002 bounded outbox/uncertain delivery -> CP-004 isolated task sessions -> CP-007 scheduled backups/restore -> CP-006 maintenance/quiet hours | CP-017 private-DM slice implemented; live acceptance pending; CP-002/003/004/007 partially implemented and deployed; full cutover, managed execution and restore gates remain open; CP-006 planned |
-| 3 | Conversation management | CP-016 topic deletion/retirement -> CP-018 per-conversation providers/models/quota scope | CP-016 store foundation merged/deployed; runtime integration and CP-018 pending |
+| 3 | Conversation management | CP-016 topic deletion/retirement -> CP-018 per-conversation providers/models/quota scope | CP-016 store foundation deployed, durable outbox fences merged (not deployed); runtime integration and CP-018 pending |
 | 4 | Group service UX | CP-019 ephemeral command/service/error replies; T14 scoped menu/strings work coordinated with transport | Spec saved; ordinary output stays public |
 | 5 | Media, three queues | CP-014 Q1 cards/links/attachment fidelity -> Q2 document/OCR/image/speech -> Q3 video speech+frames/export; CP-003 typed IPC artifacts and CP-005 qualified tools support appropriate slices | Specs/proposals only beyond existing baseline |
 | 6 | Platform extensions | CP-011 runtime, CP-012 registry; then additional providers/sandboxes, bounded bot-to-bot experiment if useful; secret gateway/MCP/metrics stay deferred | Design/research/deferred; no new backend or peer enabled |
@@ -117,12 +117,15 @@ Deployment and destructive live acceptance remain separate gates.
 
 ### Reliability checkpoint — 2026-11-03
 
-CP-002 PR 6b atomic batch attempt recording is being verified on
-`feat/reliable-batch-start`; foreground freeze/publication cutover remains open.
+CP-002 PR 6b atomic batch attempt recording merged in PR #160 (`f5ba97a`);
+foreground freeze/publication cutover remains open.
 [Slice boundary](docs/reviews/2026-11-03-batch-start-foundation.md).
 Live acceptance found a silent/model picker regression; fix PR #159 is merged,
-with production retest pending deployment. CP-016 command/runtime/output fences
-remain open after its store foundation.
+with production retest pending deployment. CP-016 durable outbox fences merged
+in PR #161 (`602403a`): unresolved deletion holds pending delivery, refusal
+reopens it, confirmed deletion cancels pending parts. Runtime/network quiescence,
+command/recovery/stream/callback integration remain open. All three PRs passed
+independent review and test/isolation/Sonar. Nothing deployed in this wave.
 
 ## Planning candidates — 2026-10-26
 
@@ -356,7 +359,7 @@ implementation.
 
 | Proposal | Status | Implementation scope |
 |---|---|---|
-| CP-016 topic deletion | 🟦 | Store retirement foundation in PR #144; command, runtime/output/recovery fences and client acceptance still open; no deleted-topic event assumed |
+| CP-016 topic deletion | 🟦 | Store retirement foundation #144 and durable outbox fences #161 merged; command, runtime/stream/recovery/callback fences and client acceptance still open; no deleted-topic event assumed |
 | CP-017 Telegram diagnostics | ✅ | Separate Telegram settings, subscriptions, code support and contextual rights; owner doctor and scoped help; [execution plan](docs/superpowers/plans/2026-10-25-telegram-capability-diagnostics.md) implemented for private DMs; group reports/notices deferred |
 | CP-018 per-thread providers | ⬜ | Chat default plus topic overrides, provider-specific models and scoped confirmed quota fallback |
 | CP-019 ephemeral command/service/error replies | ⬜ | Public conversational messages unchanged; private delivery never falls back to public |

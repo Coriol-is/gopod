@@ -33,7 +33,7 @@ advertised as available.
 
 ## Implementation checkpoint — 2026-11-03
 
-The durable outbox slice on `feat/topic-outbox-fence` adds publication/claim and
+The durable outbox slice merged in PR #161 (`602403a`) adds publication/claim and
 plain-fallback fences over the existing deletion journal. Runtime/network
 quiescence and command/recovery/stream/callback integration remain open. See
 [contract and tests](../reviews/2026-11-03-topic-outbox-fences.md).
