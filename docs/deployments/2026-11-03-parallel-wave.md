@@ -12,7 +12,7 @@
 
 Combined source build/vet/full tests and queue/store/cmd/Telegram/IPC race suites
 passed. No schema, provider/helper image or configuration change. Final main CI
-and live rollout are pending. Production currently remains `ec51ee6`.
+and live rollout passed. Production is `e6f0fad`; `ec51ee6` is retained for rollback.
 
 Sonar: PR #163 advisory ERROR, 4.6% duplicated new lines (test fixture blocks);
 PR #164 OK. Main analysis remains stale at `4e3031a` (2026-10-26), security E.
@@ -26,8 +26,8 @@ continuity, bounded Stop/process exit and post-Stop resume passed. Test topic
 PDF delivered there and its contents verified. The preliminary missing-file
 notice leaked into main; this release fixes that defect. Topic/PDF retained.
 
-Next: exact main CI, idle and retained rollback image, verified matched-stopped
-backup, startup/state read-back, scoped missing-file warning and `/version`.
+The rollout below completed exact main CI, idle and rollback preparation, a
+verified matched-stopped backup, startup/state read-back and scoped Telegram checks.
 
 ## Candidate checkpoint
 
@@ -37,7 +37,7 @@ match the fully tested integration tree. Exact main CI:
 Pi isolated synthetic-account boot passed with no network/production mounts.
 Candidate image `sha256:70d9f3ef7925d9946d90424ee048358c618abf039d5fa78f205ca56790426639`.
 Rollback tag `gopod-gopod:rollback-pre-backlog-20261103-e6f0fad` retains `ec51ee6`.
-No production switch until CI is green and the idle gate is rechecked.
+This candidate was switched only after CI passed and the idle gate was rechecked.
 
 ## Deployment connection checkpoint
 
