@@ -50,7 +50,12 @@ review, full local checks and affected races: [PR #166](https://github.com/Corio
 the contract; foreground activation remains off. CP-016 independent review found and fixed unknown-edit lease tracking and
 refused-reopen lock inversion; targeted races passed. Final full tests and
 combined-source integration remain pending. Legacy fallback-message origin
-after restart/cache eviction is still an activation gate; no delete command. Production remains unchanged.
+after restart/cache eviction is still an activation gate; no delete command.
+Final CP-016 review additionally found async login completion inheriting a
+released ingress context; fix and delayed-completion regression are required
+before merge. One concurrent managed-queue timeout is under investigation
+(repeated targeted checks passed); do not treat it as an established baseline
+flake without evidence. Combined tree compiled for linux/arm64 with Go 1.26.10. Production remains unchanged.
 
 ## Previous completed wave — parallel follow-up, 2026-11-03
 
