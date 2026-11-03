@@ -71,6 +71,9 @@ type SpawnConfig struct {
 // Validate enforces the non-optional fields of SpawnConfig. Called
 // automatically by BuildContainerArgs; exposed for tests.
 func (c SpawnConfig) Validate() error {
+	if c.ChatFolder == ElevatedFolder {
+		return errors.New("SpawnConfig: reserved elevated folder requires its own profile")
+	}
 	if c.Image == "" {
 		return errors.New("SpawnConfig: Image is empty")
 	}

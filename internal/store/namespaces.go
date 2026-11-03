@@ -175,6 +175,9 @@ func snapshotScopeQ(ctx context.Context, q taskSQL, predicate string, value any)
 	if err != nil {
 		return ScopeRef{}, err
 	}
+	if c.Folder == ElevatedFolder {
+		return ScopeRef{}, ErrReservedFolder
+	}
 	ref := c.Scope()
 	if err = validateOwnership(ctx, q, ref); err != nil {
 		return ScopeRef{}, err

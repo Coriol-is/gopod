@@ -11,7 +11,7 @@ import (
 )
 
 // ElevatedFolder is reserved for explicitly confirmed host-administration sessions.
-const ElevatedFolder = "elevated"
+const ElevatedFolder = store.ElevatedFolder
 
 // ElevatedSpawnConfig cannot be constructed from a chat SpawnConfig. No caller
 // supplied mounts or environment are accepted; the elevated path owns its profile.

@@ -116,6 +116,9 @@ func (p Paths) Validate() error {
 //
 // Passing a nil allowlist is equivalent to an empty allowlist.
 func BuildMounts(p Paths, chatFolder string, tier Tier, al *mountsec.Allowlist) ([]Mount, error) {
+	if chatFolder == ElevatedFolder {
+		return nil, errors.New("mounts: elevated folder requires its own profile")
+	}
 	if err := p.Validate(); err != nil {
 		return nil, err
 	}
@@ -277,6 +280,9 @@ func chatMatches(chatFolder string, allowed []string) bool {
 // Idempotent: safe to call repeatedly on the same chatFolder. Files
 // created on prior runs are left alone.
 func EnsureChatDirs(p Paths, chatFolder string, isOwner bool, log *slog.Logger) error {
+	if chatFolder == ElevatedFolder {
+		return errors.New("mounts: elevated folder requires its own bootstrap")
+	}
 	if err := p.Validate(); err != nil {
 		return err
 	}
