@@ -648,15 +648,23 @@ No arguments shows Claude/Codex buttons; `/root claude|codex` shows a Russian
 host-root warning and one-shot confirmation. `/root status` shows current state,
 `/root log [1..100]` shows a bounded, explicitly truncated host-exec journal,
 and `/root stop` removes the runtime and returns input routing to ordinary chat.
-`/stop` cancels only the elevated answer while ROOT is active. Existing ordinary
+`/stop` cancels the elevated answer or provider login while ROOT is active. Existing ordinary
 Stop callbacks keep their original targets and cannot cancel a root answer.
 
 Only new plain text is supported. Attachments, forwarded/automatic input and
 known login material are refused without entering the elevated transcript.
-Provider credentials must already be provisioned in the dedicated home; `/login`
-continues to mean ordinary-chat login, not elevated login. No automatic copy or
-paid fallback occurs. Missing provider login returns an error and keeps explicit
-close/status available. All root answers are buffered until journal settlement.
+After confirming the selected ROOT session, use `/root login` (or explicit
+`/login elevated`, or the "Войти в ROOT-профиль" button). The provider is fixed by
+that session: ordinary profiles and credentials are never used. Codex supplies a
+browser URL/device code; Claude supplies an OAuth URL and consumes the returned
+code privately before message persistence/model routing. No SSH is needed.
+The private login slot is shared with ordinary login, so concurrent profile
+logins are refused. Inference is blocked during sign-in. `/stop` cancels sign-in;
+`/root stop`, shutdown and restart also terminate it. Success requires native
+auth-status verification in the same container and generation, not CLI wording.
+`/login` without arguments continues to mean ordinary-chat login. No automatic
+copy or paid fallback occurs. A nonzero provider exit does not prove missing
+authentication; it offers `/root login` and `/root log` without claiming otherwise. All root answers are buffered until journal settlement.
 
 Stale confirmations, Docker unavailable, busy session, changed/missing container,
 and failed teardown are distinct refusals. Unknown teardown retains modal routing

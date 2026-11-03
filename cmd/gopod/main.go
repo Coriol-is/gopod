@@ -723,6 +723,9 @@ func run() error {
 		restart.notify = tgBot.SendRestartNotice
 		control.RegisterRestartLifecycle(router, restart.command)
 		control.RegisterStopCommand(router, tgBot.StopCurrentTurn)
+		if cfg.ElevatedEnabled {
+			control.RegisterElevated(router, cfg.OwnerChatID, elevated, tgBot.LoginElevated)
+		}
 		control.RegisterTelegramCommands(router, tgBot.TelegramSnapshot, tgBot.RefreshTelegramSnapshot, func(ctx context.Context, id int64) bool {
 			_, err := st.GetRegistered(ctx, fmt.Sprintf("tg:%d", id))
 			return err == nil

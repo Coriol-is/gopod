@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
@@ -12,6 +13,16 @@ import (
 // ExecElevated cancels via the supervisor's private stdin, never a host PID.
 // A cancelled attachment is not exit proof: inspect continues on a bounded context.
 func (d *Docker) ExecElevated(ctx context.Context, id string, argv []string) (*ExecResult, error) {
+	return d.execElevated(ctx, id, argv, nil, nil)
+}
+
+// ExecElevatedLogin streams login output only to its private consumer; no output
+// or stdin credentials are retained in results or written to the exec journal.
+func (d *Docker) ExecElevatedLogin(ctx context.Context, id string, argv []string, input io.ReadCloser, output io.Writer) (*ExecResult, error) {
+	return d.execElevated(ctx, id, append([]string{"--interactive"}, argv...), input, output)
+}
+
+func (d *Docker) execElevated(ctx context.Context, id string, argv []string, input io.ReadCloser, output io.Writer) (*ExecResult, error) {
 	cmd := append([]string{"node", "/usr/local/lib/gopod-elevated-exec.cjs"}, argv...)
 	created, err := d.cli.ContainerExecCreate(ctx, id, container.ExecOptions{Cmd: cmd, AttachStdin: true, AttachStdout: true, AttachStderr: true})
 	if err != nil {
@@ -27,7 +38,15 @@ func (d *Docker) ExecElevated(ctx context.Context, id string, argv []string) (*E
 	defer resp.Close()
 	out, stderr := &boundedBuffer{}, &boundedBuffer{}
 	copied := make(chan error, 1)
-	go func() { _, e := stdcopy.StdCopy(out, stderr, resp.Reader); copied <- e }()
+	if input != nil {
+		defer input.Close()
+		go func() { _, _ = io.Copy(resp.Conn, input) }()
+	}
+	var outWriter, errWriter io.Writer = out, stderr
+	if output != nil {
+		outWriter, errWriter = output, output
+	}
+	go func() { _, e := stdcopy.StdCopy(outWriter, errWriter, resp.Reader); copied <- e }()
 	stop := context.AfterFunc(ctx, func() { _ = resp.CloseWrite() })
 	defer stop()
 	// Wait for attachment EOF before treating Running=false as exit. Immediately

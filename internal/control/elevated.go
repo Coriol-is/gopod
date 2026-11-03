@@ -25,10 +25,14 @@ type rootControl struct {
 	pending string
 	owner   int64
 	session ElevatedSession
+	login   Handler
 }
 
-func RegisterElevated(r *Router, owner int64, e ElevatedSession) {
+func RegisterElevated(r *Router, owner int64, e ElevatedSession, login ...Handler) {
 	handler := &rootControl{owner: owner, session: e}
+	if len(login) > 0 {
+		handler.login = login[0]
+	}
 	r.Register("root", "root", "(owner, private) host-root session", PermOwnerOnly, handler.dispatch)
 }
 
@@ -50,6 +54,17 @@ func (r *rootControl) dispatch(ctx context.Context, cmd Command) (Response, erro
 	switch action {
 	case "":
 		return r.picker(), nil
+	case "login":
+		if len(cmd.Args) == 2 && cmd.Args[1] != r.session.Generation() {
+			return Response{Code: 1, Text: "Кнопка ROOT устарела; используйте /root login."}, nil
+		}
+		if !r.session.Active() {
+			return Response{Code: 1, Text: "Сначала /root: выберите провайдера и подтвердите запуск. Затем /root login."}, nil
+		}
+		if r.login == nil {
+			return Response{Code: 1, Text: "ROOT login недоступен."}, nil
+		}
+		return r.login(ctx, cmd)
 	case "status":
 		return r.status(), nil
 	case "log":
@@ -146,5 +161,5 @@ func (r *rootControl) confirm(cmd Command, provider string) Response {
 }
 func rootControls(e ElevatedSession) [][]Button {
 	generation := e.Generation()
-	return [][]Button{{{Label: "Статус", Command: "root", Args: []string{"status"}}, {Label: "Журнал", Command: "root", Args: []string{"log"}}}, {{Label: "Остановить ответ", Command: "root", Args: []string{"interrupt", generation}}, {Label: "Закрыть ROOT", Command: "root", Args: []string{"stop", generation}, Style: StyleDanger}}}
+	return [][]Button{{{Label: "Войти в ROOT-профиль", Command: "root", Args: []string{"login", generation}}}, {{Label: "Статус", Command: "root", Args: []string{"status"}}, {Label: "Журнал", Command: "root", Args: []string{"log"}}}, {{Label: "Остановить ответ", Command: "root", Args: []string{"interrupt", generation}}, {Label: "Закрыть ROOT", Command: "root", Args: []string{"stop", generation}, Style: StyleDanger}}}
 }

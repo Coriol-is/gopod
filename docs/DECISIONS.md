@@ -2175,3 +2175,23 @@ Start refuses Docker hosts lacking memory, CPU quota or pids enforcement. The
 Pi initially reported MemoryLimit=false. Owner-authorized configuration and reboot
 on 2026-11-03 enabled the controller; host qualification passed. Production flag
 activation and native provider acceptance remain separate from host qualification.
+
+
+## D062 — Explicit elevated-profile login through Telegram
+
+**Status:** accepted implementation contract, 2026-11-03, owner-requested.
+Supersedes D061's manual-only provider-login transport, not its profile isolation.
+
+`/root login` and `/login elevated` authenticate the provider of an already
+confirmed owner-private ROOT session. No implicit promotion, credential copying,
+provider switch or ordinary scope registration occurs. The existing private
+OAuth/device UI is shared; its per-chat reservation excludes simultaneous ordinary
+and elevated logins. Credentials and URLs stay out of ordinary persistence and
+exec journal payloads. Only fixed login/auth-status argv are journaled.
+
+Elevated login holds the same runtime/capacity lease as inference. Its own-group
+supervisor forwards stdin only in explicit interactive mode; cancellation closes
+private stdin and requires exit inspection. Stop/close/restart cancel login and
+unknown exit remains blocked. Success requires completed exec, settled journal
+and same-generation native auth status. It is never inferred from printed CLI
+success. Native login profiles remain separate and persist after container close.

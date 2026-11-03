@@ -6,6 +6,20 @@ Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
 [ACCEPTANCE](ACCEPTANCE.md) for pending real-client verification.
 
+## Resume here — elevated login implementation, 2026-11-03
+
+`feat/elevated-login` in `gopod-elevated-login` adds explicit `/root login`,
+`/login elevated` and a generation-bound login button (D062). It reuses private
+OAuth/device delivery while holding the elevated lifecycle/capacity lease.
+Fixed login/status calls are journaled without credentials; Stop/close/restart
+cancel the supervisor, and success needs separate native auth verification.
+Nonzero inference exit no longer falsely asserts that login is required.
+Full build/vet/test, affected race tests and real-Docker interactive-stdin plus
+cancellation proof passed. Independent review and final PR CI/merge remain.
+Both elevated images need rebuilding for interactive stdin forwarding before
+controller deployment. Existing Pi elevated session belongs to the owner;
+check idle state and do not interrupt it to deploy without settling it first.
+
 ## CI policy — Sonar soft gate, 2026-11-03
 
 Owner requested advisory Sonar: failures/cancellations/stale analyses are reported

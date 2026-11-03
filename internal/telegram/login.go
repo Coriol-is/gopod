@@ -35,11 +35,14 @@ func privateLoginMessage(m *models.Message) bool {
 
 // loginSession holds the state for one in-progress /login flow.
 type loginSession struct {
-	exec   loginIO
-	ctx    context.Context
-	cancel context.CancelFunc
-	chatID int64
-	folder string
+	submitMu  sync.Mutex
+	submitted bool
+	elevated  interface{ Verified(context.Context) bool }
+	exec      loginIO
+	ctx       context.Context
+	cancel    context.CancelFunc
+	chatID    int64
+	folder    string
 	// thread is the private-chat topic /login was sent in (0 = main
 	// chat). The session stays per chat; every message of the flow
 	// answers in this topic.
@@ -276,6 +279,15 @@ func (b *Bot) runLoginTarget(ctx context.Context, m *models.Message, thread int,
 	// Closing the attachment bounds a blocked ReadLine when the flow times out.
 	context.AfterFunc(loginCtx, func() { _ = exec.Close() })
 
+	return b.publishLogin(ctx, m, &loginSession{
+		exec: exec, ctx: loginCtx, cancel: loginCancel, chatID: m.Chat.ID,
+		folder: rc.Folder, thread: thread, private: true, actorID: userID(m.From),
+		tier: tier, provider: prov.Name(),
+	}, prov)
+}
+
+func (b *Bot) publishLogin(ctx context.Context, m *models.Message, session *loginSession, prov runner.AgentProvider) bool {
+	exec, loginCtx, loginCancel, thread := session.exec, session.ctx, session.cancel, session.thread
 	// Read lines looking for URL and optional device code.
 	var url, deviceCode string
 	for i := 0; i < 30; i++ {
@@ -306,35 +318,28 @@ func (b *Bot) runLoginTarget(ctx context.Context, m *models.Message, thread int,
 		}
 	}
 
-	if url == "" {
+	if url == "" || (prov.Name() == "codex" && deviceCode == "") {
 		loginCancel()
 		_ = exec.Close()
-		b.replyLoginText(ctx, m.Chat.ID, thread,
-			"Could not extract the login URL. Check gopod logs.")
+		text := "Could not extract the login URL. Check gopod logs."
+		if session.elevated != nil {
+			text = "⚠️ ROOT: вход не запущен или отменён. /root login — повторить."
+		}
+		b.replyLoginText(ctx, m.Chat.ID, thread, text)
 		return false
 	}
 
-	// Store the session.
-	session := &loginSession{
-		exec:       exec,
-		ctx:        loginCtx,
-		cancel:     loginCancel,
-		chatID:     m.Chat.ID,
-		folder:     rc.Folder,
-		thread:     thread,
-		awaitsCode: deviceCode == "",
-		private:    true,
-		actorID:    userID(m.From),
-		tier:       tier,
-		provider:   prov.Name(),
-		loginURL:   url,
-		deviceCode: deviceCode,
+	if session.elevated != nil && loginCtx.Err() != nil {
+		loginCancel()
+		_ = exec.Close()
+		return false
 	}
+	session.awaitsCode = deviceCode == ""
+	session.loginURL, session.deviceCode = url, deviceCode
 	if session.actorID == 0 {
 		session.actorID = m.Chat.ID
 	}
 	b.logins.set(m.Chat.ID, session)
-
 	// Backticks make the URL an inline-code entity in Telegram:
 	// copyable, and the markdown pass can't eat the underscores in
 	// its query parameters (client_id, code_challenge, ...).
@@ -350,7 +355,14 @@ func (b *Bot) runLoginTarget(ctx context.Context, m *models.Message, thread int,
 			"\n\nAfter signing in, copy the authorization code from the " +
 			"success page and send it here as your next message."
 	}
-	if _, err := b.sendPrivateLoginText(ctx, m.Chat.ID, thread, loginMsg, nil); err != nil {
+	if session.elevated != nil {
+		loginMsg = "⚠️ ROOT · " + session.provider + " · отдельный профиль\nОбычный профиль не изменяется. /stop — отменить вход.\n\n" + loginMsg
+	}
+	sendCtx := ctx
+	if session.elevated != nil {
+		sendCtx = loginCtx
+	}
+	if _, err := b.sendPrivateLoginText(sendCtx, m.Chat.ID, thread, loginMsg, nil); err != nil {
 		b.cleanupLoginSession(m.Chat.ID, session)
 		return false
 	}
@@ -370,8 +382,11 @@ func (b *Bot) runLoginTarget(ctx context.Context, m *models.Message, thread int,
 			_ = exec.Close()
 			// Only notify if it was a timeout, not a clean completion.
 			if loginCtx.Err() == context.DeadlineExceeded && session.private && session.chatID > 0 {
-				b.replyLoginText(context.Background(), m.Chat.ID, thread,
-					"Login session timed out. Run /login to try again.")
+				text := "Login session timed out. Run /login to try again."
+				if session.elevated != nil {
+					text = "⚠️ ROOT: время входа истекло. /root login — повторить."
+				}
+				b.replyLoginText(context.Background(), m.Chat.ID, thread, text)
 			}
 		}
 	}()
@@ -390,6 +405,13 @@ func (b *Bot) handleLoginCode(ctx context.Context, chatID int64, code string) {
 		b.cleanupLoginSession(chatID, session)
 		return
 	}
+	session.submitMu.Lock()
+	if session.submitted {
+		session.submitMu.Unlock()
+		return
+	}
+	session.submitted = true
+	session.submitMu.Unlock()
 	b.replyLoginText(ctx, chatID, session.thread, "Verifying code...")
 	if session.exec == nil {
 		b.cleanupLoginSession(chatID, session)
@@ -415,13 +437,18 @@ func (b *Bot) finishLogin(ctx context.Context, chatID int64, session *loginSessi
 		return
 	}
 	if session.exec != nil {
-		for i := 0; i < 30; i++ {
+		for i := 0; session.elevated != nil || i < 30; i++ {
 			line, err := session.exec.ReadLine()
 			if err != nil {
+				if session.elevated != nil && err != io.EOF {
+					b.cleanupLoginSession(chatID, session)
+					b.replyLoginText(ctx, chatID, session.thread, "⚠️ ROOT: вывод входа недоступен; вход отменён. /root login — повторить.")
+					return
+				}
 				break
 			}
 			lower := strings.ToLower(stripANSI(line))
-			if strings.Contains(lower, "logged in") || strings.Contains(lower, "authenticated") || strings.Contains(lower, "success") || strings.Contains(lower, "error") || strings.Contains(lower, "failed") || strings.Contains(lower, "invalid") {
+			if session.elevated == nil && (strings.Contains(lower, "logged in") || strings.Contains(lower, "authenticated") || strings.Contains(lower, "success") || strings.Contains(lower, "error") || strings.Contains(lower, "failed") || strings.Contains(lower, "invalid")) {
 				break
 			}
 		}
@@ -429,17 +456,32 @@ func (b *Bot) finishLogin(ctx context.Context, chatID int64, session *loginSessi
 	if session.ctx != nil && session.ctx.Err() == context.DeadlineExceeded {
 		return
 	}
-	b.cleanupLoginSession(chatID, session)
+	if session.elevated == nil {
+		b.cleanupLoginSession(chatID, session)
+	}
 	verified := false
-	if b.loginAuthCheck != nil {
+	if session.elevated != nil {
+		verified = session.elevated.Verified(ctx)
+	} else if b.loginAuthCheck != nil {
 		verified = b.loginAuthCheck(ctx, session)
 	} else {
 		verified = b.checkAuthAfterLogin(ctx, session)
 	}
+	if session.elevated != nil {
+		b.cleanupLoginSession(chatID, session)
+	}
 	if verified {
-		b.replyLoginText(ctx, chatID, session.thread, "Authentication verified. Send a message to start chatting.")
+		text := "Authentication verified. Send a message to start chatting."
+		if session.elevated != nil {
+			text = "⚠️ ROOT · " + session.provider + ": вход в отдельный elevated-профиль подтверждён. Можно отправлять запросы."
+		}
+		b.replyLoginText(ctx, chatID, session.thread, text)
 	} else {
-		b.replyLoginText(ctx, chatID, session.thread, "Authentication could not be verified. Run /login in this private chat to try again.")
+		text := "Authentication could not be verified. Run /login in this private chat to try again."
+		if session.elevated != nil {
+			text = "⚠️ ROOT: вход не подтверждён или отменён. /root login — повторить; /root stop — закрыть."
+		}
+		b.replyLoginText(ctx, chatID, session.thread, text)
 	}
 }
 

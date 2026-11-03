@@ -9,13 +9,14 @@ import (
 
 type rootInputProbe struct {
 	calls  int
+	stops  int
 	active bool
 }
 
 func (p *rootInputProbe) Active() bool       { return p.active }
 func (p *rootInputProbe) FreshAfter() int64  { return 100 }
 func (p *rootInputProbe) TakeNotice() string { return "" }
-func (p *rootInputProbe) StopAnswer() bool   { return true }
+func (p *rootInputProbe) StopAnswer() bool   { p.stops++; return true }
 func (p *rootInputProbe) Run(context.Context, string) (string, error) {
 	p.calls++
 	return strings.Repeat("x", 3500), nil

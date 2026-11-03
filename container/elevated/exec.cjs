@@ -8,7 +8,13 @@ if (args[0] === '--inner') {
   process.stdin.resume();
   process.stdin.on('end', killOwnGroup);
   process.stdin.on('error', killOwnGroup);
-  const child = spawn(args[1], args.slice(2), {stdio: ['ignore', 'inherit', 'inherit']});
+  const interactive = args[1] === '--interactive';
+  const command = interactive ? args.slice(2) : args.slice(1);
+  const child = spawn(command[0], command.slice(1), {stdio: [interactive ? 'pipe' : 'ignore', 'inherit', 'inherit']});
+  if (interactive) {
+    process.stdin.pipe(child.stdin);
+    child.stdin.on('error', () => {});
+  }
   const finish = code => { fs.writeSync(3, String(code)); killOwnGroup(); };
   child.on('error', () => finish(127));
   child.on('exit', code => finish(code === null ? 137 : code));
