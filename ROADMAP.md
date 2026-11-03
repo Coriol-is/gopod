@@ -38,7 +38,7 @@ T5/T5b parallel-runtime implementation remains paused; deployment and T9 reboot 
 ## Elevated host session — CP-038 (implementation authorized)
 
 ⬜ Design merged as `2ca967c` via [PR #128](https://github.com/Coriol-is/gopod/pull/128).
-E0 images are in progress on `feat/elevated-e0`; E1–E6 remain pending. No feature flag or elevated runtime is deployed. [CP-038](docs/proposals/CP-038-elevated-host-session.md)
+E0 images merged in #150 (`57e4c0c`). E1 profile/guard is in progress on `feat/elevated-e1` (D059); E2–E6 remain pending. No feature flag or elevated runtime is deployed. [CP-038](docs/proposals/CP-038-elevated-host-session.md)
 is `in-progress`: owner authorized implementation on 2026-11-03.
 
 An explicitly started owner-private conversation with host authority on the Pi:

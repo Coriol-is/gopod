@@ -126,8 +126,9 @@ func (e *fakeEngine) CreateStart(_ context.Context, name string, cfg *container.
 		User:           cfg.User,
 		ReadonlyRootfs: host.ReadonlyRootfs,
 		Privileged:     host.Privileged,
-		CapDrop:        []string(host.CapDrop),
-		SecurityOpt:    host.SecurityOpt,
+		PidMode:        string(host.PidMode), NetworkMode: string(host.NetworkMode), IpcMode: string(host.IpcMode),
+		CapDrop:     []string(host.CapDrop),
+		SecurityOpt: host.SecurityOpt,
 	}
 	for k, v := range cfg.Labels {
 		f.Labels[k] = v

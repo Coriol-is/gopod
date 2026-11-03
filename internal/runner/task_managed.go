@@ -139,7 +139,7 @@ func (r *Runner) planFor(ctx context.Context, folder string, role ExecRole, prov
 	if m == nil {
 		return nil, ErrManagedTasksDisabled
 	}
-	if !role.Valid() {
+	if !role.Valid() || role == RoleElevatedHost {
 		return nil, fmt.Errorf("%w: unknown role", ErrTaskDenied)
 	}
 	scope, err := m.scopes.SnapshotScope(ctx, folder)

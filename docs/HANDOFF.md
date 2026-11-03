@@ -1,12 +1,37 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-03 (CP-038 implementation authorized; E0 images qualified)
+**Last updated:** 2026-11-03 (E0 merged; E1 role boundary approved and implemented)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
 [ACCEPTANCE](ACCEPTANCE.md) for pending real-client verification.
 
-## Resume here — CP-038 E0 implementation, 2026-11-03
+## Resume here — CP-038 E1 profile and guard, 2026-11-03
+
+E0 PR #150 merged as `57e4c0c` after independent review and green test,
+isolation-spike and Sonar. Both ARM64 provider images built/smoked; see
+[image evidence](reviews/2026-11-03-elevated-e0.md). Sonar CLI uses organization
+`coriol-is`; MCP's default organization does not enumerate this project's issues.
+
+E1 worktree `gopod-elevated-e1`, branch `feat/elevated-e1`: commit `43027d3`
+pinned ordinary args/digest before implementation. The new profile has fixed
+host/workspace/provider mounts, root and host namespaces, positive resource
+limits and an independent Docker guard (no managed-task activation). Requested
+config digest, role and immutable image must match; drift/death never recycles.
+
+Owner approved [D059](DECISIONS.md): reject transitions involving elevated,
+including stopped containers, while preserving ordinary foreground/task
+recycling and proof/slot checks. Tests pin ordinary args/digest, namespace
+normalization/tampering and role boundaries. Owner also explicitly requires
+warning/confirmation dialogs and host-rendered start/reply/end markers; E3/E4
+contract is recorded in spec section 14.
+
+Next: independent review, full build/vet/tests and runner race, PR green CI/merge,
+then E2 folder/journal and durable identity reconciliation. E2–E6 remain pending;
+no elevated runtime caller, activation or Pi rollout exists yet. Preserve worktrees.
+
+## Previous — CP-038 E0 implementation, 2026-11-03
+
 
 Owner asked to finish elevated. CP-038 is now in-progress; worktree
 `gopod-elevated-e0`, branch `feat/elevated-e0` contains separate Claude/Codex
