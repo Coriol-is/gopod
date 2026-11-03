@@ -312,6 +312,10 @@ func (l *Lifecycle) shutdownTargets(ctx context.Context) []chatThread {
 // or the main chat when the topic is gone. It is not a turn reply and
 // is not recorded anywhere.
 func (b *Bot) sendNotice(ctx context.Context, chatID int64, thread int, text string) error {
+	if err := b.topicAdmission(ctx, chatID, thread); err != nil {
+		return err
+	}
+	originalThread := thread
 	if b.threadGone(chatID, thread) {
 		thread = 0
 	}
@@ -319,6 +323,9 @@ func (b *Bot) sendNotice(ctx context.Context, chatID int64, thread int, text str
 		ChatID: chatID, MessageThreadID: thread, Text: text,
 	})
 	if err != nil && b.checkThreadGone(chatID, thread, err) {
+		if err := b.topicAdmission(ctx, chatID, originalThread); err != nil {
+			return err
+		}
 		_, err = b.api.SendMessage(ctx, &bot.SendMessageParams{ChatID: chatID, Text: text})
 	}
 	if err != nil {

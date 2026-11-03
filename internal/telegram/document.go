@@ -17,12 +17,18 @@ import (
 // is in memory, so unlike a voice reply the upload can be repeated.
 // caption is plain text; keep it short.
 func (b *Bot) sendDocument(ctx context.Context, chatID int64, thread int, name string, data []byte, caption string) (int, error) {
+	if err := b.topicAdmission(ctx, chatID, thread); err != nil {
+		return 0, err
+	}
 	b.chatAction(ctx, chatID, thread, models.ChatActionUploadDocument)
 	if !b.threadGone(chatID, thread) {
 		id, err := b.uploadDocument(ctx, chatID, thread, name, data, caption)
 		if !b.checkThreadGone(chatID, thread, err) {
 			return id, err
 		}
+	}
+	if err := b.topicAdmission(ctx, chatID, thread); err != nil {
+		return 0, err
 	}
 	return b.uploadDocument(ctx, chatID, 0, name, data, caption)
 }
@@ -32,6 +38,9 @@ func (b *Bot) sendDocument(ctx context.Context, chatID int64, thread int, name s
 // message. Best effort: a failure is only logged at debug. A topic
 // known gone gets it in the main chat, where the content will go.
 func (b *Bot) chatAction(ctx context.Context, chatID int64, thread int, action models.ChatAction) {
+	if b.topicAdmission(ctx, chatID, thread) != nil {
+		return
+	}
 	if b.threadGone(chatID, thread) {
 		thread = 0
 	}

@@ -745,18 +745,24 @@ func (b *Bot) sendRendered(ctx context.Context, chatID int64, thread int, replyT
 // need theirs there: their tokens are bound to the chat, not the
 // topic, and a question without its buttons cannot be answered.
 func (b *Bot) sendRenderedOpts(ctx context.Context, chatID int64, thread int, replyToMsgID int, text string, render func(string) string, markup models.ReplyMarkup, keepMarkup bool) (int, error) {
+	if err := b.topicAdmission(ctx, chatID, thread); err != nil {
+		return 0, err
+	}
 	if !b.threadGone(chatID, thread) {
 		id, err := b.sendChunks(ctx, chatID, thread, replyToMsgID, text, render, markup)
 		if !b.checkThreadGone(chatID, thread, err) {
 			return id, err
 		}
 	}
+	if err := b.topicAdmission(ctx, chatID, thread); err != nil {
+		return 0, err
+	}
 	// The topic-gone fallback in main carries no reply action row
 	// (replyrow.go): that row is the topic conversation's.
 	if !keepMarkup {
 		markup = nil
 	}
-	return b.sendChunks(ctx, chatID, 0, 0, threadGoneNote+text, render, markup)
+	return b.sendChunks(ctx, chatID, 0, 0, threadGoneNote+text, render, markup, thread)
 }
 
 // sendChunks sends text as HTML chunks into thread, falling back to
@@ -766,7 +772,17 @@ func (b *Bot) sendRenderedOpts(ctx context.Context, chatID int64, thread int, re
 // attempt is returned as is: the plain-text fallback is for markup
 // Telegram rejects and would only hit the same rate limit. So is a
 // thread-gone error, which the plain text would hit as well.
-func (b *Bot) sendChunks(ctx context.Context, chatID int64, thread int, replyToMsgID int, text string, render func(string) string, markup models.ReplyMarkup) (int, error) {
+func (b *Bot) sendChunks(ctx context.Context, chatID int64, thread int, replyToMsgID int, text string, render func(string) string, markup models.ReplyMarkup, originalThread ...int) (int, error) {
+	sourceThread := thread
+	if len(originalThread) > 0 {
+		sourceThread = originalThread[0]
+	}
+	send := func(params *bot.SendMessageParams) (*models.Message, error) {
+		if err := b.topicAdmission(ctx, chatID, sourceThread); err != nil {
+			return nil, err
+		}
+		return b.api.SendMessage(ctx, params)
+	}
 	const maxLen = 4000
 	last := 0
 	htmlText := render(text)
@@ -790,7 +806,7 @@ func (b *Bot) sendChunks(ctx context.Context, chatID int64, thread int, replyToM
 			}
 		}
 
-		sent, err := b.api.SendMessage(ctx, params)
+		sent, err := send(params)
 		if err == nil && sent != nil {
 			last = sent.ID
 		}
@@ -804,7 +820,7 @@ func (b *Bot) sendChunks(ctx context.Context, chatID int64, thread int, replyToM
 			b.log.Warn("reply keyboard refused, sending the chunk without it",
 				slog.Int64("chat_id", chatID), slog.Any("err", err))
 			params.ReplyMarkup = nil
-			sent, err = b.api.SendMessage(ctx, params)
+			sent, err = send(params)
 			if err == nil {
 				if sent != nil {
 					last = sent.ID
@@ -838,14 +854,14 @@ func (b *Bot) sendChunks(ctx context.Context, chatID int64, thread int, replyToM
 				if j == len(plainChunks)-1 {
 					pp.ReplyMarkup = markup
 				}
-				sent, err := b.api.SendMessage(ctx, pp)
+				sent, err := send(pp)
 				if err != nil && pp.ReplyMarkup != nil && isKeyboardRefusal(err) {
 					// A refused keyboard never costs the reply: the
 					// buttons are a convenience, the text is not.
 					b.log.Warn("reply keyboard refused, sending without it",
 						slog.Int64("chat_id", chatID), slog.Any("err", err))
 					pp.ReplyMarkup = nil
-					sent, err = b.api.SendMessage(ctx, pp)
+					sent, err = send(pp)
 				}
 				if err != nil {
 					b.log.Error("SendMessage failed",

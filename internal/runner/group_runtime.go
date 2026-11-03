@@ -55,6 +55,9 @@ func (r *Runner) groupRegistration(ctx context.Context, folder string) (store.Re
 	return found, isGroupRegistration(found), nil
 }
 func (r *Runner) turnRuntime(ctx context.Context, folder string, thread int, tier Tier, al *mountsec.Allowlist) (string, AgentProvider, func(), error) {
+	if err := r.validateTopicAdmission(ctx, folder, thread); err != nil {
+		return "", nil, func() {}, err
+	}
 	c, ok, err := r.groupRegistration(ctx, folder)
 	if err != nil {
 		return "", nil, func() {}, err
