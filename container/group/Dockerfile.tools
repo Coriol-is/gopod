@@ -7,3 +7,8 @@ RUN mkdir -p /workspace/chat
 WORKDIR /workspace/chat
 USER 1000:1000
 CMD ["sleep", "infinity"]
+
+# A short-lived, pids-limited execution sandbox: host preflight and exit status
+# are its readiness/completion contract. Periodic processes consume its 8-PID
+# budget and may run while the sandbox is paused for snapshot, so disable them.
+HEALTHCHECK NONE

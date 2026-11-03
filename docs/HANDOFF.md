@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-03 (parallel wave deployed and final Telegram regression passed)
+**Last updated:** 2026-11-03 (next CP-002 / CP-016 / healthchecks wave started)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -13,7 +13,46 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — parallel follow-up, 2026-11-03
+## Resume here — final plans, quiescence and healthchecks
+
+Owner approved the next three parallel streams after deployment `e6f0fad`.
+Base main `f4d71f3`; production remains `e6f0fad`. Existing worktrees retained.
+
+- `feat/final-publication-plan`, `../gopod-final-plan`: CP-002 immutable final
+  text/code/voice publication and cancellation settlement toward safe activation.
+- `feat/topic-quiescence`, `../gopod-topic-quiescence`: CP-016 native/transport
+  quiescence, queued work and thread-aware edits toward safe topic deletion.
+- `feat/container-healthchecks`, `../gopod-healthchecks`: offline read-only
+  health/readiness probes for long-running containers and one-shot exit checks.
+
+Workers must coordinate shared runner/Telegram ownership before edits. Root owns
+independent review, global documentation, sequential integration/CI and deployment.
+Do not claim full completion or activate incomplete paths. No host reboot,
+provider login, paid test call or deletion of existing user data is implied.
+Dedicated reports track intermediate implementation evidence. This stage has
+not changed production. Concrete stream plans reviewed:
+CP-002 persists final intent and atomically publishes deterministic text/code/voice
+plans, with boot recovery before ordinary classification (D063 reserved).
+CP-016 adds per-conversation native/queue/transport leases and scoped edit ownership;
+quiescence must prove actual native completion, not just handler return (D064 reserved).
+Healthchecks add local controller responsiveness/store readiness and offline image
+prerequisites with disposable Docker qualification; no host reboot in this wave.
+Full activation/command exposure depends on the remaining gates actually passing.
+
+Checkpoint: healthchecks source `14d40d0` is independently reviewed; full local
+build/vet/tests, affected races and disposable offline Docker matrix passed.
+[PR #165](https://github.com/Coriol-is/gopod/pull/165) passed required CI and
+merged as `067c016`. Sonar advisory ERROR: loopback HTTP (S5332), security B;
+probe is restricted to literal loopback, no proxy/redirect or user data.
+CP-002 immutable-plan persistence/preparation/boot recovery passed independent
+review, full local checks and affected races: [PR #166](https://github.com/Coriol-is/gopod/pull/166),
+`149e1d8`, merged as `de8293b` after required CI and Sonar OK. D063 records
+the contract; foreground activation remains off. CP-016 independent review found and fixed unknown-edit lease tracking and
+refused-reopen lock inversion; targeted races passed. Final full tests and
+combined-source integration remain pending. Legacy fallback-message origin
+after restart/cache eviction is still an activation gate; no delete command. Production remains unchanged.
+
+## Previous completed wave — parallel follow-up, 2026-11-03
 
 Owner approved three parallel streams, with sequential review/integration/deploy.
 Base main `09dbaf4`; production controller `e6f0fad` since 16:29:08 UTC. Existing worktrees retained.

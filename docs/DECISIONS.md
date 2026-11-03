@@ -2196,6 +2196,42 @@ unknown exit remains blocked. Success requires completed exec, settled journal
 and same-generation native auth status. It is never inferred from printed CLI
 success. Native login profiles remain separate and persist after container close.
 
+## D063 — Immutable personal final publication intent
+
+**Status:** accepted implementation contract, 2026-11-03. Foreground producer
+activation remains gated; this does not complete CP-002.
+
+An interactive personal frozen result may own one `final_reply_intents` row.
+Before preparation the host records immutable presentation input and its hash.
+The `preparing` state has no dispatch authority. Unknown or in-progress speech
+preparation remains held and uses the existing result-bound generation ledger;
+recovery never repeats paid generation. A `ready` plan freezes exact ordered
+parts, reply/edit targets, markup, preparation membership and expiry, with a
+content hash. Changed preferences cannot rewrite it. All artifact references
+must map bijectively to ready, same-scope artifacts in active reservations.
+
+Publication atomically creates the outbox delivery, attaches every artifact
+reference, releases all participating reservations and records `published`.
+Concurrent identical publication reuses that delivery. A different prior
+publication remains an explicit reconciliation hold. `published` means durable
+outbox ownership, never Telegram acknowledgement. Boot only publishes ready
+plans, before ordinary queue recovery, with no rendering, preference lookup,
+filesystem generation or model/TTS calls. Corrupt intent/plan hashes fail startup;
+expired/stale plans remain held. Transport still verifies actual blob bytes and
+reports missing or corrupt files through existing delivery failure semantics.
+
+Preparation reservations retain their existing TTL; failed/concurrent preparation
+losers expire rather than releasing possibly committed winning artifacts. Ready
+plans are not regenerated after expiry. Backup schema counts include the intent
+table and idle diagnostics expose unpublished intents. The additive outbox reply
+target column preserves legacy hashes for zero targets; older binaries may reject
+the newer schema during backup restore and cannot honor nonzero reply targets.
+
+Production foreground creation remains disconnected until conditional code-upload
+fallback, preview ownership, late cancellation settlement and reply-action parity
+are qualified together. Sync voice-only and streaming text selection remain
+explicit inputs. No flag, group-path activation or live billing is introduced.
+
 ## D064 — Exact-topic quiescence leases and conservative restart restoration
 
 **Status:** accepted implementation contract, 2026-11-03, CP-016 continuation.

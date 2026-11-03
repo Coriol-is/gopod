@@ -56,6 +56,16 @@ import (
 var version = "dev"
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "healthcheck" {
+		address := os.Getenv("GOPOD_HEALTH_ADDR")
+		if address == "" {
+			address = control.DefaultHealthAddress
+		}
+		if control.CheckHealth(context.Background(), address) != nil {
+			os.Exit(1)
+		}
+		return
+	}
 	// `gopod backup ...` is an operator CLI: it never starts the application.
 	if len(os.Args) > 1 && os.Args[1] == "backup" {
 		os.Exit(runBackupCLI(os.Args[2:], os.Stdout, os.Stderr))
@@ -136,6 +146,22 @@ func run() error {
 			logger.Error("store close", slog.Any("err", err))
 		}
 	}()
+
+	var healthyOutbox func() bool // assigned before health.Ready publishes startup
+	health := control.NewHealth(sigCtx, func(c context.Context) error {
+		if healthyOutbox != nil && !healthyOutbox() {
+			return errors.New("outbox not running")
+		}
+		_, err := st.GetState(c, "healthcheck_read_only")
+		return err
+	})
+	if address := os.Getenv("GOPOD_HEALTH_ADDR"); address != "" {
+		closeHealth, err := control.ServeHealth(address, health.Handler())
+		if err != nil {
+			return err
+		}
+		defer closeHealth()
+	}
 
 	// Apply a requested durable-session adoption before anything reads the
 	// session tables, so an adopted DB starts durable in this same boot.
@@ -401,6 +427,7 @@ func run() error {
 				subsystems.Add(1)
 				go func() {
 					defer subsystems.Done()
+					defer health.Fail()
 					if err := memAPI.Start(); err != nil && err != http.ErrServerClosed {
 						runLog.Error("memory API server", slog.Any("err", err))
 					}
@@ -822,6 +849,11 @@ func run() error {
 				}
 				logger.Info("released stale execution claims", slog.Int("count", n))
 			}
+			if cfg.OutboxDispatcherEnabled {
+				if err := recoverReadyFinalReplies(ctx, st, logger); err != nil {
+					return err
+				}
+			}
 			n, err := agentQueue.Recover(ctx)
 			if errors.Is(err, queue.ErrHoldsUnknown) {
 				// Serving beside a possibly running task attempt is unsafe.
@@ -849,6 +881,7 @@ func run() error {
 			subsystems.Add(1)
 			go func() {
 				defer subsystems.Done()
+				defer health.Fail()
 				sched.Start(ctx)
 			}()
 		}
@@ -864,6 +897,7 @@ func run() error {
 			// A failure here must not take the whole bot down: the legacy send
 			// paths stay authoritative, so run with the dispatcher disabled.
 			if owner, err := acquireOutboxOwner(ctx, st, 10*time.Second, 500*time.Millisecond); err != nil {
+				health.Fail()
 				outboxLog.Error("outbox dispatcher DISABLED: could not take the exclusive outbox lock", slog.Any("err", err))
 			} else {
 				// CP-003 artifact snapshots: on by default (D057), off with GOPOD_OUTBOX_ARTIFACTS=0.
@@ -883,11 +917,13 @@ func run() error {
 				dispatcher := telegram.NewOutboxDispatcher(owner, tgBot.NewOutboxTransport(opener), telegram.OutboxConfig{}, outboxLog)
 				if err := dispatcher.Start(ctx); err != nil {
 					owner.Release()
+					health.Fail()
 					outboxLog.Error("outbox dispatcher DISABLED: start failed", slog.Any("err", err))
 					if closeArtifacts != nil {
 						onShutdown(closeArtifacts)
 					}
 				} else {
+					healthyOutbox = dispatcher.Running
 					st.SetPublishNotifier(dispatcher.Notify)
 					onShutdown(func() {
 						if err := dispatcher.Stop(10 * time.Second); err != nil {
@@ -936,6 +972,7 @@ func run() error {
 			subsystems.Add(1)
 			go func() {
 				defer subsystems.Done()
+				defer health.Fail()
 				maintainGenerations(ctx, st, 5*time.Minute, time.Duration(cfg.GenerationRetentionDays)*24*time.Hour, reconcile, ipcLog)
 			}()
 		}
@@ -986,6 +1023,7 @@ func run() error {
 		subsystems.Add(1)
 		go func() {
 			defer subsystems.Done()
+			defer health.Fail()
 			if err := ipcWatcher.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 				ipcLog.Error("ipc watcher", slog.Any("err", err))
 			}
@@ -1021,12 +1059,14 @@ func run() error {
 		subsystems.Add(1)
 		go func() {
 			defer subsystems.Done()
+			defer health.Fail()
 			if err := tgBot.Run(ctx); err != nil {
 				tgLog.Error("telegram bot exited with error", slog.Any("err", err))
 			}
 		}()
 	}
 
+	health.Ready()
 	logger.Info("gopod ready (waiting for SIGINT/SIGTERM)")
 
 	<-ctx.Done()

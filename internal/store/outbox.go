@@ -73,12 +73,13 @@ var (
 
 // DeliveryPart is one exact, immutable operation. Retries never re-render it.
 type DeliveryPart struct {
-	Kind            PartKind
-	Payload         []byte // text/edit body; an upload's optional caption
-	ArtifactRef     string // opaque immutable artifact reference for uploads
-	ParseMode       string
-	ReplyMarkup     string
-	TargetMessageID int64 // required for edits
+	Kind             PartKind
+	Payload          []byte // text/edit body; an upload's optional caption
+	ArtifactRef      string // opaque immutable artifact reference for uploads
+	ParseMode        string
+	ReplyMarkup      string
+	TargetMessageID  int64 // required for edits
+	ReplyToMessageID int64 // optional same-conversation reply for text/upload
 }
 
 // RequestIdentity is the durable dedupe identity of an IPC request. The key is
@@ -159,6 +160,9 @@ func validatePublish(req PublishRequest, now int64) error {
 		return fmt.Errorf("%w: request identity", ErrInvalidDelivery)
 	}
 	for i, p := range req.Parts {
+		if p.ReplyToMessageID < 0 || p.ReplyToMessageID > 2147483647 || (p.Kind == PartEdit && p.ReplyToMessageID != 0) {
+			return fmt.Errorf("%w: invalid reply target", ErrInvalidDelivery)
+		}
 		if len(p.Payload) > MaxPartPayloadBytes || len(p.ReplyMarkup) > MaxReplyMarkupBytes ||
 			len(p.ArtifactRef) > MaxArtifactRefBytes || len(p.ParseMode) > MaxParseModeBytes {
 			return fmt.Errorf("%w: part %d exceeds a size bound", ErrInvalidDelivery, i)
@@ -199,8 +203,13 @@ func planHash(req PublishRequest) string {
 }
 
 func partHash(ordinal int, p DeliveryPart) string {
-	return newCanonicalHasher("gopod.delivery-part.v1").int(int64(ordinal)).str(string(p.Kind)).bytes(p.Payload).
-		str(p.ArtifactRef).str(p.ParseMode).str(p.ReplyMarkup).int(p.TargetMessageID).sum()
+	h := newCanonicalHasher("gopod.delivery-part.v1").int(int64(ordinal)).str(string(p.Kind)).bytes(p.Payload).
+		str(p.ArtifactRef).str(p.ParseMode).str(p.ReplyMarkup).int(p.TargetMessageID)
+	// Keep old zero-target hashes stable across this additive migration.
+	if p.ReplyToMessageID != 0 {
+		h.str("reply_to").int(p.ReplyToMessageID)
+	}
+	return h.sum()
 }
 
 // PublishDelivery atomically revalidates the ScopeRef, enforces request/plan
@@ -331,9 +340,9 @@ func publishDeliveryQ(ctx context.Context, q taskSQL, limits OutboxLimits, req P
 		if len(p.Payload) > 0 {
 			payload = p.Payload
 		}
-		if _, err = q.ExecContext(ctx, `INSERT INTO outbox_parts(part_id,delivery_id,ordinal,kind,payload,part_hash,artifact_ref,parse_mode,reply_markup,target_message_id,state,next_attempt_at,updated_at)
- VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			partID, id, i, string(p.Kind), payload, partHash(i, p), p.ArtifactRef, p.ParseMode, p.ReplyMarkup, p.TargetMessageID, PartPending, now, now); err != nil {
+		if _, err = q.ExecContext(ctx, `INSERT INTO outbox_parts(part_id,delivery_id,ordinal,kind,payload,part_hash,artifact_ref,parse_mode,reply_markup,target_message_id,reply_to_message_id,state,next_attempt_at,updated_at)
+ VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			partID, id, i, string(p.Kind), payload, partHash(i, p), p.ArtifactRef, p.ParseMode, p.ReplyMarkup, p.TargetMessageID, p.ReplyToMessageID, PartPending, now, now); err != nil {
 			return Delivery{}, fmt.Errorf("store: insert part %d: %w", i, err)
 		}
 	}
@@ -429,7 +438,7 @@ func readDelivery(ctx context.Context, q taskSQL, id string) (Delivery, error) {
 		return Delivery{}, err
 	}
 	d.ResultID, d.Conversation.Visibility, d.Owner, d.Unresolved, d.CompactedAt = result.String, Visibility(vis), DeliveryOwner(owner), unresolved != 0, compacted.Int64
-	rows, err := q.QueryContext(ctx, `SELECT part_id,ordinal,kind,payload,artifact_ref,parse_mode,reply_markup,target_message_id,state,attempts,next_attempt_at,remote_message_id,reason_code FROM outbox_parts WHERE delivery_id=? ORDER BY ordinal`, id)
+	rows, err := q.QueryContext(ctx, `SELECT part_id,ordinal,kind,payload,artifact_ref,parse_mode,reply_markup,target_message_id,reply_to_message_id,state,attempts,next_attempt_at,remote_message_id,reason_code FROM outbox_parts WHERE delivery_id=? ORDER BY ordinal`, id)
 	if err != nil {
 		return Delivery{}, err
 	}
@@ -438,7 +447,7 @@ func readDelivery(ctx context.Context, q taskSQL, id string) (Delivery, error) {
 		var p OutboxPart
 		var kind string
 		if err = rows.Scan(&p.ID, &p.Ordinal, &kind, &p.Part.Payload, &p.Part.ArtifactRef, &p.Part.ParseMode, &p.Part.ReplyMarkup,
-			&p.Part.TargetMessageID, &p.State, &p.Attempts, &p.NextAttemptAt, &p.RemoteMessageID, &p.ReasonCode); err != nil {
+			&p.Part.TargetMessageID, &p.Part.ReplyToMessageID, &p.State, &p.Attempts, &p.NextAttemptAt, &p.RemoteMessageID, &p.ReasonCode); err != nil {
 			return Delivery{}, err
 		}
 		p.Part.Kind = PartKind(kind)

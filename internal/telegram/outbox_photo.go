@@ -125,6 +125,10 @@ func (t *botTransport) uploadBound() int64 {
 
 // attemptPhoto delivers one photo-presented upload from the verified bytes.
 func (t *botTransport) attemptPhoto(ctx context.Context, req SendRequest, name string, data io.Reader) Outcome {
+	var reply *models.ReplyParameters
+	if req.ReplyToMessageID != 0 {
+		reply = &models.ReplyParameters{MessageID: int(req.ReplyToMessageID), AllowSendingWithoutReply: true}
+	}
 	bound := t.uploadBound()
 	buf, err := io.ReadAll(io.LimitReader(data, bound+1))
 	if err != nil || int64(len(buf)) > bound {
@@ -132,7 +136,7 @@ func (t *botTransport) attemptPhoto(ctx context.Context, req SendRequest, name s
 	}
 	sendDoc := func() Outcome {
 		msg, err := t.api.SendDocument(ctx, &bot.SendDocumentParams{
-			ChatID: req.ChatID, MessageThreadID: req.Thread,
+			ChatID: req.ChatID, MessageThreadID: req.Thread, ReplyParameters: reply,
 			Document: &models.InputFileUpload{Filename: name, Data: bytes.NewReader(buf)},
 			Caption:  req.Text,
 		})
@@ -142,7 +146,7 @@ func (t *botTransport) attemptPhoto(ctx context.Context, req SendRequest, name s
 		return sendDoc()
 	}
 	msg, err := t.api.SendPhoto(ctx, &bot.SendPhotoParams{
-		ChatID: req.ChatID, MessageThreadID: req.Thread,
+		ChatID: req.ChatID, MessageThreadID: req.Thread, ReplyParameters: reply,
 		Photo:   &models.InputFileUpload{Filename: name, Data: bytes.NewReader(buf)},
 		Caption: req.Text, // plain text; an upload has no parse mode
 	})

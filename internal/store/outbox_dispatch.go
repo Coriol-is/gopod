@@ -198,7 +198,7 @@ func nextCandidateQ(ctx context.Context, q taskSQL, nowMs int64) (OutboxClaim, b
 	var result sql.NullString
 	var payload []byte
 	sc := &c.Conversation.Scope
-	err := q.QueryRowContext(ctx, `SELECT p.part_id,p.delivery_id,p.ordinal,p.kind,p.payload,p.artifact_ref,p.parse_mode,p.reply_markup,p.target_message_id,p.attempts,
+	err := q.QueryRowContext(ctx, `SELECT p.part_id,p.delivery_id,p.ordinal,p.kind,p.payload,p.artifact_ref,p.parse_mode,p.reply_markup,p.target_message_id,p.reply_to_message_id,p.attempts,
  g.result_id,g.expires_at,g.namespace_id,g.namespace_epoch,g.registration_revision,g.chat_jid,g.chat_folder,g.thread_id,g.visibility
  FROM outbox_parts p JOIN delivery_groups g ON g.delivery_id=p.delivery_id
  WHERE p.state=? AND p.next_attempt_at<=?
@@ -212,7 +212,7 @@ func nextCandidateQ(ctx context.Context, q taskSQL, nowMs int64) (OutboxClaim, b
   AND q.state IN ('pending','sending','uncertain') AND h.expires_at>?
   AND (h.conversation_seq<g.conversation_seq OR (h.conversation_seq=g.conversation_seq AND q.ordinal<p.ordinal)))
  ORDER BY p.next_attempt_at,g.created_at,p.ordinal LIMIT 1`, PartPending, nowMs, nowMs).
-		Scan(&c.PartID, &c.DeliveryID, &c.Ordinal, &kind, &payload, &c.Part.ArtifactRef, &c.Part.ParseMode, &c.Part.ReplyMarkup, &c.Part.TargetMessageID, &c.Attempt,
+		Scan(&c.PartID, &c.DeliveryID, &c.Ordinal, &kind, &payload, &c.Part.ArtifactRef, &c.Part.ParseMode, &c.Part.ReplyMarkup, &c.Part.TargetMessageID, &c.Part.ReplyToMessageID, &c.Attempt,
 			&result, &c.ExpiresAt, &sc.NamespaceID, &sc.NamespaceEpoch, &sc.RegistrationRevision, &sc.JID, &sc.Folder, &c.Conversation.ThreadID, &vis)
 	if errors.Is(err, sql.ErrNoRows) {
 		return OutboxClaim{}, false, nil

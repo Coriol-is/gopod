@@ -75,14 +75,15 @@ type Outcome struct {
 // and Thread are the stored conversation destination; there is no field through
 // which a transport could pick another topic.
 type SendRequest struct {
-	Kind            store.PartKind
-	ChatID          int64
-	Thread          int
-	Text            string
-	ParseMode       string
-	ReplyMarkup     string // JSON of an inline keyboard, as frozen at publication
-	TargetMessageID int64
-	ArtifactRef     string
+	Kind             store.PartKind
+	ChatID           int64
+	Thread           int
+	Text             string
+	ParseMode        string
+	ReplyMarkup      string // JSON of an inline keyboard, as frozen at publication
+	TargetMessageID  int64
+	ReplyToMessageID int64
+	ArtifactRef      string
 	// PartID and AttemptID identify the stored attempt; they are used only for
 	// logging a second API call.
 	PartID    string
@@ -146,6 +147,13 @@ func (t *botTransport) Attempt(ctx context.Context, req SendRequest) Outcome {
 	if ctx.Err() != nil {
 		return Outcome{Kind: OutcomeNotSent, Code: "canceled_before_dispatch"}
 	}
+	if req.ReplyToMessageID < 0 || req.ReplyToMessageID > 2147483647 || req.Kind == store.PartEdit && req.ReplyToMessageID != 0 {
+		return refused("invalid_reply_target")
+	}
+	var reply *models.ReplyParameters
+	if req.ReplyToMessageID != 0 {
+		reply = &models.ReplyParameters{MessageID: int(req.ReplyToMessageID), AllowSendingWithoutReply: true}
+	}
 	markup, err := parseOutboxMarkup(req.ReplyMarkup)
 	if err != nil {
 		return refused("invalid_markup")
@@ -153,7 +161,7 @@ func (t *botTransport) Attempt(ctx context.Context, req SendRequest) Outcome {
 	switch req.Kind {
 	case store.PartText:
 		msg, err := t.api.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: req.ChatID, MessageThreadID: req.Thread, Text: req.Text,
+			ChatID: req.ChatID, MessageThreadID: req.Thread, Text: req.Text, ReplyParameters: reply,
 			ParseMode: models.ParseMode(req.ParseMode), ReplyMarkup: markup,
 		})
 		return classifySend(msg, err, 0)
@@ -188,14 +196,14 @@ func (t *botTransport) Attempt(ctx context.Context, req SendRequest) Outcome {
 		if req.ParseMode == store.UploadPresentationVoice {
 			// Host-generated audio only (the V1 agent request cannot set this).
 			msg, err := t.api.SendVoice(ctx, &bot.SendVoiceParams{
-				ChatID: req.ChatID, MessageThreadID: req.Thread,
+				ChatID: req.ChatID, MessageThreadID: req.Thread, ReplyParameters: reply,
 				Voice:   &models.InputFileUpload{Filename: name, Data: data},
 				Caption: req.Text,
 			})
 			return classifySend(msg, err, 0)
 		}
 		msg, err := t.api.SendDocument(ctx, &bot.SendDocumentParams{
-			ChatID: req.ChatID, MessageThreadID: req.Thread,
+			ChatID: req.ChatID, MessageThreadID: req.Thread, ReplyParameters: reply,
 			Document: &models.InputFileUpload{Filename: name, Data: data},
 			Caption:  req.Text, // plain text; an upload has no parse mode
 		})
