@@ -1,8 +1,11 @@
 package ipc
 
 import (
+	"context"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Coriol-is/gopod/internal/store"
 )
@@ -23,8 +26,8 @@ func (f *artFixture) wantNotice(path, code string) string {
 }
 
 // GOPOD_OUTBOX_ARTIFACTS=0: the watcher has no artifact route. A V1 file
-// request is refused with artifacts_disabled, the user is told where the file
-// is, and nothing of the request (not even its text) is sent.
+// request is refused with artifacts_disabled and a generic notice. Nothing
+// from the unvalidated request (including paths and text) is sent.
 func TestAttachmentDisabledRefusesWithReceiptAndNotice(t *testing.T) {
 	f := newArtFixture(t)
 	f.write("banks/report.pdf", "%PDF-1.4")
@@ -37,7 +40,10 @@ func TestAttachmentDisabledRefusesWithReceiptAndNotice(t *testing.T) {
 	if help, _ := rc["help"].(string); !strings.Contains(help, "ATTACHMENTS.md") || !strings.Contains(help, "NOT attached") {
 		t.Fatalf("receipt help = %q", rc["help"])
 	}
-	text := f.wantNotice("/workspace/chat/banks/report.pdf", codeArtifactsDisabled)
+	text := f.wantNotice("", codeArtifactsDisabled)
+	if strings.Contains(text, "/workspace/chat/") {
+		t.Fatal("untrusted path leaked")
+	}
 	if strings.Contains(text, "report attached") {
 		t.Fatalf("the request text leaked into the notice: %q", text)
 	}
@@ -84,7 +90,14 @@ func TestAttachmentRouteRefusalsNotifyTheUser(t *testing.T) {
 			f.sendV1("owner", "0001-r.json", c.setup(f))
 			f.tick(w)
 			f.wantError("0001-r.json", c.code)
-			f.wantNotice(c.path, c.code)
+			path := c.path
+			if c.name == "no capability" || c.name == "photo forced on a PDF" {
+				path = ""
+			}
+			text := f.wantNotice(path, c.code)
+			if path == "" && strings.Contains(text, c.path) {
+				t.Fatal("unvalidated path leaked")
+			}
 			f.assertNoLeak(c.name)
 		})
 	}
@@ -119,9 +132,9 @@ func TestAttachmentNoticeSanitizesAndBoundsPaths(t *testing.T) {
 	}
 }
 
-// A strict-decode failure (unknown field before or inside files) still names
-// the paths in the user notice, read leniently from the request.
-func TestAttachmentParseFailureStillNamesThePaths(t *testing.T) {
+// Strict-decode failures have no validated grant: notify generically without
+// revealing request paths in another conversation.
+func TestAttachmentParseFailureDoesNotRevealPaths(t *testing.T) {
 	for name, body := range map[string]map[string]any{
 		"unknown top-level field": {"version": 1, "requestId": "req-00000001", "aaa": 1,
 			"files": []map[string]any{{"path": "/workspace/chat/a.pdf"}}},
@@ -135,7 +148,92 @@ func TestAttachmentParseFailureStillNamesThePaths(t *testing.T) {
 			f.sendV1("owner", "0001-p.json", body)
 			f.tick(w)
 			f.wantError("0001-p.json", codeInvalidRequest)
-			f.wantNotice("/workspace/chat/a.pdf", codeInvalidRequest)
+			text := f.wantNotice("", codeInvalidRequest)
+			if strings.Contains(text, "/workspace/chat/a.pdf") {
+				t.Fatal("parse failure leaked path")
+			}
 		})
+	}
+}
+
+type scopedNoticeSink struct {
+	*fakeMessageSink
+	destinations []store.ConversationScope
+}
+
+func (s *scopedNoticeSink) SendConversation(ctx context.Context, d store.ConversationScope, text string) error {
+	s.destinations = append(s.destinations, d)
+	return s.Send(ctx, d.Scope.JID, text)
+}
+
+func TestAttachmentRefusalUsesHostGrantTopic(t *testing.T) {
+	f := newArtFixture(t)
+	conv, err := f.st.SnapshotConversation(t.Context(), "tg:1", 7, store.VisibilityConversation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.token, err = f.caps.Issue(Grant{Folder: "owner", Actor: "owner", RunRef: "topic-run", Destination: conv, Owner: store.OwnerLegacyAgentIPC, OutputRoot: filepath.Join(f.chats, "owner"), ExpiresAt: time.Now().Add(time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := f.watcher()
+	sink := &scopedNoticeSink{fakeMessageSink: f.sink}
+	w.msgs = sink
+	f.sendV1("owner", "0001-topic.json", f.req("missing.pdf"))
+	f.tick(w)
+	f.wantError("0001-topic.json", codeSourceMissing)
+	text := f.wantNotice("/workspace/chat/missing.pdf", codeSourceMissing)
+	if len(sink.destinations) != 1 || sink.destinations[0] != conv {
+		t.Fatalf("wrong host destination: %+v", sink.destinations)
+	}
+	if strings.Contains(text, "остался") || strings.Contains(attachmentHelp, "stays") {
+		t.Fatal("claims nonexistent file remains")
+	}
+}
+
+func TestAttachmentUntrustedGrantDoesNotRevealPaths(t *testing.T) {
+	for _, kind := range []string{"missing", "stale", "foreign destination", "request thread"} {
+		t.Run(kind, func(t *testing.T) {
+			f := newArtFixture(t)
+			w := f.watcher()
+			sink := &scopedNoticeSink{fakeMessageSink: f.sink}
+			w.msgs = sink
+			req := f.req("private-name.pdf")
+			switch kind {
+			case "missing":
+				delete(req, "capability")
+			case "stale":
+				req["capability"] = "invalid"
+			case "foreign destination":
+				req["chatJid"] = "tg:999"
+			case "request thread":
+				req["threadId"] = 999
+			}
+			f.sendV1("owner", "0001-refused.json", req)
+			f.tick(w)
+			calls := f.sink.callsSnapshot()
+			if len(calls) != 1 || len(sink.destinations) != 0 || calls[0].chatJID != "tg:1" || strings.Contains(calls[0].text, "private-name") {
+				t.Fatalf("unsafe refusal: %+v %+v", calls, sink.destinations)
+			}
+		})
+	}
+}
+
+func TestAttachmentTopicRefusalDoesNotFallbackWithoutScopedSink(t *testing.T) {
+	f := newArtFixture(t)
+	conv, err := f.st.SnapshotConversation(t.Context(), "tg:1", 7, store.VisibilityConversation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.token, err = f.caps.Issue(Grant{Folder: "owner", Actor: "owner", RunRef: "topic-run", Destination: conv, Owner: store.OwnerLegacyAgentIPC, OutputRoot: filepath.Join(f.chats, "owner"), ExpiresAt: time.Now().Add(time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := f.watcher()
+	f.sendV1("owner", "0001-topic.json", f.req("missing.pdf"))
+	f.tick(w)
+	f.wantError("0001-topic.json", codeSourceMissing)
+	if len(f.sink.callsSnapshot()) != 0 {
+		t.Fatal("topic notice rerouted to main")
 	}
 }

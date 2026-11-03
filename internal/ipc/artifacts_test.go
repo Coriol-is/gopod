@@ -417,7 +417,17 @@ func TestArtifacts_QuotaExhaustionRetriesThenRejectsWithoutLeak(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.write("a.bin", "data")
+	conv, err := f.st.SnapshotConversation(t.Context(), "tg:1", 7, store.VisibilityConversation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.token, err = f.caps.Issue(Grant{Folder: "owner", Actor: "owner", RunRef: "topic-quota", Destination: conv, Owner: store.OwnerLegacyAgentIPC, OutputRoot: filepath.Join(f.chats, "owner"), ExpiresAt: time.Now().Add(time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
 	w := f.watcher()
+	sink := &scopedNoticeSink{fakeMessageSink: f.sink}
+	w.msgs = sink
 	f.sendV1("owner", "0001-q.json", f.req("a.bin"))
 	f.tick(w)
 	if rc := f.receipt("owner", "0001-q.result.json"); rc["status"] != "retrying" || rc["error"] != "quota_exceeded" {
@@ -428,6 +438,10 @@ func TestArtifacts_QuotaExhaustionRetriesThenRejectsWithoutLeak(t *testing.T) {
 		f.tick(w)
 	}
 	f.wantError("0001-q.json", "quota_exceeded")
+	if len(sink.destinations) != 1 || sink.destinations[0] != conv {
+		t.Fatalf("retry lost topic: %+v", sink.destinations)
+	}
+	f.wantNotice("/workspace/chat/a.bin", codeQuotaExceeded)
 	if f.deliveries() != 0 || f.rows(`SELECT count(*) FROM artifacts`) != 1 {
 		t.Fatal("quota rejection leaked rows (only the other run's artifact may exist)")
 	}
@@ -637,7 +651,7 @@ func TestArtifacts_GroupAndOwnerAuthorityDenied(t *testing.T) {
 		t.Fatal("a group folder reached the artifact route")
 	}
 	calls := f.sink.callsSnapshot()
-	if len(calls) != 1 || calls[0].chatJID != "tg:-2" || !strings.Contains(calls[0].text, "/workspace/chat/g.txt") {
+	if len(calls) != 1 || calls[0].chatJID != "tg:-2" || strings.Contains(calls[0].text, "/workspace/chat/g.txt") {
 		t.Fatalf("want one refusal notice to the group's own chat, got %+v", calls)
 	}
 }

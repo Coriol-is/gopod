@@ -3,11 +3,13 @@ package telegram
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"unicode/utf8"
 
 	"github.com/Coriol-is/gopod/internal/ipc"
+	"github.com/Coriol-is/gopod/internal/store"
 )
 
 func TestIPCSink_BadJIDIsPermanent(t *testing.T) {
@@ -77,5 +79,74 @@ func TestIPCSink_DeliveryErrors(t *testing.T) {
 				t.Fatalf("missing partial evidence: %v", err)
 			}
 		})
+	}
+}
+
+func ipcNoticeScope(t *testing.T, b *Bot) store.ConversationScope {
+	t.Helper()
+	if err := b.store.RegisterChat(t.Context(), store.RegisteredChat{JID: buildChatJID(streamChat), Folder: "owner", IsOwner: true, AddedAt: 1}); err != nil {
+		t.Fatal(err)
+	}
+	conv, err := b.store.SnapshotConversation(t.Context(), buildChatJID(streamChat), 7, store.VisibilityConversation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return conv
+}
+
+func TestIPCSinkScopedNoticePreservesTopicAndNeverFallsBack(t *testing.T) {
+	for _, refuse := range []bool{false, true} {
+		t.Run(fmt.Sprint(refuse), func(t *testing.T) {
+			fake := &fakeTelegram{respond: func(string, map[string]string) (int, string) {
+				if refuse {
+					return apiError(400, "message thread not found")
+				}
+				return sentMessage("10")
+			}}
+			b, _ := newStreamFixture(t, fake)
+			conv := ipcNoticeScope(t, b)
+			b.markThreadGone(streamChat, 7) // generic legacy redirect must not affect this sink
+			err := NewIPCSink(b).SendConversation(t.Context(), conv, "notice")
+			if (err != nil) != refuse {
+				t.Fatalf("got %v", err)
+			}
+			calls := fake.callsTo("sendMessage")
+			if len(calls) != 1 || calls[0].Form["message_thread_id"] != "7" {
+				t.Fatalf("wrong destination: %+v", calls)
+			}
+		})
+	}
+}
+
+func TestIPCSinkScopedNoticeRevalidatesBeforeEachChunk(t *testing.T) {
+	fake := &fakeTelegram{}
+	b, _ := newStreamFixture(t, fake)
+	conv := ipcNoticeScope(t, b)
+	fake.respond = func(string, map[string]string) (int, string) {
+		if _, _, err := b.store.BeginTopicDeletion(t.Context(), conv.Scope, 7); err != nil {
+			t.Error(err)
+		}
+		return sentMessage("10")
+	}
+	err := NewIPCSink(b).SendConversation(t.Context(), conv, strings.Repeat("x", 7000))
+	if !errors.Is(err, store.ErrTopicDeleting) || !errors.Is(err, ipc.ErrPermanent) {
+		t.Fatalf("got %v", err)
+	}
+	if len(fake.callsTo("sendMessage")) != 1 {
+		t.Fatal("sent after deletion began")
+	}
+}
+
+func TestIPCSinkScopedNoticeRejectsStaleScopeBeforeSend(t *testing.T) {
+	fake := &fakeTelegram{}
+	b, _ := newStreamFixture(t, fake)
+	conv := ipcNoticeScope(t, b)
+	conv.Scope.RegistrationRevision++
+	err := NewIPCSink(b).SendConversation(t.Context(), conv, "private path")
+	if !errors.Is(err, store.ErrStaleScope) {
+		t.Fatalf("got %v", err)
+	}
+	if len(fake.callsTo("sendMessage")) != 0 {
+		t.Fatal("sent stale destination")
 	}
 }

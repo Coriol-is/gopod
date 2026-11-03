@@ -134,19 +134,25 @@ except `invalid_request`, `recipient_unavailable`, `request_expired`,
 When a request that names at least one file (from the strict decode, or from a
 lenient read of `files[].path` when the strict decode stopped early) reaches a
 terminal refusal for the first time (not on replay of an already refused request), the host sends one
-plain-text message to the chat the IPC folder is registered to (destination from
-the folder, never from the request), in Russian:
+plain-text message to the host capability's validated conversation (chat and
+topic), never a request-controlled destination. For example, a validated grant
+whose source file is missing produces:
 
 ```
 Не удалось приложить файл /workspace/chat/banks/report.pdf
-Причина: отправка файлов в этом чате выключена (artifacts_disabled).
-Файл не отправлен и остался в рабочей папке чата.
+Причина: файл не найден (source_missing).
+Файл не отправлен. Проверьте путь и наличие файла перед повторной попыткой.
 ```
 
 Several files are listed one per line. Paths are display-only: control and bidi
 characters removed, at most 200 bytes each with `…`. The notice is best effort
-through the legacy IPC message sink (thread 0, 10 s timeout); a failed notice is
-logged and the receipt remains the authority. A refused request delivers
+through a scoped IPC notice sink (10 s timeout), which revalidates the full
+conversation scope before each part and never falls back to main. Without a
+validated capability (including parse failure or disabled artifact route), only
+a generic folder-authorized main-chat notice is sent, without request paths or
+content. A legacy sink may send detailed notices only for a validated main-chat
+grant; missing scoped support suppresses a topic notice instead of rerouting it.
+A failed notice is logged and the receipt remains the authority. A refused request delivers
 nothing else: its `text` is not sent without its files.
 
 ### What the agent is told to reply
@@ -154,8 +160,8 @@ nothing else: its `text` is not sent without its files.
 On `queued`/`sent`: say briefly that the file was sent; do not repeat the path.
 On `retrying` (quota or storage pressure, bounded host retries): deferred, do not
 resend; re-read the receipt later, it ends as `queued` or `error`.
-On `uncertain`: do not resend. On `error`: say the file is at its path and could
-not be attached, with the reason; never claim it was sent; retry only after
+On `uncertain`: do not resend. On `error`: say the file could not be attached,
+with the reason; verify its path and existence rather than claiming it remains; never claim it was sent; retry only after
 fixing the cause, with a new name and `requestId`.
 
 ## Routing summary (watcher)
@@ -171,8 +177,7 @@ fixing the cause, with a new name and `requestId`.
 Agent-initiated downloads from the internet, inline images in streamed text,
 editing or deleting sent files, files above the limits (refused; chunking or
 external storage is a separate CP), voice (CP-003 PR 5), CP-014 media input,
-group delivery (CP-019/CP-020), topic-aware notices (the notice lands in thread
-0 like every IPC message), the Pi activation record and retention/restore checks
+group delivery (CP-019/CP-020), request-controlled notice routing, the Pi activation record and retention/restore checks
 listed under CP-040 item 4 (owner-run).
 
 ## Acceptance

@@ -3,8 +3,8 @@ package ipc
 // Honest refusal for agent attachments (CP-040). A V1 request that carries
 // files and is refused ends in a .failed receipt with a sanitized code, as
 // every V1 rejection does, and additionally in one plain-text notice to the
-// chat the IPC folder belongs to, so the user sees which file was not attached
-// and why instead of a reply that silently lacks it.
+// authenticated conversation, so the user sees which file was not attached
+// and why. Without a validated grant, only a generic folder notice is safe.
 
 import (
 	"bytes"
@@ -26,8 +26,7 @@ const (
 )
 
 // attachmentHelp is the receipt help for a refused attachment.
-const attachmentHelp = "The file was NOT attached. Read /workspace/chat/ATTACHMENTS.md. Tell the user the file stays at its path " +
-	"and could not be attached, with this reason; do not claim it was sent. Retry only after fixing the cause, with a new filename and requestId."
+const attachmentHelp = "The file was NOT attached. Read /workspace/chat/ATTACHMENTS.md. Tell the user the file could not be attached, with this reason; verify its path and existence before retrying; do not claim it was sent. Retry only after fixing the cause, with a new filename and requestId."
 
 // attachmentReasons are the Russian user-facing explanations of refusal codes.
 // A code without an entry is shown as is.
@@ -60,10 +59,10 @@ func isAttachmentCode(code string) bool {
 
 // refuseArtifact persists a rejection of an artifact-route request and, once
 // the request reached its terminal state, tells the user about its files.
-func (w *Watcher) refuseArtifact(ctx context.Context, src store.ScopeRef, folder, filePath string, id store.RequestIdentity, code string, files []artifactFile) bool {
+func (w *Watcher) refuseArtifact(ctx context.Context, src store.ScopeRef, folder, filePath string, id store.RequestIdentity, code string, files []artifactFile, destination ...store.ConversationScope) bool {
 	done := w.rejectDurable(ctx, src, folder, filePath, id, code)
 	if done && len(files) > 0 {
-		w.noticeAttachmentRefused(ctx, folder, files, code)
+		w.noticeAttachmentRefused(ctx, folder, files, code, destination...)
 	}
 	return done
 }
@@ -116,11 +115,17 @@ func pathsAsFiles(paths []string) []artifactFile {
 	return files
 }
 
-// noticeAttachmentRefused sends one best-effort plain-text notice to the chat
-// the folder is registered to. The destination comes from the folder (path
-// authorization), never from the request. A failed notice is logged; the
-// receipt stays the authority.
-func (w *Watcher) noticeAttachmentRefused(ctx context.Context, folder string, files []artifactFile, code string) {
+// ConversationMessageSink accepts only host-authenticated conversation scopes.
+// It is optional for legacy sinks; a missing implementation never reroutes a
+// topic notice to main. Production revalidates the scope before every send.
+type ConversationMessageSink interface {
+	SendConversation(context.Context, store.ConversationScope, string) error
+}
+
+// noticeAttachmentRefused uses a validated host grant for detailed notices.
+// Without one, only a generic folder-authorized notice is safe: request paths
+// and content must not leak from an unknown conversation into main.
+func (w *Watcher) noticeAttachmentRefused(ctx context.Context, folder string, files []artifactFile, code string, destination ...store.ConversationScope) {
 	if w.msgs == nil || w.resolve == nil {
 		return
 	}
@@ -130,7 +135,28 @@ func (w *Watcher) noticeAttachmentRefused(ctx context.Context, folder string, fi
 	}
 	ctx, cancel := context.WithTimeout(ctx, noticeSendTimeout)
 	defer cancel()
-	if err := w.msgs.Send(ctx, jid, attachmentNotice(files, code)); err != nil {
+	text := attachmentNotice(nil, code)
+	var err error
+	if len(destination) > 0 {
+		dest := destination[0]
+		if dest.Scope.Folder != folder || !sameChat(jid, dest.Scope.JID) || w.cfg.Artifacts.Store == nil {
+			return
+		}
+		if w.cfg.Artifacts.Store.ValidateConversation(ctx, dest) != nil {
+			return
+		}
+		text = attachmentNotice(files, code)
+		if scoped, ok := w.msgs.(ConversationMessageSink); ok {
+			err = scoped.SendConversation(ctx, dest, text)
+		} else if dest.ThreadID == 0 {
+			err = w.msgs.Send(ctx, jid, text)
+		} else {
+			return
+		}
+	} else {
+		err = w.msgs.Send(ctx, jid, text)
+	}
+	if err != nil {
 		w.log.Warn("ipc: attachment refusal notice not sent", "folder", folder, "code", code, "err", err)
 	}
 }
@@ -142,7 +168,9 @@ func attachmentNotice(files []artifactFile, code string) string {
 		reason = "отказ"
 	}
 	var b strings.Builder
-	if len(files) == 1 {
+	if len(files) == 0 {
+		b.WriteString("Не удалось приложить файл")
+	} else if len(files) == 1 {
 		b.WriteString("Не удалось приложить файл ")
 		b.WriteString(displayPath(files[0].Path))
 	} else {
@@ -157,7 +185,7 @@ func attachmentNotice(files []artifactFile, code string) string {
 		}
 	}
 	fmt.Fprintf(&b, "\nПричина: %s (%s).", reason, code)
-	b.WriteString("\nФайл не отправлен и остался в рабочей папке чата.")
+	b.WriteString("\nФайл не отправлен. Проверьте путь и наличие файла перед повторной попыткой.")
 	return b.String()
 }
 
