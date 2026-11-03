@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | proposed |
+| Status | in-progress |
 | Date | 2026-11-01 |
 | Origin | Owner asked for an explicitly started, separately commanded agent session that holds host authority on the Pi, with the provider passed through, available only in the private chat |
 | Size | M |
@@ -10,6 +10,8 @@
 | Depends on | D011, D012, D028, D044, D054; CP-036 Stop precedent; a button-fence fix in `internal/telegram` as a prerequisite. Not CP-037 |
 | Spec | [Elevated host session](../superpowers/specs/2026-11-01-elevated-host-session.md) |
 | Plan | [Staged delivery](../superpowers/plans/2026-11-01-elevated-host-session.md) |
+
+Owner authorized implementation on 2026-11-03 ("давай доделаем elevated"). E0 images are in progress; E1–E6 remain gated by the staged plan. Activation is separate.
 
 ## Problem
 
@@ -64,8 +66,9 @@ control.
   press; a callback, a group message, an IPC message, a scheduler tick and a
   non-owner chat each fail to start it.
 - The elevated container is created with the elevated policy role, and a
-  container whose recorded role differs from the requested one is denied rather
-  than recycled.
+  container crossing the elevated role boundary is denied rather than recycled,
+  including stopped containers. Ordinary foreground/task recycling is preserved
+  (D059).
 - The container arguments produced for an ordinary turn are byte-identical to
   the pre-change fixture, and no existing container's recorded policy digest
   changes.

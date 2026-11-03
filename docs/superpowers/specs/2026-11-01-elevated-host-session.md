@@ -1,13 +1,18 @@
 # Elevated host session — architecture and implementation contract
 
 **Proposal:** [CP-038](../../proposals/CP-038-elevated-host-session.md) ·
-**Date:** 2026-11-01 · **Status:** design, no implementation authorised yet
+**Date:** 2026-11-01 · **Status:** implementation authorized 2026-11-03; E0 in progress
 
 An implementer's review of the first draft of this document found that several
 of its claims about the existing code were wrong and that three of its
 contracts could not be implemented as written. This revision is the corrected
 version; §13 keeps the record of what changed and why, so the same mistakes are
 not re-derived later.
+
+Implementation note (2026-11-03): CP-037 P1 now exists. Historical statements
+below that no session entity exists describe the design baseline. E2/E3 must
+reconcile the reserved folder with the durable adapter, which requires a
+registered scope; ordinary scope checks must not be relaxed.
 
 ## 1. Decisions the owner took
 
@@ -107,38 +112,24 @@ describe it as mitigated.
 
 ## 4. Identity, routing and command surface
 
-### 4.1 A reserved folder, not a new session entity
+### 4.1 Reserved folder and explicit host-session state (D060)
 
-The first draft specified a new `elevated` session kind. There is no session
-entity in gopod to extend: `sessions` maps `(chat_folder, thread_id, provider)`
-to the provider CLI's own session string
-(`internal/store/schema.go:83-90`), and CP-037's execution-session concept is
-design-stage, slice P1, unstarted. Building a second session model here would
-be work P1 then has to reconcile.
+The reserved folder is `elevated`, thread 0, and is never registered. Ordinary
+scope validation, task creation and container builders refuse it. P1 ordinary
+legacy/durable mappings remain unchanged. Dedicated `elevated_sessions`,
+`elevated_execs`, `elevated_native_contexts` and `elevated_transcript` tables own
+host-session state. One active session ID fences late writes; native context
+persists per provider across explicit close/reopen without inheriting an
+ordinary provider context. The lifecycle must prove old runtime death before
+opening a new session; closing a database row alone is insufficient.
 
-Instead the elevated runtime is bound to one **reserved chat folder**,
-`elevated`, at thread 0. Everything folder-keyed then works unchanged:
-
-| Mechanism | Effect with the reserved folder |
-|---|---|
-| `runner.ContainerName` | `gopod-elevated`, no new naming scheme |
-| `sessions` table | Row `("elevated", 0, provider)`, existing shape, so a reopened session can continue the previous elevated conversation |
-| Provider state dirs | `data/sessions/elevated/.claude` and `.codex`, exactly the layout `standardMounts` already uses (`internal/runner/mounts.go:154-162`) |
-| Workspace | `chats/elevated/` at `/workspace/chat`, so `WorkingDir` is unchanged |
-| Memory | Folder-scoped, so elevated extraction cannot overwrite the ordinary topic's facts (D023) |
-
-The folder is created by the host at bootstrap and is never registered:
-registration rejects the name, which also removes the collision the first draft
-tried to fix with an `elevated-` prefix rule.
-
-Two folder-keyed mechanisms must be excluded by name rather than inherited:
-
-- **The idle watcher.** `killIdleChat` lists containers and stops every one
-  whose `gopod.chat` label equals the idle folder
-  (`internal/runner/lifecycle.go:163-187`). Left alone it would kill the
-  elevated container 30 minutes after the owner stopped typing, which is the
-  timer the owner declined. The watcher skips the reserved folder.
-- **The scheduler**, per §3.2.
+Workspace is `chats/elevated/`, mounted at `/workspace/session`; native homes
+are `data/sessions/elevated/.claude` and `.codex`. Bootstrap creates only these
+reserved paths, with provenance markers, and no IPC namespace. Nonempty
+unmarked paths, symlinks and historical ordinary registration/ownership cause
+refusal; no automatic credential/workspace adoption is performed. The idle
+watcher skips elevated. Ordinary adoption skips/counts historical reserved
+legacy rows while migrating other chats normally.
 
 ### 4.2 One at a time
 
@@ -251,12 +242,13 @@ wrong.
 **New comparison logic is required.** The first draft claimed none was needed.
 Two additions:
 
-- `decideContainer` must reject a role the plan did not ask for. Today a
+- `decideContainer` must reject a role mismatch involving elevated (D059). Ordinary foreground/task
+  recycling remains unchanged. Today a
   well-formed container whose labels are self-consistent but whose fingerprint
   differs reaches `actRecreate`, "policy_mismatch"
-  (`internal/runner/exec_guard.go:217-219`). For a role difference that is
-  wrong in both directions, so the role is compared before the fingerprint and
-  a mismatch denies.
+  (`internal/runner/exec_guard.go:217-219`). For transitions involving elevated that is
+  wrong in both directions, so that boundary is checked before stopped-state
+  handling and the fingerprint; a mismatch denies.
 - The namespace modes are not inspectable. `ContainerFacts` has no `PidMode`,
   `NetworkMode` or `IpcMode` (`internal/runner/exec_guard.go:52-66`) and
   `InspectContainer` does not read them
@@ -337,8 +329,8 @@ write from the CLI against the live file is a corruption risk, not a maintenance
 step. The session's own text says this where the owner will see it.
 
 **Build.** arm64 for the Pi, pinned by base-image digest. Exact apt version pins
-are deliberately not used: they break on every Debian point release and the base
-digest already fixes the package set.
+are deliberately not used: they break on every Debian point release and apt resolves current signed packages when the image is rebuilt. The base
+digest fixes the starting filesystem, not the later apt package versions.
 
 ## 6. Lifecycle
 
@@ -416,8 +408,8 @@ off-host sink and is out of scope.
 | Variable | Default | Effect |
 |---|---|---|
 | `GOPOD_ELEVATED` | off | On: registers `/root`. Off: the command is not registered |
-| `GOPOD_ELEVATED_IMAGE` | `gopod-elevated:latest` | Claude image (§5.4) |
-| `GOPOD_ELEVATED_IMAGE_CODEX` | `gopod-elevated-codex:latest` | Codex image |
+| `GOPOD_ELEVATED_IMAGE` | `gopod-agent-elevated:latest` | Claude image (§5.4) |
+| `GOPOD_ELEVATED_IMAGE_CODEX` | `gopod-agent-elevated-codex:latest` | Codex image |
 | `GOPOD_ELEVATED_MEM` | conservative, Pi-4 safe | Hard memory cap |
 | `GOPOD_ELEVATED_CPUS` | conservative | CPU cap |
 | `GOPOD_ELEVATED_PIDS` | conservative | Pids cap |
@@ -475,7 +467,8 @@ PID/NET/IPC, with `/host` and the socket bound, and the inspection reads the
 namespace modes back. `BuildContainerArgs`'s output for an ordinary turn is
 byte-identical to the pre-change fixture, and an existing chat container's
 recorded config digest still matches after the `hardening` fields are added. A
-container labelled with a role the plan did not request is denied, not recycled.
+container crossing the elevated role boundary is denied, not recycled, even
+when stopped. Ordinary foreground/task recycling remains unchanged (D059).
 
 **C — lifetime and audit.** `/root stop`, `/restart`, `/restart force` and
 controller shutdown each remove the container, close the session and revert
@@ -509,3 +502,15 @@ Kept so the same errors are not re-derived. Each was verified in the source.
 | `jq` is justified by JSON logs | Logs are text by default and also go to SQLite |
 | Removal happens before any other startup work | It must sit between `restart.recycle` and `CleanupLeftovers`, or a survivor blocks all execution |
 | The scheduler refuses the session kind | Nothing is keyed by session kind; the testable property is the reserved folder |
+
+## 14. Owner-required dialogs (2026-11-03, D059)
+
+E3/E4 must provide Russian host-rendered UI with these distinct states:
+provider picker; explicit host-root warning and Confirm/Cancel before creation;
+start notice naming the provider; visible elevated prefix on each answer;
+status with stop/log controls; successful close with ordinary routing restored;
+stale confirmation; Docker unavailable; runtime lost; teardown failed (do not
+claim closure or resume ordinary routing while elevated execution is unproven).
+The warning states that files, processes and other containers can be changed,
+that external content can influence the agent, and that the journal records
+host Docker exec calls rather than every command the agent executes.

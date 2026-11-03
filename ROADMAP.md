@@ -33,13 +33,13 @@ Lifecycle safety P0 precedes parallel execution; ordinary restart drains, explic
 `/restart force` cancels background work. Mixed-provider routing, model changes and explicit quota fallback are consolidated
 in contract D. These remain specifications only.
 Owner authorized P0 code, parallel worktrees, acceptance and automatic merge.
-T5/T5b parallel-runtime implementation remains paused; T9 reboot is not authorized. The separately authorized reliability rollout is deployed as `a0de4dc` ([evidence](docs/deployments/2026-11-02-reliability-streams.md)).
+T5/T5b parallel-runtime implementation remains paused; T9 reboot is not authorized. The separately authorized reliability rollout was deployed as `a0de4dc` ([evidence](docs/deployments/2026-11-02-reliability-streams.md)).
 
-## Elevated host session — CP-038 (design only)
+## Elevated host session — CP-038 (implementation authorized)
 
 ⬜ Design merged as `2ca967c` via [PR #128](https://github.com/Coriol-is/gopod/pull/128).
-E0–E6 are unimplemented; no elevated feature flag or runtime is deployed. [CP-038](docs/proposals/CP-038-elevated-host-session.md)
-stays `proposed` and needs owner acceptance before any code.
+E0 images (#150), E1 profile/guard (#151, D059) and E2 journal/reserved identity (#152, D060) are merged and deployed as `75b3be3`; E3–E6 remain pending. No feature flag or elevated runtime is active. [CP-038](docs/proposals/CP-038-elevated-host-session.md)
+is `in-progress`: owner authorized implementation on 2026-11-03.
 
 An explicitly started owner-private conversation with host authority on the Pi:
 `Privileged: true` plus host PID/network/IPC, the Docker socket and the host root at
@@ -91,7 +91,7 @@ remain paused operational/research items, not implicit deployment steps.
 
 ## Next iteration — status as of 2026-11-02
 
-Done since 2026-10-27 (all merged to `main`; production runs `a0de4dc`; outbox IPC/dispatcher and artifacts on, managed tasks off): CP-002 PR 1-5
+Done since 2026-10-27 (all merged to `main`; production runs `75b3be3`; outbox IPC/dispatcher and artifacts on, managed tasks off): CP-002 PR 1-5
 (store, dispatcher, durable personal text IPC, immutable artifacts, voice/code preparation),
 CP-004 PR 1-3 (storage, managed dispatch, policy-guarded execution), CP-007 backup foundation,
 rich-message formatting P1 (D045), supervised owner `/restart` (CP-031).

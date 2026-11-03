@@ -50,6 +50,9 @@ var (
 // ContainerFacts is what Docker reports about an existing container, reduced to
 // what the guard compares. Env holds NAMES only: values never leave Docker.
 type ContainerFacts struct {
+	PidMode        string
+	NetworkMode    string
+	IpcMode        string
 	ID             string
 	Running        bool
 	ImageID        string
@@ -77,14 +80,19 @@ type containerEngine interface {
 
 // hardening is the inspectable security configuration the guard pins.
 type hardening struct {
-	User       string `json:"user"`
-	ReadonlyFS bool   `json:"rofs"`
-	Privileged bool   `json:"priv"`
-	DropAll    bool   `json:"dropall"`
-	NoNewPrivs bool   `json:"nonewprivs"`
+	PidMode     string `json:"pidmode,omitempty"`
+	NetworkMode string `json:"networkmode,omitempty"`
+	IpcMode     string `json:"ipcmode,omitempty"`
+	User        string `json:"user"`
+	ReadonlyFS  bool   `json:"rofs"`
+	Privileged  bool   `json:"priv"`
+	DropAll     bool   `json:"dropall"`
+	NoNewPrivs  bool   `json:"nonewprivs"`
 }
 
-// hardeningOf normalizes the inspected security fields. The tolerated
+// hardeningOf normalizes the inspected security fields; namespaceModes also
+// maps Docker ordinary defaults (default/bridge network and private IPC) to
+// their empty create-time forms. The tolerated
 // normalizations are exactly these and nothing else; every other difference
 // between the recorded and the inspected configuration is a mismatch and is
 // denied (a daemon that rewrites bind sources, User or other fields makes the
@@ -140,14 +148,16 @@ func envNamesOf(env []string) []string {
 
 // digestOfFacts computes configDigest from an inspection.
 func digestOfFacts(f *ContainerFacts, universe map[string]bool) string {
-	return configDigest(f.Mounts, f.EnvNames, universe,
-		hardeningOf(f.User, f.ReadonlyRootfs, f.Privileged, f.CapDrop, f.SecurityOpt))
+	h := hardeningOf(f.User, f.ReadonlyRootfs, f.Privileged, f.CapDrop, f.SecurityOpt)
+	h.PidMode, h.NetworkMode, h.IpcMode = namespaceModes(f.PidMode, f.NetworkMode, f.IpcMode)
+	return configDigest(f.Mounts, f.EnvNames, universe, h)
 }
 
 // digestOfSpawn computes configDigest from the create arguments.
 func digestOfSpawn(conf *container.Config, host *container.HostConfig, mounts []Mount, universe map[string]bool) string {
-	return configDigest(mounts, envNamesOf(conf.Env), universe,
-		hardeningOf(conf.User, host.ReadonlyRootfs, host.Privileged, host.CapDrop, host.SecurityOpt))
+	h := hardeningOf(conf.User, host.ReadonlyRootfs, host.Privileged, host.CapDrop, host.SecurityOpt)
+	h.PidMode, h.NetworkMode, h.IpcMode = namespaceModes(string(host.PidMode), string(host.NetworkMode), string(host.IpcMode))
+	return configDigest(mounts, envNamesOf(conf.Env), universe, h)
 }
 
 // hasNoPolicyLabels is true only when none of the policy labels exist. A
@@ -186,6 +196,9 @@ func deny(reason string) guardDecision {
 func decideContainer(want *policyPlan, facts *ContainerFacts, desiredImage string, universe map[string]bool) guardDecision {
 	if facts == nil {
 		return guardDecision{Action: actCreate, Reason: "absent"}
+	}
+	if role := facts.Labels[LabelPolicyRole]; role != string(want.Policy.Role) && (role == string(RoleElevatedHost) || want.Policy.Role == RoleElevatedHost) {
+		return deny("role_mismatch")
 	}
 	if !facts.Running {
 		// A stopped container has no execution to protect; the existing rule is
@@ -289,4 +302,16 @@ func shortID(id string) string {
 		return id[:12]
 	}
 	return id
+}
+
+// Docker expands empty ordinary namespace settings on inspection. Normalize
+// only the documented private defaults; host/container modes remain pinned.
+func namespaceModes(pid, network, ipc string) (string, string, string) {
+	if network == "default" || network == "bridge" {
+		network = ""
+	}
+	if ipc == "private" {
+		ipc = ""
+	}
+	return pid, network, ipc
 }

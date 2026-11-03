@@ -1,26 +1,59 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-02 (recovered streams deployed as a0de4dc; first queued-command acceptance passed)
+**Last updated:** 2026-11-03 (E0–E2 merged and deployed; E3 dialogs/routing next)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
 [ACCEPTANCE](ACCEPTANCE.md) for pending real-client verification.
 
-## Resume here — deployed a0de4dc, 2026-11-02
+## Resume here — E0–E2 deployed, 2026-11-03
 
-Owner authorized deploy/merge/accept. PRs #143–148 are merged; Pi runs `a0de4dc`
-since 18:40:15 UTC. [Deployment evidence](deployments/2026-11-02-reliability-streams.md)
-records exact image, verified online/matched backups, rollback tags, preserved
-registrations/sessions/tasks and five bounded command probes. The rollout exposed
-a next-offset/SDK mismatch; #148 fixes it. A command queued during downtime was
-answered without retry, with stored offset equal to first processed update.
+Pi runs `75b3be3` (PR #152) since 09:47:51 UTC. Independent E2 review,
+PR test/isolation/Sonar and exact main CI passed. Sonar CLI reports six
+cognitive-complexity findings; gate passed, no suppressions were added.
+[Rollout evidence](deployments/2026-11-03-elevated-e2.md) records verified
+backups, retained rollback image and unchanged registrations/sessions/tasks.
+Both elevated ARM64 images remain installed. All four dedicated elevated tables
+exist and are empty. No `/root`, feature flag or elevated runtime is active.
 
-Next: address the independently reproduced [IPC receipt/archive race](reviews/2026-11-02-task-ipc-replay-race.md), then continue the CP-002/CP-016 integration gates below.
-CP-038 elevated E0–E6 remain unstarted/proposed; E-pre alone is deployed.
-Real provider/client acceptance remains bounded by [ACCEPTANCE](ACCEPTANCE.md).
-All worktrees, rollback images and backups are preserved; mapping stays legacy.
+E2 adds dedicated state/generation fencing, reserved-folder exclusions,
+provenance bootstrap and journal-before-exec (D060); full build/vet/tests and
+store/runner race tests passed. Next: E3 owner-private command, modal input and
+warning/confirmation dialogs, E4 lifecycle, E5 docs, E6 host proof. The known
+IPC receipt/archive race remains open ([diagnostic](reviews/2026-11-02-task-ipc-replay-race.md)), not fixed by E2.
+The earlier [reliability rollout](deployments/2026-11-02-reliability-streams.md) records the bounded restart cursor acceptance.
 
-## Recovered parallel queue streams 1–3, 2026-11-02
+E3 design constraints discovered by review: root Claude rejects the ordinary
+`--dangerously-skip-permissions`; use a dedicated explicit tool allowlist with
+`--permission-mode dontAsk` (offline no-auth root check passed, authenticated
+acceptance still open). Elevated Codex restore must use `/workspace/session`.
+D060 context APIs bypass neither scope validation nor P1; use only dedicated
+methods. Store closure/journal -1 never proves runtime death. Do not inherit
+ordinary PID-file signalling blindly into host PID namespace. The owner requires
+visible start/reply/end markers and actionable refusal/uncertainty messages.
+
+## Previous — CP-038 E0 implementation, 2026-11-03
+
+
+Owner asked to finish elevated. CP-038 is now in-progress; worktree
+`gopod-elevated-e0`, branch `feat/elevated-e0` contains separate Claude/Codex
+ARM64 images and local smoke checks. [Evidence](reviews/2026-11-03-elevated-e0.md)
+records image digests, native CLI versions, Docker API compatibility with the Pi
+and passed build/vet/full tests. No elevated runtime or flag is implemented.
+
+Next: E0 independent source review, green PR CI and merge, then E1 per the
+[staged plan](superpowers/plans/2026-11-01-elevated-host-session.md).
+P1 is already merged: E2/E3 must explicitly reconcile elevated native context
+ownership with the durable adapter's registered-scope requirement. Never make
+the reserved folder registerable to work around that check.
+
+Current deployed code remains `a0de4dc`; deployment documentation PR #149 is
+preserved in the reliability rollout report. The older rollout statements below are historical.
+Elevated host tests/activation are separate gates; no provider sign-in, host
+privileged session or ordinary profile change was performed in E0.
+
+## Previous — parallel queue streams 1–3, 2026-11-02
+
 
 The owner asked Claude to run approved queue items **1–3 in parallel**: release
 qualification, reliability, and conversation management. Recovered session

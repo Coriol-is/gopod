@@ -28,6 +28,7 @@ import (
 type ExecRole string
 
 const (
+	RoleElevatedHost ExecRole = "elevated_host"
 	// RoleForegroundPersonal is the existing personal default: owner tier mounts,
 	// env and tools, exactly what Run/RunStream have always used.
 	RoleForegroundPersonal ExecRole = "foreground_personal"
@@ -39,7 +40,7 @@ const (
 
 // Valid reports whether r is a role this host knows.
 func (r ExecRole) Valid() bool {
-	return r == RoleForegroundPersonal || r == RoleScheduledTaskPersonal
+	return r == RoleForegroundPersonal || r == RoleScheduledTaskPersonal || r == RoleElevatedHost
 }
 
 // policyRevision is bumped whenever a role definition changes, so containers
@@ -65,6 +66,7 @@ const (
 // so a change of grant recycles the container; the IPC watcher and memory API
 // still enforce authority from the host-controlled namespace, not from here.
 var roleGrants = map[ExecRole][]string{
+	RoleElevatedHost: {"host:root", "host:docker", "host:namespaces"},
 	RoleForegroundPersonal: {
 		"ipc:artifacts", "ipc:messages", "ipc:tasks", "memory:api", "owner:project-ro", "owner:store-rw",
 	},

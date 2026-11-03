@@ -2091,3 +2091,51 @@ workspaces), a seeded owner `ATTACHMENTS.md`, the owner `CLAUDE.md` template and
 **Consequences.** A group or non-owner agent that tries to attach now produces a visible refusal in its own chat
 instead of a text-only send. An image request that omits `as` and `presentation` becomes a photo hint (previously a
 document). Spec: [agent attachments](superpowers/specs/2026-11-02-agent-attachments.md).
+
+## D059 — Elevated role boundary and explicit host-authority dialogs
+
+**Status:** accepted 2026-11-03 (owner decision, CP-038 E1).
+
+**Decision.** Reject a container role mismatch whenever either the recorded or
+requested role is `elevated_host`, including stopped containers. Preserve D044's
+foreground/task recycling, folder-slot and execution-proof checks. Elevated
+reuse additionally requires the requested configuration digest and immutable
+image to match inspection; drift or death never silently recreates a session.
+Ordinary builder output, policy revision and existing profile fingerprints stay
+unchanged. Namespace defaults normalize bridge/default network and private IPC
+to their empty create forms; every other namespace value is pinned.
+
+The owner also requires dialogs and warnings: provider selection precedes an
+explicit confirmation warning that the session has host-root authority and can
+change files, processes and containers. Start, every elevated reply and teardown
+carry host-rendered markers. Cancellation, stale confirmation, unavailable
+Docker, lost runtime and failed teardown have distinct actionable messages.
+No claim of sandboxing or complete agent-command auditing is made. These UI
+requirements are implemented with E3/E4; E1 alone activates no runtime.
+
+**Consequences.** The original CP-038 wording forbidding every role transition is
+narrowed to the elevated boundary; ordinary scheduled work remains compatible.
+Host deployment/activation and provider credential derivation remain separate.
+
+## D060 — Elevated state stays outside ordinary session mappings
+
+**Status:** accepted implementation contract, 2026-11-03 (CP-038 E2, reconciled
+with deployed CP-037 P1 and independently reviewed).
+
+Elevated host sessions use dedicated lifecycle, exec-journal, native-context
+and transcript tables. They never register a chat or fabricate a namespace
+snapshot, and do not pass through the legacy/durable ordinary-session adapter.
+Native context is keyed by provider and updated only by the current active
+host-session ID; close/reopen rejects late writes. The one-live-session index
+is a data fence, not proof that an old runtime exited.
+
+Reserved workspace/native directories need an elevated provenance marker;
+nonempty unmarked or symlinked directories are refused. Historical ordinary
+registration/ownership of the reserved folder prevents opening a host session.
+Ordinary scope lookup also refuses it; P1 adoption counts/skips such unreachable
+legacy rows instead of aborting adoption for other chats.
+
+Every elevated host exec must commit a bounded redacted intent before running
+and settle before publishing its result. Exit -1 records an unknown host-call
+result, not process-death proof; lifecycle must retain uncertainty until Docker
+proves quiescence. The journal is not tamper-proof against the host-root agent.
