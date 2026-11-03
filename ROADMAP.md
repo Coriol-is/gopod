@@ -433,4 +433,8 @@ Buttons/hooks, inbound/outbound stickers and thread awareness remain separate wo
   tools. Checks must not trigger provider inference, credential refresh or writes.
   Include the health matrix and before/after-reboot verification in the runbook.
   Requested after observing that gopod/controller and owner agent had no healthcheck.
-  TODO only; not implemented in the elevated completion iteration.
+  Implemented in PR #165 (`067c016`): controller/relay readiness and native
+  offline prerequisites, with explicit one-shot exceptions. Local full/race
+  checks, disposable Docker matrix and required CI passed. Production rollout
+  remains pending; reboot qualification is separately authorized.
+  [Health matrix and runbook](docs/CONTAINER-HEALTH.md).

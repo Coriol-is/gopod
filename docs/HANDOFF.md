@@ -41,9 +41,12 @@ Full activation/command exposure depends on the remaining gates actually passing
 
 Checkpoint: healthchecks source `14d40d0` is independently reviewed; full local
 build/vet/tests, affected races and disposable offline Docker matrix passed.
-[PR #165](https://github.com/Coriol-is/gopod/pull/165) is awaiting required CI.
-CP-002 immutable-plan persistence/preparation/boot recovery is implemented and
-under regression review; foreground activation remains off. CP-016 leases are
+[PR #165](https://github.com/Coriol-is/gopod/pull/165) passed required CI and
+merged as `067c016`. Sonar advisory ERROR: loopback HTTP (S5332), security B;
+probe is restricted to literal loopback, no proxy/redirect or user data.
+CP-002 immutable-plan persistence/preparation/boot recovery passed independent
+review, full local checks and affected races: [PR #166](https://github.com/Coriol-is/gopod/pull/166),
+`149e1d8`, awaiting CI. D063 records the contract; foreground activation remains off. CP-016 leases are
 under independent race review, including unknown edit ownership and late queue
 admission. Production remains unchanged.
 
