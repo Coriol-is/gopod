@@ -529,7 +529,7 @@ exec. Explicit close, restart and shutdown use one teardown path; renamed role
 survivors are found by Docker labels/IDs. Unknown cleanup remains modal and keeps
 host capacity held. No daemon availability means no proof, not ordinary routing.
 
-Images need rebuilding for the new supervisor. The feature stays off. On the Pi,
-MemoryLimit=false blocks start; enabling it requires separately authorized host
-configuration/reboot and E6 acceptance. Provider homes need separate native login;
+Both candidate images include the new supervisor. The feature stays off. The Pi
+memory controller was enabled after owner-authorized configuration/reboot on
+2026-11-03; the E6 host lifecycle proof passed. Provider homes need separate native login;
 no automatic ordinary credential inheritance or authenticated acceptance is implied.

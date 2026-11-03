@@ -32,16 +32,18 @@ nil-Docker recovery, private login interception and cancelled-first-turn context
 Focused tests, build/vet/full suite, affected race suites and real-Docker supervisor
 cancellation passed; PR CI/merge remains. Both ARM64 images built and passed offline smoke checks.
 
-**E6 blocked:** live Pi Docker reports MemoryLimit=false, CPUCfsQuota=true,
-PidsLimit=true; cgroup.controllers lacks memory, although CONFIG_MEMCG=y. Boot
-cmdline has no cgroup options. No boot configuration/reboot or feature activation
-was performed. Start now refuses hosts without actual required resource support.
-Provider native login and authenticated new/resume/tool acceptance remain open;
-ordinary credentials were not copied. `/login` still means ordinary-chat login.
+**E6 host gate qualified:** owner authorized memory-cgroup configuration and a
+whole-Pi reboot. Before/after inventory preserved all nine containers and their
+images; all seven configured healthchecks passed. Memory/CPU/pids enforcement is
+available. Candidate images pass offline smoke; the opt-in manager lifecycle test
+uses disposable state, both provider images and fixed read-only host probes.
+See [host qualification](deployments/2026-11-03-elevated-host-qualification.md).
 
-Next: merge green integrated PR, deploy with flag off when authorized, then obtain
-explicit host-configuration/reboot authority for memory controller qualification
-and separate provider login/activation acceptance. Pi still runs `75b3be3`.
+PR #154 is awaiting final updated-head CI and merge. Pi controller still runs
+`75b3be3`; candidate tags do not replace production images. Feature activation,
+separate native provider login, authenticated new/resume/tool checks and real
+Telegram button acceptance remain open. Ordinary credentials were not copied.
+`/login` still means ordinary-chat login. Healthchecks are a separate queued task.
 
 ## Previous — E0–E2 deployed, 2026-11-03
 

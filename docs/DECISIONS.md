@@ -2172,5 +2172,6 @@ explicit JSON thread identity. Separate native homes are never copied from the
 ordinary chat. Provider login remains a manual, separately authorized operation.
 
 Start refuses Docker hosts lacking memory, CPU quota or pids enforcement. The
-Pi currently reports MemoryLimit=false; no root session or flag activation is
-accepted until host cgroup qualification and provider acceptance are complete.
+Pi initially reported MemoryLimit=false. Owner-authorized configuration and reboot
+on 2026-11-03 enabled the controller; host qualification passed. Production flag
+activation and native provider acceptance remain separate from host qualification.

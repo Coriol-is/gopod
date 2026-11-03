@@ -16,4 +16,8 @@ Build/vet/full tests and affected runner/control/telegram/cmd race tests passed.
 login, credential copy or live root activation was performed. Pi read-only proof:
 Linux 6.12.75+rpt-rpi-v8, cgroup v2 controllers cpuset/cpu/io/pids;
 Docker MemoryLimit=false, CPUCfsQuota=true, PidsLimit=true; CONFIG_MEMCG=y.
-E6 is blocked pending explicit host configuration/reboot and provider qualification.
+This was the pre-reboot baseline. Owner subsequently authorized configuration and
+reboot; [host qualification](../deployments/2026-11-03-elevated-host-qualification.md)
+records successful resource enforcement and manager lifecycle proof. Native provider
+and real-client acceptance remain open. The opt-in integration test received a
+focused independent review; production elevated remains off during qualification.
