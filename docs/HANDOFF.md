@@ -25,6 +25,18 @@ Base main `09dbaf4`; production controller `ec51ee6`. Existing worktrees retaine
 - `docs/acceptance-next` in `../gopod-acceptance-next`: sole Telegram acceptance
   actor, bounded ordinary Stop/media/continuity probes; no auth changes or live deletion.
 
+Implementation checkpoint: CP-002 now classifies frozen/published results before
+replay, holds unpublished work visibly, and preserves NoReplay through Telegram;
+regressions are being added. CP-016 ingress/callback/output/native-admission guards
+passed targeted suites; full checks are running. Neither slice enables final
+foreground ownership or the deletion command.
+
+Acceptance checkpoint: bounded Codex Stop reached durable stopped state and
+native process exit; subsequent nonce recall succeeded. Owner additionally
+requested Telegram Toolkit topic creation: `topics create` implemented, 83 local
+tests passed, live topic `3176309` created for this acceptance wave. PDF probe is
+running there; the topic is retained. Toolkit changes are in its own repository.
+
 Root owns global handoff/roadmap, integration and release. Each stream records
 intermediate evidence in its own review report. Source changes require independent
 review, full checks and exact CI; only bounded small fixes retain the owner's
