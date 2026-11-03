@@ -9,10 +9,25 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
+type topicOutputOriginKey struct{}
+
+// withTopicOutputOrigin retains the source conversation when legacy delivery
+// targets main. Every nested send (chunks, retry, code upload) must still check
+// that source, rather than treating thread zero as permission to disclose it.
+func withTopicOutputOrigin(ctx context.Context, chatID int64, thread int) context.Context {
+	if thread <= 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, topicOutputOriginKey{}, chatThread{chat: chatID, thread: thread})
+}
+
 // topicAdmission checks durable intent/tombstone state before new topic work.
 // Main, groups and unregistered diagnostics keep their existing behavior. This
 // is a read fence, not a lease: an already issued request still needs quiescence.
 func (b *Bot) topicAdmission(ctx context.Context, chatID int64, thread int) error {
+	if origin, ok := ctx.Value(topicOutputOriginKey{}).(chatThread); ok && origin.chat == chatID && thread == 0 {
+		thread = origin.thread
+	}
 	if thread <= 0 || chatID <= 0 || b.store == nil {
 		return nil
 	}

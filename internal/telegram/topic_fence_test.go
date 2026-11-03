@@ -3,8 +3,10 @@ package telegram
 import (
 	"context"
 	"errors"
+	"github.com/Coriol-is/gopod/internal/queue"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Coriol-is/gopod/internal/store"
 	"github.com/go-telegram/bot"
@@ -222,5 +224,65 @@ func TestTopicFenceStoreFailureDoesNotAdmitTopic(t *testing.T) {
 	}
 	if len(fake.callsTo("sendMessage")) != 0 {
 		t.Fatal("API called with unreadable fence")
+	}
+}
+
+func TestTopicFenceFinalMainFallbackRetainsOrigin(t *testing.T) {
+	for _, kind := range []string{"chunks", "code uploads", "rate limit retry"} {
+		t.Run(kind, func(t *testing.T) {
+			fake := &fakeTelegram{}
+			b, d := topicFenceFixture(t, fake)
+			if err := b.store.RecordTopicDeletionOutcome(t.Context(), d, "refused"); err != nil {
+				t.Fatal(err)
+			}
+			calls := 0
+			fake.respond = func(method string, _ map[string]string) (int, string) {
+				if method == "sendMessage" || method == "sendDocument" {
+					calls++
+					if _, _, err := b.store.BeginTopicDeletion(t.Context(), d.Scope, 7); err != nil {
+						t.Error(err)
+					}
+					if kind == "rate limit retry" {
+						return tooManyRequests("1")
+					}
+				}
+				return sentMessage("10")
+			}
+			b.sleep = func(context.Context, time.Duration) error { return nil }
+			text := strings.Repeat("x", 8000)
+			if kind == "code uploads" {
+				text = fence("go", 100) + "\n" + fence("py", 100)
+			}
+			if kind == "rate limit retry" {
+				text = "private"
+			}
+			_ = b.replyInMain(t.Context(), queue.Item{ChatID: streamChat, Folder: "owner", ThreadID: 7}, text)
+			if calls != 1 {
+				t.Fatalf("%s: issued %d content sends after deletion began", kind, calls)
+			}
+		})
+	}
+}
+
+func TestTopicFenceDeletionDuringUploadActionPreventsDocument(t *testing.T) {
+	fake := &fakeTelegram{}
+	b, d := topicFenceFixture(t, fake)
+	if err := b.store.RecordTopicDeletionOutcome(t.Context(), d, "refused"); err != nil {
+		t.Fatal(err)
+	}
+	fake.respond = func(method string, _ map[string]string) (int, string) {
+		if method == "sendChatAction" {
+			if _, _, err := b.store.BeginTopicDeletion(t.Context(), d.Scope, 7); err != nil {
+				t.Error(err)
+			}
+		}
+		return sentMessage("10")
+	}
+	_, err := b.sendDocument(t.Context(), streamChat, 7, "private.txt", []byte("private"), "")
+	if !errors.Is(err, store.ErrTopicDeleting) {
+		t.Fatalf("got %v", err)
+	}
+	if len(fake.callsTo("sendDocument")) != 0 {
+		t.Fatal("document uploaded after deletion began during chat action")
 	}
 }

@@ -37,3 +37,12 @@ Native setup is refused before container ensure; group nonzero-thread and legacy
 reader compatibility are covered. Full Telegram/runner race suites and three repeated targeted race runs passed.
 Final full build/vet/test and diff hygiene passed. Independent review and exact
 CI remain parent integration gates. No live deletion performed.
+
+## Independent-review correction
+
+The streamed final fallback initially checked the source topic once and then
+lost it while sending to main. The source now stays in a host-created context
+through nested text chunks, 429 retry and long-code document uploads. Regressions
+begin deletion after the first request and assert no subsequent content request.
+This preserves the read-fence boundary; already-issued requests still need
+transport quiescence before deletion is exposed.

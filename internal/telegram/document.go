@@ -17,6 +17,7 @@ import (
 // is in memory, so unlike a voice reply the upload can be repeated.
 // caption is plain text; keep it short.
 func (b *Bot) sendDocument(ctx context.Context, chatID int64, thread int, name string, data []byte, caption string) (int, error) {
+	ctx = withTopicOutputOrigin(ctx, chatID, thread)
 	if err := b.topicAdmission(ctx, chatID, thread); err != nil {
 		return 0, err
 	}
@@ -58,6 +59,9 @@ func (b *Bot) chatAction(ctx context.Context, chatID int64, thread int, action m
 }
 
 func (b *Bot) uploadDocument(ctx context.Context, chatID int64, thread int, name string, data []byte, caption string) (int, error) {
+	if err := b.topicAdmission(ctx, chatID, thread); err != nil {
+		return 0, err
+	}
 	msg, err := b.api.SendDocument(ctx, &bot.SendDocumentParams{
 		ChatID:          chatID,
 		MessageThreadID: thread,

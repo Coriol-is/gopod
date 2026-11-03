@@ -676,6 +676,7 @@ func isNotModified(err error) bool {
 // draft path it returns errReplyUndelivered when nothing went out, so
 // the turn is not marked done with its answer lost.
 func (b *Bot) replyInMain(ctx context.Context, item queue.Item, text string) error {
+	ctx = withTopicOutputOrigin(ctx, item.ChatID, item.ThreadID)
 	if err := b.topicAdmission(ctx, item.ChatID, item.ThreadID); err != nil {
 		return err
 	}
