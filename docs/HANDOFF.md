@@ -51,7 +51,13 @@ no-PR exception. Do not enable `/thread delete` or managed tasks from incomplete
 prerequisites. Combined source passed full build/vet/tests and affected race suites; source
 identity matches the reviewed integration worktree. Resume: wait final main CI,
 then perform one idle/backup-gated rollout and the scoped missing-file regression.
-No new production deployment has occurred in this follow-up yet.
+Release candidate `e6f0fad` passed isolated Pi boot; exact main
+[CI 41654649071](https://github.com/Coriol-is/gopod/actions/runs/41654649071) passed (test and isolation-spike).
+[Rollout record](deployments/2026-11-03-parallel-wave.md). No production switch yet: SSH connection failed before remote script execution
+(1Password agent refused main-ssh-key signature). Owner was asked to unlock the
+agent; do not relogin providers or alter credentials. After unlock, rerun the
+reviewed `/tmp/gopod-backlog-e6f0fad/gopod-wave-deploy-e6f0fad.sh` on Pi; it
+rechecks idle before stopping anything.
 
 ## Deployment checkpoint — 2026-11-03
 

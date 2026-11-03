@@ -28,3 +28,22 @@ notice leaked into main; this release fixes that defect. Topic/PDF retained.
 
 Next: exact main CI, idle and retained rollback image, verified matched-stopped
 backup, startup/state read-back, scoped missing-file warning and `/version`.
+
+## Candidate checkpoint
+
+Candidate `e6f0fad` built CGO-free for linux/arm64 with Go 1.26.10. Source files
+match the fully tested integration tree. Exact main CI:
+[41654649071](https://github.com/Coriol-is/gopod/actions/runs/41654649071).
+Pi isolated synthetic-account boot passed with no network/production mounts.
+Candidate image `sha256:70d9f3ef7925d9946d90424ee048358c618abf039d5fa78f205ca56790426639`.
+Rollback tag `gopod-gopod:rollback-pre-backlog-20261103-e6f0fad` retains `ec51ee6`.
+No production switch until CI is green and the idle gate is rechecked.
+
+## Deployment connection checkpoint
+
+Exact main CI passed: test and isolation-spike. An intervening native/outbox
+operation was allowed to finish; subsequent read-only counts were zero.
+SSH then failed before executing the rollout script: the 1Password agent refused
+the main SSH key signature and the server disconnected for authentication attempts.
+No controller stop or production switch occurred. Production remains `ec51ee6`;
+owner was asked to unlock the existing SSH agent. Credentials/config unchanged.
