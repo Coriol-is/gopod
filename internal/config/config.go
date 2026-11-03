@@ -25,6 +25,9 @@ import (
 // observability endpoints, etc.) — they live next to the subsystems that own
 // them, gathered into Config at Load time.
 type Config struct {
+	ElevatedEnabled                            bool
+	ElevatedImage, ElevatedCodexImage          string
+	ElevatedMemory, ElevatedCPUs, ElevatedPids int64
 	// DataDir is the gopod runtime state directory. The SQLite store
 	// lives at ${DataDir}/store.sqlite, IPC dirs at ${DataDir}/ipc/<chat>/,
 	// session dirs at ${DataDir}/sessions/<chat>/.
@@ -290,6 +293,9 @@ func Load(loadDotenv bool) (Config, error) {
 		return Config{}, fmt.Errorf("GOPOD_LOG_FORMAT=%q: must be text or json", cfg.LogFormat)
 	}
 
+	if err := loadElevated(&cfg); err != nil {
+		return Config{}, err
+	}
 	if err := cfg.validate(); err != nil {
 		return Config{}, err
 	}

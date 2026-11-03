@@ -224,3 +224,9 @@ func (s *Store) AppendElevatedTranscript(ctx context.Context, session, role, bod
 	}
 	return nil
 }
+
+func (s *Store) ElevatedExecCount(ctx context.Context, session string) (int, error) {
+	var count int
+	err := s.db.QueryRowContext(ctx, `SELECT count(*) FROM elevated_execs WHERE session_id=?`, session).Scan(&count)
+	return count, err
+}

@@ -385,3 +385,11 @@ func TestStartedForegroundRecoveryNeverReplaysUnknownExecution(t *testing.T) {
 		t.Fatal(turn)
 	}
 }
+
+func TestRestartLeavesElevatedToDedicatedLifecycle(t *testing.T) {
+	r := &controllerRestart{}
+	target, err := r.personalTarget(t.Context(), container.Summary{ID: "root", State: "running", Labels: map[string]string{runner.LabelChat: runner.ElevatedFolder, runner.LabelPolicyRole: string(runner.RoleElevatedHost)}})
+	if err != nil || target != nil {
+		t.Fatal(target, err)
+	}
+}

@@ -514,3 +514,22 @@ claim closure or resume ordinary routing while elevated execution is unproven).
 The warning states that files, processes and other containers can be changed,
 that external content can influence the agent, and that the journal records
 host Docker exec calls rather than every command the agent executes.
+
+## 15. Integrated delivery clarification (2026-11-03, D061)
+
+E3–E5 are delivered together at the owner's request. New plain-text input is the
+initial supported surface; media, automatic/forwarded input and known credential
+material are refused without ordinary persistence. Credential-flow interception
+precedes elevated routing. Inputs timestamped before the confirmed start are
+refused, including the ambiguous partial start second; resend as a fresh request.
+
+`/stop` uses the image's own process-group supervisor, never a writable PID file
+in the host namespace. Known native identity persists after an observed cancelled
+exec. Explicit close, restart and shutdown use one teardown path; renamed role
+survivors are found by Docker labels/IDs. Unknown cleanup remains modal and keeps
+host capacity held. No daemon availability means no proof, not ordinary routing.
+
+Both candidate images include the new supervisor. The feature stays off. The Pi
+memory controller was enabled after owner-authorized configuration/reboot on
+2026-11-03; the E6 host lifecycle proof passed. Provider homes need separate native login;
+no automatic ordinary credential inheritance or authenticated acceptance is implied.

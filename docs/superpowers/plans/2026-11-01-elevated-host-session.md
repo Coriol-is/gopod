@@ -3,8 +3,9 @@
 **Proposal:** [CP-038](../../proposals/CP-038-elevated-host-session.md) ·
 **Spec:** [Architecture and contract](../specs/2026-11-01-elevated-host-session.md)
 
-Implementation authorized by the owner on 2026-11-03. Each slice is a worktree, a PR, an independent
-source review and green CI before the next starts. `GOPOD_ELEVATED` stays off
+Implementation authorized by the owner on 2026-11-03. E0–E2 landed sequentially.
+The owner subsequently requested one larger completion iteration: E3–E5 now share
+a worktree/PR with independent review and green CI; E6 evidence follows the integrated build. `GOPOD_ELEVATED` stays off
 through every slice, so nothing here changes a running deployment.
 
 | Slice | Scope | Depends on | Checks that must pass |

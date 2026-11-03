@@ -33,12 +33,12 @@ Lifecycle safety P0 precedes parallel execution; ordinary restart drains, explic
 `/restart force` cancels background work. Mixed-provider routing, model changes and explicit quota fallback are consolidated
 in contract D. These remain specifications only.
 Owner authorized P0 code, parallel worktrees, acceptance and automatic merge.
-T5/T5b parallel-runtime implementation remains paused; T9 reboot is not authorized. The separately authorized reliability rollout was deployed as `a0de4dc` ([evidence](docs/deployments/2026-11-02-reliability-streams.md)).
+T5/T5b parallel-runtime implementation remains paused; T9 memory-cgroup reboot was separately authorized and completed on 2026-11-03; broader T5 activation remains deferred. The separately authorized reliability rollout was deployed as `a0de4dc` ([evidence](docs/deployments/2026-11-02-reliability-streams.md)).
 
 ## Elevated host session — CP-038 (implementation authorized)
 
 ⬜ Design merged as `2ca967c` via [PR #128](https://github.com/Coriol-is/gopod/pull/128).
-E0 images (#150), E1 profile/guard (#151, D059) and E2 journal/reserved identity (#152, D060) are merged and deployed as `75b3be3`; E3–E6 remain pending. No feature flag or elevated runtime is active. [CP-038](docs/proposals/CP-038-elevated-host-session.md)
+E0 images (#150), E1 profile/guard (#151, D059) and E2 journal/reserved identity (#152, D060) are merged and deployed as `75b3be3`; E3–E5 are implemented and independently reviewed on `feat/elevated-complete`; final checks/merge remain. E6 host cgroups and lifecycle are qualified on Pi; native provider and real-client acceptance remain open. No feature flag or elevated runtime is active. [CP-038](docs/proposals/CP-038-elevated-host-session.md)
 is `in-progress`: owner authorized implementation on 2026-11-03.
 
 An explicitly started owner-private conversation with host authority on the Pi:
@@ -401,3 +401,14 @@ Buttons/hooks, inbound/outbound stickers and thread awareness remain separate wo
 ### Reaction reading specification (2026-10-29)
 
 - CP-032: [design](docs/superpowers/specs/2026-10-29-telegram-reaction-reading.md) saved for incoming emoji/custom reactions, scoped message correlation and no-admin capability handling. Private native reaction delivery is unavailable under the documented Bot API admin requirement. No implementation, activation or queue reprioritization.
+
+## Owner TODO — container healthchecks (2026-11-03)
+
+- Add appropriate Docker healthchecks/readiness checks for every gopod-owned
+  container: controller, Claude/Codex personal and group runtimes, elevated
+  runtimes and auxiliary images. Long-running containers must expose meaningful
+  startup/liveness status; define a suitable readiness/exit check for one-shot
+  tools. Checks must not trigger provider inference, credential refresh or writes.
+  Include the health matrix and before/after-reboot verification in the runbook.
+  Requested after observing that gopod/controller and owner agent had no healthcheck.
+  TODO only; not implemented in the elevated completion iteration.

@@ -326,6 +326,9 @@ func (r *controllerRestart) snapshotFor(ctx context.Context, allowHeld bool) ([]
 }
 
 func (r *controllerRestart) personalTarget(ctx context.Context, c container.Summary) (*store.RestartContainer, error) {
+	if c.Labels[runner.LabelPolicyRole] == string(runner.RoleElevatedHost) {
+		return nil, nil
+	} // dedicated manager owns elevated teardown
 	folder := c.Labels[runner.LabelChat]
 	if folder == "" || c.State != "running" {
 		return nil, nil

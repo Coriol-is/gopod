@@ -55,6 +55,13 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 	if consumed {
 		return
 	}
+	if sensitiveLogin && b.elevated != nil && b.elevated.Active() && !strings.HasPrefix(strings.TrimSpace(messageText(m)), "/") {
+		b.replyTo(ctx, m.Chat.ID, inboundThreadID(m), m.ID, "⚠️ ROOT: данные входа не переданы агенту. Завершите вход отдельно.")
+		return
+	}
+	if !sensitiveLogin && b.handleElevated(ctx, m) {
+		return
+	}
 	if !sensitiveLogin && !isLoginCommand(strings.TrimSpace(messageText(m))) {
 		b.persistMessage(ctx, m)
 	}

@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-03 (E0–E2 merged and deployed; E3 dialogs/routing next)
+**Last updated:** 2026-11-03 (integrated E3–E5 implementation reviewed; E6 host gate open)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -15,7 +15,37 @@ all proposed write defaults consistently require confirmation. Documentation-onl
 updates now use the owner-approved exception in CLAUDE.md: no mandatory PR or
 full verification, with diff/link/consistency checks retained.
 
-## Resume here — E0–E2 deployed, 2026-11-03
+## Owner follow-up — container healthchecks
+
+Recorded in [ROADMAP](../ROADMAP.md#owner-todo--container-healthchecks-2026-11-03):
+add meaningful health/readiness checks for every gopod-owned container, including
+Claude/Codex elevated images. This is a queued task, not implemented in this iteration.
+
+## Resume here — integrated elevated completion, 2026-11-03
+
+Owner requested one larger E3–E5 iteration. `feat/elevated-complete` in
+`gopod-elevated-complete` implements `/root`, fresh modal owner text, confirmations,
+markers, lifecycle/drain/shutdown/boot cleanup, dedicated provider context and
+supervised cancellation (D061). Independent review PASS after fixing start/close
+races, inspect-only reuse, renamed survivors, restart snapshots, global admission,
+nil-Docker recovery, private login interception and cancelled-first-turn context.
+Focused tests, build/vet/full suite, affected race suites and real-Docker supervisor
+cancellation passed; PR CI/merge remains. Both ARM64 images built and passed offline smoke checks.
+
+**E6 host gate qualified:** owner authorized memory-cgroup configuration and a
+whole-Pi reboot. Before/after inventory preserved all nine containers and their
+images; all seven configured healthchecks passed. Memory/CPU/pids enforcement is
+available. Candidate images pass offline smoke; the opt-in manager lifecycle test
+uses disposable state, both provider images and fixed read-only host probes.
+See [host qualification](deployments/2026-11-03-elevated-host-qualification.md).
+
+PR #154 is awaiting final updated-head CI and merge. Pi controller still runs
+`75b3be3`; candidate tags do not replace production images. Feature activation,
+separate native provider login, authenticated new/resume/tool checks and real
+Telegram button acceptance remain open. Ordinary credentials were not copied.
+`/login` still means ordinary-chat login. Healthchecks are a separate queued task.
+
+## Previous — E0–E2 deployed, 2026-11-03
 
 Pi runs `75b3be3` (PR #152) since 09:47:51 UTC. Independent E2 review,
 PR test/isolation/Sonar and exact main CI passed. Sonar CLI reports six

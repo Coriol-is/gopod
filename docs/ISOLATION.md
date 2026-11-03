@@ -368,3 +368,22 @@ Repository source links above are the implementation reference. Earlier research
 is dated evidence, not a current deployment assertion. See the [audit](research/2026-10-25-personal-group-isolation-audit.md),
 [subscription prototype](research/2026-10-25-subscription-cli-tool-isolation-prototype.md)
 and [original accepted contract](superpowers/specs/2026-10-25-personal-group-container-isolation.md).
+
+## Elevated host-root trust profile (CP-038, D059–D061)
+
+| Property | Elevated host session |
+|---|---|
+| Authority | root uid/gid, privileged, host PID/network/IPC; **not isolated from the host** |
+| Mounts | `/` to `/host`, Docker socket, dedicated workspace and two native homes |
+| Identity | reserved unregistered `elevated`, dedicated tables, no ordinary IPC |
+| Activation | default off, owner-private one-shot confirmation, Docker resource support required |
+| Lifetime | explicit close; no TTL/idle eviction; startup removes survivors |
+| Cancellation | supervised own process group via private stdin, daemon exit proof; detached host effects remain |
+| Audit | bounded redacted controller exec intents/results, not every agent action or tamper-proof history |
+
+Ordinary foreground/task role recycling remains intact. Crossing the elevated
+role boundary is refused even for stopped containers. Root has access to other
+host credentials and services; dedicated homes prevent accidental inheritance,
+not root access to the host. Host content may influence the agent with full root
+authority. Do not infer protection of a proposed Telegram account connector from
+its ordinary-container isolation policy when elevated is enabled.

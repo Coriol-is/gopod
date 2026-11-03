@@ -28,6 +28,7 @@ RUN npm install -g --ignore-scripts "@anthropic-ai/claude-code@${CLAUDE_CODE_VER
  && npm cache clean --force
 
 
+COPY container/elevated/exec.cjs /usr/local/lib/gopod-elevated-exec.cjs
 ENV HOME=/home/node
 RUN mkdir -p /workspace/session /home/node/.claude /home/node/.codex
 # CP-038 intentionally requires host-root authority in this dedicated image.
