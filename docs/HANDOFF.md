@@ -28,7 +28,7 @@ Base main `09dbaf4`; production controller `ec51ee6`. Existing worktrees retaine
 Implementation checkpoint: CP-002 now classifies frozen/published results before
 replay, holds unpublished work visibly, and preserves NoReplay through Telegram;
 regressions/full/race checks and independent review passed; PR #164 (`933da28`)
-is waiting for exact-head CI.
+passed exact-head CI and merged as `e8b58b8`.
 CP-016 PR #163 (`effc746`) passed independent re-review after preserving the
 original topic through final fallback chunks/retries/code uploads and rechecking
 after chat actions. Final-head CI passed and PR #163 merged as `b62eb22`. Neither slice enables final
@@ -40,15 +40,18 @@ requested Telegram Toolkit topic creation: `topics create` implemented, 83 local
 tests passed, live topic `3176309` created for this acceptance wave. PDF arrived
 there and its test bytes were verified. The first source-missing warning leaked
 to main and falsely claimed the file remained; a separate bounded IPC notice fix
-passed review/full/race tests as `f5768ba`, pending integration without PR under
-the owner-approved small-fix exception. Topic retained; Telegram probes are paused. Toolkit main
+passed review/full/race tests as `f5768ba`, integrated as `33ba30a` without PR
+under the owner-approved small-fix exception. Topic retained; Telegram probes are paused. Toolkit main
 `c28367d` is published and installed locally.
 
 Root owns global handoff/roadmap, integration and release. Each stream records
 intermediate evidence in its own review report. Source changes require independent
 review, full checks and exact CI; only bounded small fixes retain the owner's
 no-PR exception. Do not enable `/thread delete` or managed tasks from incomplete
-prerequisites. No new production mutation has occurred in this follow-up yet.
+prerequisites. Combined source passed full build/vet/tests and affected race suites; source
+identity matches the reviewed integration worktree. Resume: wait final main CI,
+then perform one idle/backup-gated rollout and the scoped missing-file regression.
+No new production deployment has occurred in this follow-up yet.
 
 ## Deployment checkpoint — 2026-11-03
 

@@ -37,3 +37,7 @@ The durable outbox slice merged in PR #161 (`602403a`) adds publication/claim an
 plain-fallback fences over the existing deletion journal. Runtime/network
 quiescence and command/recovery/stream/callback integration remain open. See
 [contract and tests](../reviews/2026-11-03-topic-outbox-fences.md).
+
+## Parallel follow-up checkpoint
+
+Ingress/callback/native-admission and guarded output fences merged in PR #163 (`b62eb22`). Original-topic identity survives final fallback chunks, retries and code uploads. Native/transport quiescence, queued-turn settlement and threadless edit ownership still block `/thread delete`. [Evidence](../reviews/2026-11-03-topic-next.md).

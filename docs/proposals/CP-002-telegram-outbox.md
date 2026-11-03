@@ -64,3 +64,7 @@ PR #145 provides the runner freeze seam; PR #160 (`f5ba97a`) adds atomic ordinar
 batch attempt recording and trusted handler counters. Full foreground ownership,
 frozen-result publication recovery and cutover remain open. See
 [PR 6b evidence](../reviews/2026-11-03-batch-start-foundation.md).
+
+## Parallel follow-up checkpoint
+
+Ordinary frozen-result recovery/visible holds and NoReplay transport handling merged in PR #164 (`e8b58b8`). Published plans remain outbox-owned; unpublished results are not guessed into text-only plans. Foreground freeze/publication activation remains gated on voice/code/stream plan parity and late cancellation settlement. [Evidence](../reviews/2026-11-03-freeze-next.md).

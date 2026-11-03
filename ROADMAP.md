@@ -130,7 +130,11 @@ independent review and test/isolation/Sonar. Deployed in `4350e1b`; backups, run
 Parallel follow-up started from `09dbaf4`: CP-002 ordinary eligibility/frozen
 recovery, CP-016 admission/quiescence and serialized Telegram acceptance in
 separate worktrees. Integration/deploy will be sequential after review and CI.
-No completion or production activation is claimed for these new slices yet.
+CP-016 ingress/native/callback/output fences merged in #163 (`b62eb22`); CP-002
+result-aware recovery/hold and NoReplay propagation merged in #164 (`e8b58b8`).
+Full foreground ownership and topic deletion remain incomplete and disabled.
+Native Codex continuity/Stop and topic PDF delivery were observed; an attachment
+refusal notice routing/wording defect is fixed in `33ba30a`, awaiting rollout.
 
 ## Planning candidates — 2026-10-26
 
