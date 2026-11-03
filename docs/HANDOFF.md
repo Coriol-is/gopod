@@ -29,7 +29,8 @@ E2 adds dedicated state/generation fencing, reserved-folder exclusions,
 provenance bootstrap and journal-before-exec (D060); full build/vet/tests and
 store/runner race tests passed. Next: E3 owner-private command, modal input and
 warning/confirmation dialogs, E4 lifecycle, E5 docs, E6 host proof. The known
-IPC receipt/archive race remains open (PR #149 evidence), not fixed by E2.
+IPC receipt/archive race remains open ([diagnostic](reviews/2026-11-02-task-ipc-replay-race.md)), not fixed by E2.
+The earlier [reliability rollout](deployments/2026-11-02-reliability-streams.md) records the bounded restart cursor acceptance.
 
 E3 design constraints discovered by review: root Claude rejects the ordinary
 `--dangerously-skip-permissions`; use a dedicated explicit tool allowlist with
@@ -55,8 +56,8 @@ P1 is already merged: E2/E3 must explicitly reconcile elevated native context
 ownership with the durable adapter's registered-scope requirement. Never make
 the reserved folder registerable to work around that check.
 
-Current deployed code remains `a0de4dc`; deployment documentation PR #149 is
-open pending GitHub approval. The older rollout statements below are historical.
+At that E0 checkpoint deployed code was `a0de4dc`; deployment documentation PR #149 is
+preserved in the reliability rollout report. The older rollout statements below are historical.
 Elevated host tests/activation are separate gates; no provider sign-in, host
 privileged session or ordinary profile change was performed in E0.
 
@@ -76,7 +77,7 @@ Codex resumed the work from clean `main` `2d24266`; its
   open. FTS quote escaping is fixed in [PR #143](https://github.com/Coriol-is/gopod/pull/143);
   cancellation misclassified as profile unavailability is fixed in
   [PR #146](https://github.com/Coriol-is/gopod/pull/146), merged as `5b0e362`
-  (not deployed). Use SSH to
+  (now deployed). Use SSH to
   `100.123.150.53` with strict host checking: the saved IP works, whereas the
   `rpi4` hostname failed host-key lookup. No SSH settings/key changes are needed.
 - **Reliability:** [PR #145](https://github.com/Coriol-is/gopod/pull/145),
@@ -97,17 +98,17 @@ The FTS fix is merged as `69cb0a9`; all four implementation PRs (#143–146) pas
 `test`, Docker `isolation-spike` and Sonar before squash merge. Full local
 build/vet/tests and affected race tests passed. The cross-stream runner/store
 checks are recorded in [integration evidence](reviews/2026-11-02-stream-integration.md).
-No new code has been deployed; the Pi remains on `8a4f55a`.
+These changes are now deployed in `a0de4dc`; see the current rollout above.
 
 The task-role credential adapter, CP-038 E0–E6, host reboot/cgroup changes and
-production deployment remain outside this wave. Existing worktrees and branches
+elevated activation remain outside this wave. Existing worktrees and branches
 are preserved. Session mapping remains legacy until separately adopted.
 
 Older sections below are historical checkpoints. For current deployed state,
 use the latest deployment and the [acceptance report](reviews/2026-11-02-release-qualification.md) rather than older
 “not deployed” or “next” statements.
 
-## Latest deployment — `8a4f55a`, 2026-11-02
+## Previous deployment — `8a4f55a`, 2026-11-02
 
 `main` `8a4f55a` (CP-040 agent attachments, [D058](DECISIONS.md), PR #140 merged after
 an independent review) runs on the Pi since **2026-11-02 10:17:49 UTC**; evidence,

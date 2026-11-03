@@ -12,6 +12,7 @@ from unit tests, CLI --help/version, startup notices or a green CI job.
 - CP-031: owner reported `/restart` checked on 2026-10-29. Baseline accepted by owner; negative cases and specific topic/provider scenarios remain unqualified.
 
 ## Verified operational baseline
+- [2026-11-02 reliability rollout](deployments/2026-11-02-reliability-streams.md): verified backups, preserved state and restart cursor acceptance. IPC receipt/archive race remains open.
 - [2026-11-03 E2 rollout](deployments/2026-11-03-elevated-e2.md): state preserved, four empty elevated tables migrated, healthy startup. No `/root` or elevated runtime active.
 - [2026-11-03 E0/E1 rollout](deployments/2026-11-03-elevated-e1.md): verified backups, preserved state, healthy startup and first queued status reply. No elevated host runtime or provider-inference acceptance.
 - [Rich IPC/restart rollout](deployments/2026-10-29-8bdff46.md): gateway/owner startup, two acknowledged HTML sends, preserved schedules/counts/config and initial online backup verification.

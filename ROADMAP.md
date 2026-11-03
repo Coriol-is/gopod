@@ -33,7 +33,7 @@ Lifecycle safety P0 precedes parallel execution; ordinary restart drains, explic
 `/restart force` cancels background work. Mixed-provider routing, model changes and explicit quota fallback are consolidated
 in contract D. These remain specifications only.
 Owner authorized P0 code, parallel worktrees, acceptance and automatic merge.
-T5/T5b parallel-runtime implementation remains paused; deployment and T9 reboot are not authorized.
+T5/T5b parallel-runtime implementation remains paused; T9 reboot is not authorized. The separately authorized reliability rollout was deployed as `a0de4dc` ([evidence](docs/deployments/2026-11-02-reliability-streams.md)).
 
 ## Elevated host session — CP-038 (implementation authorized)
 
@@ -48,8 +48,7 @@ a timer. [Spec](docs/superpowers/specs/2026-11-01-elevated-host-session.md) ·
 [Plan](docs/superpowers/plans/2026-11-01-elevated-host-session.md).
 
 Slice `E-pre` is done and was independent of acceptance: button presses carried no
-`MessageID`, so `/restart force|status|cancel` were refused on `main` (`5c36b81`, not
-deployed; the Pi's `8a3ce75` registers no argument forms). The hardened chat and group
+`MessageID`, and could reject `/restart force|status|cancel`. The fix is included in the deployed `a0de4dc`. The hardened chat and group
 profiles are not touched by any slice.
 
 ## Private-chat Stop — CP-036
@@ -81,7 +80,7 @@ has passed. The proposal registry remains the single CP status source;
 |---|---|---|---|
 | 1 | Qualify the deployed release | Tasks panel, delivery, upgraded CLIs, quota/provider continuity, Stop/recovery and media baseline — A01–A17 | Implemented/deployed baseline; live checks open |
 | 2 | Reliability and diagnostics | CP-017 Telegram diagnosis -> CP-002 bounded outbox/uncertain delivery -> CP-004 isolated task sessions -> CP-007 scheduled backups/restore -> CP-006 maintenance/quiet hours | CP-017 private-DM slice implemented; live acceptance pending; CP-002/003/004/007 partially implemented and deployed; full cutover, managed execution and restore gates remain open; CP-006 planned |
-| 3 | Conversation management | CP-016 topic deletion/retirement -> CP-018 per-conversation providers/models/quota scope | Specs saved; no implementation |
+| 3 | Conversation management | CP-016 topic deletion/retirement -> CP-018 per-conversation providers/models/quota scope | CP-016 store foundation merged/deployed; runtime integration and CP-018 pending |
 | 4 | Group service UX | CP-019 ephemeral command/service/error replies; T14 scoped menu/strings work coordinated with transport | Spec saved; ordinary output stays public |
 | 5 | Media, three queues | CP-014 Q1 cards/links/attachment fidelity -> Q2 document/OCR/image/speech -> Q3 video speech+frames/export; CP-003 typed IPC artifacts and CP-005 qualified tools support appropriate slices | Specs/proposals only beyond existing baseline |
 | 6 | Platform extensions | CP-011 runtime, CP-012 registry; then additional providers/sandboxes, bounded bot-to-bot experiment if useful; secret gateway/MCP/metrics stay deferred | Design/research/deferred; no new backend or peer enabled |
@@ -92,7 +91,7 @@ remain paused operational/research items, not implicit deployment steps.
 
 ## Next iteration — status as of 2026-11-02
 
-Done since 2026-10-27 (all merged to `main`; production runs `8a4f55a`; outbox IPC/dispatcher and artifacts on, managed tasks off): CP-002 PR 1-5
+Done since 2026-10-27 (all merged to `main`; production runs `75b3be3`; outbox IPC/dispatcher and artifacts on, managed tasks off): CP-002 PR 1-5
 (store, dispatcher, durable personal text IPC, immutable artifacts, voice/code preparation),
 CP-004 PR 1-3 (storage, managed dispatch, policy-guarded execution), CP-007 backup foundation,
 rich-message formatting P1 (D045), supervised owner `/restart` (CP-031).
