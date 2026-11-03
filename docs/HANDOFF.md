@@ -51,11 +51,12 @@ the contract; foreground activation remains off. CP-016 independent review found
 refused-reopen lock inversion; targeted races passed. Final full tests and
 combined-source integration remain pending. Legacy fallback-message origin
 after restart/cache eviction is still an activation gate; no delete command.
-Final CP-016 review additionally found async login completion inheriting a
-released ingress context; fix and delayed-completion regression are required
-before merge. One concurrent managed-queue timeout is under investigation
-(repeated targeted checks passed); do not treat it as an established baseline
-flake without evidence. Combined tree compiled for linux/arm64 with Go 1.26.10. Production remains unchanged.
+Final CP-016 source `5a7a4da` in [PR #167](https://github.com/Coriol-is/gopod/pull/167)
+passed independent review after fixing async login completion lifetime and adding
+an explicit active-login blocker. Targeted races passed; exact full checks and CI
+remain pending. Existing managed queue stress timeout was reproduced on unchanged
+main `572e246` (three failures in 100 repetitions); track separately, not suppressed.
+Combined tree compiled for linux/arm64 with Go 1.26.10. Production remains unchanged.
 
 ## Previous completed wave — parallel follow-up, 2026-11-03
 
@@ -215,7 +216,8 @@ full verification, with diff/link/consistency checks retained.
 
 Recorded in [ROADMAP](../ROADMAP.md#owner-todo--container-healthchecks-2026-11-03):
 add meaningful health/readiness checks for every gopod-owned container, including
-Claude/Codex elevated images. This is a queued task, not implemented in this iteration.
+Claude/Codex elevated images. Implemented in PR #165; production rollout is pending in the current wave.
+See [health matrix](CONTAINER-HEALTH.md); host reboot remains separate.
 
 ## Resume here — integrated elevated completion, 2026-11-03
 
