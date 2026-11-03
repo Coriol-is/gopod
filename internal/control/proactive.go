@@ -33,8 +33,12 @@ type ProactiveDeps struct {
 	// Connector reports the status of a connector key ("gmail" or "cal").
 	// Optional: nil means every connector is unknown.
 	Connector func(ctx context.Context, connector string) ConnectorStatus
-	Now       func() time.Time // optional, defaults to time.Now
-	Log       *slog.Logger     // optional
+	// ChatDir returns the host directory mounted at /workspace/chat for the
+	// owner chat; the panel reads the agent's outcome files there. Optional:
+	// nil or an error means no outcome is shown.
+	ChatDir func(context.Context) (string, error)
+	Now     func() time.Time // optional, defaults to time.Now
+	Log     *slog.Logger     // optional
 }
 
 const proactiveUnavailable = "Proactive actions are unavailable right now."
@@ -155,6 +159,8 @@ func proactiveFailure(err error) (string, bool) {
 		return "All presets are paused (/proactive off). Send /proactive on first.", true
 	case errors.Is(err, proactive.ErrTaskConflict):
 		return "A task of another chat already holds this preset's id; it was left alone.", true
+	case errors.Is(err, proactive.ErrPresetUnavailable):
+		return "This preset is not available yet: timed reminders arrive in a later update.", true
 	case errors.Is(err, proactive.ErrNotEnabled):
 		return "The preset is off. Turn it on first.", true
 	}

@@ -101,8 +101,8 @@ func (f *workflow) named(t *testing.T, folder, name string, payload any) receipt
 	t.Fatalf("no source-scoped IPC receipt for %s/%s (possible deadlock)", folder, name)
 	return receipt{}
 }
-func schedule(id string) map[string]any {
-	return map[string]any{"op": "schedule", "taskId": id, "prompt": "Review notes and save summary", "scheduleType": "cron", "scheduleValue": "CRON_TZ=Europe/Belgrade 0 9 * * *"}
+func schedule(_ string) map[string]any {
+	return map[string]any{"op": "schedule", "prompt": "Review notes and save summary", "scheduleType": "cron", "scheduleValue": "CRON_TZ=Europe/Belgrade 0 9 * * *"}
 }
 func ok(t *testing.T, r receipt) {
 	t.Helper()
@@ -113,14 +113,15 @@ func ok(t *testing.T, r receipt) {
 
 func TestTaskIPCWorkflowUsesRealStoreAndScopedReceipts(t *testing.T) {
 	f := newWorkflow(t)
-	r := f.submit(t, "alice", schedule("daily"))
+	r := f.named(t, "alice", "daily-create", schedule("daily"))
+	id := r.Result.TaskID
 	ok(t, r)
 	if r.Result.Task == nil || r.Result.Task.NextRun <= time.Now().UnixMilli() || r.Result.Task.ChatJID != "tg:2" || r.Result.Task.NextRunAt == "" {
 		t.Fatalf("not runnable: %+v", r)
 	}
 	originalNext := r.Result.Task.NextRun
-	ok(t, f.submit(t, "alice", schedule("daily")))
-	task, _ := f.st.GetTask(context.Background(), "daily")
+	ok(t, f.named(t, "alice", "daily-create", schedule("daily")))
+	task, _ := f.st.GetTask(context.Background(), id)
 	if task.NextRun != originalNext {
 		t.Fatal("same schedule shifted on replay")
 	}
@@ -135,7 +136,7 @@ func TestTaskIPCWorkflowUsesRealStoreAndScopedReceipts(t *testing.T) {
 		t.Fatal("foreign list leaked")
 	}
 	for _, op := range []string{"get", "pause", "resume", "update", "cancel", "delete"} {
-		r = f.submit(t, "bob", map[string]any{"op": op, "taskId": "daily", "prompt": "foreign"})
+		r = f.submit(t, "bob", map[string]any{"op": op, "taskId": id, "prompt": "foreign"})
 		if r.Status != "error" {
 			t.Fatalf("foreign %s allowed", op)
 		}
@@ -145,27 +146,27 @@ func TestTaskIPCWorkflowUsesRealStoreAndScopedReceipts(t *testing.T) {
 	if len(r.Result.Tasks) != 1 {
 		t.Fatal("owner scoped list unavailable")
 	}
-	r = f.submit(t, "alice", map[string]any{"op": "pause", "taskId": "daily"})
+	r = f.submit(t, "alice", map[string]any{"op": "pause", "taskId": id})
 	ok(t, r)
 	if r.Result.Task.Status != "paused" || r.Result.Task.NextRun != 0 {
 		t.Fatal("pause failed")
 	}
-	r = f.submit(t, "alice", map[string]any{"op": "resume", "taskId": "daily"})
+	r = f.submit(t, "alice", map[string]any{"op": "resume", "taskId": id})
 	ok(t, r)
 	if r.Result.Task.Status != "active" || r.Result.Task.NextRun <= 0 {
 		t.Fatal("resume failed")
 	}
-	r = f.submit(t, "alice", map[string]any{"op": "update", "taskId": "daily", "prompt": "Updated notes", "scheduleType": "interval", "scheduleValue": "1h"})
+	r = f.submit(t, "alice", map[string]any{"op": "update", "taskId": id, "prompt": "Updated notes", "scheduleType": "interval", "scheduleValue": "1h"})
 	ok(t, r)
 	if r.Result.Task.Prompt != "Updated notes" || r.Result.Task.ScheduleValue != "1h" {
 		t.Fatal("update failed")
 	}
-	r = f.submit(t, "alice", map[string]any{"op": "cancel", "taskId": "daily"})
+	r = f.submit(t, "alice", map[string]any{"op": "cancel", "taskId": id})
 	ok(t, r)
 	if r.Result.Task.Status != "done" {
 		t.Fatal("cancel failed")
 	}
-	r = f.submit(t, "alice", map[string]any{"op": "delete", "taskId": "daily"})
+	r = f.submit(t, "alice", map[string]any{"op": "delete", "taskId": id})
 	ok(t, r)
 	if !r.Result.Deleted {
 		t.Fatal("delete failed")
@@ -174,8 +175,10 @@ func TestTaskIPCWorkflowUsesRealStoreAndScopedReceipts(t *testing.T) {
 
 func TestTaskIPCRequestReplayUsesHostJournal(t *testing.T) {
 	f := newWorkflow(t)
-	ok(t, f.submit(t, "alice", schedule("daily")))
-	request := map[string]any{"op": "update", "taskId": "daily", "scheduleType": "interval", "scheduleValue": "1h"}
+	created := f.submit(t, "alice", schedule("daily"))
+	ok(t, created)
+	id := created.Result.TaskID
+	request := map[string]any{"op": "update", "taskId": id, "scheduleType": "interval", "scheduleValue": "1h"}
 	first := f.named(t, "alice", "same-update", request)
 	ok(t, first)
 	time.Sleep(10 * time.Millisecond)
@@ -184,13 +187,13 @@ func TestTaskIPCRequestReplayUsesHostJournal(t *testing.T) {
 	if first.Result.Task.NextRun != second.Result.Task.NextRun {
 		t.Fatal("replayed update shifted next run")
 	}
-	different := f.named(t, "alice", "same-update", map[string]any{"op": "delete", "taskId": "daily"})
+	different := f.named(t, "alice", "same-update", map[string]any{"op": "delete", "taskId": id})
 	if different.Status != "error" {
 		t.Fatal("reused filename accepted different operation")
 	}
-	deleted := f.named(t, "alice", "same-delete", map[string]any{"op": "delete", "taskId": "daily"})
+	deleted := f.named(t, "alice", "same-delete", map[string]any{"op": "delete", "taskId": id})
 	ok(t, deleted)
-	replay := f.named(t, "alice", "same-delete", map[string]any{"op": "delete", "taskId": "daily"})
+	replay := f.named(t, "alice", "same-delete", map[string]any{"op": "delete", "taskId": id})
 	ok(t, replay)
 	if !replay.Result.Deleted {
 		t.Fatal("delete success lost on replay")
@@ -269,7 +272,9 @@ func TestTaskIPCReceiptSymlinkCannotWriteOrPruneOutside(t *testing.T) {
 
 func TestTaskIPCResponseFailureReplaysCommittedDelete(t *testing.T) {
 	f := newWorkflow(t)
-	ok(t, f.submit(t, "alice", schedule("delete-me")))
+	created := f.submit(t, "alice", schedule("delete-me"))
+	ok(t, created)
+	id := created.Result.TaskID
 	results := filepath.Join(f.root, "ipc", "alice", "results")
 	saved := results + "-saved"
 	if err := os.Rename(results, saved); err != nil {
@@ -279,13 +284,13 @@ func TestTaskIPCResponseFailureReplaysCommittedDelete(t *testing.T) {
 		t.Fatal(err)
 	}
 	input := filepath.Join(f.root, "ipc", "alice", "tasks", "delete-retry.json")
-	if err := os.WriteFile(input, []byte(`{"op":"delete","taskId":"delete-me"}`), 0o600); err != nil {
+	if err := os.WriteFile(input, []byte(fmt.Sprintf(`{"op":"delete","taskId":%q}`, id)), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(2 * time.Second)
 	committed := false
 	for time.Now().Before(deadline) {
-		if _, err := f.st.GetTask(context.Background(), "delete-me"); err != nil {
+		if _, err := f.st.GetTask(context.Background(), id); err != nil {
 			committed = true
 			break
 		}
@@ -350,5 +355,26 @@ func TestGroupTaskManagementDoesNotRevealForeignIDs(t *testing.T) {
 	managed := f.submit(t, "group", map[string]any{"op": "get", "taskId": own.Result.TaskID})
 	if managed.Status != "ok" {
 		t.Fatalf("group cannot manage its returned ID: %+v", managed)
+	}
+}
+
+func TestPrivateNonOwnerCannotChooseGlobalTaskID(t *testing.T) {
+	f := newWorkflow(t)
+	for _, id := range []string{"private-task", "missing-task", "preset-gmail"} {
+		r := f.submit(t, "alice", map[string]any{"op": "schedule", "taskId": id, "prompt": "p", "scheduleType": "interval", "scheduleValue": "1h"})
+		if r.Status != "error" || !strings.Contains(r.Error, "must omit taskId") {
+			t.Fatalf("id probe: %+v", r)
+		}
+	}
+	r := f.submit(t, "alice", schedule(""))
+	ok(t, r)
+	id := r.Result.TaskID
+	bad := f.submit(t, "alice", map[string]any{"op": "update", "taskId": id, "scheduleType": "interval", "scheduleValue": "1ms"})
+	if bad.Status != "error" {
+		t.Fatal("update bypassed minimum period")
+	}
+	got, err := f.st.GetTask(t.Context(), id)
+	if err != nil || got.ScheduleType != "cron" {
+		t.Fatal("rejected update mutated task")
 	}
 }

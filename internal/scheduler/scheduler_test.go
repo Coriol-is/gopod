@@ -93,6 +93,9 @@ func newSchedulerTestStore(t *testing.T) *store.Store {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := s.RegisterChat(context.Background(), store.RegisteredChat{JID: "tg:1", Folder: "owner", IsOwner: true, AddedAt: 1}); err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() { _ = s.Close() })
 	return s
 }

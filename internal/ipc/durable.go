@@ -229,7 +229,11 @@ func sanitizeCode(s string) string {
 }
 
 func (w *Watcher) finishRejected(folder, path, code string) bool {
-	if !w.writeDurableReceipt(folder, path, durableReceipt{Status: "error", Error: code}) {
+	rc := durableReceipt{Status: "error", Error: code}
+	if isAttachmentCode(code) {
+		rc.Help = attachmentHelp
+	}
+	if !w.writeDurableReceipt(folder, path, rc) {
 		return w.terminalBackoff(path)
 	}
 	return w.archiveTerminal(folder, path, ".failed")
@@ -274,6 +278,9 @@ func (w *Watcher) archiveTerminal(folder, path, destination string) bool {
 // cadence instead of every poll. It always returns false (not completed).
 func (w *Watcher) terminalBackoff(path string) bool {
 	if w.bumpRetry(path) {
+		if _, exists := w.retries[path]; !exists && len(w.retries) >= maxWatcherEntries {
+			return false
+		}
 		last := w.cfg.RetryBackoff[len(w.cfg.RetryBackoff)-1]
 		w.retries[path] = retryEntry{attempts: w.cfg.MaxRetries, nextRetryAt: w.cfg.NowFn().Add(last)}
 	}

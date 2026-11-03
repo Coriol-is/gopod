@@ -25,12 +25,18 @@ func (s *Store) GetSession(ctx context.Context, folder string, thread int, provi
 
 // PutSession stores or replaces the session id for one conversation.
 func (s *Store) PutSession(ctx context.Context, folder string, thread int, provider, id string) error {
-	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO sessions (chat_folder, thread_id, provider, session_id, updated_at)
+	_, err := s.withTx(ctx, func(q taskSQL) error {
+		if err := topicFolderAdmissionQ(ctx, q, folder, thread); err != nil {
+			return err
+		}
+		_, err := q.ExecContext(ctx,
+			`INSERT INTO sessions (chat_folder, thread_id, provider, session_id, updated_at)
 		 VALUES (?, ?, ?, ?, ?)
 		 ON CONFLICT(chat_folder, thread_id, provider)
 		 DO UPDATE SET session_id=excluded.session_id, updated_at=excluded.updated_at`,
-		folder, thread, provider, id, time.Now().Unix())
+			folder, thread, provider, id, time.Now().Unix())
+		return err
+	})
 	if err != nil {
 		return fmt.Errorf("putting session: %w", err)
 	}

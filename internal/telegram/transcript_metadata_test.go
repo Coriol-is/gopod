@@ -88,7 +88,7 @@ func TestFailedTranscriptionCaptionHasNoSuccessMetadata(t *testing.T) {
 	}
 }
 
-func TestVoiceMetadataDoesNotAlterLoginCodeRouting(t *testing.T) {
+func TestTranscribedVoiceNeverBecomesLoginCode(t *testing.T) {
 	f := newInboundFixture(t, map[string]string{"v1": "voice/message.ogg"})
 	newFakeWhisper(t, f.b, "abc#def")
 	f.b.logins.set(streamChat, &loginSession{chatID: streamChat, awaitsCode: true, private: true})
@@ -97,9 +97,9 @@ func TestVoiceMetadataDoesNotAlterLoginCodeRouting(t *testing.T) {
 	m := threadedMsg(7, "")
 	m.Voice = &models.Voice{FileID: "v1", Duration: 2}
 	f.handle(m)
-	f.none(t)
-	if code != "abc#def" {
-		t.Fatalf("metadata changed raw login code: %q", code)
+	item := f.next(t)
+	if code != "" || !strings.Contains(item.Text, "abc#def") {
+		t.Fatalf("voice routed as login code: code=%q text=%q", code, item.Text)
 	}
 }
 

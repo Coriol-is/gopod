@@ -202,8 +202,8 @@ func TestLoadOutboxIPCFlagIsOffByDefault(t *testing.T) {
 	}
 }
 
-func TestLoadOutboxArtifactsFlagIsOffByDefault(t *testing.T) {
-	for val, want := range map[string]bool{"": false, "0": false, "junk": false, "1": true, "true": true} {
+func TestLoadOutboxArtifactsFlagIsOnByDefault(t *testing.T) {
+	for val, want := range map[string]bool{"": true, "0": false, "false": false, "off": false, "junk": true, "1": true, "true": true} {
 		t.Setenv("GOPOD_OUTBOX_ARTIFACTS", val)
 		cfg, err := Load(false)
 		if err != nil {
@@ -224,6 +224,15 @@ func TestLoadManagedTasksFlagIsOffByDefault(t *testing.T) {
 		}
 		if cfg.ManagedTasksEnabled != want {
 			t.Errorf("GOPOD_MANAGED_TASKS=%q: got %v, want %v", val, cfg.ManagedTasksEnabled, want)
+		}
+	}
+}
+
+func TestOwnerIDRequiresPositivePrivateChat(t *testing.T) {
+	for _, value := range []string{"0", "-1", "-100123456"} {
+		t.Setenv("GOPOD_OWNER_CHAT_ID", value)
+		if _, err := Load(false); err == nil {
+			t.Fatalf("accepted owner ID %s", value)
 		}
 	}
 }

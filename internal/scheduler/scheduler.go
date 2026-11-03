@@ -109,6 +109,9 @@ func (s *Scheduler) Start(ctx context.Context) {
 }
 
 func (s *Scheduler) poll(ctx context.Context) {
+	if s.queue.Draining() {
+		return
+	}
 	now := time.Now().UnixMilli()
 	tasks, err := s.store.GetDueTasks(ctx, now)
 	if err != nil {
@@ -128,11 +131,38 @@ func (s *Scheduler) poll(ctx context.Context) {
 func (s *Scheduler) runTask(ctx context.Context, t store.TaskRecord, now int64) {
 	release := LockTasks(s.store)
 	defer release()
+	if s.queue.Draining() {
+		return
+	}
 	current, err := s.store.GetTask(ctx, t.ID)
 	if err != nil || current.Status != "active" || current.NextRun <= 0 || current.NextRun > now {
 		return
 	}
 	t = current
+	registration, err := s.store.GetByFolder(ctx, t.ChatFolder)
+	if err != nil || registration.JID != t.ChatJID {
+		return
+	}
+	if !registration.IsOwner {
+		if err := ValidateNonOwnerPeriod(t.ScheduleType, t.ScheduleValue); err != nil {
+			if e := s.store.UpdateTaskStatus(ctx, t.ID, "paused", 0, t.LastRun); e != nil {
+				s.log.Error("scheduler: pause unsafe schedule", "err", e)
+			}
+			return
+		}
+		allowed, err := reserveDailyRun(ctx, s.store, t.ChatFolder, now)
+		if err != nil {
+			s.log.Error("scheduler: task budget", "err", err)
+			return
+		}
+		if !allowed {
+			tomorrow := time.UnixMilli(now).UTC().Truncate(24 * time.Hour).Add(24 * time.Hour).UnixMilli()
+			if err := s.store.UpdateTaskStatus(ctx, t.ID, "active", tomorrow, t.LastRun); err != nil {
+				s.log.Error("scheduler: delay budgeted task", "err", err)
+			}
+			return
+		}
+	}
 
 	// slot is the task's scheduled time. It is stable across polls and
 	// crashes, unlike now, so it keys both the log row and the queue

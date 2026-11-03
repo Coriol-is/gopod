@@ -15,6 +15,7 @@ import (
 	"time"
 	"unicode"
 
+	picoclog "github.com/Coriol-is/gopod/internal/log"
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
@@ -87,11 +88,11 @@ func (b *Bot) saveUpload(ctx context.Context, chatFolder, fileID, name, defaultE
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, b.api.FileDownloadLink(file), nil)
 	if err != nil {
-		return "", "", fmt.Errorf("download: %w", err)
+		return "", "", fmt.Errorf("download: %w", redactDownloadError(err))
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", "", fmt.Errorf("download: %w", err)
+		return "", "", fmt.Errorf("download: %w", redactDownloadError(err))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -165,4 +166,20 @@ func (b *Bot) chatDir(ctx context.Context, chatFolder string) (string, error) {
 		return b.runner.ChatWorkspace(ctx, chatFolder)
 	}
 	return filepath.Join("chats", chatFolder), nil
+}
+
+// Keep errors.Is/As semantics while ensuring URL-bearing HTTP errors cannot
+// expose the bot credential through any caller's logger or response text.
+type safeDownloadError struct {
+	cause error
+	text  string
+}
+
+func (e safeDownloadError) Error() string { return e.text }
+func (e safeDownloadError) Unwrap() error { return e.cause }
+func redactDownloadError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return safeDownloadError{cause: err, text: picoclog.NewRedactor().Text(err.Error())}
 }

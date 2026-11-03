@@ -1,6 +1,6 @@
 # CP-031 — Owner Telegram restart
 
-**Status:** in-progress
+**Status:** done
 **Requested/accepted:** owner, 2026-10-29
 **Size:** M
 
@@ -18,4 +18,5 @@ ADR: D046 in [DECISIONS](../DECISIONS.md).
 - Exact old container IDs are stopped and normal startup recreates the personal
   runtime; disabled groups and uncertain task reservations remain protected.
 - Recovery reports ready/degraded truthfully; notice failures cannot loop.
-- Real Compose/Telegram smoke remains unperformed until a separately authorized deployment.
+- Merged in #84 (`8bdff46`) and deployed; owner reported the baseline `/restart` successful on 2026-10-29. Negative/topic/provider cases remain separate live acceptance.
+- Deployment evidence: [2026-10-29 rollout](../deployments/2026-10-29-8bdff46.md).

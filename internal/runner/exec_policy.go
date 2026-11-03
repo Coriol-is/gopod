@@ -28,6 +28,7 @@ import (
 type ExecRole string
 
 const (
+	RoleElevatedHost ExecRole = "elevated_host"
 	// RoleForegroundPersonal is the existing personal default: owner tier mounts,
 	// env and tools, exactly what Run/RunStream have always used.
 	RoleForegroundPersonal ExecRole = "foreground_personal"
@@ -39,11 +40,15 @@ const (
 
 // Valid reports whether r is a role this host knows.
 func (r ExecRole) Valid() bool {
-	return r == RoleForegroundPersonal || r == RoleScheduledTaskPersonal
+	return r == RoleForegroundPersonal || r == RoleScheduledTaskPersonal || r == RoleElevatedHost
 }
 
 // policyRevision is bumped whenever a role definition changes, so containers
-// created under an older definition are recycled rather than trusted.
+// created under an older definition are never trusted. Note what that means in
+// practice: decideContainer DENIES a container whose recorded version differs
+// (deny("labels_stale_version")) rather than recycling it, so execution for
+// that folder is refused until the container is gone. Bumping this is a
+// deployment-ordering decision, not a free invalidation.
 const policyRevision = 1
 
 // fingerprintPrefix versions the fingerprint encoding.
@@ -61,6 +66,7 @@ const (
 // so a change of grant recycles the container; the IPC watcher and memory API
 // still enforce authority from the host-controlled namespace, not from here.
 var roleGrants = map[ExecRole][]string{
+	RoleElevatedHost: {"host:root", "host:docker", "host:namespaces"},
 	RoleForegroundPersonal: {
 		"ipc:artifacts", "ipc:messages", "ipc:tasks", "memory:api", "owner:project-ro", "owner:store-rw",
 	},

@@ -17,6 +17,9 @@ func TestTasksExplicitShortIDs(t *testing.T) {
 		t.Run(id, func(t *testing.T) {
 			st := testStore(t)
 			ctx := context.Background()
+			if err := st.RegisterChat(ctx, store.RegisteredChat{JID: "tg:100", Folder: "owner", IsOwner: true, AddedAt: 1}); err != nil {
+				t.Fatal(err)
+			}
 			next := time.Now().Add(time.Hour).UnixMilli()
 			if _, err := st.CreateTask(ctx, store.TaskRecord{ID: id, ChatFolder: "owner", ChatJID: "tg:100", Prompt: "test recurring reminder", ScheduleType: "interval", ScheduleValue: "1h", NextRun: next}); err != nil {
 				t.Fatal(err)

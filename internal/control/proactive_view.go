@@ -2,7 +2,9 @@ package control
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"strings"
 	"time"
 
@@ -131,7 +133,11 @@ func (h proactiveHandler) connectorScreen(ctx context.Context, svc *proactive.Se
 		if st.Preset.Connector() != key {
 			continue
 		}
-		fmt.Fprintf(&sb, "• %s — %s — %s, %s\n", st.Preset.Title, stateText(st), scheduleText(st.Preset, st.Settings, env), runsText(st.Preset, st.Settings, env))
+		if reason, off := st.Preset.Unavailable(); off {
+			fmt.Fprintf(&sb, "• %s — not available yet (%s)\n", st.Preset.Title, reason)
+		} else {
+			fmt.Fprintf(&sb, "• %s — %s — %s, %s\n", st.Preset.Title, stateText(st), scheduleText(st.Preset, st.Settings, env), runsText(st.Preset, st.Settings, env))
+		}
 		tok := presetToken(st.Preset)
 		row = append(row, Button{Label: strings.ToUpper(tok[:1]) + tok[1:], Command: "proactive", Args: []string{connectorWord(key), tok}})
 	}
@@ -168,6 +174,13 @@ func (h proactiveHandler) presetScreen(ctx context.Context, svc *proactive.Servi
 	tok, word := presetToken(p), connectorWord(p.Connector())
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "**%s · %s**\n", connectorTitle(p.Connector()), p.Title)
+	reason, unavailable := p.Unavailable()
+	if unavailable {
+		fmt.Fprintf(&sb, "Not available yet: %s.\n", reason)
+	}
+	if unavailable && st.State == proactive.StateOff {
+		return withNotice(Response{Text: sb.String(), Buttons: [][]Button{{{Label: "‹ Back", Command: "proactive", Args: []string{word}}}}}, notice, code), nil
+	}
 	fmt.Fprintf(&sb, "State: %s\n", stateText(st))
 	fmt.Fprintf(&sb, "Schedule: %s\n%s\n", scheduleText(p, st.Settings, env), runsText(p, st.Settings, env))
 	if p.ID == "cal.reminder" {
@@ -180,13 +193,16 @@ func (h proactiveHandler) presetScreen(ctx context.Context, svc *proactive.Servi
 		if st.LastRun > 0 {
 			fmt.Fprintf(&sb, "Last run: %s\n", time.UnixMilli(st.LastRun).In(loc).Format("Mon 15:04"))
 		}
+		if line := h.outcomeLine(ctx, p, st.LastRun, loc); line != "" {
+			sb.WriteString(line + "\n")
+		}
 	}
 	edited := "no"
 	if st.Modified {
 		edited = "yes"
 	}
 	fmt.Fprintf(&sb, "Template v%d · edited in /tasks: %s\n", p.TemplateVersion, edited)
-	if st.Modified && st.TemplateOutdated {
+	if !unavailable && st.Modified && st.TemplateOutdated {
 		sb.WriteString("Template updated: Reset to template applies it and drops your edits.\n")
 	}
 	if st.Conflict {
@@ -197,7 +213,10 @@ func (h proactiveHandler) presetScreen(ctx context.Context, svc *proactive.Servi
 		presetButton("On", mark(st.State == proactive.StateActive), word, tok, "on"),
 		presetButton("Off", mark(st.State != proactive.StateActive), word, tok, "off"),
 	}}
-	if freqs := p.Freqs(); len(freqs) > 1 {
+	if unavailable { // a live task from an earlier build can only be turned off
+		rows = [][]Button{{presetButton("Off", mark(st.State != proactive.StateActive), word, tok, "off")}}
+	}
+	if freqs := p.Freqs(); len(freqs) > 1 && !unavailable {
 		var row []Button
 		for _, f := range freqs {
 			row = append(row, presetButton(f, mark(f == st.Settings.Freq), word, tok, "freq", f))
@@ -207,14 +226,14 @@ func (h proactiveHandler) presetScreen(ctx context.Context, svc *proactive.Servi
 	if len(p.TimeOptions(nil)) > 0 {
 		rows = append(rows, []Button{{Label: "Time " + fixedTime(st.Settings.Time), Command: "proactive", Args: []string{word, tok, "time"}}})
 	}
-	if leads := p.Leads(); len(leads) > 0 {
+	if leads := p.Leads(); len(leads) > 0 && !unavailable {
 		var row []Button
 		for _, l := range leads {
 			row = append(row, presetButton(fmt.Sprintf("%d min", l), mark(l == st.Settings.Lead), word, tok, "lead", fmt.Sprint(l)))
 		}
 		rows = append(rows, row)
 	}
-	if st.State != proactive.StateOff && (st.Modified || st.TemplateOutdated) {
+	if !unavailable && st.State != proactive.StateOff && (st.Modified || st.TemplateOutdated) {
 		rows = append(rows, []Button{{Label: "Reset to template", Command: "proactive", Args: []string{word, tok, "reset"}, Style: StyleDanger}})
 	}
 	rows = append(rows, []Button{{Label: "‹ Back", Command: "proactive", Args: []string{word}}})
@@ -285,6 +304,84 @@ func resumeText(rep proactive.ResumeReport) string {
 func orNone(s string) string {
 	if s == "" {
 		return "none"
+	}
+	return s
+}
+
+// outcomeLine describes what the last run did, from the outcome file the agent
+// wrote (section 5.3). The file is agent-written and untrusted: only its
+// sanitized fields are shown, nothing acts on it. A run with no usable file
+// (missing, corrupt, from an earlier run) reads "ran, outcome unknown", taken
+// from the task's own last_run. A preset that never ran shows nothing.
+func (h proactiveHandler) outcomeLine(ctx context.Context, p proactive.Preset, lastRun int64, loc *time.Location) string {
+	var o proactive.Outcome
+	known := false
+	if h.deps.ChatDir != nil {
+		if dir, err := h.deps.ChatDir(ctx); err == nil {
+			if got, rerr := proactive.ReadOutcome(dir, p.ID); rerr == nil {
+				o, known = got, true
+			} else if !errors.Is(rerr, fs.ErrNotExist) {
+				h.deps.Log.Debug("proactive: outcome file unusable", "preset", p.ID, "err", rerr)
+			}
+		}
+	}
+	if known && lastRun > 0 {
+		// Written by an earlier run if either clock says it is older than this
+		// one: the agent's "at" or the file's modification time. Neither can make
+		// an old file look new on its own: a forged future "at" does not hide an
+		// old mtime.
+		cutoff := time.UnixMilli(lastRun).Add(-time.Minute)
+		if (!o.At.IsZero() && o.At.Before(cutoff)) || (!o.Modified.IsZero() && o.Modified.Before(cutoff)) {
+			known = false
+		}
+	}
+	if known && o.Result == proactive.OutcomeUnknown {
+		known = false
+	}
+	if !known {
+		if lastRun == 0 {
+			return ""
+		}
+		return "Last outcome: ran, outcome unknown"
+	}
+	var what string
+	switch o.Result {
+	case proactive.OutcomeSent:
+		what = "sent a message"
+	case proactive.OutcomeEmpty:
+		what = "stayed silent (nothing to report)"
+	case proactive.OutcomeUnavailable:
+		what = "connector not available"
+	default:
+		what = "error"
+	}
+	at := time.UnixMilli(lastRun) // the host's clock: file mtime, else the task's last run
+	if !o.Modified.IsZero() {
+		at = o.Modified
+	}
+	out := fmt.Sprintf("Last outcome: %s (%s)", what, at.In(loc).Format("Mon 15:04"))
+	if note := shortNote(noMarkup(o.Note)); note != "" {
+		out += " · (agent note, untrusted) `" + note + "`"
+	}
+	return out
+}
+
+// noMarkup removes the characters that would change Markdown or HTML.
+func noMarkup(s string) string {
+	return strings.Map(func(r rune) rune {
+		if strings.ContainsRune("`*_[]<>&", r) {
+			return -1
+		}
+		return r
+	}, s)
+}
+
+// shortNote caps the agent's note for the screen; the file may carry up to 120
+// characters but the owner sees a short single line.
+func shortNote(s string) string {
+	const max = 80
+	if r := []rune(s); len(r) > max {
+		return string(r[:max]) + "…"
 	}
 	return s
 }

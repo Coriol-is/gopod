@@ -128,24 +128,31 @@ func (w *Watcher) processArtifactRequest(ctx context.Context, folder, filePath s
 	req, err := parseArtifactRequest(raw)
 	if err != nil {
 		code, _ := errCode(err)
-		return w.rejectDurable(ctx, src, folder, filePath, id, code)
+		files := req.Files
+		if lenient := v1FilePaths(raw); len(lenient) > len(files) {
+			// The strict decode stopped before (or inside) files: name the
+			// paths from a lenient read so the user notice is not skipped.
+			files = pathsAsFiles(lenient)
+		}
+		return w.refuseArtifact(ctx, src, folder, filePath, id, code, files)
 	}
-	written, _ := w.requestModTime(folder, filePath)
+	mtime, _ := w.requestModTime(folder, filePath)
+	written := w.writtenBound(filePath, mtime)
 	grant, err := a.Caps.ResolveAt(req.Capability, folder, written)
 	if err != nil {
-		return w.rejectDurable(ctx, src, folder, filePath, id, codeStaleCapability)
+		return w.refuseArtifact(ctx, src, folder, filePath, id, codeStaleCapability, req.Files)
 	}
 	if code := w.authorizeArtifactGrant(ctx, a, grant, req, folder, src); code != "" {
 		if code == codeUnavailable {
 			return w.durableTransient(folder, filePath, code, errors.New("scope validation unavailable"))
 		}
-		return w.rejectDurable(ctx, src, folder, filePath, id, code)
+		return w.refuseArtifact(ctx, src, folder, filePath, id, code, req.Files)
 	}
 	if w.requestExpired(folder, filePath) {
-		return w.rejectDurable(ctx, src, folder, filePath, id, codeRequestExpired)
+		return w.refuseArtifact(ctx, src, folder, filePath, id, codeRequestExpired, req.Files)
 	}
 	if n := len(splitTextIf(req.Text)) + len(req.Files); n > store.MaxDeliveryParts {
-		return w.rejectDurable(ctx, src, folder, filePath, id, codeTooManyParts)
+		return w.refuseArtifact(ctx, src, folder, filePath, id, codeTooManyParts, req.Files)
 	}
 
 	var prep store.Preparation
@@ -161,12 +168,12 @@ func (w *Watcher) processArtifactRequest(ctx context.Context, folder, filePath s
 			return false
 		}
 		if err != nil {
-			return w.artifactFailure(ctx, a, folder, filePath, src, id, prep, err)
+			return w.artifactFailure(ctx, a, folder, filePath, src, id, prep, req.Files, err)
 		}
 	}
 	parts, err := artifactParts(req, prep.ArtifactIDs)
 	if err != nil {
-		return w.artifactFailure(ctx, a, folder, filePath, src, id, prep, err)
+		return w.artifactFailure(ctx, a, folder, filePath, src, id, prep, req.Files, err)
 	}
 	pr := store.PublishRequest{
 		Conversation: grant.Destination,
@@ -180,7 +187,7 @@ func (w *Watcher) processArtifactRequest(ctx context.Context, folder, filePath s
 		if errors.Is(ferr, artifactfs.ErrSimulatedCrash) {
 			return false
 		}
-		return w.artifactFailure(ctx, a, folder, filePath, src, id, prep, ferr)
+		return w.artifactFailure(ctx, a, folder, filePath, src, id, prep, req.Files, ferr)
 	}
 	var delivery store.Delivery
 	if len(req.Files) == 0 {
@@ -189,7 +196,7 @@ func (w *Watcher) processArtifactRequest(ctx context.Context, folder, filePath s
 		delivery, err = a.Store.PublishDeliveryWithArtifacts(ctx, pr, prep.ID)
 	}
 	if err != nil {
-		return w.artifactFailure(ctx, a, folder, filePath, src, id, prep, err)
+		return w.artifactFailure(ctx, a, folder, filePath, src, id, prep, req.Files, err)
 	}
 	if !delivery.Created && len(req.Files) > 0 {
 		// Duplicate: the store already abandoned this preparation; remove its blobs.
@@ -238,6 +245,9 @@ func (w *Watcher) prepareArtifacts(ctx context.Context, a ArtifactConfig, g Gran
 	rels := make([]string, len(req.Files))
 	for i, f := range req.Files {
 		rel, err := g.MapPath(f.Path)
+		if errors.Is(err, ErrPathOutsideWorkspace) {
+			return store.Preparation{}, reject(codePathOutside)
+		}
 		if err != nil {
 			return store.Preparation{}, reject(codePathDenied)
 		}
@@ -367,7 +377,7 @@ func mapPrepareError(err error) error {
 // artifactFailure cleans up an aborted preparation and chooses between a
 // durable rejection, a bounded retry and a transient retry. A simulated crash
 // leaves everything as it is.
-func (w *Watcher) artifactFailure(ctx context.Context, a ArtifactConfig, folder, filePath string, src store.ScopeRef, id store.RequestIdentity, prep store.Preparation, err error) bool {
+func (w *Watcher) artifactFailure(ctx context.Context, a ArtifactConfig, folder, filePath string, src store.ScopeRef, id store.RequestIdentity, prep store.Preparation, files []artifactFile, err error) bool {
 	if errors.Is(err, artifactfs.ErrSimulatedCrash) {
 		return false
 	}
@@ -383,15 +393,15 @@ func (w *Watcher) artifactFailure(ctx context.Context, a ArtifactConfig, folder,
 	case errors.Is(err, store.ErrRequestRejected):
 		return w.finishRejected(folder, filePath, rejectionCode(err))
 	case errors.Is(err, store.ErrOutboxQuotaExceeded):
-		return w.retryOrReject(ctx, src, folder, filePath, id, codeQuotaExceeded)
+		return w.retryOrReject(ctx, src, folder, filePath, id, codeQuotaExceeded, files)
 	case errors.Is(err, store.ErrInvalidDelivery), errors.Is(err, store.ErrInvalidArtifact):
-		return w.rejectDurable(ctx, src, folder, filePath, id, codeInvalidRequest)
+		return w.refuseArtifact(ctx, src, folder, filePath, id, codeInvalidRequest, files)
 	}
 	if code, ok := errCode(err); ok {
 		if code == codeQuotaExceeded || code == codeStorageFull {
-			return w.retryOrReject(ctx, src, folder, filePath, id, code)
+			return w.retryOrReject(ctx, src, folder, filePath, id, code, files)
 		}
-		return w.rejectDurable(ctx, src, folder, filePath, id, code)
+		return w.refuseArtifact(ctx, src, folder, filePath, id, code, files)
 	}
 	// Includes a stale scope or capability race, an expired preparation and
 	// store errors: the next pass takes a fresh look instead of failing.
@@ -399,9 +409,9 @@ func (w *Watcher) artifactFailure(ctx context.Context, a ArtifactConfig, folder,
 }
 
 // retryOrReject keeps the request for a bounded number of passes, then rejects.
-func (w *Watcher) retryOrReject(ctx context.Context, src store.ScopeRef, folder, filePath string, id store.RequestIdentity, code string) bool {
+func (w *Watcher) retryOrReject(ctx context.Context, src store.ScopeRef, folder, filePath string, id store.RequestIdentity, code string, files []artifactFile) bool {
 	if w.bumpRetry(filePath) {
-		return w.rejectDurable(ctx, src, folder, filePath, id, code)
+		return w.refuseArtifact(ctx, src, folder, filePath, id, code, files)
 	}
 	w.writeDurableReceipt(folder, filePath, durableReceipt{Status: "retrying", Error: code})
 	return false
@@ -437,4 +447,39 @@ func (w *Watcher) maybeReconcileArtifacts(ctx context.Context) {
 	if rep != (ReconcileReport{}) {
 		w.log.Info("ipc: artifact reconcile", slog.Any("report", rep))
 	}
+}
+
+// beginSweep records the start of a watcher sweep on the capability clock.
+func (w *Watcher) beginSweep() {
+	if w.cfg.Artifacts.Caps == nil {
+		return
+	}
+	w.prevSweep, w.curSweep = w.curSweep, w.cfg.Artifacts.Caps.now()
+}
+
+// writtenBound is the time handed to Capabilities.ResolveAt for a request file.
+// The file's mtime is chosen by the agent, so a backdated mtime must not make a
+// file that appeared after the run ended look like it was written before. The
+// watcher has proof of its own: a file first observed in sweep N was not in the
+// channel when sweep N-1 started, so it appeared no earlier than that. The
+// bound is max(mtime, start of the previous sweep), fixed when the file is first
+// observed. What remains is at most one poll interval of slack, which is what
+// lets an agent write its last request and exit before the next poll. On the
+// very first sweep of a process there is no previous sweep and the mtime is used;
+// capabilities do not survive a restart, so none predates it.
+func (w *Watcher) writtenBound(path string, mtime time.Time) time.Time {
+	floor, seen := w.writeFloor[path]
+	if !seen {
+		floor = w.prevSweep
+		if len(w.writeFloor) >= maxWatcherEntries {
+			// Refuse post-run admission when the host cannot retain first-seen proof.
+			// Returning current time cannot make an expired capability valid again.
+			return w.cfg.NowFn()
+		}
+		w.writeFloor[path] = floor
+	}
+	if mtime.After(floor) {
+		return mtime
+	}
+	return floor
 }

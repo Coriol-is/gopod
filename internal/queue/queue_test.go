@@ -1030,3 +1030,95 @@ func TestQueuePosition_Waiting(t *testing.T) {
 	}
 	close(release)
 }
+
+// New input waits for an explicit Stop; Stop ends only the running batch.
+func TestNewMessageWaitsAndSurvivesExplicitStop(t *testing.T) {
+	ss := newStatusStore()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	q := New(t.Context(), func(ctx context.Context, items []Item) error {
+		if items[0].SourceID == "first" {
+			close(started)
+			select {
+			case <-release:
+				return ErrStopped
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+		return nil
+	}, 1, ss, silentLog())
+	defer q.Close()
+	finished := make(chan Item, 2)
+	q.OnDone(func(it Item, _ error) { finished <- it })
+	first, _ := q.Enqueue(t.Context(), Item{Folder: "owner", Source: "telegram", SourceID: "first"})
+	<-started
+	next, _ := q.Enqueue(t.Context(), Item{Folder: "owner", Source: "telegram", SourceID: "next"})
+	if q.Pending() != 1 || ss.statusOf(first) != "running" {
+		t.Fatal("new input did not remain queued")
+	}
+	close(release)
+	for i := 0; i < 2; i++ {
+		select {
+		case <-finished:
+		case <-time.After(3 * time.Second):
+			t.Fatal("queued input did not complete after Stop")
+		}
+	}
+	if ss.statusOf(first) != StatusStopped || ss.statusOf(next) != StatusDone {
+		t.Fatal("Stop lost or replayed an input")
+	}
+}
+
+func TestBatchesNeverSpanThreads(t *testing.T) {
+	type batch struct{ thread, n int }
+	var mu sync.Mutex
+	var got []batch
+	release := make(chan struct{})
+	started := make(chan struct{})
+	var once sync.Once
+	handler := func(_ context.Context, items []Item) error {
+		once.Do(func() { close(started); <-release })
+		mu.Lock()
+		got = append(got, batch{items[0].ThreadID, len(items)})
+		for _, it := range items {
+			if it.ThreadID != items[0].ThreadID {
+				t.Errorf("batch spans threads %d and %d", items[0].ThreadID, it.ThreadID)
+			}
+		}
+		mu.Unlock()
+		return nil
+	}
+	q := New(context.Background(), handler, 10, nil, silentLog())
+	ctx := context.Background()
+	// A blocker holds the folder so the three real items queue up behind it.
+	q.Enqueue(ctx, Item{Folder: "alice", ThreadID: 9, Text: "blocker"})
+	<-started
+	q.Enqueue(ctx, Item{Folder: "alice", ThreadID: 0, Text: "a"})
+	q.Enqueue(ctx, Item{Folder: "alice", ThreadID: 5, Text: "b"})
+	q.Enqueue(ctx, Item{Folder: "alice", ThreadID: 0, Text: "c"})
+	close(release)
+
+	deadline := time.After(2 * time.Second)
+	for {
+		mu.Lock()
+		n := len(got)
+		mu.Unlock()
+		if n == 4 {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("timeout; batches so far: %v", got)
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	want := []batch{{9, 1}, {0, 1}, {5, 1}, {0, 1}}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("batches = %v, want %v", got, want)
+		}
+	}
+}

@@ -100,6 +100,9 @@ func (s *Service) Enable(ctx context.Context, id string) error {
 	if !ok {
 		return ErrUnknownPreset
 	}
+	if err := unavailableErr(p); err != nil {
+		return err
+	}
 	return s.inLockedTx(ctx, func(ctx context.Context) error {
 		if on, err := s.GloballyPaused(ctx); err != nil {
 			return err
@@ -247,6 +250,9 @@ func (s *Service) UpdateSettings(ctx context.Context, id string, fn func(*Settin
 	if !ok {
 		return ErrUnknownPreset
 	}
+	if err := unavailableErr(p); err != nil {
+		return err
+	}
 	return s.inLockedTx(ctx, func(ctx context.Context) error {
 		row, err := s.loadRow(ctx, id)
 		if err != nil {
@@ -313,6 +319,9 @@ func (s *Service) ResetToTemplate(ctx context.Context, id string) error {
 	if !ok {
 		return ErrUnknownPreset
 	}
+	if err := unavailableErr(p); err != nil {
+		return err
+	}
 	return s.inLockedTx(ctx, func(ctx context.Context) error {
 		row, err := s.loadRow(ctx, id)
 		if err != nil {
@@ -342,4 +351,14 @@ func (s *Service) ResetToTemplate(ctx context.Context, id string) error {
 		}
 		return s.putRow(ctx, row, set, p.TemplateVersion, ContentHash(prompt, "cron", sched))
 	})
+}
+
+// unavailableErr is ErrPresetUnavailable with the reason, or nil for an
+// available preset. Every operation that would start, rewrite or reset a
+// preset's task goes through it.
+func unavailableErr(p Preset) error {
+	if reason, off := p.Unavailable(); off {
+		return fmt.Errorf("%w: %s", ErrPresetUnavailable, reason)
+	}
+	return nil
 }

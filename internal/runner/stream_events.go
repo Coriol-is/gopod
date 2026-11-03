@@ -115,23 +115,27 @@ const rawTailBytes = 64 << 10
 func readStructuredStream(stdout, stderr io.Reader, parse func([]byte) ([]StreamEvent, error), onText func(string), onTool func(ProgressEvent)) structuredOutput {
 	stderrCh := make(chan string, 1)
 	go func() {
-		b, _ := io.ReadAll(stderr)
-		stderrCh <- string(b)
+		var b boundedBuffer
+		_, _ = io.Copy(&b, stderr)
+		stderrCh <- b.String()
 	}()
 
 	var (
 		out       structuredOutput
-		raw       []byte          // see structuredOutput.Raw
-		answer    strings.Builder // main agent text deltas since the last tool call
-		msgSince  string          // last main-agent message text since the last tool call
-		lastMsg   string          // last main-agent message text
+		raw       []byte        // see structuredOutput.Raw
+		answer    boundedBuffer // main agent text deltas since the last tool call
+		msgSince  string        // last main-agent message text since the last tool call
+		lastMsg   string        // last main-agent message text
 		resultTxt string
 	)
 	br := bufio.NewReaderSize(stdout, 64<<10)
 	for {
-		line, err := br.ReadBytes('\n') // no length limit: init lines are large
+		line, err := readBoundedLine(br)
 		if len(line) > 0 {
 			raw = append(raw, line...)
+			if len(raw) > maxAgentOutputBytes {
+				raw = append(raw[:0], raw[len(raw)-maxAgentOutputBytes:]...)
+			}
 			if out.Parsed > 0 && len(raw) > 2*rawTailBytes {
 				raw = append(raw[:0], raw[len(raw)-rawTailBytes:]...)
 			}
@@ -199,4 +203,25 @@ func truncateBytes(s string, n int) string {
 		n--
 	}
 	return s[:n]
+}
+
+// Drain an oversized event without retaining it or parsing a truncated JSON
+// prefix. The next complete event can still supply the final answer.
+func readBoundedLine(br *bufio.Reader) ([]byte, error) {
+	var line []byte
+	oversized := false
+	for {
+		fragment, err := br.ReadSlice('\n')
+		if !oversized {
+			if len(line)+len(fragment) > maxAgentOutputBytes {
+				oversized = true
+				line = nil
+			} else {
+				line = append(line, fragment...)
+			}
+		}
+		if err != bufio.ErrBufferFull {
+			return line, err
+		}
+	}
 }

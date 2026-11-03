@@ -48,18 +48,19 @@ func acquireOutboxOwner(ctx context.Context, st *store.Store, wait, poll time.Du
 }
 
 // openArtifactStore opens the host-private snapshot store and the per-run
-// capability registry for CP-003. Nothing in this binary issues a capability
-// yet (the runner integration is a later slice), so with the flag on every V1
-// request is still rejected as stale_capability; the flag only proves the
-// storage, reconcile and upload plumbing. It must not be enabled before the
-// matched backup and restore gate in D039 passes.
+// capability registry for CP-003. The runner issues capabilities from this
+// registry through artifactIssuer, but only for the owner's private chat. The
+// flag must not be enabled before the matched backup and restore gate in D039
+// passes.
 func openArtifactStore(cfg config.Config, st *store.Store) (ipc.ArtifactConfig, *artifactfs.Blobs, error) {
 	blobs, err := artifactfs.OpenBlobs(filepath.Join(cfg.DataDir, "artifacts"))
 	if err != nil {
 		return ipc.ArtifactConfig{}, nil, fmt.Errorf("open artifact store: %w", err)
 	}
 	resolve := func(folder string) (string, bool) {
-		c, err := st.GetByFolder(context.Background(), folder)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		c, err := st.GetByFolder(ctx, folder)
 		if err != nil {
 			return "", false
 		}
@@ -161,5 +162,33 @@ func maintainGenerations(ctx context.Context, st *store.Store, every, retention 
 		case <-t.C:
 			tick()
 		}
+	}
+}
+
+// artifactIssuer builds the runner-side capability issuer (CP-003 PR C). It
+// exists only when V1 artifact requests are actually admitted (the effective
+// config from artifactIPC: flag on, dispatcher running, durable route on) and
+// there is a private owner chat, and it shares the watcher's capability
+// registry so that what it issues is what the watcher checks. Otherwise nil:
+// no exec gets a capability and every V1 request stays stale_capability.
+func artifactIssuer(cfg config.Config, ac ipc.ArtifactConfig, st *store.Store, log *slog.Logger) *ipc.RunIssuer {
+	if ac.Store == nil || ac.Blobs == nil || ac.Caps == nil || st == nil || cfg.OwnerChatID <= 0 {
+		return nil
+	}
+	return &ipc.RunIssuer{
+		Caps:     ac.Caps,
+		Scopes:   st,
+		OwnerJID: fmt.Sprintf("tg:%d", cfg.OwnerChatID),
+		ChatsDir: cfg.ChatsDir,
+		Resolve: func(folder string) (string, bool) {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			c, err := st.GetByFolder(ctx, folder)
+			if err != nil {
+				return "", false
+			}
+			return c.JID, true
+		},
+		Log: log,
 	}
 }

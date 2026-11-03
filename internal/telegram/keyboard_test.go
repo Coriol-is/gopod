@@ -53,7 +53,7 @@ func markupData(t *testing.T, c apiCall) ([]string, bool) {
 
 func hasStop(t *testing.T, c apiCall, turnID int64) bool {
 	data, _ := markupData(t, c)
-	return len(data) == 1 && data[0] == "st:"+strconv.FormatInt(turnID, 10)
+	return len(data) == 1 && strings.HasPrefix(data[0], "st:"+strconv.FormatInt(turnID, 10)+":")
 }
 
 // cleared reports a call that explicitly removes the inline keyboard.
@@ -80,7 +80,7 @@ func TestStopKeyboard(t *testing.T) {
 func TestPlaceholderCarriesStopButton(t *testing.T) {
 	fake := editPathFake()
 	b, item := newStreamFixture(t, fake)
-	defer b.registerInflight(item.ID, item.ChatID, func() {})()
+	defer b.registerInflight(item.ID, item.ChatID, 0, func() {})()
 	s := newStructuredStream()
 	done := make(chan error, 1)
 	go func() { done <- b.streamReply(context.Background(), item, s.stream()) }()
@@ -130,7 +130,7 @@ func TestPlaceholderWithoutInflightHasNoStop(t *testing.T) {
 func TestFinalEditRemovesKeyboard(t *testing.T) {
 	fake := editPathFake()
 	b, item := newStreamFixture(t, fake)
-	defer b.registerInflight(item.ID, item.ChatID, func() {})()
+	defer b.registerInflight(item.ID, item.ChatID, 0, func() {})()
 	s := newStructuredStream()
 	go s.finish("**done**")
 	if err := b.streamReply(context.Background(), item, s.stream()); err != nil {
@@ -152,9 +152,9 @@ func TestStopCallbackCancelsTurnInSameChat(t *testing.T) {
 	b.registerCallbacks()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	defer b.registerInflight(5, streamChat, cancel)()
+	defer b.registerInflight(5, streamChat, 0, cancel)()
 
-	b.callbackHandler(context.Background(), b.api, cbUpdate("q1", streamChat, 0, 77, "st:5"))
+	b.callbackHandler(context.Background(), b.api, cbUpdate("q1", streamChat, 0, 77, testStopData(b, 5, 77)))
 
 	if ctx.Err() == nil {
 		t.Fatal("stop button did not cancel the turn")
@@ -181,15 +181,15 @@ func TestStopCallbackFromOtherChatIsRefused(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	defer b.registerInflight(5, streamChat, cancel)()
+	defer b.registerInflight(5, streamChat, 0, cancel)()
 
 	// Someone forwards the callback data from another registered chat.
-	b.callbackHandler(context.Background(), b.api, cbUpdate("q1", other, 0, 77, "st:5"))
+	b.callbackHandler(context.Background(), b.api, cbUpdate("q1", other, 0, 77, testStopData(b, 5, 77)))
 
 	if ctx.Err() != nil {
 		t.Fatal("a button in another chat stopped this chat's turn")
 	}
-	if toast := answeredOnce(t, fake, "q1"); toast != stopToastFinished {
+	if toast := answeredOnce(t, fake, "q1"); toast != cbToastExpired {
 		t.Fatalf("toast = %q", toast)
 	}
 }
@@ -199,12 +199,12 @@ func TestStopCallbackAfterFinishToastsFinished(t *testing.T) {
 	b := newCallbackFixture(t, fake)
 	b.registerCallbacks()
 	cancels := 0
-	unregister := b.registerInflight(5, streamChat, func() { cancels++ })
+	unregister := b.registerInflight(5, streamChat, 0, func() { cancels++ })
 
-	b.callbackHandler(context.Background(), b.api, cbUpdate("q1", streamChat, 0, 77, "st:5"))
-	b.callbackHandler(context.Background(), b.api, cbUpdate("q2", streamChat, 0, 77, "st:5"))
+	b.callbackHandler(context.Background(), b.api, cbUpdate("q1", streamChat, 0, 77, testStopData(b, 5, 77)))
+	b.callbackHandler(context.Background(), b.api, cbUpdate("q2", streamChat, 0, 77, testStopData(b, 5, 77)))
 	unregister()
-	b.callbackHandler(context.Background(), b.api, cbUpdate("q3", streamChat, 0, 77, "st:5"))
+	b.callbackHandler(context.Background(), b.api, cbUpdate("q3", streamChat, 0, 77, testStopData(b, 5, 77)))
 	b.callbackHandler(context.Background(), b.api, cbUpdate("q4", streamChat, 0, 77, "st:x"))
 
 	if cancels != 1 {
@@ -214,7 +214,7 @@ func TestStopCallbackAfterFinishToastsFinished(t *testing.T) {
 		t.Fatalf("first press toast = %q", got)
 	}
 	for _, id := range []string{"q2", "q3"} {
-		if got := answeredOnce(t, fake, id); got != stopToastFinished {
+		if got := answeredOnce(t, fake, id); got != cbToastExpired {
 			t.Fatalf("%s toast = %q, want %q", id, got, stopToastFinished)
 		}
 	}
@@ -232,7 +232,7 @@ func TestStopCallbackEndsEditPathTurnStopped(t *testing.T) {
 	b.registerCallbacks()
 	runCtx, cancelRun := context.WithCancel(context.Background())
 	defer cancelRun()
-	defer b.registerInflight(item.ID, item.ChatID, cancelRun)()
+	defer b.registerInflight(item.ID, item.ChatID, 0, cancelRun)()
 	s := newStructuredStream()
 	errc := make(chan error, 1)
 	go func() { errc <- b.streamReply(context.Background(), item, s.stream()) }()
@@ -246,7 +246,7 @@ func TestStopCallbackEndsEditPathTurnStopped(t *testing.T) {
 		}
 		return false
 	})
-	data := "st:" + strconv.FormatInt(item.ID, 10)
+	data := testStopData(b, item.ID, 77)
 	b.callbackHandler(context.Background(), b.api, cbUpdate("q1", streamChat, 0, 77, data))
 	if runCtx.Err() == nil {
 		t.Fatal("run not cancelled")
@@ -274,7 +274,7 @@ func TestWaitPlaceholderCarriesStopButton(t *testing.T) {
 	fake := &fakeTelegram{respond: okResponder}
 	b, item := newStreamFixture(t, fake)
 	b.markDraftsUnsupported(streamChat)
-	defer b.registerInflight(item.ID, item.ChatID, func() {})()
+	defer b.registerInflight(item.ID, item.ChatID, 0, func() {})()
 	ctx := context.Background()
 
 	b.waitNotice(ctx, item)(runner.WaitSlot)
@@ -300,7 +300,7 @@ func TestStreamNotStartedClearsStopButton(t *testing.T) {
 	b, item := newStreamFixture(t, fake)
 	b.markDraftsUnsupported(streamChat)
 	runCtx, cancelRun := context.WithCancel(context.Background())
-	defer b.registerInflight(item.ID, item.ChatID, cancelRun)()
+	defer b.registerInflight(item.ID, item.ChatID, 0, cancelRun)()
 	ctx := context.Background()
 	b.waitNotice(ctx, item)(runner.WaitSlot)
 	cancelRun()
@@ -422,4 +422,24 @@ func TestMoreKeyboard_BackRestores(t *testing.T) {
 	if d.Act != "mb" || d.Args[0] != "7" {
 		t.Fatalf("back = %+v", d)
 	}
+}
+
+// testStopData models a message created by the current attempt.
+func testStopData(b *Bot, id int64, msg int) string {
+	b.inflightMu.Lock()
+	defer b.inflightMu.Unlock()
+	if t := b.inflight[id]; t != nil {
+		if b.store != nil {
+			if _, e := b.store.GetRegistered(context.Background(), buildChatJID(t.home)); e != nil {
+				_ = b.store.RegisterChat(context.Background(), store.RegisteredChat{JID: buildChatJID(t.home), Folder: "owner", IsOwner: true, AddedAt: 1})
+			}
+			if rc, e := b.store.GetRegistered(context.Background(), buildChatJID(t.home)); e == nil {
+				t.scope = rc.Scope()
+			}
+		}
+		t.messages[msg] = true
+		v, _ := encodeCB("st", strconv.FormatInt(id, 10), t.token)
+		return v
+	}
+	return "st:" + strconv.FormatInt(id, 10) + ":expired"
 }

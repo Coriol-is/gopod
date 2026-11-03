@@ -9,15 +9,19 @@ import (
 
 // AgentLimits are the admission settings (D026), read by internal/config.
 type AgentLimits struct {
-	MaxAgents      int // agents running at once; < 1 means 1
-	MinAvailableMB int // MemAvailable a start needs; 0 disables the check
-	NodeHeapMB     int // V8 heap cap for Claude agents; 0 disables
+	GrowthReserveMB int  // additional unmeasured growth headroom per admitted agent
+	StrictMemory    bool // fail closed on missing/low memory; no idle bypass
+	MaxAgents       int  // agents running at once; < 1 means 1
+	MinAvailableMB  int  // MemAvailable a start needs; 0 disables the check
+	NodeHeapMB      int  // V8 heap cap for Claude agents; 0 disables
 }
 
 // SetAgentLimits replaces the agent gate and the heap cap. Call it at
 // startup, before the first agent runs (like SetCompactAfter).
 func (r *Runner) SetAgentLimits(l AgentLimits) {
 	r.gate = newGate(l.MaxAgents, int64(max(l.MinAvailableMB, 0)), readMemAvailableMB, r.log)
+	r.gate.strictMemory = l.StrictMemory
+	r.gate.growthReserveMB = int64(max(l.GrowthReserveMB, 0))
 	r.nodeHeapMB = max(l.NodeHeapMB, 0)
 }
 
@@ -29,11 +33,12 @@ const nodeOptionsEnv = "NODE_OPTIONS"
 // here rather than forwarded from the host (D012 does not apply). A
 // NODE_OPTIONS the container already has (forwarded through the env
 // allowlist) is merged, since the exec's value replaces the container's.
-func (r *Runner) agentExecEnv(chatFolder string, thread int, prov AgentProvider) ([]string, func()) {
+func (r *Runner) agentExecEnv(chatFolder string, thread int, prov AgentProvider, interactive bool) ([]string, func()) {
 	if group, ok := prov.(interface{ GroupExecEnv() []string }); ok {
 		return group.GroupExecEnv(), func() {}
 	}
 	env, release := r.agentEnv(chatFolder, thread)
+	env, release = r.withArtifactCapability(env, release, chatFolder, thread, interactive)
 	if r.nodeHeapMB <= 0 || prov.Name() != "claude" {
 		return env, release
 	}

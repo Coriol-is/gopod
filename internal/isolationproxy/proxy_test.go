@@ -291,7 +291,7 @@ func TestInferenceCannotFetchAccountContext(t *testing.T) {
 		t.Fatal("remote context reached upstream")
 		return nil, nil
 	})
-	for _, body := range []string{`{"input":[{"type":"item_reference","id":"private"}]}`, `{"input":[{"type":"input_file","file_id":"private"}]}`, `{"input":[{"type":"input_image","image_url":"https://private"}]}`, `{"unreviewed_future_feature":true}`} {
+	for _, body := range []string{`{"input":[{"type":"item_reference","id":"private"}]}`, `{"input":[{"type":"input_file","file_id":"private"}]}`, `{"input":[{"type":"input_file","file_url":"https://private"}]}`, `{"input":[{"type":"input_image","image_url":"https://private"}]}`, `{"unreviewed_future_feature":true}`} {
 		res := post(t, c, "https://chatgpt.example.com/backend-api/codex/responses", body)
 		if res.StatusCode != 403 {
 			t.Fatal(res.StatusCode)

@@ -13,7 +13,11 @@ func (r *Runner) ChatWorkspace(ctx context.Context, folder string) (string, erro
 	if err := r.authorizeProfile(ctx, folder); err != nil {
 		return "", err
 	}
-	if c, group := r.groupRegistration(ctx, folder); group {
+	c, group, err := r.groupRegistration(ctx, folder)
+	if err != nil {
+		return "", err
+	}
+	if group {
 		if !c.GroupEpochReady {
 			return "", ErrProfileUnavailable
 		}

@@ -44,6 +44,9 @@ var ErrChatNotRegistered = errors.New("store: chat not registered")
 // AllowedChats entries) so registered chat folders can never become
 // path-traversal vectors or weird Docker label values.
 func (s *Store) RegisterChat(ctx context.Context, c RegisteredChat) error {
+	if c.Folder == ElevatedFolder {
+		return ErrReservedFolder
+	}
 	if c.JID == "" {
 		return errors.New("store: RegisterChat: empty JID")
 	}

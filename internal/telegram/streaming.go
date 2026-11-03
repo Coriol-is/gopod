@@ -12,6 +12,7 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
+	"github.com/Coriol-is/gopod/internal/control"
 	"github.com/Coriol-is/gopod/internal/queue"
 	"github.com/Coriol-is/gopod/internal/runner"
 )
@@ -74,6 +75,16 @@ func (b *Bot) editMessage(ctx context.Context, chatID int64, msgID int, text str
 // turnKeyboard on every edit, so the text and the Stop button change in
 // one call.
 func (b *Bot) editMessageKB(ctx context.Context, chatID int64, msgID int, text string, markup models.ReplyMarkup) error {
+	b.controlMu.Lock()
+	defer b.controlMu.Unlock()
+	return b.editMessageKBLocked(ctx, chatID, msgID, text, markup)
+}
+func (b *Bot) editMessageKBLocked(ctx context.Context, chatID int64, msgID int, text string, markup models.ReplyMarkup) error {
+	if !b.controlEditAllowed(ctx, chatID, msgID, markup) {
+		return nil
+	}
+	text = b.safeControlText(ctx, chatID, msgID, text, markup)
+	b.checkpointControl(ctx, chatID, msgID, text, false, markup)
 	if text == "" {
 		text = "\u2758" // keep cursor visible if empty
 	}
@@ -89,6 +100,11 @@ func (b *Bot) editMessageKB(ctx context.Context, chatID int64, msgID int, text s
 			slog.Int("msg_id", msgID),
 			slog.Any("err", err))
 		return fmt.Errorf("editMessageText: %w", err)
+	}
+	if b.store != nil {
+		if err := b.store.AcknowledgeControlEdit(ctx, chatID, msgID); err != nil {
+			b.log.Warn("control edit acknowledge failed", slog.Int64("chat_id", chatID), slog.Int("msg_id", msgID), slog.Any("err", err))
+		}
 	}
 	return nil
 }
@@ -108,6 +124,16 @@ func (b *Bot) editMessageHTML(ctx context.Context, chatID int64, msgID int, html
 // edit is tried once more without them: a refused keyboard never costs
 // the reply.
 func (b *Bot) editMessageHTMLKB(ctx context.Context, chatID int64, msgID int, html string, markup models.ReplyMarkup) error {
+	b.controlMu.Lock()
+	defer b.controlMu.Unlock()
+	return b.editMessageHTMLKBLocked(ctx, chatID, msgID, html, markup)
+}
+func (b *Bot) editMessageHTMLKBLocked(ctx context.Context, chatID int64, msgID int, html string, markup models.ReplyMarkup) error {
+	if !b.controlEditAllowed(ctx, chatID, msgID, markup) {
+		return nil
+	}
+	html = b.safeControlText(ctx, chatID, msgID, html, markup)
+	b.checkpointControl(ctx, chatID, msgID, html, true, markup)
 	if html == "" {
 		return nil
 	}
@@ -129,13 +155,18 @@ func (b *Bot) editMessageHTMLKB(ctx context.Context, chatID int64, msgID int, ht
 			slog.Int64("chat_id", chatID),
 			slog.Int("msg_id", msgID),
 			slog.Any("err", err))
-		perr := b.editMessageKB(ctx, chatID, msgID, htmlToPlain(html), markup)
+		perr := b.editMessageKBLocked(ctx, chatID, msgID, htmlToPlain(html), markup)
 		if perr != nil && hasButtons(markup) && !isNotModified(perr) {
 			if _, limited := retryAfter(perr); !limited {
-				return b.editMessageHTML(ctx, chatID, msgID, html)
+				return b.editMessageHTMLKBLocked(ctx, chatID, msgID, html, noKeyboard())
 			}
 		}
 		return perr
+	}
+	if b.store != nil {
+		if err := b.store.AcknowledgeControlEdit(ctx, chatID, msgID); err != nil {
+			b.log.Warn("control edit acknowledge failed", slog.Int64("chat_id", chatID), slog.Int("msg_id", msgID), slog.Any("err", err))
+		}
 	}
 	return nil
 }
@@ -168,10 +199,11 @@ func (b *Bot) runAgentStreaming(ctx context.Context, item queue.Item) error {
 	}
 	runCtx, cancelRun := context.WithCancel(ctx)
 	defer cancelRun()
-	defer b.registerInflight(item.ID, item.ChatID, cancelRun)()
+	defer b.registerInflight(item.ID, item.ChatID, item.ThreadID, cancelRun)()
 	// No queue-position draft may land in this thread from now on.
 	defer b.markThreadBusy(item)()
 	b.stopQueueWaits(item.ChatID, item.ThreadID)
+	b.preparePrivateStop(ctx, item)
 
 	waitCtx := runner.WithWaitNotice(runCtx, b.waitNotice(ctx, item))
 	stream, err := b.runner.RunStream(waitCtx, item.Folder, item.ThreadID, tier, b.allowlist, prompt)
@@ -182,15 +214,11 @@ func (b *Bot) runAgentStreaming(ctx context.Context, item queue.Item) error {
 		if handled, err := b.streamNotStarted(ctx, runCtx, item); handled {
 			return err
 		}
-		if ph := b.popWaitPlaceholder(item); ph != 0 {
-			b.editMessage(ctx, item.ChatID, ph, "")
-		}
 		// Fallback: if streaming setup fails, try sync path.
 		b.log.Warn("RunStream failed, falling back to sync",
 			slog.String("folder", item.Folder),
 			slog.Any("err", err))
-		b.runAgentSync(ctx, item)
-		return nil
+		return b.runAgentSyncContext(ctx, runCtx, item)
 	}
 	b.turnStatus(item).Set(stThinking) // the agent runs
 	return b.streamReply(ctx, item, stream)
@@ -218,6 +246,9 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 
 	stop := b.inflightStop(item.ID) // nil: not stoppable, never fires
 	status := b.turnStatus(item)
+	// Silent mode (D055): answer text never reaches the draft or the
+	// placeholder; the view stays on progress until the final message.
+	silent := b.silentMode(ctx, item)
 	stopOpts := draftOpts{CanStop: stop != nil, KeepOnStop: stop != nil}
 	// kb is the edit path's Stop button (nil when not stoppable): on
 	// the placeholder and on every mid-stream edit of it.
@@ -243,10 +274,10 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 	draftID := 0 // non-zero while the turn streams through drafts
 	var lastDraft time.Time
 	var draftHold time.Time // no draft updates before this (429 retry_after)
-	if placeholder = b.reusePlaceholder(ctx, item); placeholder != 0 {
+	if placeholder = b.takeWaitPlaceholder(ctx, item); placeholder != 0 {
+		// Sent before startup or while the turn waited for the agent gate.
+	} else if placeholder = b.reusePlaceholder(ctx, item); placeholder != 0 {
 		b.recordPlaceholder(ctx, item, placeholder)
-	} else if placeholder = b.takeWaitPlaceholder(ctx, item); placeholder != 0 {
-		// Sent (and recorded) while the turn waited for the agent gate.
 	} else if b.draftsSupported(item.ChatID) {
 		// The opening draft shows the cursor and probes support up front.
 		draftID = useDraft(b.newDraftID())
@@ -315,8 +346,11 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 	// had to be finished by drainAndSend.
 	addChunk := func(chunk string) bool {
 		status.Set(stThinking)
-		accumulated.WriteString(chunk)
 		full.WriteString(chunk)
+		if silent {
+			return true // kept for a stop only; the view stays on progress
+		}
+		accumulated.WriteString(chunk)
 		answering = true
 		dirty = true
 
@@ -351,7 +385,14 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 		if placeholder == 0 {
 			return b.finishStopped(ctx, item, stream, full.String())
 		}
-		return b.finishStoppedEdit(ctx, item, stream, placeholder, full.String(), overflow, accumulated.String())
+		ov, tail := overflow, accumulated.String()
+		if silent {
+			// The placeholder holds progress, never text: a reply that
+			// does not fit one message goes out separately, and the
+			// placeholder keeps the progress summary (no cursor).
+			ov, tail = full.Len() > editLimit, view()
+		}
+		return b.finishStoppedEdit(ctx, item, stream, placeholder, full.String(), ov, tail)
 	}
 
 	progress := stream.Progress // nil for plain runs: never selected
@@ -511,6 +552,13 @@ loop:
 		finalText = "(empty reply)"
 	}
 
+	// Silent mode never overflowed the placeholder (it holds progress,
+	// not text): a reply that does not fit one message takes the
+	// overflow branch, which sends it as a separate message.
+	if silent && len(finalText) > editLimit {
+		overflow = true
+	}
+
 	// The topic vanished after the placeholder went out: editing it
 	// would deliver nothing, so send the reply (to main) like a draft turn.
 	gone := placeholder != 0 && b.threadGone(item.ChatID, item.ThreadID)
@@ -560,6 +608,9 @@ loop:
 				}
 				break
 			}
+		} else if silent {
+			// Leave the progress summary (no cursor, no Stop button).
+			b.editMessage(ctx, item.ChatID, placeholder, view())
 		} else if kb != nil {
 			b.clearKeyboard(ctx, item.ChatID, placeholder)
 		}
@@ -573,6 +624,22 @@ loop:
 	// Voice reply (must wait for full text).
 	b.maybeVoiceReply(ctx, item, finalText)
 	return nil
+}
+
+// silentMode reports whether the turn's chat has silent mode on
+// (control.SilentStateKey, D055). A lookup failure logs and streams
+// normally.
+func (b *Bot) silentMode(ctx context.Context, item queue.Item) bool {
+	if b.store == nil {
+		return false
+	}
+	v, err := b.store.GetState(ctx, control.SilentStateKey+item.Folder)
+	if err != nil {
+		b.log.Warn("silent mode lookup failed",
+			slog.Int64("chat_id", item.ChatID), slog.String("folder", item.Folder), slog.Any("err", err))
+		return false
+	}
+	return v == "1"
 }
 
 // finalEditLost reports whether the final edit of a turn's placeholder

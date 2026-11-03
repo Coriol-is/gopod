@@ -113,6 +113,9 @@ type Bot struct {
 	// taskRun overrides how silent scheduled turns run the agent. Tests only.
 	taskRun func(ctx context.Context, folder string, thread int, tier runner.Tier, prompt string) (string, error)
 
+	// syncRun overrides buffered interactive execution in tests.
+	syncRun func(context.Context, string, int, runner.Tier, string) (string, error)
+
 	// draftsOff marks chats where sendMessageDraft was refused; sticky
 	// until restart. draftSeq hands out draft ids.
 	draftsMu  sync.Mutex
@@ -127,6 +130,7 @@ type Bot struct {
 	goneThreads map[chatThread]bool
 
 	// inflight maps turn id to its stoppable streaming state (stop.go).
+	controlMu  sync.Mutex // serializes control-message writers and recovery
 	inflightMu sync.Mutex
 	inflight   map[int64]*inflightTurn
 
@@ -264,16 +268,16 @@ func New(token string, deps Deps) (*Bot, error) {
 	client := &http.Client{Timeout: time.Minute}
 	b.capabilities = newCapabilityCache(newCapabilityFetcher(token, client), time.Now)
 	opts := append(b.botOptions(), bot.WithSkipGetMe(), bot.WithHTTPClient(time.Minute, client))
-	// Load last processed update offset for cursor backfill (M8a).
-	// On restart, this tells Telegram to deliver any updates that
-	// arrived while gopod was down.
+	// The stored cursor is the next update ID to request (M8a). The SDK
+	// takes the last seen ID and adds one when polling, so convert at
+	// this boundary without changing the persisted next-offset format.
 	if deps.Store != nil {
 		offsetStr, _ := deps.Store.GetState(context.Background(), "telegram_update_offset")
 		if offsetStr != "" {
 			var offset int64
 			fmt.Sscanf(offsetStr, "%d", &offset)
 			if offset > 0 {
-				opts = append(opts, bot.WithInitialOffset(offset))
+				opts = append(opts, bot.WithInitialOffset(offset-1))
 				deps.Log.Info("telegram: resuming from stored offset",
 					slog.Int64("offset", offset))
 			}
@@ -323,6 +327,10 @@ func (b *Bot) registerHandlers(api *bot.Bot) {
 // publish failure is logged at warn level and the bot keeps running —
 // command discovery is nice-to-have, not a hard requirement.
 func (b *Bot) Run(ctx context.Context) error {
+	recoveryCtx, cancelRecovery := context.WithCancel(ctx)
+	recoveryDone := make(chan struct{})
+	go func() { defer close(recoveryDone); b.runControlRecovery(recoveryCtx) }()
+	defer func() { cancelRecovery(); <-recoveryDone }()
 	if b.capabilities != nil {
 		// The mention gate needs the bot username: resolve it before polling,
 		// boundedly (about 10 s), and carry on without it if getMe keeps failing.
@@ -359,7 +367,7 @@ func (b *Bot) publishCommands(ctx context.Context) {
 			}
 			entry := models.BotCommand{Command: c.SlashName, Description: c.Description}
 			privateCmds = append(privateCmds, entry)
-			if c.Name != "telegram" {
+			if c.Name != "telegram" && c.Name != "stop" {
 				cmds = append(cmds, entry)
 			}
 		}

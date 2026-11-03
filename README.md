@@ -13,9 +13,7 @@ A focused descendant of [NanoClaw](https://github.com/nanocoai/nanoclaw):
 # 1. Clone (with submodules) and build the agent image
 git clone --recurse-submodules https://github.com/Coriol-is/gopod
 cd gopod
-docker build -t gopod-agent:latest -f container/Dockerfile .
-# Codex variant (optional, for /provider codex):
-# docker build -t gopod-agent-codex:latest -f container/Dockerfile.codex .
+sh container/build-profiles.sh
 
 # 2. Configure
 cp .env.example .env

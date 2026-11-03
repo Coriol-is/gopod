@@ -123,6 +123,39 @@ Message acceptance is not proof of Telegram delivery; CP-002 remains separate.
 
 ## 6. Resource and execution limits
 
+### 6.1 Hardened agent container profile
+
+The flags every agent container is created with. `BuildContainerArgs`
+(`internal/runner/docker_args.go`) is the single place that sets them.
+
+Under the managed runtime the reuse guard pins a subset of them by digest:
+`configDigest` covers the bind mounts, the credential env names, and `User`,
+`ReadonlyRootfs`, `Privileged`, `CapDrop` and `SecurityOpt`
+(`internal/runner/exec_guard.go`). The tmpfs set, the resource caps, the restart
+policy, the labels and `ExtraHosts` are **not** in the digest, so drift in those
+is not detected by container reuse.
+
+| Setting | Value |
+| --- | --- |
+| User | the host operator's uid:gid, passed at spawn; uid 0 is refused by `SpawnConfig.Validate` |
+| Root filesystem | read-only; every writable path is a bind mount or one of the tmpfs mounts below |
+| Capabilities | `CapDrop: ALL`. Handing one back is an ADR, not a code patch |
+| Privilege escalation | `no-new-privileges:true`; seccomp is left unset so the daemon applies its default profile |
+| Restart policy | `no`, so a crash stays visible instead of being hidden by Docker |
+| Resources | memory, CPU and pids caps, all required to be positive |
+| Tmpfs | `/tmp` 512 MiB, `/home/node` 256 MiB, `/run` 64 MiB, each `mode=1777` so a non-root uid override can write |
+| Name | `gopod-<chat folder>`, deterministic, from `runner.ContainerName` |
+| Labels | `gopod.chat`, `gopod.version`, plus the four `gopod.policy.*` labels merged at create time |
+| Hosts | `host.docker.internal:host-gateway`, required for the agent to reach the host-side Memory API |
+
+Mounts are not chosen here: `BuildMounts` (`internal/runner/mounts.go`) builds
+the per-tier list and §3 is its contract.
+
+### 6.2 Untrusted tools and admission budgets
+
+The limits below apply to group tool execution, not to the agent container of
+§6.1, which requires outbound network for its provider.
+
 Untrusted tools have no network or host binds, read-only root, dropped capabilities,
 non-root uid, bounded tmpfs/inodes, a 20-second command deadline and 32 KiB output.
 Snapshots allow at most 8 MiB total and 4 MiB per regular file; traversal, links,
@@ -211,6 +244,19 @@ keeps affected groups unavailable and preserves namespace tombstones/epochs. Do
 not restore an old permissive group runtime or replace the live database with an
 old backup merely to recover availability. Verified backup/restore and exact
 runtime release evidence remain separate acceptance gates.
+
+Runtime lifecycle safety ([D054](DECISIONS.md), CP-037 P0): the idle watcher removes
+only containers whose slot is provably idle; a busy or unknown runtime is never
+evicted by the idle timeout. Boot-time cleanup removes proven non-running leftovers;
+a leftover that is still running is quarantined at any version, execution for that
+folder is refused (`ErrExecutionUnproven`) and the Telegram control plane stays up
+so the owner can inspect, force or repair instead of restart-looping. Unknown
+execution keeps holding global capacity until the Docker process inventory proves
+it settled. A normal Stop stops the slot-owned runtime so detached child tools are
+proven dead; the next turn recreates it on the same persistent mounts. Controller
+restart drains active work before stopping containers; only an explicitly confirmed
+`/restart force` cancels running and pending background work, stops quarantined
+leftovers by exact id, and that cancellation is durable so recovery does not replay it.
 
 ## 8. Module layout
 

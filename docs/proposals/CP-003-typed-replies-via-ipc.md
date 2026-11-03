@@ -64,3 +64,10 @@ PR 4 (immutable artifact inventory and secure preparation) is implemented behind
 `GOPOD_OUTBOX_ARTIFACTS` (off by default; [D039](../DECISIONS.md)). Voice (PR 5),
 foreground long-code parity, the runner-side capability issuer and the CP-007
 matched artifact backup/restore gate are not done, so nothing is enabled.
+
+## 2026-11-02 default flipped
+
+[D057](../DECISIONS.md): `GOPOD_OUTBOX_ARTIFACTS` now defaults to on (owner
+decision); `=0` disables it. The `matched_stopped` backup covers artifact blobs.
+The agent-facing contract and document presentation are tracked in
+[CP-040](CP-040-agent-attachments.md).

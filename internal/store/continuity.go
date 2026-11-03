@@ -83,6 +83,9 @@ func (s *Store) CompleteConversation(ctx context.Context, folder string, thread 
 // It is shared with FreezeTurnResult, which must append continuity inside the
 // result transaction and cannot call the public API (single connection).
 func completeConversationQ(ctx context.Context, q taskSQL, folder string, thread int, provider, reply string) error {
+	if err := topicFolderAdmissionQ(ctx, q, folder, thread); err != nil {
+		return err
+	}
 	if _, err := q.ExecContext(ctx, `INSERT INTO conversation_history(chat_folder,thread_id,role,content) VALUES(?,?,'assistant',?)`, folder, thread, reply); err != nil {
 		return err
 	}
@@ -91,7 +94,13 @@ func completeConversationQ(ctx context.Context, q taskSQL, folder string, thread
 }
 
 func (s *Store) RecordConversationRequest(ctx context.Context, folder string, thread int, prompt string) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO conversation_history(chat_folder,thread_id,role,content) VALUES(?,?,'user',?)`, folder, thread, prompt)
+	_, err := s.withTx(ctx, func(q taskSQL) error {
+		if err := topicFolderAdmissionQ(ctx, q, folder, thread); err != nil {
+			return err
+		}
+		_, err := q.ExecContext(ctx, `INSERT INTO conversation_history(chat_folder,thread_id,role,content) VALUES(?,?,'user',?)`, folder, thread, prompt)
+		return err
+	})
 	if err != nil {
 		return fmt.Errorf("recording conversation request: %w", err)
 	}
@@ -106,6 +115,9 @@ func (s *Store) seedConversationHistory(ctx context.Context, folder string, thre
 		return err
 	}
 	defer tx.Rollback()
+	if err := topicFolderAdmissionQ(ctx, tx, folder, thread); err != nil {
+		return err
+	}
 	var exists int
 	key := continuityKey(folder, thread, "seeded")
 	if err = tx.QueryRowContext(ctx, `SELECT count(*) FROM router_state WHERE key=?`, key).Scan(&exists); err != nil {

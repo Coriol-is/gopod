@@ -204,20 +204,6 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 		return
 	}
 
-	// If this chat has an active /login session, the next non-empty
-	// message is the OAuth code from the browser success page. Intercept
-	// it and pipe it to claude's stdin instead of sending it to the
-	// agent. Slash commands are NOT intercepted — the user might type
-	// /help mid-login and that should still work.
-	if b.logins.awaitingCode(m.Chat.ID, text) != nil {
-		if b.loginCode != nil {
-			b.loginCode(ctx, m.Chat.ID, text)
-		} else {
-			b.handleLoginCode(ctx, m.Chat.ID, text)
-		}
-		return
-	}
-
 	// Slash commands are dispatched through the Router. /login is
 	// handled separately (registered via go-telegram/bot's
 	// MatchTypeCommand because it's a stateful interactive session).
@@ -390,7 +376,7 @@ func (b *Bot) dispatchSlash(ctx context.Context, m *models.Message, text string)
 		b.sendDiagnosticResponse(ctx, m, resp.Text)
 		return
 	}
-	b.sendCommandResponse(ctx, m.Chat.ID, thread, m.ID, resp)
+	b.sendCommandResponse(ctx, m.Chat.ID, thread, m.ID, resp, userID(m.From))
 }
 
 func userID(u *models.User) int64 {
@@ -445,7 +431,19 @@ func SetReplyMode(chatID int64, mode string) {
 
 // runAgentSync is the synchronous agent path. Used as the queue
 // handler callback (and directly when Queue is nil).
-func (b *Bot) runAgentSync(ctx context.Context, item queue.Item) {
+func (b *Bot) runAgentSync(ctx context.Context, item queue.Item) error {
+	runCtx, cancelRun := context.WithCancel(ctx)
+	defer cancelRun()
+	defer b.registerInflight(item.ID, item.ChatID, item.ThreadID, cancelRun)()
+	defer b.markThreadBusy(item)()
+	b.stopQueueWaits(item.ChatID, item.ThreadID)
+	b.preparePrivateStop(ctx, item)
+	return b.runAgentSyncContext(ctx, runCtx, item)
+}
+
+// runAgentSyncContext keeps agent cancellation separate from Telegram feedback.
+// The streaming setup fallback passes its already registered child context here.
+func (b *Bot) runAgentSyncContext(ctx, runCtx context.Context, item queue.Item) error {
 	tier := runner.TierRegistered
 	if item.IsOwner {
 		tier = runner.TierOwner
@@ -461,10 +459,42 @@ func (b *Bot) runAgentSync(ctx context.Context, item queue.Item) {
 	if item.Resumed {
 		prompt = resumePrompt(item.Text)
 	}
-	reply, err := b.runner.Run(ctx, item.Folder, item.ThreadID, tier, b.allowlist, prompt)
+	run := b.syncRun
+	if run == nil {
+		run = func(ctx context.Context, folder string, thread int, tier runner.Tier, prompt string) (string, error) {
+			return b.runner.Run(ctx, folder, thread, tier, b.allowlist, prompt)
+		}
+	}
+	reply, err := run(runCtx, item.Folder, item.ThreadID, tier, prompt)
+	if handled, stopErr := b.streamNotStarted(ctx, runCtx, item); handled {
+		return stopErr
+	}
 	if err != nil {
+		if ph := b.popWaitPlaceholder(item); ph != 0 {
+			b.editMessage(ctx, item.ChatID, ph, "Answer failed.")
+		}
 		b.replyError(ctx, item, err)
-		return
+		return nil
+	}
+	if b.waitPlaceholder(item) != 0 {
+		if b.getReplyMode(item.ChatID, item.IsVoice) == "voice" && stripCodeBlocks(reply) == reply {
+			// The Stop placeholder must not turn a buffered voice-only answer
+			// into voice+text. Retire the control, then keep the original delivery.
+			ph := b.popWaitPlaceholder(item)
+			if _, err := b.api.DeleteMessage(ctx, &bot.DeleteMessageParams{ChatID: item.ChatID, MessageID: ph}); err != nil {
+				b.log.Warn("remove voice reply placeholder", slog.Any("err", err))
+				b.editMessage(ctx, item.ChatID, ph, "Finished.")
+			}
+			status.Set(stDone)
+			b.deliverSyncReply(ctx, item, reply)
+			return nil
+		}
+		// Reuse the persistent private response and its normal terminal UI.
+		chunks := make(chan string)
+		close(chunks)
+		result := make(chan runner.RunResult, 1)
+		result <- runner.RunResult{FullText: reply}
+		return b.streamReply(ctx, item, &runner.AgentStream{Chunks: chunks, Result: result})
 	}
 
 	status.Set(stDone)
@@ -473,6 +503,7 @@ func (b *Bot) runAgentSync(ctx context.Context, item queue.Item) {
 		reply = "(empty reply)"
 	}
 	b.deliverSyncReply(ctx, item, reply)
+	return nil
 }
 
 // deliverSyncReply sends the sync path's final reply: voice when the
@@ -553,7 +584,7 @@ func (b *Bot) NewAgentHandler() queue.Handler {
 		if b.streamEnabled {
 			runErr = b.runAgentStreaming(ctx, item)
 		} else {
-			b.runAgentSync(ctx, item)
+			runErr = b.runAgentSync(ctx, item)
 		}
 		if err := ctx.Err(); err != nil {
 			// Shutdown cut the run short: report it so the queue marks
@@ -759,7 +790,7 @@ func (b *Bot) sendChunks(ctx context.Context, chatID int64, thread int, replyToM
 		fatal := func(err error) bool {
 			return errors.As(err, new(*bot.TooManyRequestsError)) || (thread != 0 && isThreadGone(err))
 		}
-		if err != nil && params.ReplyMarkup != nil && !fatal(err) {
+		if err != nil && params.ReplyMarkup != nil && isKeyboardRefusal(err) {
 			// The keyboard may be what Telegram refused: send this same
 			// HTML chunk again without it. Buttons are a convenience;
 			// the formatted text is not, and earlier chunks are out.
@@ -775,7 +806,7 @@ func (b *Bot) sendChunks(ctx context.Context, chatID int64, thread int, replyToM
 			}
 		}
 		if err != nil {
-			if fatal(err) {
+			if fatal(err) || !isParseRefusal(err) {
 				return last, fmt.Errorf("sendMessage: %w", err)
 			}
 			// Fallback: send as plain text, only what has not gone out:
@@ -801,7 +832,7 @@ func (b *Bot) sendChunks(ctx context.Context, chatID int64, thread int, replyToM
 					pp.ReplyMarkup = markup
 				}
 				sent, err := b.api.SendMessage(ctx, pp)
-				if err != nil && pp.ReplyMarkup != nil && !errors.As(err, new(*bot.TooManyRequestsError)) {
+				if err != nil && pp.ReplyMarkup != nil && isKeyboardRefusal(err) {
 					// A refused keyboard never costs the reply: the
 					// buttons are a convenience, the text is not.
 					b.log.Warn("reply keyboard refused, sending without it",
@@ -989,4 +1020,15 @@ func messageText(m *models.Message) string {
 		return m.Text
 	}
 	return m.Caption
+}
+
+func isKeyboardRefusal(err error) bool {
+	if !errors.Is(err, bot.ErrorBadRequest) {
+		return false
+	}
+	text := strings.ToLower(err.Error())
+	return strings.Contains(text, "button_data_invalid") || strings.Contains(text, "button_type_invalid") || strings.Contains(text, "button_url_invalid") || strings.Contains(text, "reply markup") || strings.Contains(text, "inline keyboard")
+}
+func isParseRefusal(err error) bool {
+	return errors.Is(err, bot.ErrorBadRequest) && strings.Contains(strings.ToLower(err.Error()), "can't parse entities")
 }

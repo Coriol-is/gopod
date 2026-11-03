@@ -192,6 +192,7 @@ all DB queries by `cmd.Caller.ChatID`.
 | `/clear` | — | ChatLocal | Clear this conversation's context; asks to confirm (§6.1) |
 | `/model [name\|default]` | — | ChatLocal | Show (picker) or set this chat's model |
 | `/provider [claude\|codex]` | — | ChatLocal | Show (picker) or switch this chat's provider; a switch asks to confirm |
+| `/silent [on\|off]` | — | ChatLocal | Show (picker) or toggle silent mode ([D055](DECISIONS.md)): the draft shows only progress (elapsed time, last tool steps); the answer arrives as one final message |
 | `/remember <text>` | — | ChatLocal | `memory_add` convenience for the calling chat |
 | `/recall <query>` | — | ChatLocal | `memory_search` over the calling chat's memories |
 | `/tasks list` | — | ChatLocal | List scheduled tasks for the calling chat |
@@ -226,6 +227,8 @@ Cross-chat operations and global state.
 | `/model set <folder> <model>` | `gopod model set ...` | OwnerOnly | Switch model for one chat |
 | `/system health` | `gopod system health` | OwnerOnly | Container daemon, DB, embedder, scheduler, queue health |
 | `/system uptime` | `gopod system uptime` | OwnerOnly | Process uptime, last restart cause |
+| `/restart [force\|status [<id>]\|cancel [<id>]]` | (Telegram only) | OwnerOnly | Controller restart ([D054](DECISIONS.md)). Bare `/restart` records a durable drain request: new dispatch stops, queued input is retained, active replies and tasks finish, then the gateway and authorized personal containers restart; the reply carries **Status** / **Cancel restart** buttons bound to that request id. `force` asks for a confirmation button, then cancels the active reply and all pending/running background work, records the cancelled occurrences so recovery does not replay them, and keeps schedules and files. A drain that cannot prove termination stays `blocked` and stops nothing; `cancel` works only while `draining`/`blocked`. Refused outside the owner's private chat. |
+| `/sessions [status\|adopt\|cancel]` | (Telegram only) | OwnerOnly | Durable session identity ([D056](DECISIONS.md)). Bare call shows the session mapping mode (`legacy` or `durable`), row counts and, when legacy and not yet requested, an **Adopt** picker button. `adopt` asks a confirmation button (D028), then records the request; it takes effect at the next restart (adoption runs at controller startup and the same boot starts in durable mode). `cancel` withdraws a pending request without confirmation (`No adoption requested.` when there is none). At restart, adoption is deferred (legacy kept, request retained, logged) while unfinished turns exist; status shows the deferral. Legacy rows of unregistered folders are skipped and logged. |
 | `/debug ...` | `gopod debug ...` | OwnerOnly | Free-form diagnostics (per-subcommand) |
 | `/proactive [gmail\|calendar [<preset> [on\|off\|freq <v>\|time <HHMM>\|lead <min>\|reset]]]`, `/proactive tz [<IANA>]`, `/proactive hours [<HHMM-HHMM>]`, `/proactive quiet [<HHMM-HHMM>\|off]`, `/proactive off\|on` | (Telegram only) | OwnerOnly | Built-in recurring Gmail and Calendar presets (CP-033, [spec](superpowers/specs/2026-10-30-proactive-presets.md)). No argument shows the overview; every screen is a picker (current choice `✓`, message edited in place) and each button re-dispatches the command, so the Router re-checks `OwnerOnly` on the presser. Refused in groups for everyone, the owner included. Turning a preset on while the connector status is unknown asks for a Yes; `reset` (discard edits made in `/tasks`) confirms. `check`, `guide` and `offer` are not built yet |
 
@@ -255,6 +258,11 @@ private chat and answer the group with a one-line acknowledgement. `/logs`, `/re
   (e.g. `/whoami` makes no sense on a shell). The reverse is rare.
 - The skills CLI subcommands defined in [SKILLS.md §5](SKILLS.md) are
   reabsorbed here — they go through `internal/control` like everything else.
+- Agent attachments (CP-040, [D058](DECISIONS.md)) are not a command: the agent
+  sends a file through the IPC V1 request
+  ([spec](superpowers/specs/2026-11-02-agent-attachments.md)), authorized by the
+  per-run capability, not by `Perm`. There is no slash command to send or list
+  attachments; delivery state is in the IPC receipt and the outbox.
 
 ---
 
@@ -338,8 +346,9 @@ toasts «Кнопка устарела».
 
 Pickers: `/model` with no args offers the provider's model names (Claude:
 `fable`, `opus`, `sonnet`, `haiku`; Codex: none, any id is typed) plus
-`default`; `/provider` with no args offers `claude`, `codex`. The current
-one is marked `✓` and styled `primary`.
+`default`; `/provider` with no args offers `claude`, `codex`; `/silent`
+with no args offers `on`, `off`. The current one is marked `✓` and styled
+`primary`.
 
 Confirmations (owner Q6): `/clear` and `/provider <name>` answer `CodeConfirm` with Yes (`danger`) / Cancel; a
 provider picked from the picker is confirmed the same way. `/chats
@@ -616,3 +625,17 @@ An available owner startup snapshot includes its timestamp/age and local
 container/CLI/auth results, explicitly historical and not current-health proof.
 Changing provider/model invalidates its association; doctor never starts a probe
 to fill it. Nonowner summaries do not expose startup details.
+
+## Private-chat Stop (CP-036)
+
+`/stop` is an owner-only, Telegram-private command with no arguments. It requests
+cancellation of the active interactive answer in the current topic (main chat is
+topic 0). It bypasses the turn queue, uses the same per-turn cancellation as the
+inline Stop button, and is published only in the private command menu. An idle or
+repeated command reports that there is no active answer or Stop is already requested.
+
+Owner-private answers use a persistent editable response with Stop, including
+startup/admission waits and buffered execution. Stop does not clear context,
+create a replacement turn, cancel schedules, or remove queued messages. New input
+never interrupts automatically; queued input may start after cleanup. Process
+cleanup is best effort, and completed external effects cannot be undone.

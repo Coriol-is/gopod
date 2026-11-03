@@ -512,7 +512,18 @@ func (b *Bot) interceptLoginInput(ctx context.Context, m *models.Message) (consu
 			b.replyLoginText(ctx, m.Chat.ID, session.thread, "Complete sign-in in your browser. Do not send the device code to this chat.")
 			return true, true
 		}
-		return false, true
+		quoted := ""
+		if m.ReplyToMessage != nil {
+			quoted = messageText(m.ReplyToMessage)
+		}
+		if m.Quote != nil {
+			quoted += " " + m.Quote.Text
+		}
+		sensitiveQuote := (session.deviceCode != "" && strings.Contains(quoted, session.deviceCode)) || (session.loginURL != "" && strings.Contains(quoted, session.loginURL))
+		if session.deviceCode == "" && session.loginURL == "" {
+			sensitiveQuote = strings.Contains(quoted, "https://") || strings.Contains(quoted, "http://")
+		}
+		return false, sensitiveQuote
 	}
 	if session.actorID != 0 && session.actorID != userID(m.From) {
 		return !strings.HasPrefix(raw, "/"), true

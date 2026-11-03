@@ -471,7 +471,7 @@ func localContextOnly(value any) bool {
 		}
 		for key, item := range v {
 			switch key {
-			case "file_id", "connector_id", "server_url", "conversation_id", "previous_response_id":
+			case "file_url", "file_id", "connector_id", "server_url", "conversation_id", "previous_response_id":
 				return false
 			case "image_url":
 				image, ok := item.(string)

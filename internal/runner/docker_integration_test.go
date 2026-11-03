@@ -20,7 +20,7 @@
 //     GOPOD_TEST_CODEX_IMAGE      image for the Codex test (default gopod-agent-codex:latest)
 //     GOPOD_TEST_CODEX_VERSION    if set, `codex --version` output must contain it
 //
-// Example, after bumping the pins in container/Dockerfile*:
+// Example, after bumping the pins in container/personal/Dockerfile*:
 //
 //     GOPOD_TEST_CLAUDE_VERSION=2.1.310 GOPOD_TEST_CODEX_VERSION=0.164.0 \
 //       go test -tags docker_integration -run 'AgentImage|Codex' ./internal/runner/
@@ -74,7 +74,7 @@ func agentImage() string { return envOr("GOPOD_TEST_AGENT_IMAGE", "gopod-agent:l
 func codexImage() string { return envOr("GOPOD_TEST_CODEX_IMAGE", "gopod-agent-codex:latest") }
 
 // requireImage skips the test when image is not present locally. Agent
-// images are built from container/Dockerfile*, never pulled.
+// images are built from container/personal/Dockerfile*, never pulled.
 func requireImage(t *testing.T, ctx context.Context, d *Docker, image string) {
 	t.Helper()
 	if _, _, err := d.cli.ImageInspectWithRaw(ctx, image); err != nil {
@@ -423,23 +423,21 @@ func TestIntegrationCleanupLeftovers(t *testing.T) {
 	})
 
 	cleaned, err := d.CleanupLeftovers(ctx, currentVersion)
-	if err != nil {
+	if !errors.Is(err, ErrExecutionUnproven) {
 		t.Fatalf("CleanupLeftovers: %v", err)
 	}
-	// Stale container should be cleaned; keep container should not. But
-	// depending on leftover state from other tests there may be more
-	// gopod-prefixed containers around — we assert AT LEAST 1.
-	if cleaned < 1 {
-		t.Errorf("cleaned = %d, want >= 1", cleaned)
-	}
+	t.Logf("cleaned proven non-running leftovers: %d", cleaned)
 
 	// keepID must still exist.
 	if _, err := d.cli.ContainerInspect(ctx, keepID); err != nil {
 		t.Errorf("keep container no longer exists after cleanup: %v", err)
 	}
 
-	// staleID must be gone.
-	if _, err := d.cli.ContainerInspect(ctx, staleID); err == nil {
-		t.Error("stale container still exists after cleanup")
+	// Version mismatch is not authority to interrupt a running process.
+	if _, err := d.cli.ContainerInspect(ctx, staleID); err != nil {
+		t.Fatalf("running stale removed: %v", err)
+	}
+	if !d.quarantined(ctx, "inttest-stale") {
+		t.Fatal("stale runtime not quarantined")
 	}
 }

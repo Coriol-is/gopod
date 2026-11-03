@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | implemented; controller deployed, group activation blocked |
+| Status | implemented; controller deployed, final provider/client qualification open |
 | Date | 2026-10-25 |
 | Origin | Owner requested deep isolation audit and plan for group/private memory, env, connected services and public-space agent instructions |
 | Size | L |
@@ -24,24 +24,18 @@ credential-free offline tools and exact-route network egress. Existing native
 subscription auth is an explicit read-only auth-only reference; group execution
 cannot refresh it or inherit personal HOME, connectors, env or services.
 
-P0 remains the deployed baseline (`c82399b`). Local full tests/race/vet, real
-Docker tool checks, CI/Sonar and independent review passed. Pi offline tools
-passed (6.22 s); earlier-candidate Claude actual new/resume two-turn file/context/session checks
-passed. Final latest-v2 both-provider/native-network qualification and rollout remain
-open; see [draft release evidence](../deployments/2026-10-27-group-isolation.md). No full
-runtime deployment or group re-enablement is claimed here. Owner-private behavior
-remains the baseline; group speech and automatic maintenance remain unavailable.
+The controller is deployed as `e3b5401`; see [current deployment evidence](../deployments/2026-10-31-security-wave.md).
+Follow-ups #88/#89 fixed Codex tree-budget admission and enabled default admission for
+registered groups (D047); #93/#95/#97 added group controls and private login guidance.
+Historical 2026-10-29 evidence records existing-group preparation and Claude new/resume success
+following owner login. Final Codex two-turn/tool and cross-boundary/client qualification remain open.
 
-Native policy v2 qualification passed 69 local cases across all 11 public catalog
-models, including new/resume and hostile-capability paths. ARM64 release images
-were built locally from merged main; production remains untouched. The sanitized
-public catalog and explicit `gpt-6.1-sol` default are documented in the
-[catalog provenance](../../container/group/policy/README.md).
-
-[Current architecture, disabled configuration example and limits](../ISOLATION.md)
-record implementation behavior. [Earlier native-subscription prototype](../research/2026-10-25-subscription-cli-tool-isolation-prototype.md)
-canaries are historical evidence, not acceptance of this new runtime. Incremental
-checks use controlled sandboxes; no real-group rollout or T9 reboot is implied.
+Local tests/races/vet, Docker tool checks, CI and independent review passed. Earlier native policy
+v2 qualification covered 69 cases across 11 catalog models; Pi TCP/offline-tool results remain
+[historical evidence](../deployments/2026-10-27-group-isolation.md), not proof of final live acceptance.
+Use [current policy and limits](../ISOLATION.md) and [handoff](../HANDOFF.md) for operational state.
+Group speech and automatic maintenance remain unavailable. No T9 reboot or additional group
+activation was performed by the security rollout or this documentation housekeeping.
 
 ## Out of scope
 Silently changing billing, deleting historical data, revoking accounts, enabling

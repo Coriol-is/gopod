@@ -39,6 +39,9 @@ func (d *Docker) InspectContainer(ctx context.Context, name string) (*ContainerF
 	f.User = info.Config.User
 	f.ReadonlyRootfs = info.HostConfig.ReadonlyRootfs
 	f.Privileged = info.HostConfig.Privileged
+	f.PidMode = string(info.HostConfig.PidMode)
+	f.NetworkMode = string(info.HostConfig.NetworkMode)
+	f.IpcMode = string(info.HostConfig.IpcMode)
 	f.CapDrop = []string(info.HostConfig.CapDrop)
 	f.SecurityOpt = info.HostConfig.SecurityOpt
 	for _, m := range info.Mounts {

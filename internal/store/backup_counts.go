@@ -7,7 +7,13 @@ package store
 // test TestRowCountSQLCoversEverySchemaTable fails when a table is added to the
 // schema without being added here.
 var rowCountSQL = map[string]string{
-	"outbox_plain_fallbacks": "SELECT count(*) FROM outbox_plain_fallbacks",
+	"elevated_sessions":         "SELECT count(*) FROM elevated_sessions",
+	"elevated_execs":            "SELECT count(*) FROM elevated_execs",
+	"elevated_native_contexts":  "SELECT count(*) FROM elevated_native_contexts",
+	"elevated_transcript":       "SELECT count(*) FROM elevated_transcript",
+	"topic_deletions":           "SELECT count(*) FROM topic_deletions",
+	"telegram_control_messages": "SELECT count(*) FROM telegram_control_messages",
+	"outbox_plain_fallbacks":    "SELECT count(*) FROM outbox_plain_fallbacks",
 	// core
 	"chats":                "SELECT count(*) FROM chats",
 	"messages":             "SELECT count(*) FROM messages",
@@ -30,6 +36,12 @@ var rowCountSQL = map[string]string{
 	// proactive presets (CP-033)
 	"proactive_presets":  "SELECT count(*) FROM proactive_presets",
 	"proactive_settings": "SELECT count(*) FROM proactive_settings",
+	// durable session identity (CP-037 P1)
+	"execution_sessions":    "SELECT count(*) FROM execution_sessions",
+	"conversation_bindings": "SELECT count(*) FROM conversation_bindings",
+	"native_contexts":       "SELECT count(*) FROM native_contexts",
+	"attempt_bindings":      "SELECT count(*) FROM attempt_bindings",
+	"execution_claims":      "SELECT count(*) FROM execution_claims",
 	// memory
 	"memories": "SELECT count(*) FROM memories",
 	// delivery and outbox

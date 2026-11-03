@@ -294,6 +294,9 @@ func TestArtifacts_StrictSchema(t *testing.T) {
 		}), "invalid_request"},
 		{"bad mime", mut(func(m map[string]any) { file(m)["mime"] = "not a mime" }), "invalid_request"},
 		{"bad presentation", mut(func(m map[string]any) { file(m)["presentation"] = "video" }), "invalid_request"},
+		{"presentation voice", mut(func(m map[string]any) { file(m)["presentation"] = "voice" }), "invalid_request"},
+		{"presentation Photo", mut(func(m map[string]any) { file(m)["presentation"] = "Photo" }), "invalid_request"},
+		{"presentation  photo", mut(func(m map[string]any) { file(m)["presentation"] = " photo" }), "invalid_request"},
 		{"long caption", mut(func(m map[string]any) { file(m)["caption"] = strings.Repeat("x", 1025) }), "invalid_request"},
 		{"huge text", mut(func(m map[string]any) { m["text"] = strings.Repeat("x", 49<<10) }), "invalid_request"},
 	}
@@ -350,12 +353,12 @@ func TestArtifacts_PathAttacksRejectedWithoutLeaks(t *testing.T) {
 		{ContainerOutputRoot + "/inside/inner.txt", "path_denied"},
 		{ContainerOutputRoot + "/hard.txt", "hardlink_denied"},
 		{ContainerOutputRoot + "/fifo", "not_regular_file"},
-		{ContainerOutputRoot + "/../outside.txt", "path_denied"},
-		{ContainerOutputRoot + "/sub/../ok.txt", "path_denied"},
-		{"/etc/passwd", "path_denied"},
-		{outside, "path_denied"},
-		{"/workspace/ipc/messages/x.json", "path_denied"},
-		{"relative.txt", "path_denied"},
+		{ContainerOutputRoot + "/../outside.txt", "path_outside_workspace"},
+		{ContainerOutputRoot + "/sub/../ok.txt", "path_outside_workspace"},
+		{"/etc/passwd", "path_outside_workspace"},
+		{outside, "path_outside_workspace"},
+		{"/workspace/ipc/messages/x.json", "path_outside_workspace"},
+		{"relative.txt", "path_outside_workspace"},
 		{ContainerOutputRoot + "/.secret/token.txt", "path_denied"},
 		{ContainerOutputRoot + "/memory/MEMORY.md", "path_denied"},
 		{ContainerOutputRoot + "/state.sqlite", "path_denied"},
@@ -602,7 +605,8 @@ func TestArtifacts_GroupAndOwnerAuthorityDenied(t *testing.T) {
 	w := f.watcher()
 
 	// Only the owner folder reaches the artifact route: a group folder's V1
-	// file keeps the legacy text path (which refuses it: no chatJid).
+	// file request is refused as artifacts_disabled (CP-040) with one notice
+	// to the group's own chat, never through the artifact route.
 	gTok := f.issue("group-a", "tg:-2", store.OwnerLegacyAgentIPC, "run-g")
 	writeIPC(t, f.root, "group-a", "messages", "0001-g.json", map[string]any{"version": 1, "requestId": "req-00000002", "capability": gTok,
 		"files": []map[string]any{{"path": ContainerOutputRoot + "/g.txt"}}})
@@ -625,15 +629,16 @@ func TestArtifacts_GroupAndOwnerAuthorityDenied(t *testing.T) {
 			t.Fatalf("%s: %v", c.name, rc)
 		}
 	}
-	if rc := f.receipt("group-a", "0001-g.result.json"); rc["status"] != "error" {
+	if rc := f.receipt("group-a", "0001-g.result.json"); rc["status"] != "error" || rc["error"] != "artifacts_disabled" {
 		t.Fatalf("group V1 request: %v", rc)
 	}
 	f.assertNoLeak("authority")
 	if f.rows(`SELECT count(*) FROM artifact_reservations`) != 0 {
 		t.Fatal("a group folder reached the artifact route")
 	}
-	if calls := f.sink.callsSnapshot(); len(calls) != 0 {
-		t.Fatalf("direct send %+v", calls)
+	calls := f.sink.callsSnapshot()
+	if len(calls) != 1 || calls[0].chatJID != "tg:-2" || !strings.Contains(calls[0].text, "/workspace/chat/g.txt") {
+		t.Fatalf("want one refusal notice to the group's own chat, got %+v", calls)
 	}
 }
 
@@ -1084,4 +1089,52 @@ func TestArtifacts_FinishDeletingPagesPastFailingRows(t *testing.T) {
 		t.Fatalf("deleted %d (%v), want the two healthy rows behind three failing ones", n, err)
 	}
 	_ = keys
+}
+
+// A request file's mtime is agent-controlled. A file that appears after the run
+// ended must be refused even when its mtime is set into the past.
+func TestArtifacts_BackdatedMtimeAfterEndRunIsRefused(t *testing.T) {
+	f := newArtFixture(t)
+	f.write("a.csv", "x")
+	w := f.watcher()
+	f.tick(w) // an empty sweep: the host has now seen the channel without the file
+	if f.caps.EndRun("run-1") != 1 {
+		t.Fatal("capability was not active")
+	}
+	time.Sleep(20 * time.Millisecond)
+	f.tick(w) // a later empty sweep, after the run ended
+	time.Sleep(20 * time.Millisecond)
+	f.sendV1("owner", "0001-late.json", f.req("a.csv"))
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(filepath.Join(f.dir("owner", "messages"), "0001-late.json"), old, old); err != nil {
+		t.Fatal(err)
+	}
+	f.tick(w)
+	f.wantError("0001-late.json", "stale_capability")
+	if f.deliveries() != 0 {
+		t.Fatalf("deliveries %d, want 0", f.deliveries())
+	}
+}
+
+// A request the watcher saw while the run was active (here deferred by the
+// per-tick budget) is still admitted inside the grace window after the run ends.
+func TestArtifacts_RequestSeenBeforeEndRunIsAdmittedInGrace(t *testing.T) {
+	f := newArtFixture(t)
+	f.write("a.csv", "x")
+	w := f.watcher()
+	f.tick(w)
+	time.Sleep(20 * time.Millisecond)
+	for i := 0; i < 3; i++ {
+		f.sendV1("owner", fmt.Sprintf("000%d-b.json", i), f.req("a.csv"))
+	}
+	f.tick(w) // two published, the third is observed and deferred
+	if n := f.deliveries(); n != 2 {
+		t.Fatalf("first tick published %d, want 2", n)
+	}
+	f.caps.EndRun("run-1")
+	time.Sleep(20 * time.Millisecond)
+	f.tick(w)
+	if n := f.deliveries(); n != 3 {
+		t.Fatalf("a request observed before the end was lost: %d deliveries", n)
+	}
 }

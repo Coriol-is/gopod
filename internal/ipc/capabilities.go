@@ -40,6 +40,9 @@ var (
 	// ErrPathDenied is an agent path outside the run's ordinary output root or
 	// naming protected material.
 	ErrPathDenied = errors.New("ipc: path denied")
+	// ErrPathOutsideWorkspace is the ErrPathDenied case of a path that is not a
+	// clean absolute path under the container output root (CP-040).
+	ErrPathOutsideWorkspace = fmt.Errorf("%w: outside the workspace", ErrPathDenied)
 )
 
 // Grant is what the host decided for one run.
@@ -118,7 +121,7 @@ func (g Grant) MapPath(agentPath string) (string, error) {
 		croot = ContainerOutputRoot
 	}
 	if path.Clean(agentPath) != agentPath || !strings.HasPrefix(agentPath, croot+"/") || strings.ContainsRune(agentPath, 0) {
-		return "", ErrPathDenied
+		return "", ErrPathOutsideWorkspace
 	}
 	rel := strings.TrimPrefix(agentPath, croot+"/")
 	parts := strings.Split(rel, "/")

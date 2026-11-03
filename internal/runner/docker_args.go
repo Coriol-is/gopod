@@ -71,6 +71,9 @@ type SpawnConfig struct {
 // Validate enforces the non-optional fields of SpawnConfig. Called
 // automatically by BuildContainerArgs; exposed for tests.
 func (c SpawnConfig) Validate() error {
+	if c.ChatFolder == ElevatedFolder {
+		return errors.New("SpawnConfig: reserved elevated folder requires its own profile")
+	}
 	if c.Image == "" {
 		return errors.New("SpawnConfig: Image is empty")
 	}
@@ -80,8 +83,8 @@ func (c SpawnConfig) Validate() error {
 	if c.Version == "" {
 		return errors.New("SpawnConfig: Version is empty")
 	}
-	if c.UID == 0 && c.GID == 0 {
-		return errors.New("SpawnConfig: refusing uid=0 gid=0 (container must run as non-root)")
+	if c.UID == 0 {
+		return errors.New("SpawnConfig: refusing uid=0 (container must run as non-root)")
 	}
 	if c.UID < 0 || c.GID < 0 {
 		return fmt.Errorf("SpawnConfig: UID=%d GID=%d must be non-negative", c.UID, c.GID)
@@ -166,7 +169,7 @@ func BuildContainerArgs(cfg SpawnConfig) (*container.Config, *container.HostConf
 
 		// Drop every Linux capability. If a future skill legitimately
 		// needs one back, that's an ADR not a code patch (see
-		// ISOLATION.md §6.4).
+		// ISOLATION.md §6.1).
 		CapDrop: strslice.StrSlice{"ALL"},
 
 		// no-new-privileges blocks setuid/setgid escalation even if
@@ -198,8 +201,8 @@ func BuildContainerArgs(cfg SpawnConfig) (*container.Config, *container.HostConf
 			PidsLimit: &pidsLimit,
 		},
 
-		// Tmpfs mounts. ISOLATION.md §6.1 names three; we add one
-		// more (/home/node) once end-to-end testing of M6d showed
+		// Tmpfs mounts, the three ISOLATION.md §6.1 lists. /home/node
+		// is one of them because end-to-end testing of M6d showed
 		// that Claude Code needs a writable HOME to store its
 		// per-instance state (`$HOME/.claude.json` plus npm/node
 		// scratch). The /home/node tmpfs sits below the

@@ -89,7 +89,7 @@ func TestAgentExecEnvClaudeOnly(t *testing.T) {
 	} {
 		ex := &envExec{fakeAgentExec: newFakeAgentExec()}
 		r := &Runner{ex: ex, provider: tc.prov, allow: tc.allow, log: quietLog(), nodeHeapMB: 768}
-		if _, err := r.execAgent(context.Background(), "cid", "chat", 0, tc.prov, tc.prov.RunFreshCmd("p")); err != nil {
+		if _, err := r.execAgent(context.Background(), "cid", "chat", 0, tc.prov, tc.prov.RunFreshCmd("p"), false); err != nil {
 			t.Fatalf("%s: %v", tc.prov.Name(), err)
 		}
 		got, ok := nodeOptionsOf(ex.envs[0])

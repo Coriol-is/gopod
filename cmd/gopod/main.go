@@ -137,8 +137,15 @@ func run() error {
 		}
 	}()
 
+	// Apply a requested durable-session adoption before anything reads the
+	// session tables, so an adopted DB starts durable in this same boot.
+	if err := adoptSessionsIfRequested(ctx, st, logger); err != nil {
+		return err
+	}
+
 	// Upgrade logger to also write to SQLite logs table.
 	sqliteHandler := picoclog.NewSQLiteHandler(st.DB(), logger.Handler())
+	defer sqliteHandler.Close()
 	logger = slog.New(sqliteHandler)
 	slog.SetDefault(logger)
 
@@ -154,6 +161,7 @@ func run() error {
 		folderHeld  func(string) bool // set once the queue exists (managed tasks)
 		allowlist   *mountsec.Allowlist
 		agentMemory *memory.Memory
+		sessionMode string // store.SessionMapping*; durable wraps the queue handler
 	)
 	if !cfg.ContainerEnabled {
 		logger.Warn("runner subsystem skipped: GOPOD_NO_CONTAINER is truthy")
@@ -197,12 +205,26 @@ func run() error {
 			d.RequirePolicyLabels(cfg.ManagedTasksEnabled)
 			if cfg.LeftoverCleanupEnabled && restartRecoveryErr == nil {
 				n, err := d.CleanupLeftovers(ctx, buildVersion())
-				if err != nil {
-					runLog.Warn("leftover cleanup failed",
-						slog.Any("err", err))
+				if errors.Is(err, runner.ErrExecutionUnproven) {
+					// The Docker facade retains quarantine; only execution is
+					// blocked. Keep Telegram status/force/repair reachable.
+					restartRecoveryErr = err
+					runLog.Warn("running leftovers quarantined; execution blocked", slog.Any("err", err))
+				} else if err != nil {
+					return fmt.Errorf("leftover inventory failed; admission refused: %w", err)
 				} else {
 					runLog.Info("leftover cleanup complete",
 						slog.Int("cleaned", n))
+				}
+			} else {
+				// Removal is skipped, but a running leftover must still be
+				// quarantined: re-attaching it would resume an unproven agent.
+				err := d.QuarantineLeftovers(ctx)
+				if errors.Is(err, runner.ErrExecutionUnproven) {
+					restartRecoveryErr = err
+					runLog.Warn("running leftovers quarantined; execution blocked", slog.Any("err", err))
+				} else if err != nil {
+					return fmt.Errorf("leftover inventory failed; admission refused: %w", err)
 				}
 			}
 
@@ -213,9 +235,9 @@ func run() error {
 				Image:       cfg.ContainerImage,
 				UID:         os.Getuid(),
 				GID:         os.Getgid(),
-				MemoryBytes: 4 << 30,       // 4 GiB; GOPOD_CONTAINER_MEM later
-				NanoCPUs:    2_000_000_000, // 2 CPUs
-				PidsLimit:   1024,
+				MemoryBytes: cfg.ContainerMemoryBytes,
+				NanoCPUs:    cfg.ContainerNanoCPUs,
+				PidsLimit:   cfg.ContainerPidsLimit,
 			}
 			// Create the agent provider. Currently always Claude;
 			// P3/P4 will add per-chat provider selection.
@@ -235,7 +257,12 @@ func run() error {
 				return fmt.Errorf("init runner: %w", err)
 			}
 			agentRunner = r
-			r.SetStore(st)
+			sessionStore, mode, err := newSessionStateStore(ctx, st, runLog)
+			if err != nil {
+				return fmt.Errorf("init session store: %w", err)
+			}
+			sessionMode = mode
+			r.SetStore(sessionStore)
 			r.SetAdmissionPolicy(cfg.OwnerChatID, st)
 			if cfg.ManagedTasksEnabled {
 				// Before any container use, so the foreground container is already
@@ -259,9 +286,11 @@ func run() error {
 				runLog.Info("managed task runtime enabled (task role denied until a credential adapter is qualified)")
 			}
 			r.SetAgentLimits(runner.AgentLimits{
-				MaxAgents:      cfg.MaxAgents,
-				MinAvailableMB: cfg.MinAvailableMB,
-				NodeHeapMB:     cfg.AgentNodeHeapMB,
+				MaxAgents:       cfg.MaxAgents,
+				MinAvailableMB:  cfg.MinAvailableMB,
+				NodeHeapMB:      cfg.AgentNodeHeapMB,
+				StrictMemory:    cfg.StrictMemoryAdmission,
+				GrowthReserveMB: cfg.AgentGrowthReserveMB,
 			})
 			runLog.Info("agent admission",
 				slog.Int("max_agents", cfg.MaxAgents),
@@ -411,6 +440,14 @@ func run() error {
 	}
 
 	control.RegisterTriggerCommand(router, st)
+	control.RegisterSessionsCommand(router, control.SessionsDeps{
+		Mode: st.SessionMappingMode, Request: st.RequestSessionAdoption, Count: st.CountSessionRows,
+		Cancel: st.CancelSessionAdoption,
+		Unfinished: func(ctx context.Context) (int, error) {
+			turns, err := st.ListUnfinishedTurns(ctx)
+			return len(turns), err
+		},
+	})
 	control.RegisterWhoami(router, cfg.OwnerChatID)
 	control.RegisterVoiceCommand(router, telegram.SetReplyMode)
 	control.RegisterLogsCommand(router, func(level, subsystem string, limit int) (string, error) {
@@ -449,11 +486,12 @@ func run() error {
 		}
 	}
 	control.RegisterTaskCommands(router, st, chatFolderLookup, taskPromptFn)
+	control.RegisterOutboxCommands(router, st)
 
 	// /proactive (CP-033): owner-only recurring Gmail and Calendar presets. Every
 	// preset is off until the owner turns it on, so this changes nothing by itself.
 	proactiveSvc := proactiveService(st, cfg.OwnerChatID)
-	control.RegisterProactiveCommand(router, control.ProactiveDeps{Service: proactiveSvc, Log: ctlLog})
+	control.RegisterProactiveCommand(router, control.ProactiveDeps{Service: proactiveSvc, ChatDir: proactiveChatDir(st, cfg.OwnerChatID, cfg.ChatsDir), Log: ctlLog})
 	upgradeProactiveTemplates(ctx, ctlLog, proactiveSvc)
 
 	var fallbackSwitch control.ProviderFallbackSwitchFunc
@@ -509,6 +547,26 @@ func run() error {
 			func(chatFolder string) []string {
 				if agentRunner.ProviderForChat(chatFolder).Name() == "claude" {
 					return []string{"fable", "opus", "sonnet", "haiku"}
+				}
+				return nil
+			}, chatFolderLookup)
+
+		// /silent (D055): per-chat progress-only streaming, persisted like /model.
+		control.RegisterSilentCommand(router,
+			func(chatFolder string) bool {
+				v, err := st.GetState(context.Background(), control.SilentStateKey+chatFolder)
+				if err != nil {
+					logger.Warn("silent mode lookup failed", slog.String("folder", chatFolder), slog.Any("err", err))
+				}
+				return v == "1"
+			},
+			func(chatFolder string, on bool) error {
+				v := ""
+				if on {
+					v = "1"
+				}
+				if err := st.SetState(context.Background(), control.SilentStateKey+chatFolder, v); err != nil {
+					return fmt.Errorf("persist silent mode: %w", err)
 				}
 				return nil
 			}, chatFolderLookup)
@@ -621,7 +679,8 @@ func run() error {
 		}
 
 		restart.notify = tgBot.SendRestartNotice
-		control.RegisterRestartCommand(router, restart.request)
+		control.RegisterRestartLifecycle(router, restart.command)
+		control.RegisterStopCommand(router, tgBot.StopCurrentTurn)
 		control.RegisterTelegramCommands(router, tgBot.TelegramSnapshot, tgBot.RefreshTelegramSnapshot, func(ctx context.Context, id int64) bool {
 			_, err := st.GetRegistered(ctx, fmt.Sprintf("tg:%d", id))
 			return err == nil
@@ -636,9 +695,18 @@ func run() error {
 		var agentQueue *queue.Queue
 		if agentRunner != nil {
 			queueLog := logger.With(slog.String("subsys", "queue"))
-			agentQueue = queue.New(ctx, tgBot.NewAgentHandler(), queue.DefaultMaxConcurrent,
+			agentHandler := tgBot.NewAgentHandler()
+			if sessionMode == store.SessionMappingDurable {
+				agentHandler = bindingHandler(st,
+					func(folder string) string { return agentRunner.ProviderForChat(folder).Name() },
+					agentRunner.ModelForChat, agentRunner.ExecutionUncertain, agentHandler, queueLog)
+			}
+			agentQueue = queue.New(ctx, agentHandler, queue.DefaultMaxConcurrent,
 				turnStoreAdapter{st: st}, queueLog)
 			tgBot.SetQueue(agentQueue)
+			restart.queue = agentQueue
+			restart.runtime, _ = any(agentRunner).(restartRuntime)
+			restart.app = ctx
 			// Managed task recovery is inspect-only until execution lands (CP-004
 			// PR 3): no handler, so nothing managed runs, but possibly started
 			// attempts are never replayed and held capacity is rebuilt.
@@ -677,12 +745,30 @@ func run() error {
 		if agentQueue != nil {
 			schedLog := logger.With(slog.String("subsys", "scheduler"))
 			sched = scheduler.New(st, agentQueue, schedLog)
+			if err := sched.SuppressForcedRestart(ctx); err != nil {
+				return fmt.Errorf("force restart occurrence suppression: %w", err)
+			}
+		}
+
+		if agentQueue != nil && restart.runtime != nil {
+			if err := restart.restoreDrain(ctx); err != nil {
+				return fmt.Errorf("restore restart drain: %w", err)
+			}
 		}
 
 		// Recover turns left unfinished by a crash/shutdown. Must run after
 		// the scheduler hook is registered and before the bot polls.
 		replayed := 0
 		if agentQueue != nil {
+			if sessionMode == store.SessionMappingDurable {
+				// Nothing runs yet: a held claim is a crash leftover. Recover
+				// re-batches turns, so the old holder id would never settle it.
+				n, err := st.ReleaseStaleExecutionClaims(ctx)
+				if err != nil {
+					return fmt.Errorf("release stale execution claims: %w", err)
+				}
+				logger.Info("released stale execution claims", slog.Int("count", n))
+			}
 			n, err := agentQueue.Recover(ctx)
 			if errors.Is(err, queue.ErrHoldsUnknown) {
 				// Serving beside a possibly running task attempt is unsafe.
@@ -693,6 +779,15 @@ func run() error {
 				logger.Info("queue: recovered unfinished turns", slog.Int("count", n))
 			}
 			replayed = n
+		}
+
+		// Status repair is best-effort and must not delay execution safety recovery.
+		if repair, ok := any(tgBot).(interface{ RepairControls(context.Context) error }); ok {
+			repairCtx, repairCancel := context.WithTimeout(ctx, 10*time.Second)
+			if err := repair.RepairControls(repairCtx); err != nil {
+				logger.Warn("Telegram control repair pending", slog.Any("err", err))
+			}
+			repairCancel()
 		}
 
 		// Start polling only after Recover, so the first poll cannot
@@ -718,9 +813,10 @@ func run() error {
 			if owner, err := acquireOutboxOwner(ctx, st, 10*time.Second, 500*time.Millisecond); err != nil {
 				outboxLog.Error("outbox dispatcher DISABLED: could not take the exclusive outbox lock", slog.Any("err", err))
 			} else {
-				// CP-003 artifact snapshots: off unless GOPOD_OUTBOX_ARTIFACTS=1.
+				// CP-003 artifact snapshots: on by default (D057), off with GOPOD_OUTBOX_ARTIFACTS=0.
 				// A failure to open the store leaves uploads refused, not the bot down.
 				var opener telegram.ArtifactOpener
+				var closeArtifacts func()
 				if cfg.OutboxArtifactsEnabled {
 					if ac, blobs, err := openArtifactStore(cfg, st); err != nil {
 						outboxLog.Error("artifact delivery DISABLED", slog.Any("err", err))
@@ -728,20 +824,28 @@ func run() error {
 						artifactIPCConfig = ac
 						tgBot.EnablePreparedDelivery(preparedDelivery(cfg, st, blobs, outboxLog))
 						opener = &telegram.SnapshotOpener{Inventory: st, Blobs: blobs, MaxBytes: st.ArtifactLimits().MaxFileBytes, Log: outboxLog}
-						onShutdown(func() { blobs.Close() })
+						closeArtifacts = func() { blobs.Close() }
 					}
 				}
 				dispatcher := telegram.NewOutboxDispatcher(owner, tgBot.NewOutboxTransport(opener), telegram.OutboxConfig{}, outboxLog)
 				if err := dispatcher.Start(ctx); err != nil {
 					owner.Release()
 					outboxLog.Error("outbox dispatcher DISABLED: start failed", slog.Any("err", err))
+					if closeArtifacts != nil {
+						onShutdown(closeArtifacts)
+					}
 				} else {
 					st.SetPublishNotifier(dispatcher.Notify)
 					onShutdown(func() {
 						if err := dispatcher.Stop(10 * time.Second); err != nil {
 							outboxLog.Error("outbox dispatcher stop", slog.Any("err", err))
+							// An unobserved stop must not close descriptors still in use.
+							return
 						}
 						owner.Release()
+						if closeArtifacts != nil {
+							closeArtifacts()
+						}
 					})
 					outboxRunning = true
 					outboxLog.Info("outbox dispatcher running")
@@ -782,7 +886,13 @@ func run() error {
 				maintainGenerations(ctx, st, 5*time.Minute, time.Duration(cfg.GenerationRetentionDays)*24*time.Hour, reconcile, ipcLog)
 			}()
 		}
+		// Runner-side capability issuer (CP-003 PR C): nil unless V1 artifact
+		// requests are really admitted, so with the flag off nothing is issued.
+		if iss := artifactIssuer(cfg, artifactIPC(durableIPC(cfg.OutboxIPCEnabled, outboxRunning, st, ownerFolder, cfg.OwnerChatID), artifactIPCConfig), st, ipcLog); iss != nil && agentRunner != nil {
+			agentRunner.SetArtifactIssuer(iss)
+		}
 		ipcMsgs := telegram.NewIPCSink(tgBot)
+		scheduler.SetTaskNotifier(st, tgBot.NotifyOwner)
 		ipcTasks := scheduler.NewIPCSink(st)
 		ipcWatcher := ipc.New(ipc.Config{
 			DataDir:     cfg.DataDir,
@@ -954,7 +1064,7 @@ func (a *memoryCompilerAdapter) CompileContext(ctx context.Context, chatFolder s
 }
 
 func newLogger(cfg config.Config) *slog.Logger {
-	opts := &slog.HandlerOptions{Level: cfg.LogLevel}
+	opts := &slog.HandlerOptions{Level: cfg.LogLevel, ReplaceAttr: picoclog.NewRedactor().ReplaceAttr}
 	var h slog.Handler
 	switch cfg.LogFormat {
 	case "json":
@@ -1018,6 +1128,16 @@ func (a turnStoreAdapter) LoadUnfinished(ctx context.Context) ([]queue.Item, err
 	}
 	out := make([]queue.Item, 0, len(turns))
 	for _, t := range turns {
+		if t.AttemptID == "" && t.Attempts > 0 {
+			status, why := store.TurnFailed, "execution_unknown: controller restarted after dispatch; automatic replay refused"
+			if t.ReplyMsgID != 0 {
+				status, why = store.TurnDone, ""
+			}
+			if err := a.st.MarkTurnFinished(ctx, t.ID, status, why); err != nil {
+				return nil, err
+			}
+			continue
+		}
 		out = append(out, turnToItem(t))
 	}
 	return out, nil

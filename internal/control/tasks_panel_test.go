@@ -13,6 +13,9 @@ import (
 func TestTasksPanelPagesAndStateActions(t *testing.T) {
 	st := testStore(t)
 	ctx := context.Background()
+	if err := st.RegisterChat(ctx, store.RegisteredChat{JID: "tg:100", Folder: "owner", IsOwner: true, AddedAt: 1}); err != nil {
+		t.Fatal(err)
+	}
 	for i := 0; i < 8; i++ {
 		_, err := st.CreateTask(ctx, store.TaskRecord{ID: fmt.Sprintf("task-%d", i), ChatFolder: "owner", ChatJID: "tg:100", Prompt: strings.Repeat("я🙂", 80), ScheduleType: "interval", ScheduleValue: "1h", NextRun: time.Now().Add(time.Hour).UnixMilli(), CreatedAt: int64(i + 1)})
 		if err != nil {
@@ -47,7 +50,7 @@ func TestTasksPanelPagesAndStateActions(t *testing.T) {
 	}
 	action := first.Buttons[0][0]
 	paused := call(action.Command, 100, action.Args...)
-	if paused.Code != 0 || !strings.Contains(paused.Text, "[paused] task-0") {
+	if paused.Code != 0 || !strings.Contains(paused.Text, "[paused] `task-0`") {
 		t.Fatalf("pause panel: %+v", paused)
 	}
 	record, _ := st.GetTask(ctx, "task-0")

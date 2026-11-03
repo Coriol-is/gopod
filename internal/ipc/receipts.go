@@ -3,6 +3,7 @@ package ipc
 import (
 	"encoding/json"
 	"fmt"
+	"golang.org/x/sys/unix"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -46,23 +47,29 @@ func (w *Watcher) writeReceiptNamed(folder, name, directory string, receipt any)
 		return false
 	}
 	defer root.Close()
-	if err = root.MkdirAll(directory, 0o700); err != nil {
-		w.log.Error("ipc: create result directory", "folder", folder, "err", err)
+	if filepath.Base(name) != name || name == "." || name == ".." {
 		return false
 	}
-	tmp := filepath.Join(directory, ".tmp-"+name+"-"+strconv.FormatInt(w.cfg.NowFn().UnixNano(), 10))
-	f, err := root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	dir, err := openDirectory(root, directory, true)
+	if err != nil {
+		w.log.Error("ipc: unsafe result directory", "folder", folder, "err", err)
+		return false
+	}
+	defer dir.Close()
+	tmp := ".tmp-" + name + "-" + strconv.FormatInt(w.cfg.NowFn().UnixNano(), 10)
+	fd, err := unix.Openat(int(dir.Fd()), tmp, unix.O_WRONLY|unix.O_CREAT|unix.O_EXCL|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0600)
 	if err == nil {
+		f := os.NewFile(uintptr(fd), tmp)
 		_, err = f.Write(append(data, '\n'))
 		if closeErr := f.Close(); err == nil {
 			err = closeErr
 		}
 	}
 	if err == nil {
-		err = root.Rename(tmp, filepath.Join(directory, name))
+		err = unix.Renameat(int(dir.Fd()), tmp, int(dir.Fd()), name)
 	}
 	if err != nil {
-		root.Remove(tmp)
+		unix.Unlinkat(int(dir.Fd()), tmp, 0)
 		w.log.Error("ipc: write receipt", "folder", folder, "file", name, "err", fmt.Errorf("receipt: %w", err))
 		return false
 	}

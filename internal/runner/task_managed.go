@@ -139,7 +139,7 @@ func (r *Runner) planFor(ctx context.Context, folder string, role ExecRole, prov
 	if m == nil {
 		return nil, ErrManagedTasksDisabled
 	}
-	if !role.Valid() {
+	if !role.Valid() || role == RoleElevatedHost {
 		return nil, fmt.Errorf("%w: unknown role", ErrTaskDenied)
 	}
 	scope, err := m.scopes.SnapshotScope(ctx, folder)
@@ -221,7 +221,7 @@ func (r *Runner) ensureRole(ctx context.Context, folder string, role ExecRole, p
 	}
 	r.lockChat(folder)
 	defer r.unlockChat(folder)
-	if err := r.authorizeProfile(ctx, folder); err != nil {
+	if err := r.authorizeOwner(ctx, folder); err != nil {
 		return "", err
 	}
 	if err := EnsureChatDirs(r.paths, folder, role == RoleForegroundPersonal, r.log); err != nil {

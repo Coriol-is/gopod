@@ -85,7 +85,7 @@ func TestTriggerPicker_MemberPressIsDeniedWithoutChange(t *testing.T) {
 
 	b.callbackHandler(t.Context(), b.api, groupPress("q1", 777, data))
 
-	if toast := answeredOnce(t, fake, "q1"); toast != "Not authorized." {
+	if toast := answeredOnce(t, fake, "q1"); toast != cbToastNotYours {
 		t.Errorf("toast = %q", toast)
 	}
 	if mode, _ := b.store.GroupTrigger(t.Context(), buildChatJID(groupChat)); mode != store.TriggerMention {

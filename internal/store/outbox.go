@@ -56,7 +56,7 @@ const (
 	MaxPartPayloadBytes   = 64 << 10 // text/edit body; Telegram text is far smaller
 	MaxReplyMarkupBytes   = 8 << 10
 	MaxArtifactRefBytes   = 512
-	MaxUploadCaptionBytes = 4096 // an upload part's payload is its caption
+	MaxUploadCaptionBytes = 4096 // an upload part's payload is its caption; MaxUploadCaptionUnits is the tighter Telegram bound
 	MaxParseModeBytes     = 32
 	MaxRequestKeyBytes    = 255
 	DefaultDeliveryExpiry = 24 * time.Hour
@@ -174,7 +174,7 @@ func validatePublish(req PublishRequest, now int64) error {
 			// photo hint or the host-only voice marker.
 			presentationOK := p.ParseMode == "" || p.ParseMode == UploadPresentationPhoto ||
 				(p.ParseMode == UploadPresentationVoice && req.voicePresentation)
-			ok = presentationOK && len(p.Payload) <= MaxUploadCaptionBytes && p.ArtifactRef != "" && p.TargetMessageID == 0
+			ok = presentationOK && len(p.Payload) <= MaxUploadCaptionBytes && CaptionUTF16Units(string(p.Payload)) <= MaxUploadCaptionUnits && p.ArtifactRef != "" && p.TargetMessageID == 0
 		}
 		if !ok {
 			return fmt.Errorf("%w: part %d (%q) is malformed", ErrInvalidDelivery, i, p.Kind)

@@ -151,10 +151,11 @@ type Config struct {
 
 	// OutboxArtifactsEnabled accepts strict V1 IPC requests with file
 	// attachments, snapshotted into an immutable host-private store and sent by
-	// the outbox dispatcher (CP-003 PR 4). Default false. GOPOD_OUTBOX_ARTIFACTS=1
-	// takes effect only while the dispatcher and the durable IPC route run.
-	// Enablement is gated on a verified matched DB/artifact backup and restore
-	// (CP-007), which this flag does not check; see D039.
+	// the outbox dispatcher (CP-003 PR 4). Default true since D057 (owner
+	// decision 2026-11-02); GOPOD_OUTBOX_ARTIFACTS=0 switches it off. It takes
+	// effect only while the dispatcher and the durable IPC route run. The
+	// matched artifact backup gate of D039 is satisfied by `matched_stopped`
+	// sets, which include artifact blobs; this flag does not check it.
 	OutboxArtifactsEnabled bool
 
 	// RecoveryQuarantine starts only the control plane: no Telegram polling,
@@ -176,7 +177,12 @@ type Config struct {
 
 	// MaxAgents caps agent processes running at once across all chats.
 	// GOPOD_MAX_AGENTS, default 2, at least 1.
-	MaxAgents int
+	MaxAgents             int
+	StrictMemoryAdmission bool
+	AgentGrowthReserveMB  int
+	ContainerMemoryBytes  int64
+	ContainerNanoCPUs     int64
+	ContainerPidsLimit    int64
 
 	// MinAvailableMB is the host MemAvailable (MiB) a new agent needs to
 	// start. GOPOD_MIN_AVAILABLE_MB, default 900; 0 disables the check.
@@ -220,7 +226,7 @@ func Load(loadDotenv bool) (Config, error) {
 		OutboxDispatcherEnabled: envFlag("GOPOD_OUTBOX_DISPATCHER"),
 		ManagedTasksEnabled:     envFlag("GOPOD_MANAGED_TASKS"),
 		OutboxIPCEnabled:        envFlag("GOPOD_OUTBOX_IPC"),
-		OutboxArtifactsEnabled:  envFlag("GOPOD_OUTBOX_ARTIFACTS"),
+		OutboxArtifactsEnabled:  !envOff("GOPOD_OUTBOX_ARTIFACTS"),
 		RecoveryQuarantine:      envFlag("GOPOD_RECOVERY_QUARANTINE"),
 		CompactAfter:            compactAfter,
 		CompactInterval:         os.Getenv("GOPOD_COMPACT_INTERVAL"),
@@ -228,6 +234,9 @@ func Load(loadDotenv bool) (Config, error) {
 		ObsidianVault:           os.Getenv("GOPOD_OBSIDIAN_VAULT"),
 	}
 
+	if err := loadContainerResources(&cfg); err != nil {
+		return Config{}, err
+	}
 	if err := loadAgentAdmission(&cfg); err != nil {
 		return Config{}, err
 	}
@@ -271,6 +280,9 @@ func Load(loadDotenv bool) (Config, error) {
 		if err != nil {
 			return Config{}, fmt.Errorf("parsing GOPOD_OWNER_CHAT_ID=%q: %w", v, err)
 		}
+		if id <= 0 {
+			return Config{}, fmt.Errorf("GOPOD_OWNER_CHAT_ID must be a positive private chat ID; omit it to disable the owner")
+		}
 		cfg.OwnerChatID = id
 	}
 
@@ -299,7 +311,14 @@ func (c Config) validate() error {
 // defaults match runner.DefaultMaxAgents, DefaultMinAvailableMB and
 // DefaultAgentNodeHeapMB (config does not import runner).
 func loadAgentAdmission(cfg *Config) error {
+	cfg.StrictMemoryAdmission = envFlag("GOPOD_STRICT_MEMORY_ADMISSION")
 	var err error
+	if cfg.AgentGrowthReserveMB, err = envInt("GOPOD_AGENT_GROWTH_RESERVE_MB", 0); err != nil {
+		return err
+	}
+	if cfg.AgentGrowthReserveMB < 0 || cfg.AgentGrowthReserveMB > 1048576 {
+		return fmt.Errorf("GOPOD_AGENT_GROWTH_RESERVE_MB out of range")
+	}
 	if cfg.GenerationRetentionDays, err = envInt("GOPOD_GENERATION_RETENTION_DAYS", 30); err != nil {
 		return err
 	}

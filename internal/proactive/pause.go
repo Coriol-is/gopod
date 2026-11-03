@@ -79,6 +79,14 @@ func (s *Service) ResumeAll(ctx context.Context) (ResumeReport, error) {
 				rep.Skipped = append(rep.Skipped, id)
 				continue
 			}
+			if _, off := p.Unavailable(); off {
+				// Stays paused; the marker is cleared so nothing treats it as pending.
+				if err = s.st.UpdateTaskStatus(ctx, task.ID, "paused", 0, task.LastRun); err != nil {
+					return err
+				}
+				rep.Skipped = append(rep.Skipped, id)
+				continue
+			}
 			row, err := s.loadRow(ctx, id)
 			if err != nil {
 				return err

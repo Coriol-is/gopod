@@ -58,8 +58,12 @@ func TestGroupCommandsFollowTheTriggerMode(t *testing.T) {
 			}
 			f.b.defaultHandler(t.Context(), nil, &models.Update{Message: groupMsg(trigOther, "/ping@"+trigBotName)})
 			f.b.defaultHandler(t.Context(), nil, &models.Update{Message: groupMsg(streamChat, "/ping")})
-			if n := len(f.fake.callsTo("sendMessage")); n != 2 {
-				t.Fatalf("addressed member command and owner command = %d replies, want 2", n)
+			want := 2
+			if mode == store.TriggerOwner {
+				want = 1
+			}
+			if n := len(f.fake.callsTo("sendMessage")); n != want {
+				t.Fatalf("command replies = %d, want %d", n, want)
 			}
 		})
 	}

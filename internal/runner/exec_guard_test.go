@@ -285,7 +285,7 @@ func TestPublicEnsureNeverRecyclesARunningContainer(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.scopes.bump("owner")
-	if _, err := m.r.Ensure(ctx, "owner", TierOwner, nil); !errors.Is(err, ErrRecycleNeedsSlot) {
+	if _, err := m.r.Ensure(ctx, "owner", TierOwner, nil); !errors.Is(err, ErrFolderBusy) {
 		t.Fatalf("live turn: err = %v", err)
 	}
 	release()

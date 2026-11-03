@@ -99,11 +99,11 @@ not enabling the feature merely by merging that document.
 | [CP-013](CP-013-transcript-provenance.md) | Speech transcript provenance | done | S |
 | [CP-014](CP-014-telegram-media-input.md) | Telegram media — three delivery queues (design only) | accepted | L |
 | [CP-015](CP-015-agent-scheduling.md) | Generic agent scheduling and IPC receipts | done | M |
-| [CP-016](CP-016-telegram-topic-deletion.md) | Telegram topic deletion and conversation retirement (design only) | accepted | M |
+| [CP-016](CP-016-telegram-topic-deletion.md) | Telegram topic deletion and conversation retirement (store foundation; command pending) | in-progress | M |
 | [CP-017](CP-017-telegram-capability-diagnostics.md) | Telegram capability diagnostics (initial private-DM slice) | done | M |
 | [CP-018](CP-018-per-thread-providers.md) | Provider selection per conversation (design only) | accepted | M |
 | [CP-019](CP-019-telegram-ephemeral-commands.md) | Private command/service/error replies in groups (design only) | accepted | M |
-| [CP-020](CP-020-personal-group-isolation.md) | Personal/group isolation (controller deployed; groups admitted by default once registered, D047; provider qualification/group activation blocked) | implemented | L |
+| [CP-020](CP-020-personal-group-isolation.md) | Personal/group isolation (controller deployed; groups admitted by default once registered, D047; final provider/client qualification open) | implemented | L |
 | [CP-021](CP-021-task-outcomes-checkpoints.md) | Task outcomes, evidence and checkpoints | proposed | M |
 | [CP-022](CP-022-schedule-execution-policies.md) | Schedule overlap, misfire and model-free reminders | proposed | M |
 | [CP-023](CP-023-research-dossiers.md) | Source-backed research dossiers and reviewed reports | proposed | L |
@@ -114,7 +114,12 @@ not enabling the feature merely by merging that document.
 | [CP-028](CP-028-telegram-account-reading.md) | Telegram user-account connector, read and write, Go port (spec written; owner decisions recorded) | proposed | L |
 | [CP-029](CP-029-scoped-location.md) | Scoped location context and expiry | proposed | M |
 | [CP-030](CP-030-agent-mailboxes.md) | Authenticated agent mailboxes and bounded delegation | proposed | L |
-| [CP-031](CP-031-telegram-restart.md) | Owner Telegram restart with durable recovery notices | in-progress | M |
+| [CP-031](CP-031-telegram-restart.md) | Owner Telegram restart with durable recovery notices (baseline owner-accepted; edge-case acceptance separate) | done | M |
 | [CP-032](CP-032-telegram-reaction-reading.md) | Read reactions and custom emoji with explicit private/non-admin limitations (design only) | accepted | M |
 | [CP-033](CP-033-proactive-controls.md) | Built-in recurring presets for the main connectors, toggled and scheduled with `/proactive` (first set: Gmail and Calendar) | in-progress | M |
 | [CP-034](CP-034-private-chat-plugin-install.md) | Install official skills and plugins from the private chat; installed set survives container recreation | accepted | M |
+| [CP-036](CP-036-private-chat-stop.md) | Explicit inline Stop and /stop for owner-private answers | done | M |
+| [CP-037](CP-037-parallel-sessions.md) | Parallel private topics and background sessions (P0 lifecycle implementation) | in-progress (P0 and P1 merged, deployed in legacy mapping) | L |
+| [CP-038](CP-038-elevated-host-session.md) | Explicitly started elevated host session for the owner's private chat | in-progress | M |
+| [CP-039](CP-039-full-backup-restore-migration.md) | Automatic full backup/restore (files, sessions, auth) and device migration (draft) | proposed | L |
+| [CP-040](CP-040-agent-attachments.md) | Agent attachments: discoverable file delivery from the agent on top of CP-003; honest refusal; document presentation ([spec](../superpowers/specs/2026-11-02-agent-attachments.md), [D058](../DECISIONS.md); real-client acceptance pending) | in-progress | M |

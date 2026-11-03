@@ -511,7 +511,7 @@ func (q *Queue) Holds() int {
 func (q *Queue) kick(folder string) {
 	q.mu.Lock()
 	cs := q.chats[folder]
-	if q.closed || cs == nil || cs.active || cs.held > 0 || len(cs.pending) == 0 {
+	if q.closed || q.draining || cs == nil || cs.active || cs.held > 0 || len(cs.pending) == 0 {
 		q.mu.Unlock()
 		return
 	}

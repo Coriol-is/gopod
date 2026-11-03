@@ -47,9 +47,9 @@ type Manager struct {
 	MCP              *groupsandbox.MCP
 	Request          func(context.Context, store.ScopeRef, int, json.RawMessage) (string, error)
 	autoPrep
-	mu       sync.Mutex
-	locks    map[string]chan struct{}
-	disabled map[string]bool
+	mu           sync.Mutex
+	locks        map[string]chan struct{}
+	activeGroups map[string]bool
 }
 
 func (m *Manager) lock(ctx context.Context, id string) (func(), error) {
@@ -75,16 +75,13 @@ func (m *Manager) Authorize(ctx context.Context, c store.RegisteredChat) error {
 		return ErrUnavailable
 	}
 	enabled := m.groupAllowed(ctx, c)
-	m.mu.Lock()
-	blocked := m.disabled[c.JID]
-	m.mu.Unlock()
 	if unknown, err := m.Store.GetState(ctx, "group_cleanup_unknown:"+c.NamespaceID); err != nil || unknown == "1" {
 		return ErrUnavailable
 	}
 	if disabled, err := m.Store.GetState(ctx, "group_disabled:"+c.NamespaceID); err != nil || disabled == "1" {
 		return ErrUnavailable
 	}
-	if !enabled || blocked {
+	if !enabled {
 		return ErrUnavailable
 	}
 	if err := m.Store.ValidateScope(ctx, c.Scope()); err != nil {
@@ -98,6 +95,9 @@ func (m *Manager) Authorize(ctx context.Context, c store.RegisteredChat) error {
 		return ErrUnavailable
 	}
 
+	if err := m.authorizeBudget(ctx, c.NamespaceID, time.Now()); err != nil {
+		return err
+	}
 	return m.checkTree(ctx, paths.Workspace, workspaceCheckPolicy)
 }
 func (m *Manager) Start(ctx context.Context, c store.RegisteredChat, base runner.AgentProvider, thread int, selectedModel string) (id string, prov runner.AgentProvider, release func(), retErr error) {
@@ -126,7 +126,7 @@ func (m *Manager) Start(ctx context.Context, c store.RegisteredChat, base runner
 				cancelLease()
 			}
 			if leaseToken != "" {
-				cleanup, done := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+				cleanup, done := context.WithTimeout(context.WithoutCancel(ctx), groupDrainTimeout)
 				if m.MCP.RevokeAndWait(cleanup, leaseToken) != nil {
 					drainUnknown = true
 					_ = m.Store.SetState(cleanup, "group_cleanup_unknown:"+c.NamespaceID, "1")
@@ -166,6 +166,13 @@ func (m *Manager) Start(ctx context.Context, c store.RegisteredChat, base runner
 	if err = m.checkTrees(ctx, paths); err != nil {
 		return "", nil, release, err
 	}
+	stage = "turn_budget"
+	releaseBudget, err := m.reserveTurn(ctx, c.NamespaceID, time.Now())
+	if err != nil {
+		return "", nil, release, err
+	}
+	// Release capacity after every runtime resource has settled.
+	cleanups = append(cleanups, releaseBudget)
 	stage = "images"
 	nativeImage, _, err := m.Docker.ImageInspectWithRaw(ctx, cfg.Image)
 	if err != nil || nativeImage.Config == nil || nativeImage.Config.Labels["org.gopod.profile"] != "group" || nativeImage.Config.Labels["org.gopod.provider"] != base.Name() || nativeImage.Config.Labels["org.gopod.native-policy"] != runner.GroupNativePolicyVersion {

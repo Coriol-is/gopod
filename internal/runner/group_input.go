@@ -10,7 +10,11 @@ import (
 var ErrGroupSensitiveInput = errors.New("authentication material is unavailable in shared agent context; use private owner authentication")
 
 func (r *Runner) checkGroupInput(ctx context.Context, folder, prompt string) error {
-	if _, group := r.groupRegistration(ctx, folder); group && memory.IsGroupSensitiveText(prompt) {
+	_, group, err := r.groupRegistration(ctx, folder)
+	if err != nil {
+		return err
+	}
+	if group && memory.IsGroupSensitiveText(prompt) {
 		return ErrGroupSensitiveInput
 	}
 	return nil

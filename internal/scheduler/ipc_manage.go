@@ -59,6 +59,9 @@ func (a *IPCSink) Manage(ctx context.Context, op string, input store.TaskRecord)
 			return fail("completed task cannot resume; schedule a new task")
 		}
 		if t.Status == "paused" {
+			if e := CheckTaskBudget(ctx, a.st, t); e != nil {
+				return fail(e.Error())
+			}
 			next, e := FirstRunAt(t.ScheduleType, t.ScheduleValue, time.Now())
 			if e != nil {
 				return fail(e.Error())
@@ -87,6 +90,9 @@ func (a *IPCSink) Manage(ctx context.Context, op string, input store.TaskRecord)
 			if t.Status == "paused" {
 				t.NextRun = 0
 			}
+		}
+		if e := CheckTaskBudget(ctx, a.st, t); e != nil {
+			return fail(e.Error())
 		}
 		err = a.st.UpdateTaskDefinition(ctx, t)
 		if errors.Is(err, store.ErrManagedTask) {

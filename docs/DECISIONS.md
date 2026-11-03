@@ -1833,3 +1833,309 @@ counts as empty; a row with no cell is dropped. Two columns use the same form. A
 any header, keeps the D050 lines (`<b>Header</b>: value`, or the bare value), skipping empty rows. A wide table whose
 rows are all empty stays a `<pre>` block, like a header-only one. Total rows get no special treatment. `<b>%</b>` is
 emitted and sanitized correctly; a one-character bold header only looks unbolded.
+
+## D052 — An agent may request a photo presentation; captions are bounded in UTF-16 units
+
+**Status:** accepted 2026-10-30. Supersedes the sentence of [D039](#d039--immutable-artifact-snapshots-reserve-first-copy-outside-sql-publish-with-references) "`photo` presentation and MIME are hints; uploads are always documents". The rest of D039 stands, including that the agent cannot select the voice presentation.
+
+**Decision.** A V1 request file with `presentation: "photo"` becomes an upload part carrying the store's photo marker
+(`store.UploadPresentationPhoto`), which the transport (`internal/telegram/outbox_photo.go`) treats as a hint: it calls
+`sendPhoto` only for a PNG/JPEG within Telegram's limits and otherwise, or after an explicit Telegram refusal, sends the
+same bytes as a document. `document` and an empty value stay documents. The host never infers a photo from an image MIME
+or extension, and an agent MIME claim never selects any presentation; the voice marker stays host-only. The marker is part
+of the part hash, so a retried request with a different presentation is a different plan. The hint is applied to any file
+(a non-image falls back to a document), so the request cannot widen what an agent may send.
+
+**Caption bound.** Telegram caps a caption at 1024 characters counted in UTF-16 units after entity parsing. The IPC
+request validator and the outbox publish validation (`store.CaptionUTF16Units`, `MaxUploadCaptionUnits`) now count those
+units, so a caption that Telegram would refuse (513+ emoji, 1026+ units; 512 emoji = 1024 units is accepted) is rejected
+instead of dropping the upload later: the IPC route rejects with `invalid_request` before the snapshot; the store check is
+a second bound. The 4096-byte store bound stays as a coarse outer limit
+(1024 units never exceed 4096 bytes). This also fixes the same defect on the document path.
+
+**Consequences.** Nothing is observable while `GOPOD_OUTBOX_ARTIFACTS` is off, and every V1 request still ends in
+`stale_capability` until the runner capability issuer lands. Rolling back to a binary without the photo marker refuses
+a stored photo part as `invalid_presentation`; revert only with the flag off.
+
+## D053 — Explicit owner-private Stop button and command
+
+**Status:** accepted 2026-10-31 (owner explicitly rejected new-message interruption).
+Refines D021 presentation; D020/D022 session and queue semantics remain unchanged.
+
+Owner-private interactive replies use the existing persistent placeholder/edit
+path with an inline Stop, prepared before agent startup. `/stop` is an owner-only
+private Telegram command through `internal/control`, scoped to the calling topic.
+Both cancel the same registered run, including buffered execution and streaming
+setup fallback. Stop never clears history/session mappings or starts a replacement
+turn; ordinary input remains queued and can execute after the stopped turn ends.
+Scheduled tasks remain outside the interactive registry. Cancellation acknowledgement
+is not proof of process death: D033 best-effort cleanup and native session-write
+limitations still apply. Other chats retain their current presentation and controls.
+
+[CP-036](proposals/CP-036-private-chat-stop.md), [spec](superpowers/specs/2026-10-31-private-chat-stop.md).
+
+## D054 — Controller restart drains or explicitly forces; busy runtimes are never evicted
+
+**Status:** accepted 2026-11-01 (CP-037 P0 lifecycle slice). Supersedes the
+"cancel the application context after a bare acknowledgement" sequence of D046;
+D046's supervision checks, durable restart receipt, scoped container stop,
+replay suppression and ready/degraded notice remain in force.
+
+**Context.** The CP-037 spec review found three ways the serial deployment
+could interrupt work it had not finished: the idle watcher evicted containers
+by last-activity time rather than by occupancy, `/restart` cancelled the root
+context while replies and tasks were running, and boot-time cleanup could stop a
+still-running leftover and then release its slot without proof the process was
+gone. The owner required that no planned restart, image update or container
+release cut off an in-flight reply or background task, and asked for a separate
+forced mode that cancels background work on purpose.
+
+**Decision.**
+- *Occupancy, not activity.* The idle timeout applies only to a runtime whose
+  slot is provably idle. Busy and unknown runtimes are protected. Unknown
+  execution holds global capacity until the Docker process inventory proves it
+  settled; a normal Stop stops the slot-owned runtime so detached child tools
+  are provably dead, and the next turn recreates it on the same persistent mounts.
+- *Quarantine keeps the control plane.* Boot-time cleanup removes only proven
+  non-running leftovers; when removal is disabled or restart recovery left
+  unproven state, the inventory still runs so nothing running is re-attached.
+  A leftover still running at any version is quarantined:
+  execution for that folder is refused with `ErrExecutionUnproven`, the owner
+  warmup is skipped, and Telegram stays up so `/restart status|force` and
+  control repair remain reachable. The controller does not exit, so there is
+  no restart loop.
+- *`/restart` drains.* Owner-private, Router `PermOwnerOnly`. The request is
+  recorded in `router_state` with mode `drain`; scheduler enqueue is locked,
+  the queue stops dispatching but retains queued input, dispatched handlers and
+  active runtime operations finish (default drain window ten minutes), the
+  authorized personal containers are snapshotted, `restarting` is persisted and
+  only then is the application context cancelled. If termination cannot be
+  proven the request becomes `blocked`, nothing is stopped and the owner is
+  told. `/restart status [<id>]` and `/restart cancel [<id>]` act only on the
+  request with that message id; cancel is valid while `draining` or `blocked`.
+- *`/restart force` is explicit and durable.* It needs the confirmation button
+  (D028). It is refused while non-personal queued work exists. Before any
+  cutoff the queued owner turns and pending background occurrences are recorded
+  as forced; then the active reply and background work are cancelled, the exact
+  authorized containers are stopped, the runner verifies every operation claim
+  settled and the cancelled occurrences are marked so startup recovery does not
+  replay them. Force also stops every quarantined leftover by exact container
+  id, including one whose folder is retired or unregistered and therefore has
+  no scope to validate; it is the only path that can settle such a leftover.
+  Schedules and files are preserved. A partial failure stays `blocked` with
+  replay disabled; repeating `/restart force` resumes the recorded request
+  without taking a new cutoff.
+- *Stop controls survive crashes.* Each owner-private Stop placeholder is bound
+  in `control_messages` to its attempt and scope. A stale callback cannot stop a
+  newer attempt; an attempt whose outcome is unknown is never rendered as
+  stopped; failed edits are retried from durable state and never block runtime
+  shutdown. `RepairControls` runs at startup within ten seconds and every thirty
+  seconds while the bot runs.
+- *Host profile is opt-in.* `deploy/compose.rpi4.yml` carries the measured Pi 4
+  limits (`GOPOD_MAX_AGENTS=2`, strict memory admission, growth reserve,
+  container memory/CPU/PID caps). The Pi kernel has no memory cgroup, so memory
+  values there are admission inputs, not enforcement.
+
+**Consequences.** A long reply or task is no longer cut by idle eviction or a
+planned restart; the price is that a restart can wait up to the drain window or
+park as `blocked` until the owner decides. The C9 Continue/Start recovery UI,
+live stream reattachment, automatic replay of started work, per-thread parallel
+runtimes, the autoscaler and provider failover are not part of this decision.
+Real Telegram and native-provider acceptance remain separate gates
+([P0 acceptance](reviews/2026-11-01-p0-acceptance.md)).
+
+## D055 — Silent mode: progress-only streaming per chat
+
+**Date:** 2026-11-01
+**Status:** Accepted
+**Extends:** D024 (tool progress in the draft), D021 (native streaming and Stop)
+
+**Context.** A streamed turn shows the agent's text deltas in the draft as soon as they arrive (D021), and D024 only drops the text that precedes a later tool step. On long coding turns the owner sees narration, half-written answers and tool steps alternating in the draft, and asked for a mode in which the chat shows only the progress of the work and receives the finished answer once.
+
+**Decision.**
+- `/silent` is a `ChatLocal` Router command (owner-only in groups, like `/model`). With no argument it shows `Silent mode: on|off` with an `on`/`off` picker (D028); `/silent on|off` sets it. The flag is per chat (every thread), persisted as `silent:<chatFolder>` in `router_state` (`"1"` on, empty or absent off), default off, read once at the start of each streamed turn.
+- In silent mode `streamReply` never switches the draft or the edit-path placeholder to answer text: chunks accumulate only for a Stop, and the view stays the status header plus the last five tool steps until the final message. A run without steps (plain runs, `GOPOD_PROGRESS=0`) shows the elapsed-time header alone after `headerQuiet`. Draft overflow cannot occur because the draft carries no text.
+- The final reply goes out as before (draft path: one `sendMessage`; edit path: the placeholder becomes the reply when it fits), with one addition on the edit path: because the placeholder never held text, a reply or a stopped partial longer than one message (`editLimit`) takes the existing overflow branch, which edits the placeholder to the progress summary (no cursor, no Stop button) and sends the reply as separate messages. D025 long-code handling, the sync path and the voice reply are unchanged. Stop keeps D021 semantics: the text received since the last tool step is the reply, `(stopped)` when there is none.
+
+**Consequences.** The owner sees the answer only when the turn ends; a turn that produces no tool steps shows a bare timer for its whole length. The flag is not per thread (CP-018 would be the place for that). A failed `router_state` read logs a warning and streams normally.
+
+
+## D056 — Durable session identity behind an atomic adoption marker
+
+**Status:** accepted 2026-11-01 (CP-037 P1)
+
+**Context.** Parallel sessions (CP-037 A1/A4) need a session identity that is
+independent of the chat folder: a stable session per conversation, a native
+provider context that can be replaced per epoch, and a record of which
+attempt ran against which session. The legacy `sessions` table keys native
+contexts by folder only and cannot express this.
+
+**Decision.**
+- *Additive tables.* `execution_sessions`, `conversation_bindings`,
+  `native_contexts`, `attempt_bindings` and `execution_claims` are added
+  without touching `sessions`. `ResolveConversation` creates the binding and
+  session at context epoch 1 (workspace `legacy:<folder>`) and retires older
+  namespace-epoch bindings of the same namespace. `turns.id` stays the monotonic
+  per-conversation ingress sequence and `UNIQUE(source, source_id)` the dedup
+  key; no new sequencing is introduced.
+- *Scope on every write.* Each write validates the registration `ScopeRef` in
+  the same transaction; authorization comes from the registration, never from
+  data the LLM produced.
+- *Marker read once.* `session_mapping` in `router_state` (default `legacy`)
+  selects the mode at startup only. In `durable` mode the runner's
+  `GetSession/PutSession/DeleteSession` resolve through the binding (Delete
+  removes only the current epoch's native context of that provider) and the
+  continuity methods (handoff transcript, provider choice, `/clear`) delegate
+  to the store; `/clear` deletes every provider's native context of the
+  current context epoch and never writes the frozen `sessions` table. In
+  `legacy` mode the plain store is used unchanged.
+- *Atomic adoption when quiesced.* `/sessions adopt` (owner-only, D028
+  confirmation) only records a request. Adoption runs at the next controller
+  startup right after the store opens, in one transaction. While unfinished
+  turns exist it is deferred (`ErrAdoptionBusy` is logged, legacy kept, the
+  request retained, and `/sessions status` shows the deferral); other errors
+  are fatal. A legacy row whose folder is unregistered or whose current scope
+  no longer validates is unreachable by any scope: it is skipped, counted and
+  logged at Warn, not fatal. `/sessions cancel` (owner-only) withdraws a
+  pending request. The same boot starts in durable mode. Default stays legacy,
+  so nothing changes until adopted.
+- *Binding and claims.* In durable mode every non-managed queue batch
+  (interactive turns, and legacy scheduled `task` items, which may coalesce
+  with other `task` items of the same thread) is bound to its session and
+  epoch before running; a recovered turn bound to a superseded epoch or
+  session is finished as stopped without running, and the superseded turn id
+  is logged. One execution claim per session is taken for the batch, keyed by
+  its last turn, and settled afterwards. The claim is settled
+  `execution_unknown` when the runner reports `ErrExecutionUnproven` or its
+  process proof (`ExecutionUncertain`) says the exit is unproven. Only managed
+  task attempts are singleton batches; they pass through untouched.
+- *P1 deviation from the literal A1 wording: an unknown claim is evidence, not
+  a lock.* In P1 an `execution_unknown` claim is durable evidence and may be
+  taken over by another turn, as may a claim whose holder turn is terminal
+  (`done`, `failed`, `stopped`); the takeover is logged at Warn with the
+  previous holder. Re-execution stays gated by the runner's P0 process proof
+  (`acquireSlot`/`ExecutionUncertain` refuse while exit is unproven;
+  `reconcileExited` clears on proven death or idle). Stale `held` claims are
+  released at controller startup before queue recovery, when nothing can be
+  running, because recovery re-batches turns and the old holder id would never
+  settle. Without a reconciler a blocking claim would wedge a conversation;
+  the cost is that a turn whose exit the runner wrongly proved could run twice
+  (the same exposure as P0). P5 adds the claim reconciler that turns an
+  unknown claim into a real lock.
+- *Rollback.* Rolling back to pre-adoption code after durable writes needs
+  explicit reconciliation: the old `sessions` table is frozen at adoption time
+  and does not see later native context changes.
+
+**Consequences.** P2 can add `/clear` and `/new` epoch transitions (not part
+of P1) and P4 can build on execution claims. There is no behavior change
+until the owner adopts and restarts. Adoption is one-way in practice because
+of the rollback caveat. Real native resume after adoption on the Pi remains an
+open acceptance row ([ACCEPTANCE](ACCEPTANCE.md)).
+
+## D057 — Artifact delivery is on by default
+
+**Status:** accepted 2026-11-02 (owner decision). Supersedes the "default off"
+flag setting of D039; D039's preparation, authorization and upload rules are
+unchanged.
+
+**Context.** CP-003 PRs 4–5 shipped the immutable artifact pipeline behind
+`GOPOD_OUTBOX_ARTIFACTS` (default off) pending a matched artifact backup gate.
+Since CP-007 PR 1 a `matched_stopped` set includes artifact blobs, and the
+2026-11-01 rollout verified such a set. Meanwhile the owner hit the user-facing
+cost of the dark feature: an agent that produced a PDF could not attach it
+(CP-040). The owner asked for the flag to default to on.
+
+**Decision.** `OutboxArtifactsEnabled` defaults to true; `GOPOD_OUTBOX_ARTIFACTS=0`
+(or `false`/`no`/`off`) switches it off. Everything else in D039 holds: strict
+V1 requests, per-run capability, owner-personal-chat destination only, rooted
+no-follow snapshots, quotas (`min(files x 20 MiB, 40 MiB)` per request,
+512 MiB per namespace, 2 GiB global), quarantine on mismatch. The pipeline still
+only runs while the outbox dispatcher and the durable IPC route are on. A
+failure to open the artifact store at startup disables uploads for that
+process and logs `artifact delivery DISABLED`; it never takes the bot down.
+
+**Consequences.** After the next deployment an agent in the owner's private
+chat can attach files through the IPC V1 request without any flag change on
+the Pi. The agent-facing contract (how the agent learns to do that) and
+document presentation remain CP-040 work; until it lands, attachments work
+only for an agent that already knows the IPC request shape. Rollback is
+`GOPOD_OUTBOX_ARTIFACTS=0` plus a restart; snapshots already taken stay in the
+host-private store under the existing retention. The matched backup gate is
+treated as met for the database and blobs; native homes and workspaces remain
+outside backups (CP-039).
+
+## D058 — Agent attachments: `as` presentation with auto photo, named refusals and a user notice
+
+**Status:** accepted 2026-11-02 (CP-040, accepted by the owner and built autonomously). Refines
+[D052](#d052--an-agent-may-request-a-photo-presentation-captions-are-bounded-in-utf-16-units): its sentence "the host
+never infers a photo from an image MIME or extension" no longer holds for the new `as` field; the legacy
+`presentation` field keeps D052 semantics when `presentation` is present. D039 path, authorization and quota rules and D057 flag semantics are unchanged.
+
+**Decision.** (1) A V1 file entry takes an optional `as`: `auto` (default), `document` or `photo`; any other value is
+`invalid_request`, and `as` together with `presentation` is `invalid_request`. `auto` offers a photo when the agent's
+`mime` is `image/png`/`image/jpeg` or the sanitized filename ends in `.png`/`.jpg`/`.jpeg`, otherwise a document with the
+original filename; `photo` on anything else is refused as `unsupported_type`. The claim cannot widen what is sent: the
+upload is the verified snapshot and the transport still checks the bytes before `sendPhoto`, falling back to a document.
+There is no content-type allowlist. (2) New codes: `artifacts_disabled` (a V1 request with files that cannot reach the
+artifact route — flag off, outbox or durable route not running, non-owner folder — or carries no capability),
+`path_outside_workspace` (the clean/prefix check of `Grant.MapPath`, previously `path_denied`; `ErrPathOutsideWorkspace`
+wraps `ErrPathDenied`), `unsupported_type`. CP-040's `too_large` is the existing `file_too_large`, not renamed.
+(3) A V1 request with files that cannot reach the artifact route is refused (`.failed`, receipt) instead of being sent
+as text without its files, as the legacy path used to. (4) The first terminal refusal of a request that names files
+sends one plain-text Russian notice ("Не удалось приложить файл <path> … Причина: … (<code>)") to the chat the IPC
+folder is registered to, through the existing IPC message sink (thread 0, best effort, logged on failure). Paths are
+display-only, stripped of control/bidi characters and bounded. The receipt carries attachment help. (5) The contract
+reaches agents through an owner-only `AttachmentsPolicy` in the per-turn system prompt (both providers, existing
+workspaces), a seeded owner `ATTACHMENTS.md`, the owner `CLAUDE.md` template and `container/skills/attachments`.
+
+**Consequences.** A group or non-owner agent that tries to attach now produces a visible refusal in its own chat
+instead of a text-only send. An image request that omits `as` and `presentation` becomes a photo hint (previously a
+document). Spec: [agent attachments](superpowers/specs/2026-11-02-agent-attachments.md).
+
+## D059 — Elevated role boundary and explicit host-authority dialogs
+
+**Status:** accepted 2026-11-03 (owner decision, CP-038 E1).
+
+**Decision.** Reject a container role mismatch whenever either the recorded or
+requested role is `elevated_host`, including stopped containers. Preserve D044's
+foreground/task recycling, folder-slot and execution-proof checks. Elevated
+reuse additionally requires the requested configuration digest and immutable
+image to match inspection; drift or death never silently recreates a session.
+Ordinary builder output, policy revision and existing profile fingerprints stay
+unchanged. Namespace defaults normalize bridge/default network and private IPC
+to their empty create forms; every other namespace value is pinned.
+
+The owner also requires dialogs and warnings: provider selection precedes an
+explicit confirmation warning that the session has host-root authority and can
+change files, processes and containers. Start, every elevated reply and teardown
+carry host-rendered markers. Cancellation, stale confirmation, unavailable
+Docker, lost runtime and failed teardown have distinct actionable messages.
+No claim of sandboxing or complete agent-command auditing is made. These UI
+requirements are implemented with E3/E4; E1 alone activates no runtime.
+
+**Consequences.** The original CP-038 wording forbidding every role transition is
+narrowed to the elevated boundary; ordinary scheduled work remains compatible.
+Host deployment/activation and provider credential derivation remain separate.
+
+## D060 — Elevated state stays outside ordinary session mappings
+
+**Status:** accepted implementation contract, 2026-11-03 (CP-038 E2, reconciled
+with deployed CP-037 P1 and independently reviewed).
+
+Elevated host sessions use dedicated lifecycle, exec-journal, native-context
+and transcript tables. They never register a chat or fabricate a namespace
+snapshot, and do not pass through the legacy/durable ordinary-session adapter.
+Native context is keyed by provider and updated only by the current active
+host-session ID; close/reopen rejects late writes. The one-live-session index
+is a data fence, not proof that an old runtime exited.
+
+Reserved workspace/native directories need an elevated provenance marker;
+nonempty unmarked or symlinked directories are refused. Historical ordinary
+registration/ownership of the reserved folder prevents opening a host session.
+Ordinary scope lookup also refuses it; P1 adoption counts/skips such unreachable
+legacy rows instead of aborting adoption for other chats.
+
+Every elevated host exec must commit a bounded redacted intent before running
+and settle before publishing its result. Exit -1 records an unknown host-call
+result, not process-death proof; lifecycle must retain uncertainty until Docker
+proves quiescence. The journal is not tamper-proof against the host-root agent.

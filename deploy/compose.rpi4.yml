@@ -1,0 +1,15 @@
+# Opt-in profile for the measured 4 GiB Raspberry Pi 4 host.
+# Apply only with the normal deployment/drain procedure; this file does not reboot.
+services:
+  gopod:
+    cpus: 1.0
+    pids_limit: 128
+    environment:
+      GOPOD_MAX_AGENTS: "2"
+      GOPOD_MIN_AVAILABLE_MB: "1536"
+      GOPOD_STRICT_MEMORY_ADMISSION: "1"
+      GOPOD_AGENT_GROWTH_RESERVE_MB: "1024"
+      GOPOD_AGENT_NODE_HEAP_MB: "512"
+      GOPOD_CONTAINER_MEM: "1024m"
+      GOPOD_CONTAINER_CPUS: "1.5"
+      GOPOD_CONTAINER_PIDS: "256"

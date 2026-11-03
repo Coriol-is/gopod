@@ -14,6 +14,8 @@ import (
 // cancellation alone does not stop exec, so every exit kills this exact owned
 // process group, verifies the exec stopped, then frees its caller's chat slot.
 func (r *Runner) probeCodexManagement(ctx context.Context, id string) (report ManagementReport, retErr error) {
+	ctx, finishOperation := r.operationContext(ctx)
+	defer finishOperation()
 	if err := ctx.Err(); err != nil {
 		return report, err
 	}
@@ -35,12 +37,14 @@ func (r *Runner) probeCodexManagement(ctx context.Context, id string) (report Ma
 		defer cancel()
 		res, err := r.ex.Exec(cleanup, id, killAgentCmd(pidFile, 100*time.Millisecond), nil)
 		if err != nil || res == nil || res.ExitCode != 0 {
+			r.markContainerUnknown(ctx, id)
 			report.ErrorClass = "cleanup_failed"
 			retErr = errors.New("management cleanup failed")
 			return
 		}
 		state, err := r.d.cli.ContainerExecInspect(cleanup, created.ID)
 		if err != nil || state.Running {
+			r.markContainerUnknown(ctx, id)
 			report.ErrorClass = "cleanup_failed"
 			retErr = errors.New("management cleanup unverified")
 		}

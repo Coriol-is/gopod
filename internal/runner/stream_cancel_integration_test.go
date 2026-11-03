@@ -126,12 +126,8 @@ func TestIntegrationStreamCancelKillsAgent(t *testing.T) {
 	}
 	t.Logf("result %v after cancel", time.Since(cancelled))
 
-	procs, files := containerState(t, d, id)
-	if strings.Contains(procs, "sleep 300") || strings.Contains(procs, "echo started") {
-		t.Errorf("agent still running %v after cancel:\n%s", time.Since(cancelled), procs)
-	}
-	if strings.Contains(files, "gopod-agent-") {
-		t.Errorf("pid file left behind: %s", files)
+	if !d.containerDead(context.Background(), id) {
+		t.Fatal("cancelled runtime still running; detached children not proven dead")
 	}
 }
 

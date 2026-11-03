@@ -196,9 +196,9 @@ func nextCandidateQ(ctx context.Context, q taskSQL, nowMs int64) (OutboxClaim, b
  AND NOT EXISTS (
   SELECT 1 FROM outbox_parts q JOIN delivery_groups h ON h.delivery_id=q.delivery_id
   WHERE h.namespace_id=g.namespace_id AND h.namespace_epoch=g.namespace_epoch AND h.thread_id=g.thread_id AND h.visibility=g.visibility
-  AND q.state IN ('pending','sending','uncertain')
+  AND q.state IN ('pending','sending','uncertain') AND h.expires_at>?
   AND (h.conversation_seq<g.conversation_seq OR (h.conversation_seq=g.conversation_seq AND q.ordinal<p.ordinal)))
- ORDER BY p.next_attempt_at,g.created_at,p.ordinal LIMIT 1`, PartPending, nowMs).
+ ORDER BY p.next_attempt_at,g.created_at,p.ordinal LIMIT 1`, PartPending, nowMs, nowMs).
 		Scan(&c.PartID, &c.DeliveryID, &c.Ordinal, &kind, &payload, &c.Part.ArtifactRef, &c.Part.ParseMode, &c.Part.ReplyMarkup, &c.Part.TargetMessageID, &c.Attempt,
 			&result, &c.ExpiresAt, &sc.NamespaceID, &sc.NamespaceEpoch, &sc.RegistrationRevision, &sc.JID, &sc.Folder, &c.Conversation.ThreadID, &vis)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -613,4 +613,70 @@ func (s *Store) DeliveryDiagnostic(ctx context.Context, id string) (DeliveryDiag
 		}
 	}
 	return out, nil
+}
+
+// UncertainPart identifies an unresolved delivery without exposing its payload.
+type UncertainPart struct {
+	PartID    string
+	ChatJID   string
+	ThreadID  int
+	ExpiresAt int64
+}
+
+// ListUncertainParts returns a bounded operator queue, including expired parts.
+func (s *Store) ListUncertainParts(ctx context.Context) ([]UncertainPart, error) {
+	rows, err := s.taskDB(ctx).QueryContext(ctx, `SELECT p.part_id,g.chat_jid,g.thread_id,g.expires_at FROM outbox_parts p JOIN delivery_groups g ON g.delivery_id=p.delivery_id WHERE p.state='uncertain' ORDER BY p.updated_at,p.part_id LIMIT 100`)
+	if err != nil {
+		return nil, fmt.Errorf("store: list uncertain parts: %w", err)
+	}
+	defer rows.Close()
+	var out []UncertainPart
+	for rows.Next() {
+		var p UncertainPart
+		if err := rows.Scan(&p.PartID, &p.ChatJID, &p.ThreadID, &p.ExpiresAt); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// SettleUncertain records operator evidence. A zero message id means proven
+// unsent: cancel this part and the remainder, never automatically replay it.
+// Existing attempt records remain unchanged as evidence of the uncertainty.
+func (s *Store) SettleUncertain(ctx context.Context, partID string, messageID int64) error {
+	if partID == "" || messageID < 0 {
+		return fmt.Errorf("%w: settlement evidence", ErrInvalidDelivery)
+	}
+	_, err := s.withTx(ctx, func(q taskSQL) error {
+		var c OutboxClaim
+		var result sql.NullString
+		var state string
+		if err := q.QueryRowContext(ctx, `SELECT p.state,p.delivery_id,g.result_id FROM outbox_parts p JOIN delivery_groups g ON g.delivery_id=p.delivery_id WHERE p.part_id=?`, partID).Scan(&state, &c.DeliveryID, &result); err != nil {
+			return err
+		}
+		if state != PartUncertain {
+			return ErrClaimLost
+		}
+		c.PartID, c.ResultID = partID, result.String
+		now := time.Now().UnixMilli()
+		target, reason := PartCancelled, "operator_unsent"
+		if messageID > 0 {
+			target, reason = PartSent, "operator_sent"
+		}
+		if _, err := q.ExecContext(ctx, `UPDATE outbox_parts SET state=?,remote_message_id=?,reason_code=?,updated_at=? WHERE part_id=? AND state='uncertain'`, target, messageID, reason, now, partID); err != nil {
+			return err
+		}
+		if messageID == 0 {
+			return resolvePendingQ(ctx, q, c.DeliveryID, PartCancelled, "operator_unsent", now)
+		}
+		if err := recomputeGroupState(ctx, q, c.DeliveryID, now); err != nil {
+			return err
+		}
+		return setReplyMemoIfComplete(ctx, q, c)
+	})
+	if err != nil {
+		return fmt.Errorf("store: settle uncertain part: %w", err)
+	}
+	return nil
 }

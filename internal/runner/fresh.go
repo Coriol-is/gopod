@@ -10,7 +10,9 @@ import (
 // can shorten this bound; foreground work also cancels the same-chat run.
 const freshRunTimeout = time.Minute
 
-func (r *Runner) execAgentWithCancel(ctx context.Context, id, folder string, thread int, prov AgentProvider, cmd []string) (*ExecResult, error) {
+func (r *Runner) execAgentWithCancel(ctx context.Context, id, folder string, thread int, prov AgentProvider, cmd []string, interactive bool) (*ExecResult, error) {
+	ctx, finishOperation := r.operationContext(ctx)
+	defer finishOperation()
 	pidFile, err := newAgentPidFile()
 	if err != nil {
 		return nil, err
@@ -29,7 +31,10 @@ func (r *Runner) execAgentWithCancel(ctx context.Context, id, folder string, thr
 			cleanup <- false
 		}
 	}()
-	res, err := r.execAgent(ctx, id, folder, thread, prov, wrapWithPidFile(pidFile, cmd))
+	res, err := r.execAgent(ctx, id, folder, thread, prov, wrapWithPidFile(pidFile, cmd), interactive)
+	if err != nil && res == nil && ctx.Err() == nil {
+		r.markExecutionUnknown(folder, id)
+	}
 	close(finished)
 	killed := <-cleanup
 	if !killed {

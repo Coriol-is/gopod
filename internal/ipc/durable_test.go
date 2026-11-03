@@ -180,7 +180,8 @@ func TestDurable_FailedArchiveDoesNotRepublishAfterRestart(t *testing.T) {
 	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	f.tick(f.watcher())
+	// Bypass the sweep preflight to model a destination changed after dispatch.
+	f.watcher().processMessageFile(t.Context(), "owner", filepath.Join(f.dir("owner", "messages"), "0001-a.json"))
 	if f.deliveries() != 1 || len(dirEntries(t, f.dir("owner", "messages"))) != 1 {
 		t.Fatalf("expected committed delivery and a file left behind: %d %v", f.deliveries(), dirEntries(t, f.dir("owner", "messages")))
 	}

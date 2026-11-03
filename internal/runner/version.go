@@ -9,7 +9,7 @@ import (
 
 // logAgentVersion runs the provider's VersionCmd inside the container
 // and logs the result once per container id. The harness version is
-// baked into the agent image at build time (container/Dockerfile*),
+// baked into the agent image at build time (container/personal/Dockerfile*),
 // so this is the only place the running version becomes visible
 // without exec-ing into the container by hand. Best effort: failures
 // are logged at debug and never affect the turn.

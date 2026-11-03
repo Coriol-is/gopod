@@ -1,12 +1,12 @@
 package runner
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -36,6 +36,8 @@ type Docker struct {
 	cli *client.Client
 	log *slog.Logger
 
+	quarantineMu        sync.Mutex
+	quarantine          map[string]string
 	requirePolicyLabels bool // managed runtime: unlabeled leftovers are stale
 }
 
@@ -108,6 +110,9 @@ func (*ImageMismatchError) Error() string {
 }
 
 func (d *Docker) ensureRunning(ctx context.Context, name string, cfg *container.Config, host *container.HostConfig, reconcile bool) (string, error) {
+	if d.quarantined(ctx, cfg.Labels[LabelChat]) {
+		return "", ErrExecutionUnproven
+	}
 	existing, err := d.inspectByName(ctx, name)
 	if err != nil {
 		return "", err
@@ -233,7 +238,7 @@ func (d *Docker) Exec(
 	stopClose := context.AfterFunc(ctx, func() { resp.Close() })
 	defer stopClose()
 
-	var outBuf, errBuf bytes.Buffer
+	var outBuf, errBuf boundedBuffer
 	if _, err := stdcopy.StdCopy(&outBuf, &errBuf, resp.Reader); err != nil && !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("docker: exec demux: %w", err)
 	}

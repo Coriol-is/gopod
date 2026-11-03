@@ -54,7 +54,7 @@ func rememberHandler(ops MemoryOps, lookup func(int64) string) Handler {
 			return Response{}, fmt.Errorf("remember: %w", err)
 		}
 		return Response{
-			Text: fmt.Sprintf("Remembered (id %d): %s", id, truncateStr(content, 80)),
+			Text: fmt.Sprintf("Remembered (id %d): %s", id, safeCommandValue(truncateStr(content, 80))),
 		}, nil
 	}
 }
@@ -82,16 +82,16 @@ func recallHandler(ops MemoryOps, lookup func(int64) string) Handler {
 			return Response{}, fmt.Errorf("recall: %w", err)
 		}
 		if len(results) == 0 {
-			return Response{Text: "No memories found for: " + query}, nil
+			return Response{Text: "No memories found for: " + safeCommandValue(query)}, nil
 		}
 
 		var sb strings.Builder
-		fmt.Fprintf(&sb, "Memories matching %q:\n\n", query)
+		fmt.Fprintf(&sb, "Memories matching %s:\n\n", safeCommandValue(query))
 		for i, r := range results {
 			if r.Title != "" {
-				fmt.Fprintf(&sb, "%d. [%s] %s: %s (score: %.3f)\n", i+1, r.Kind, r.Title, truncateStr(r.Content, 60), r.Score)
+				fmt.Fprintf(&sb, "%d. [%s] %s: %s (score: %.3f)\n", i+1, safeCommandValue(r.Kind), safeCommandValue(r.Title), safeCommandValue(truncateStr(r.Content, 60)), r.Score)
 			} else {
-				fmt.Fprintf(&sb, "%d. [%s] %s (score: %.3f)\n", i+1, r.Kind, truncateStr(r.Content, 80), r.Score)
+				fmt.Fprintf(&sb, "%d. [%s] %s (score: %.3f)\n", i+1, safeCommandValue(r.Kind), safeCommandValue(truncateStr(r.Content, 80)), r.Score)
 			}
 		}
 		return Response{Text: sb.String()}, nil
@@ -135,8 +135,18 @@ func RegisterMemoryGC(r *Router, archiveFn func(ctx context.Context, chatFolder 
 }
 
 func truncateStr(s string, n int) string {
-	if len(s) <= n {
+	r := []rune(s)
+	if n < 0 {
+		n = 0
+	}
+	if len(r) <= n {
 		return s
 	}
-	return s[:n] + "…"
+	return string(r[:n]) + "…"
+}
+
+// Keep echoed data inside one inline-code span; storage retains the original.
+func safeCommandValue(s string) string {
+	s = strings.NewReplacer("`", "ˋ", "\n", " ", "\r", " ").Replace(s)
+	return "`" + s + "`"
 }

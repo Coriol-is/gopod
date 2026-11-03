@@ -25,6 +25,9 @@ func QuotaOfferKey(turnID int64) string    { return "quota_offer:" + strconv.For
 func RegisterProviderFallbackCommand(r *Router, st *store.Store, switchFn ProviderFallbackSwitchFunc, retryFn func(context.Context, store.Turn) (bool, error)) {
 	r.Register("provider.fallback", "", "confirm a quota fallback and retry once", PermChatLocal, func(ctx context.Context, cmd Command) (Response, error) {
 		refuse := func(text string) (Response, error) { return Response{Text: text, Code: 1}, nil }
+		if groupMemberDenied(cmd.Caller) {
+			return refuse("Only the group owner can change the provider.")
+		}
 		if !cmd.Confirmed || len(cmd.Args) != 3 || cmd.Caller.Source != SourceTelegram {
 			return refuse("Подтвердите переключение кнопкой под сообщением о лимите.")
 		}
@@ -52,6 +55,21 @@ func RegisterProviderFallbackCommand(r *Router, st *store.Store, switchFn Provid
 			return refuse("Не удалось проверить повтор запроса. Попробуйте позже.")
 		} else if exists {
 			return Response{Text: "Запрос уже поставлен в очередь."}, nil
+		}
+		// A confirmed group retry is a new action by the owner, never the
+		// sender identity stored on the original turn.
+		if turn.ChatID < 0 {
+			mode, err := st.GroupTrigger(ctx, rc.JID)
+			if err != nil {
+				return refuse("Group policy unavailable.")
+			}
+			text := turn.Text
+			if strings.HasPrefix(text, "[gopod group: ") {
+				if _, rest, ok := strings.Cut(text, "\n\n"); ok {
+					text = rest
+				}
+			}
+			turn.Text = "[gopod group: trigger=" + string(mode) + "; sender=owner]\n\n" + text
 		}
 		if err := switchFn(ctx, rc.Folder, expected, target); err != nil {
 			if errors.Is(err, ErrFallbackStale) {

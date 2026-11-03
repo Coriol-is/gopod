@@ -51,8 +51,16 @@ func (a *IPCSink) Schedule(ctx context.Context, rec store.TaskRecord) error {
 	}
 	rec.NextRun = next
 
+	if err := CheckTaskBudget(ctx, a.st, rec); err != nil {
+		return fmt.Errorf("%w: %w", err, ipc.ErrPermanent)
+	}
 	if _, err := a.st.CreateTask(ctx, rec); err != nil {
 		return err
+	}
+	if pending, ok := ctx.Value(taskNotificationsKey{}).(*[]store.TaskRecord); ok {
+		*pending = append(*pending, rec)
+	} else {
+		NotifyTaskCreated(ctx, a.st, rec)
 	}
 	return nil
 }
