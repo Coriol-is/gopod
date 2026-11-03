@@ -38,3 +38,15 @@ run; all seven existing healthchecks healthy. Controller feature flag stays on.
 No defects observed in the exercised control/lifecycle paths. This does not prove
 cross-generation rejection while another session is active, authenticated native
 resume, arbitrary host-tool behavior, media refusal, or native visual rendering.
+
+## Follow-up: authenticated Codex response
+
+The owner completed device authorization in the dedicated elevated Codex home.
+Live `codex login status` returned `Logged in using ChatGPT`. Telegram status
+3176102 → 3176103 showed the existing Codex session awaiting input. The bounded
+no-tools test 3176105 received 3176107: `⚠️ ROOT` followed by
+`ELEVATED CODEX OK`. Authenticated Codex inference is therefore confirmed.
+The owner then sent `check host` (3176108); no cancellation, further test prompt
+or session teardown was performed while that owner request was active. Native
+resume retention and successful host tools are not claimed by this check. Claude
+authenticated acceptance remains open.

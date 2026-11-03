@@ -61,8 +61,10 @@ containers run and all seven configured healthchecks pass. Data hashes unchanged
 Telegram picker, warning/Cancel, both provider starts, Stop button and /stop,
 journal, close button and /root stop, and stale-close rejection passed live.
 [Evidence](reviews/2026-11-03-elevated-telegram-acceptance.md) records message IDs.
-Both elevated native profiles are unauthenticated; both test sessions are closed.
-Next: separate provider login and authenticated new/resume/tool checks. Ordinary credentials were
+Initial test sessions were closed. Subsequently the owner authorized elevated
+Codex via device login; its authenticated Telegram response passed (3176105 →
+3176107). Owner then sent a host request; that active session was left untouched.
+Next: Codex resume/tool acceptance and separate Claude login/authenticated checks. Ordinary credentials were
 not copied. `/login` still means ordinary-chat login. Healthchecks remain queued.
 
 ## Previous — E0–E2 deployed, 2026-11-03
