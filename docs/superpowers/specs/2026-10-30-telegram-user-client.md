@@ -20,7 +20,7 @@ Owner decisions (2026-10-30), recorded here and in CP-028:
    which MTProto calls matter, not code to ship.
 2. **Read and write**, with a per-class policy proposed in section 8.
 3. **Owner's private chat only.** Never in groups, never reachable from group runtimes, and the session never
-   enters any agent container or mount.
+   is deliberately delivered to any ordinary agent container or mount. Host-root CP-038 is an explicit exception (section 11).
 
 ## 2. Goals, non-goals
 
@@ -388,7 +388,12 @@ Defaults (all configurable in `tg_settings`, shown by `/tg budget`):
 
 ## 11. Isolation and proofs
 
-The user session must never reach a group runtime or an agent container.
+The user session must never be delivered to a group runtime or ordinary agent container.
+These isolation requirements do not constrain CP-038 elevated host-root containers.
+Before implementation, decide whether the connector and elevated may coexist with
+explicit account-exposure acceptance or require mutual exclusion. A startup-only
+mount check cannot prevent elevated starting later; this remains an open lifecycle
+decision and must be covered by both start paths before activation.
 - Capability issuance is gated on the host-verified owner tier and the owner folder; group, shared and task-role
   runs get no capability (`containerEnvAllow` returns nothing for restricted tiers, `admission_policy.go:76-83`).
 - `GOPOD_TG_API_ID`, `GOPOD_TG_API_HASH`, `GOPOD_TG_SESSION_KEY` and `GOPOD_TG_BROKER_ADDR` are never added to any

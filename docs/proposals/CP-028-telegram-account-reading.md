@@ -23,7 +23,7 @@ Owner decisions of 2026-10-30: port to **Go** with `gotd/td` (the owner's Python
 `telegram-mcp` are only a map of the needed calls), support **read and write** under a per-class
 policy (default: ask the owner before anything that leaves a visible trace), and make it available
 **only in the owner's private chat**, never in groups and never reachable from group runtimes. The
-session never enters an agent container or a mount. The design (broker, capability-based tool API,
+session is never delivered to an ordinary agent container or mount. CP-038 host root can access it; coexistence needs the explicit lifecycle decision in spec section 11. The design (broker, capability-based tool API,
 QR login through the private chat, encrypted session file under a refining ADR, flood-wait and account
 safety, untrusted-content handling, `/tg` command, tests, PR outline) is in the linked spec. This
 proposal authorizes no implementation, credentials, account login or rollout until the owner accepts
@@ -45,7 +45,7 @@ disclosure.
 - Synthetic account has an allowed and a forbidden peer; only bounded, in-contract reads succeed; forged
   peer handles, pagination escape, oversize downloads, expired or revoked sessions and forwarded commands
   fail safely and uniformly (no existence oracle).
-- The agent filesystem, environment and commands cannot retrieve the account session or its key; `GOPOD_TG_*`
+- The ordinary agent filesystem, environment and commands cannot retrieve the account session or its key; `GOPOD_TG_*`
   are absent from every container env allowlist; `data/tgaccount/` is not mountable and not in any backup.
 - Group runtimes and task runs get no capability and no route; `/tg` is refused in groups for everyone.
 - A write requires a separate explicit request and, by default, the owner's button press on the exact payload;
