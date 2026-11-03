@@ -13,7 +13,19 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — elevated login completion fixed and deployed
+## Resume here — ordinary Telegram acceptance, 2026-11-03
+
+Autonomous acceptance found that `/silent` and `/model` callbacks edit their
+message but drop the picker instead of retaining the marked selection. Fix this
+bounded control-plane defect first, then continue CP-002 foreground-freeze and
+CP-016 retirement integration. Task Next/Previous callbacks and a fresh doctor
+refresh passed. Silent mode was restored to off and verified with a new picker.
+The owner's ROOT Codex session remains open/idle; do not route ordinary test
+prompts into it or close it implicitly. [Evidence](reviews/2026-11-03-ordinary-telegram-acceptance.md).
+No code has been deployed in this session. Update handoff and affected docs at
+intermediate checkpoints as well as on completion (owner instruction).
+
+## Previous — elevated login completion fixed and deployed
 
 PR #158 merged as `1a3b9e1`; controller binary `8c21d58` (identical source tree)
 runs on Pi since 2026-11-03 13:03:29 UTC, ready 13:03:36, zero restarts/OOM false.

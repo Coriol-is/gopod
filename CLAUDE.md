@@ -128,6 +128,10 @@ the user before any spec or code exists for it.
   of the code you're about to touch.
 - **While doing work:** keep the change focused. If you hit something out of
   scope, write it down in HANDOFF.md as "noted" and keep moving.
+- **Intermediate checkpoints (owner-requested 2026-11-03):** update HANDOFF.md
+  and the affected documentation after each completed work stage, including
+  acceptance findings, fixes and verification. Do not defer all state updates
+  until the end of a multi-stage session.
 - **After non-trivial changes:** run `/handoff` — it updates HANDOFF.md
   (state) and, if applicable, ROADMAP.md (milestone status), and prompts for
   an ADR in DECISIONS.md when you made a real architectural choice.
