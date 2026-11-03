@@ -6,6 +6,19 @@ Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
 [ACCEPTANCE](ACCEPTANCE.md) for pending real-client verification.
 
+## Follow-up — protect existing elevated authorization
+
+PR #156 merged as `474aac0`; corrected controller `4aac936` is deployed on Pi
+since 12:42:52 UTC, ready 12:43:00, restart count zero. Live Telegram Claude
+login button and Codex `/login elevated` prompts and cancellation passed.
+However native Codex re-login deletes existing credentials before completion:
+our cancelled acceptance probe changed the owner-provided elevated auth from
+logged in to logged out. No ordinary credentials were copied; new browser
+confirmation is required. ROOT is closed; do not resume the stopped host scan.
+`fix/elevated-login-auth-guard` now preflights explicit native auth under the same
+lease and refuses existing, malformed or unproven status before invoking login.
+This follow-up must pass review/CI and deploy before repeating login acceptance.
+
 ## Startup correction — elevated login rollout
 
 PR #155's first Pi startup exposed duplicate `/root` registration (before and
