@@ -68,3 +68,20 @@ No `/thread delete` command or live deletion is exposed by this branch.
    performed in this implementation wave.
 
 Parent owns global HANDOFF/ROADMAP and sequential integration/deployment.
+
+## Final integration checkpoint
+
+Combined source `31dc7ff` includes main `de8293b` (CP-002 final-plan publication)
+and healthchecks. Build, vet, full tests and runner/queue/telegram/store race tests
+passed. Review then identified device-login completion inheriting a released
+callback/slash context: completion now acquires its own source-aware lease before
+spawn, holds it through delayed native EOF, verification and feedback, and records
+an uncertainty hold if cancellation only closes its attachment. Attachment close
+is not asserted to prove native login exit. Delayed-EOF and fallback-main
+cancellation regression tests run under the race detector.
+
+A pre-existing managed queue stress failure was reproduced independently on main
+`572e246`: `go test ./internal/queue -run TestConcurrentDispatchAndEnqueueRace
+-count=100` failed three iterations with only 8–11 of 12 outcomes settled. The same
+test passed 20 repetitions on this branch; the combined full/race suites passed.
+This is a separate follow-up, not suppressed or rewritten by CP-016.

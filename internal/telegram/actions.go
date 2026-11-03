@@ -143,11 +143,12 @@ func (b *Bot) loginCallback(ctx context.Context, q cbQuery) (string, error) {
 	// checked).
 	m := &models.Message{ID: q.MessageID, Chat: models.Chat{ID: q.ChatID, Type: models.ChatTypePrivate}, From: &models.User{ID: q.UserID}}
 	// Transfer asynchronous startup to its own lease before callback release.
+	origin := topicOrigin(ctx, q.ChatID, q.ThreadID)
 	loginCtx := context.WithoutCancel(ctx)
 	release := func() {}
-	if q.ChatID > 0 && q.ThreadID > 0 {
+	if origin.chat > 0 && origin.thread > 0 {
 		var err error
-		loginCtx, release, err = b.topicIngress.Enter(loginCtx, buildChatJID(q.ChatID), q.ThreadID)
+		loginCtx, release, err = b.topicIngress.Enter(loginCtx, buildChatJID(origin.chat), origin.thread)
 		if err != nil {
 			b.logins.release(q.ChatID)
 			return cbToastExpired, nil
