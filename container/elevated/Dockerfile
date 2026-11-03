@@ -1,12 +1,13 @@
 # Elevated host tools: root authority is granted only by the separate runner profile.
 # Docker repository setup follows https://docs.docker.com/engine/install/debian/.
-FROM node:22-slim@sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3b14d159fdb5c7279da
+# Node 22 slim; immutable multi-architecture index.
+FROM node@sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3b14d159fdb5c7279da
 ARG DOCKER_CLI_MAJOR=29
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl git ripgrep \
-      util-linux procps iproute2 iputils-ping dnsutils lsof rsync sqlite3 jq less vim-tiny \
+ && apt-get install -y --no-install-recommends ca-certificates curl dnsutils git \
+      iproute2 iputils-ping jq less lsof procps ripgrep rsync sqlite3 util-linux vim-tiny \
  && install -m 0755 -d /etc/apt/keyrings \
- && curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc \
+ && curl --proto '=https' --proto-redir '=https' -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc \
  && chmod a+r /etc/apt/keyrings/docker.asc \
  && . /etc/os-release \
  && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian ${VERSION_CODENAME} stable" > /etc/apt/sources.list.d/docker.list \
@@ -29,6 +30,7 @@ RUN npm install -g --ignore-scripts "@anthropic-ai/claude-code@${CLAUDE_CODE_VER
 
 ENV HOME=/home/node
 RUN mkdir -p /workspace/session /home/node/.claude /home/node/.codex
+# CP-038 intentionally requires host-root authority in this dedicated image.
 USER 0:0
 WORKDIR /workspace/session
 CMD ["sleep", "infinity"]

@@ -421,8 +421,8 @@ off-host sink and is out of scope.
 | Variable | Default | Effect |
 |---|---|---|
 | `GOPOD_ELEVATED` | off | On: registers `/root`. Off: the command is not registered |
-| `GOPOD_ELEVATED_IMAGE` | `gopod-elevated:latest` | Claude image (§5.4) |
-| `GOPOD_ELEVATED_IMAGE_CODEX` | `gopod-elevated-codex:latest` | Codex image |
+| `GOPOD_ELEVATED_IMAGE` | `gopod-agent-elevated:latest` | Claude image (§5.4) |
+| `GOPOD_ELEVATED_IMAGE_CODEX` | `gopod-agent-elevated-codex:latest` | Codex image |
 | `GOPOD_ELEVATED_MEM` | conservative, Pi-4 safe | Hard memory cap |
 | `GOPOD_ELEVATED_CPUS` | conservative | CPU cap |
 | `GOPOD_ELEVATED_PIDS` | conservative | Pids cap |
