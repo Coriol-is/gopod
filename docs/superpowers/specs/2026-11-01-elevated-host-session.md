@@ -112,38 +112,24 @@ describe it as mitigated.
 
 ## 4. Identity, routing and command surface
 
-### 4.1 A reserved folder, not a new session entity
+### 4.1 Reserved folder and explicit host-session state (D060)
 
-The first draft specified a new `elevated` session kind. There is no session
-entity in gopod to extend: `sessions` maps `(chat_folder, thread_id, provider)`
-to the provider CLI's own session string
-(`internal/store/schema.go:83-90`), and CP-037's execution-session concept is
-design-stage, slice P1, unstarted. Building a second session model here would
-be work P1 then has to reconcile.
+The reserved folder is `elevated`, thread 0, and is never registered. Ordinary
+scope validation, task creation and container builders refuse it. P1 ordinary
+legacy/durable mappings remain unchanged. Dedicated `elevated_sessions`,
+`elevated_execs`, `elevated_native_contexts` and `elevated_transcript` tables own
+host-session state. One active session ID fences late writes; native context
+persists per provider across explicit close/reopen without inheriting an
+ordinary provider context. The lifecycle must prove old runtime death before
+opening a new session; closing a database row alone is insufficient.
 
-Instead the elevated runtime is bound to one **reserved chat folder**,
-`elevated`, at thread 0. Everything folder-keyed then works unchanged:
-
-| Mechanism | Effect with the reserved folder |
-|---|---|
-| `runner.ContainerName` | `gopod-elevated`, no new naming scheme |
-| `sessions` table | Row `("elevated", 0, provider)`, existing shape, so a reopened session can continue the previous elevated conversation |
-| Provider state dirs | `data/sessions/elevated/.claude` and `.codex`, exactly the layout `standardMounts` already uses (`internal/runner/mounts.go:154-162`) |
-| Workspace | `chats/elevated/` at `/workspace/chat`, so `WorkingDir` is unchanged |
-| Memory | Folder-scoped, so elevated extraction cannot overwrite the ordinary topic's facts (D023) |
-
-The folder is created by the host at bootstrap and is never registered:
-registration rejects the name, which also removes the collision the first draft
-tried to fix with an `elevated-` prefix rule.
-
-Two folder-keyed mechanisms must be excluded by name rather than inherited:
-
-- **The idle watcher.** `killIdleChat` lists containers and stops every one
-  whose `gopod.chat` label equals the idle folder
-  (`internal/runner/lifecycle.go:163-187`). Left alone it would kill the
-  elevated container 30 minutes after the owner stopped typing, which is the
-  timer the owner declined. The watcher skips the reserved folder.
-- **The scheduler**, per §3.2.
+Workspace is `chats/elevated/`, mounted at `/workspace/session`; native homes
+are `data/sessions/elevated/.claude` and `.codex`. Bootstrap creates only these
+reserved paths, with provenance markers, and no IPC namespace. Nonempty
+unmarked paths, symlinks and historical ordinary registration/ownership cause
+refusal; no automatic credential/workspace adoption is performed. The idle
+watcher skips elevated. Ordinary adoption skips/counts historical reserved
+legacy rows while migrating other chats normally.
 
 ### 4.2 One at a time
 

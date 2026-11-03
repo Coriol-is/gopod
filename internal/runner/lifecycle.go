@@ -161,6 +161,9 @@ func (r *Runner) idleWatcherSweep(ctx context.Context, now time.Time, timeout ti
 // are logged at warn but otherwise swallowed (we'll try again next
 // tick).
 func (r *Runner) killIdleChat(ctx context.Context, chatFolder string) {
+	if chatFolder == ElevatedFolder {
+		return
+	}
 	if err := r.verifyQuiescent(ctx, chatFolder); err != nil {
 		r.log.Warn("idle cleanup blocked by unregistered execution", slog.String("chat", chatFolder))
 		return

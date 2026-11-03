@@ -84,7 +84,7 @@ func (s *Store) AdoptLegacySessions(ctx context.Context) (AdoptionReport, error)
 			c, ok := chats[r.folder]
 			if ok {
 				err = validateScopeQ(ctx, q, c.Scope())
-				if errors.Is(err, ErrStaleScope) || errors.Is(err, ErrNamespaceIdentityConflict) {
+				if errors.Is(err, ErrStaleScope) || errors.Is(err, ErrNamespaceIdentityConflict) || errors.Is(err, ErrReservedFolder) {
 					ok = false
 				} else if err != nil {
 					return fmt.Errorf("folder %q: validating scope: %w", r.folder, err)

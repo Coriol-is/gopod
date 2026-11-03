@@ -44,6 +44,9 @@ var ErrTaskRunNotFound = errors.New("store: task run not found")
 
 // CreateTask inserts a new scheduled task and returns its generated ID.
 func (s *Store) CreateTask(ctx context.Context, t TaskRecord) (string, error) {
+	if t.ChatFolder == ElevatedFolder {
+		return "", ErrReservedFolder
+	}
 	if t.ChatFolder == "" {
 		return "", errors.New("store: CreateTask: empty ChatFolder")
 	}

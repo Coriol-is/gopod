@@ -1,34 +1,35 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-03 (E0 merged; E1 role boundary approved and implemented)
+**Last updated:** 2026-11-03 (E0/E1 deployed; E2 journal and reserved identity reviewed)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
 [ACCEPTANCE](ACCEPTANCE.md) for pending real-client verification.
 
-## Resume here — CP-038 E1 profile and guard, 2026-11-03
+## Resume here — E0/E1 deployed; E2 review complete, 2026-11-03
 
-E0 PR #150 merged as `57e4c0c` after independent review and green test,
-isolation-spike and Sonar. Both ARM64 provider images built/smoked; see
-[image evidence](reviews/2026-11-03-elevated-e0.md). Sonar CLI uses organization
-`coriol-is`; MCP's default organization does not enumerate this project's issues.
+Pi runs `f5a815b` since 09:35:57 UTC; both elevated ARM64 images are installed.
+[Rollout evidence](deployments/2026-11-03-elevated-e1.md): verified backups,
+unchanged registrations/sessions/tasks, healthy startup and first queued status
+command answered without retry. No `/root`, flag or elevated runtime is active.
+E1 PR #151 first CI attempt exposed the known IPC receipt/archive race; unchanged
+rerun and exact main CI passed. That separate bug remains open (PR #149 evidence).
 
-E1 worktree `gopod-elevated-e1`, branch `feat/elevated-e1`: commit `43027d3`
-pinned ordinary args/digest before implementation. The new profile has fixed
-host/workspace/provider mounts, root and host namespaces, positive resource
-limits and an independent Docker guard (no managed-task activation). Requested
-config digest, role and immutable image must match; drift/death never recycles.
+E2 `feat/elevated-e2`, worktree `gopod-elevated-e2`: [review evidence](reviews/2026-11-03-elevated-e2.md).
+Dedicated elevated tables/generation fencing, reserved-folder exclusions,
+provenance bootstrap and journal-before-exec are implemented; build/vet/full
+suite and store/runner race passed, independent review passed after the legacy
+adoption skip correction. Next: PR green CI/merge, then E3 owner-private command,
+modal input and warning/confirmation dialogs, E4 lifecycle, E5 docs, E6 host proof.
 
-Owner approved [D059](DECISIONS.md): reject transitions involving elevated,
-including stopped containers, while preserving ordinary foreground/task
-recycling and proof/slot checks. Tests pin ordinary args/digest, namespace
-normalization/tampering and role boundaries. Owner also explicitly requires
-warning/confirmation dialogs and host-rendered start/reply/end markers; E3/E4
-contract is recorded in spec section 14.
-
-Next: independent review, full build/vet/tests and runner race, PR green CI/merge,
-then E2 folder/journal and durable identity reconciliation. E2–E6 remain pending;
-no elevated runtime caller, activation or Pi rollout exists yet. Preserve worktrees.
+E3 design constraints discovered by review: root Claude rejects the ordinary
+`--dangerously-skip-permissions`; use a dedicated explicit tool allowlist with
+`--permission-mode dontAsk` (offline no-auth root check passed, authenticated
+acceptance still open). Elevated Codex restore must use `/workspace/session`.
+D060 context APIs bypass neither scope validation nor P1; use only dedicated
+methods. Store closure/journal -1 never proves runtime death. Do not inherit
+ordinary PID-file signalling blindly into host PID namespace. The owner requires
+visible start/reply/end markers and actionable refusal/uncertainty messages.
 
 ## Previous — CP-038 E0 implementation, 2026-11-03
 
