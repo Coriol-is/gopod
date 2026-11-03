@@ -15,10 +15,14 @@ Fixed login/status calls are journaled without credentials; Stop/close/restart
 cancel the supervisor, and success needs separate native auth verification.
 Nonzero inference exit no longer falsely asserts that login is required.
 Full build/vet/test, affected race tests and real-Docker interactive-stdin plus
-cancellation proof passed. Independent review and final PR CI/merge remain.
-Both elevated images need rebuilding for interactive stdin forwarding before
-controller deployment. Existing Pi elevated session belongs to the owner;
-check idle state and do not interrupt it to deploy without settling it first.
+cancellation proof passed. Independent review PASS; PR #155 merged as `500a094` after green CI.
+Exact main CI `41632378323` also passed; Sonar advisory gate OK.
+Both Pi provider candidate images are built and smoke-tested; controller build
+is being prepared as `gopod-gopod:login-candidate-f3e87b2` (source tree equals
+`500a094`). Production still runs `124bc1a`. Deployment is waiting for the active
+owner ROOT request (Codex/du) to settle; ordinary `backup idle` counters do not
+cover elevated execs, so also inspect ROOT process/journal state. Online backup
+`20261103T115950Z-db-a3c9bbeb` verified; rollback controller/provider tags retained.
 
 ## CI policy — Sonar soft gate, 2026-11-03
 

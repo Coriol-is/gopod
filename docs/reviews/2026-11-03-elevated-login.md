@@ -27,6 +27,7 @@ Verification:
 
 Independent review found and corrected completion-drain deadlock, stale prompt
 publication after cancellation and `/stop` bypass during sensitive OAuth input.
-Final review/CI status is tracked in HANDOFF. Production image/controller rollout
+Final independent review PASS; PR #155 and exact main CI passed; Sonar CLI gate
+OK with maintainability findings retained. Production image/controller rollout
 and owner-completed browser authorization through the new Telegram path remain
 separate acceptance steps; do not claim either from the disposable prompt tests.
