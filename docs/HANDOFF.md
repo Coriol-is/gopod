@@ -1,26 +1,26 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-03 (E0/E1 deployed; E2 journal and reserved identity reviewed)
+**Last updated:** 2026-11-03 (E0–E2 merged and deployed; E3 dialogs/routing next)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
 [ACCEPTANCE](ACCEPTANCE.md) for pending real-client verification.
 
-## Resume here — E0/E1 deployed; E2 review complete, 2026-11-03
+## Resume here — E0–E2 deployed, 2026-11-03
 
-Pi runs `f5a815b` since 09:35:57 UTC; both elevated ARM64 images are installed.
-[Rollout evidence](deployments/2026-11-03-elevated-e1.md): verified backups,
-unchanged registrations/sessions/tasks, healthy startup and first queued status
-command answered without retry. No `/root`, flag or elevated runtime is active.
-E1 PR #151 first CI attempt exposed the known IPC receipt/archive race; unchanged
-rerun and exact main CI passed. That separate bug remains open (PR #149 evidence).
+Pi runs `75b3be3` (PR #152) since 09:47:51 UTC. Independent E2 review,
+PR test/isolation/Sonar and exact main CI passed. Sonar CLI reports six
+cognitive-complexity findings; gate passed, no suppressions were added.
+[Rollout evidence](deployments/2026-11-03-elevated-e2.md) records verified
+backups, retained rollback image and unchanged registrations/sessions/tasks.
+Both elevated ARM64 images remain installed. All four dedicated elevated tables
+exist and are empty. No `/root`, feature flag or elevated runtime is active.
 
-E2 `feat/elevated-e2`, worktree `gopod-elevated-e2`: [review evidence](reviews/2026-11-03-elevated-e2.md).
-Dedicated elevated tables/generation fencing, reserved-folder exclusions,
-provenance bootstrap and journal-before-exec are implemented; build/vet/full
-suite and store/runner race passed, independent review passed after the legacy
-adoption skip correction. Next: PR green CI/merge, then E3 owner-private command,
-modal input and warning/confirmation dialogs, E4 lifecycle, E5 docs, E6 host proof.
+E2 adds dedicated state/generation fencing, reserved-folder exclusions,
+provenance bootstrap and journal-before-exec (D060); full build/vet/tests and
+store/runner race tests passed. Next: E3 owner-private command, modal input and
+warning/confirmation dialogs, E4 lifecycle, E5 docs, E6 host proof. The known
+IPC receipt/archive race remains open (PR #149 evidence), not fixed by E2.
 
 E3 design constraints discovered by review: root Claude rejects the ordinary
 `--dangerously-skip-permissions`; use a dedicated explicit tool allowlist with

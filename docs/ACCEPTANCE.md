@@ -1,6 +1,6 @@
 # Live acceptance register
 
-Last reconciled: 2026-11-02. Application deployed: `f5a815b` (CP-038 E0/E1 foundations).
+Last reconciled: 2026-11-03. Application deployed: `75b3be3` (CP-038 E0–E2 foundations).
 Read-only runtime recheck: [2026-11-02 qualification](reviews/2026-11-02-release-qualification.md).
 Code merged/deployed is distinct from a real-client scenario being accepted.
 Items below are pending unless explicit evidence is linked. Do not infer a pass
@@ -12,6 +12,7 @@ from unit tests, CLI --help/version, startup notices or a green CI job.
 - CP-031: owner reported `/restart` checked on 2026-10-29. Baseline accepted by owner; negative cases and specific topic/provider scenarios remain unqualified.
 
 ## Verified operational baseline
+- [2026-11-03 E2 rollout](deployments/2026-11-03-elevated-e2.md): state preserved, four empty elevated tables migrated, healthy startup. No `/root` or elevated runtime active.
 - [2026-11-03 E0/E1 rollout](deployments/2026-11-03-elevated-e1.md): verified backups, preserved state, healthy startup and first queued status reply. No elevated host runtime or provider-inference acceptance.
 - [Rich IPC/restart rollout](deployments/2026-10-29-8bdff46.md): gateway/owner startup, two acknowledged HTML sends, preserved schedules/counts/config and initial online backup verification.
 - [Private-login rollout](deployments/2026-10-25-01c18fe.md): image/startup/polling and immediate before/after state preserved. No live OAuth flow invoked; actual owner-DM/client proof stays A20.
