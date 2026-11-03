@@ -1,13 +1,18 @@
 # Elevated host session — architecture and implementation contract
 
 **Proposal:** [CP-038](../../proposals/CP-038-elevated-host-session.md) ·
-**Date:** 2026-11-01 · **Status:** design, no implementation authorised yet
+**Date:** 2026-11-01 · **Status:** implementation authorized 2026-11-03; E0 in progress
 
 An implementer's review of the first draft of this document found that several
 of its claims about the existing code were wrong and that three of its
 contracts could not be implemented as written. This revision is the corrected
 version; §13 keeps the record of what changed and why, so the same mistakes are
 not re-derived later.
+
+Implementation note (2026-11-03): CP-037 P1 now exists. Historical statements
+below that no session entity exists describe the design baseline. E2/E3 must
+reconcile the reserved folder with the durable adapter, which requires a
+registered scope; ordinary scope checks must not be relaxed.
 
 ## 1. Decisions the owner took
 
@@ -337,8 +342,8 @@ write from the CLI against the live file is a corruption risk, not a maintenance
 step. The session's own text says this where the owner will see it.
 
 **Build.** arm64 for the Pi, pinned by base-image digest. Exact apt version pins
-are deliberately not used: they break on every Debian point release and the base
-digest already fixes the package set.
+are deliberately not used: they break on every Debian point release and apt resolves current signed packages when the image is rebuilt. The base
+digest fixes the starting filesystem, not the later apt package versions.
 
 ## 6. Lifecycle
 
@@ -416,8 +421,8 @@ off-host sink and is out of scope.
 | Variable | Default | Effect |
 |---|---|---|
 | `GOPOD_ELEVATED` | off | On: registers `/root`. Off: the command is not registered |
-| `GOPOD_ELEVATED_IMAGE` | `gopod-elevated:latest` | Claude image (§5.4) |
-| `GOPOD_ELEVATED_IMAGE_CODEX` | `gopod-elevated-codex:latest` | Codex image |
+| `GOPOD_ELEVATED_IMAGE` | `gopod-agent-elevated:latest` | Claude image (§5.4) |
+| `GOPOD_ELEVATED_IMAGE_CODEX` | `gopod-agent-elevated-codex:latest` | Codex image |
 | `GOPOD_ELEVATED_MEM` | conservative, Pi-4 safe | Hard memory cap |
 | `GOPOD_ELEVATED_CPUS` | conservative | CPU cap |
 | `GOPOD_ELEVATED_PIDS` | conservative | Pids cap |
