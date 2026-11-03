@@ -13,6 +13,17 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
+## Repository cleanup — 2026-11-03
+
+Owner-authorized merge/cleanup reconciled all branches. Missing CP-035 research
+was added as documentation only (`ed1320a`), still proposed. No open PRs remain.
+80 obsolete worktrees, 85 local branches and 53 remote branches were removed;
+canonical main and this detached session checkout remain at the synchronized tip.
+The old uncommitted elevated handoff and scaffold marker were preserved in the
+Git-common cleanup archive before removal. Main local data/auth/config, backups
+and production `a25f22a` were not changed. [Audit](reviews/2026-11-03-merge-cleanup.md).
+Historical worktree paths below are evidence, not current resume locations.
+
 ## Resume here — deployed final plans, quiescence and healthchecks
 
 The owner-approved parallel wave is complete. Production is `a25f22a` since
@@ -26,7 +37,8 @@ healthy at 17:14:23 UTC, zero restarts/OOM and all eight idle counters zero.
 Verified backup `20261103T171231Z-ms-c88b23ae` (43 tables, 9,103 rows, four files)
 and registered chats/sessions/scheduled tasks matched. `/version` reply `3176409`
 in test topic `3176309` confirms `gopod a25f22a (go1.26.10)`. Existing auth homes,
-workspaces, test topic/PDF, worktrees and rollback images are preserved.
+workspaces, test topic/PDF and rollback images are preserved. Obsolete worktrees
+were subsequently removed under the explicit cleanup authorization above.
 
 Sonar #165 is advisory ERROR for loopback HTTP/security B; #166/#167 are OK.
 Main Sonar baseline is stale (`4e3031a`, 2026-10-26). No finding was suppressed.

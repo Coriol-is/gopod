@@ -1,8 +1,8 @@
 # Live acceptance register
 
-Last reconciled: 2026-11-03. Latest deployment: `e6f0fad`, verified through
-startup/image and [parallel rollout](deployments/2026-11-03-parallel-wave.md).
-Telegram `/version` reply `3176372` confirms `gopod e6f0fad (go1.26.10)`.
+Last reconciled: 2026-11-03. Latest deployment: `a25f22a`, verified through
+startup/image/health and [final-plan rollout](deployments/2026-11-03-final-plans-health.md).
+Telegram `/version` reply `3176409` confirms `gopod a25f22a (go1.26.10)`.
 Code merged/deployed is distinct from a real-client scenario being accepted.
 Items below are pending unless explicit evidence is linked. Do not infer a pass
 from unit tests, CLI --help/version, startup notices or a green CI job.
