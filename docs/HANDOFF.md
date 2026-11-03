@@ -13,24 +13,28 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — CP-002 batch-start prerequisite, 2026-11-03
+## Resume here — CP-016 durable outbox fences, 2026-11-03
 
-Picker fix PR #159 passed independent review and green test/isolation/Sonar and
-is merged as `88a9aa3`; live retest needs a later authorized deployment. Ordinary Telegram
-pagination and doctor-refresh evidence is in the
-[acceptance report](reviews/2026-11-03-ordinary-telegram-acceptance.md).
-Silent was restored off; the owner's ROOT session remains open/idle.
+Picker fix PR #159 merged as `88a9aa3` after green CI and independent review.
+CP-002 atomic batch-start prerequisite PR #160 is merged as `f5ba97a` after
+independent review, full local checks/races and green test/isolation/Sonar.
+[Evidence](reviews/2026-11-03-batch-start-foundation.md). Full foreground freeze,
+eligibility checks and publication recovery remain the next reliability slice.
 
-`feat/reliable-batch-start` implements atomic ordinary batch attempt recording
-and authoritative counters as CP-002 PR 6b groundwork. Independent review found
-ordering/completion-hook and restart-snapshot hazards in the first draft; the
-revised slice retains the batch on pre-execution recording errors and owns its
-restart snapshot. Eligibility/result/topic preflight remains a separate cutover
-step. [Contract and verification](reviews/2026-11-03-batch-start-foundation.md).
-Full build/vet/tests, affected race suites and independent re-review passed;
-PR CI/merge are next. Continue
-foreground result/publication recovery and CP-016 retirement integration after
-this prerequisite. No deployment or ordinary model test in the open ROOT context.
+`feat/topic-outbox-fence` now connects deletion intents to durable publication,
+claim selection and plain fallback. Unresolved deletion holds pending parts;
+definite refusal resumes them; confirmed deletion cancels only pending parts.
+Already issued attempts retain truthful settlement. Independent review caught
+a pending tail hidden behind an uncertain head; the fix cancels pending parts
+independently of dispatch eligibility. Full local checks/races and independent
+re-review passed; PR CI/merge are next. [Contract and boundary](reviews/2026-11-03-topic-outbox-fences.md).
+This does not enable `/thread delete`: native/transport quiescence, queue/recovery,
+streaming and callback fences and registration reconciliation remain open.
+
+Ordinary Telegram [acceptance evidence](reviews/2026-11-03-ordinary-telegram-acceptance.md)
+records working pagination/doctor refresh and the picker defect. Silent restored
+off; owner's ROOT session left open. `/version` reports `dev`, recorded as a
+separate diagnostic follow-up. No deployment or destructive live test.
 
 ## Previous — elevated login completion fixed and deployed
 

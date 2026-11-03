@@ -23,7 +23,7 @@ func (o *OutboxOwner) beginPlainFallback(ctx context.Context, c OutboxClaim, at 
 		if c.Part.ParseMode != "HTML" || (c.Part.Kind != PartText && c.Part.Kind != PartEdit) || c.PlainFallback || attempts >= MaxPartAttempts || max(at, now) >= expires {
 			return ErrInvalidDelivery
 		}
-		if err := validateScopeQ(ctx, q, c.Conversation.Scope); err != nil {
+		if err := validateConversationQ(ctx, q, c.Conversation); err != nil {
 			return err
 		}
 		if err := endAttemptQ(ctx, q, c.AttemptID, "refused", "class=refused code=parse_entities", now); err != nil {

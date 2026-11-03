@@ -57,3 +57,10 @@ Owner accepted implementation on 2026-10-27. Work is split into the eight PRs of
 result and delivery foundations) is in progress: additive tables and Store APIs only, no dispatcher,
 no Telegram changes, no behavior change for existing paths. Features stay disabled until the plan's
 gates pass; the outbox is not enabled by merging PR 1.
+
+## Implementation checkpoint — 2026-11-03
+
+PR #145 provides the runner freeze seam; PR #160 (`f5ba97a`) adds atomic ordinary
+batch attempt recording and trusted handler counters. Full foreground ownership,
+frozen-result publication recovery and cutover remain open. See
+[PR 6b evidence](../reviews/2026-11-03-batch-start-foundation.md).

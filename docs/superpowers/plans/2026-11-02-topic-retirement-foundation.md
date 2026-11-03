@@ -38,6 +38,15 @@ command. The command/recovery slice must surface this blocker and design explici
 reconciliation of the recorded target and outcome before enabling deletion. Do
 not resolve it by silently replacing the intent or discarding its tombstone.
 
+## Outbox integration checkpoint — 2026-11-03
+
+The next slice is being verified on `feat/topic-outbox-fence`: transactional
+publication/validation, held claims during unresolved deletion, pending-only
+cancellation after confirmed deletion, and a plain-fallback fence. Existing
+in-flight remote attempts still require orchestration/quiescence; see the
+[contract](../../reviews/2026-11-03-topic-outbox-fences.md). The remaining gates
+below still apply before a deletion command is exposed.
+
 ## Required next slice before exposing the command
 
 1. Add `/thread info|delete` through `internal/control`, private nonzero topic

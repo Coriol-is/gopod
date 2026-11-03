@@ -241,7 +241,7 @@ func (s *Store) PublishDelivery(ctx context.Context, req PublishRequest) (Delive
 func publishDeliveryQ(ctx context.Context, q taskSQL, limits OutboxLimits, req PublishRequest, now int64) (Delivery, error) {
 	conv := req.Conversation
 	sc := conv.Scope
-	if err := validateScopeQ(ctx, q, sc); err != nil {
+	if err := validateConversationQ(ctx, q, conv); err != nil {
 		return Delivery{}, err
 	}
 	hash := planHash(req)

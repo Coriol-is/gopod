@@ -117,7 +117,9 @@ const maxStaleSkips = 64
 // conversation is in flight and an uncertain or not-yet-due head blocks only
 // its own conversation. The registration scope is revalidated in the same
 // transaction; a stale scope cancels the remaining pending parts and never
-// falls back to another conversation.
+// falls back to another conversation. Unresolved topic deletion holds pending
+// delivery without blocking other topics; confirmed deletion cancels pending
+// parts. Already sending/uncertain attempts retain their evidence.
 func (o *OutboxOwner) ClaimNext(ctx context.Context, now time.Time) (OutboxClaim, bool, error) {
 	for {
 		c, found, capped, err := o.claimOnce(ctx, now)
@@ -138,6 +140,9 @@ func (o *OutboxOwner) claimOnce(ctx context.Context, now time.Time) (out OutboxC
 		if err := o.checkFenceQ(ctx, q); err != nil {
 			return err
 		}
+		if err := cancelDeletedTopicPendingQ(ctx, q, nowMs); err != nil {
+			return err
+		}
 		if err := expireDueQ(ctx, q, nowMs); err != nil {
 			return err
 		}
@@ -146,9 +151,13 @@ func (o *OutboxOwner) claimOnce(ctx context.Context, now time.Time) (out OutboxC
 			if err != nil || !ok {
 				return err
 			}
-			err = validateScopeQ(ctx, q, c.Conversation.Scope)
-			if errors.Is(err, ErrStaleScope) {
-				if err = resolvePendingQ(ctx, q, c.DeliveryID, PartCancelled, "scope_stale", nowMs); err != nil {
+			err = validateConversationQ(ctx, q, c.Conversation)
+			if errors.Is(err, ErrStaleScope) || errors.Is(err, ErrConversationRetired) {
+				reason := "scope_stale"
+				if errors.Is(err, ErrConversationRetired) {
+					reason = "topic_retired"
+				}
+				if err = resolvePendingQ(ctx, q, c.DeliveryID, PartCancelled, reason, nowMs); err != nil {
 					return err
 				}
 				continue
@@ -194,6 +203,10 @@ func nextCandidateQ(ctx context.Context, q taskSQL, nowMs int64) (OutboxClaim, b
  FROM outbox_parts p JOIN delivery_groups g ON g.delivery_id=p.delivery_id
  WHERE p.state=? AND p.next_attempt_at<=?
  AND NOT EXISTS (
+  SELECT 1 FROM topic_deletions d WHERE d.namespace_id=g.namespace_id
+  AND d.namespace_epoch=g.namespace_epoch AND d.thread_id=g.thread_id
+  AND d.state IN ('deleting','uncertain'))
+ AND NOT EXISTS (
   SELECT 1 FROM outbox_parts q JOIN delivery_groups h ON h.delivery_id=q.delivery_id
   WHERE h.namespace_id=g.namespace_id AND h.namespace_epoch=g.namespace_epoch AND h.thread_id=g.thread_id AND h.visibility=g.visibility
   AND q.state IN ('pending','sending','uncertain') AND h.expires_at>?
@@ -210,6 +223,25 @@ func nextCandidateQ(ctx context.Context, q taskSQL, nowMs int64) (OutboxClaim, b
 	c.Part.Kind, c.Part.Payload = PartKind(kind), payload
 	c.Conversation.Visibility, c.ResultID = Visibility(vis), result.String
 	return c, true, nil
+}
+
+// cancelDeletedTopicPendingQ is independent of dispatch eligibility: even a
+// future retry or a tail behind an uncertain/sending head must be cancelled.
+// The head itself retains its remote evidence and can still be settled.
+func cancelDeletedTopicPendingQ(ctx context.Context, q taskSQL, nowMs int64) error {
+	ids, err := queryStrings(ctx, q, `SELECT DISTINCT p.delivery_id
+ FROM outbox_parts p JOIN delivery_groups g ON g.delivery_id=p.delivery_id
+ JOIN topic_deletions d ON d.namespace_id=g.namespace_id AND d.namespace_epoch=g.namespace_epoch AND d.thread_id=g.thread_id
+ WHERE p.state='pending' AND d.state IN ('deleted','retired')`)
+	if err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if err := resolvePendingQ(ctx, q, id, PartCancelled, "topic_retired", nowMs); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // expireDueQ resolves pending parts of groups whose expiry passed. A sending or
