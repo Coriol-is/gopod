@@ -639,3 +639,26 @@ startup/admission waits and buffered execution. Stop does not clear context,
 create a replacement turn, cancel schedules, or remove queued messages. New input
 never interrupts automatically; queued input may start after cleanup. Process
 cleanup is best effort, and completed external effects cannot be undone.
+
+## Elevated host conversation (CP-038)
+
+With `GOPOD_ELEVATED=1` and an owner configured, `/root` is registered as
+`PermOwnerOnly`, Telegram private only. CLI/socket/group callers cannot start it.
+No arguments shows Claude/Codex buttons; `/root claude|codex` shows a Russian
+host-root warning and one-shot confirmation. `/root status` shows current state,
+`/root log [1..100]` shows a bounded, explicitly truncated host-exec journal,
+and `/root stop` removes the runtime and returns input routing to ordinary chat.
+`/stop` cancels only the elevated answer while ROOT is active. Existing ordinary
+Stop callbacks keep their original targets and cannot cancel a root answer.
+
+Only new plain text is supported. Attachments, forwarded/automatic input and
+known login material are refused without entering the elevated transcript.
+Provider credentials must already be provisioned in the dedicated home; `/login`
+continues to mean ordinary-chat login, not elevated login. No automatic copy or
+paid fallback occurs. Missing provider login returns an error and keeps explicit
+close/status available. All root answers are buffered until journal settlement.
+
+Stale confirmations, Docker unavailable, busy session, changed/missing container,
+and failed teardown are distinct refusals. Unknown teardown retains modal routing
+and blocks execution; use `/root stop` again after Docker recovery. Start is
+refused when Docker cannot enforce the required resource limits.

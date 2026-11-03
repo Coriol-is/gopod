@@ -2139,3 +2139,38 @@ Every elevated host exec must commit a bounded redacted intent before running
 and settle before publishing its result. Exit -1 records an unknown host-call
 result, not process-death proof; lifecycle must retain uncertainty until Docker
 proves quiescence. The journal is not tamper-proof against the host-root agent.
+
+## D061 — Elevated runtime lifecycle and cancellation
+
+**Status:** CP-038 implementation contract, 2026-11-03; owner requested E3–E5
+as one completion iteration. E6 remains a qualification gate.
+
+The owner-private `/root` command selects Claude/Codex and binds a one-shot
+confirmation to the exact provider. Only fresh owner text enters the dedicated
+runtime; no queue, recovery replay, provider fallback, ordinary IPC, media import
+or ordinary transcript is reused. Credential/login interception remains ahead
+of elevated input. Each elevated reply chunk carries a host-rendered ROOT marker.
+
+Start, run and close admission are serialized. Recovery loads durable state even
+without Docker, blocks on incomplete inventory and removes elevated-role survivors
+by immutable IDs before ordinary leftover inventory. Normal/forced restart and
+shutdown share teardown; ordinary restart snapshots exclude the dedicated role.
+Unknown execution retains the ordinary global resource gate and folder slot
+until removal is proven. A data-row close is never runtime-death evidence.
+
+`/stop` closes the private exec stdin. A dedicated Node supervisor owns a new
+process group and signals only its own group with `kill(0)`; no writable PID file
+is used as a host signal target. Docker attachment EOF alone is insufficient:
+exec inspection must confirm exit. The container and native context remain.
+Processes deliberately detached from that group or launched on the host are not
+undone by answer cancellation; host-root authority cannot be contained by this
+supervisor. `/root stop` removes the container, but also cannot undo host effects.
+
+Both images include this supervisor. Claude uses explicit tool grants and
+`dontAsk` because its ordinary dangerous-permission flag refuses uid 0. Codex uses
+explicit JSON thread identity. Separate native homes are never copied from the
+ordinary chat. Provider login remains a manual, separately authorized operation.
+
+Start refuses Docker hosts lacking memory, CPU quota or pids enforcement. The
+Pi currently reports MemoryLimit=false; no root session or flag activation is
+accepted until host cgroup qualification and provider acceptance are complete.

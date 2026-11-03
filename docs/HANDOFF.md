@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-03 (E0–E2 merged and deployed; E3 dialogs/routing next)
+**Last updated:** 2026-11-03 (integrated E3–E5 implementation reviewed; E6 host gate open)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -15,7 +15,29 @@ all proposed write defaults consistently require confirmation. Documentation-onl
 updates now use the owner-approved exception in CLAUDE.md: no mandatory PR or
 full verification, with diff/link/consistency checks retained.
 
-## Resume here — E0–E2 deployed, 2026-11-03
+## Resume here — integrated elevated completion, 2026-11-03
+
+Owner requested one larger E3–E5 iteration. `feat/elevated-complete` in
+`gopod-elevated-complete` implements `/root`, fresh modal owner text, confirmations,
+markers, lifecycle/drain/shutdown/boot cleanup, dedicated provider context and
+supervised cancellation (D061). Independent review PASS after fixing start/close
+races, inspect-only reuse, renamed survivors, restart snapshots, global admission,
+nil-Docker recovery, private login interception and cancelled-first-turn context.
+Focused tests, build/vet/full suite, affected race suites and real-Docker supervisor
+cancellation passed; PR CI/merge remains. Both ARM64 images built and passed offline smoke checks.
+
+**E6 blocked:** live Pi Docker reports MemoryLimit=false, CPUCfsQuota=true,
+PidsLimit=true; cgroup.controllers lacks memory, although CONFIG_MEMCG=y. Boot
+cmdline has no cgroup options. No boot configuration/reboot or feature activation
+was performed. Start now refuses hosts without actual required resource support.
+Provider native login and authenticated new/resume/tool acceptance remain open;
+ordinary credentials were not copied. `/login` still means ordinary-chat login.
+
+Next: merge green integrated PR, deploy with flag off when authorized, then obtain
+explicit host-configuration/reboot authority for memory controller qualification
+and separate provider login/activation acceptance. Pi still runs `75b3be3`.
+
+## Previous — E0–E2 deployed, 2026-11-03
 
 Pi runs `75b3be3` (PR #152) since 09:47:51 UTC. Independent E2 review,
 PR test/isolation/Sonar and exact main CI passed. Sonar CLI reports six

@@ -23,6 +23,7 @@ RUN npm install -g --ignore-scripts "@openai/codex@${CODEX_VERSION}" \
  && npm cache clean --force
 
 
+COPY container/elevated/exec.cjs /usr/local/lib/gopod-elevated-exec.cjs
 ENV HOME=/home/node
 RUN mkdir -p /workspace/session /home/node/.claude /home/node/.codex
 # CP-038 intentionally requires host-root authority in this dedicated image.

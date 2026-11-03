@@ -151,6 +151,8 @@ func run() error {
 
 	restart := newControllerRestart(st, cfg.ChatsDir, cfg.OwnerChatID, stop, logger)
 	var restartRecoveryErr error
+	elevated := runner.NewElevated(st, nil, runner.Paths{RepoRoot: cfg.RepoRoot, DataDir: cfg.DataDir, ChatsDir: cfg.ChatsDir, ContainerSkillsDir: cfg.ContainerSkillsDir, EmptyFile: cfg.EmptyFile}, runner.ElevatedSpawnConfig{Image: cfg.ElevatedImage, Version: buildVersion(), MemoryBytes: cfg.ElevatedMemory, NanoCPUs: cfg.ElevatedCPUs, PidsLimit: cfg.ElevatedPids}, cfg.ElevatedCodexImage)
+	elevatedRecovered := false
 	var subsystems sync.WaitGroup
 
 	// Runner / Docker subsystem. Optional at boot: if GOPOD_NO_CONTAINER
@@ -188,6 +190,23 @@ func run() error {
 			if restartRecoveryErr != nil {
 				runLog.Warn("restart container recovery incomplete", slog.Any("err", restartRecoveryErr))
 			}
+
+			elevated = runner.NewElevated(st, d, runner.Paths{RepoRoot: cfg.RepoRoot, DataDir: cfg.DataDir, ChatsDir: cfg.ChatsDir, ContainerSkillsDir: cfg.ContainerSkillsDir, EmptyFile: cfg.EmptyFile}, runner.ElevatedSpawnConfig{Image: cfg.ElevatedImage, Version: buildVersion(), MemoryBytes: cfg.ElevatedMemory, NanoCPUs: cfg.ElevatedCPUs, PidsLimit: cfg.ElevatedPids}, cfg.ElevatedCodexImage)
+			recoveryCtx, recoveryCancel := context.WithTimeout(ctx, 30*time.Second)
+			elevatedErr := elevated.Recover(recoveryCtx)
+			elevatedRecovered = true
+			recoveryCancel()
+			if elevatedErr != nil {
+				restartRecoveryErr = errors.Join(restartRecoveryErr, elevatedErr)
+				runLog.Error("elevated recovery failed", slog.Any("err", elevatedErr))
+			}
+			defer func() {
+				closeCtx, closeCancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer closeCancel()
+				if err := elevated.Close(closeCtx, "controller shutdown"); err != nil {
+					runLog.Error("elevated shutdown unproven", slog.Any("err", err))
+				}
+			}()
 
 			// Load the mount allowlist. A missing file is fine — callers
 			// get an empty allowlist back and construct only the standard
@@ -433,6 +452,12 @@ func run() error {
 	// that own them (e.g. telegram registers /login directly because
 	// it's a stateful interactive session, not a Command→Response).
 	ctlLog := logger.With(slog.String("subsys", "control"))
+	if !elevatedRecovered {
+		if err := elevated.Recover(ctx); err != nil {
+			restartRecoveryErr = errors.Join(restartRecoveryErr, err)
+			logger.Error("elevated state blocked without Docker", slog.Any("err", err))
+		}
+	}
 	router := control.New(ctlLog)
 	control.RegisterBuiltins(router)
 	if groupManager != nil {
@@ -440,6 +465,15 @@ func run() error {
 	}
 
 	control.RegisterTriggerCommand(router, st)
+	if cfg.ElevatedEnabled {
+		if elevated == nil {
+			elevated = runner.NewElevated(st, nil, runner.Paths{}, runner.ElevatedSpawnConfig{}, cfg.ElevatedCodexImage)
+		}
+		control.RegisterElevated(router, cfg.OwnerChatID, elevated)
+	}
+	if elevated != nil {
+		elevated.SetAdmission(agentRunner)
+	}
 	control.RegisterSessionsCommand(router, control.SessionsDeps{
 		Mode: st.SessionMappingMode, Request: st.RequestSessionAdoption, Count: st.CountSessionRows,
 		Cancel: st.CancelSessionAdoption,
@@ -661,8 +695,13 @@ func run() error {
 	} else {
 		tgLog := logger.With(slog.String("subsys", "telegram"))
 
+		var elevatedInput telegram.ElevatedInput
+		if elevated != nil {
+			elevatedInput = elevated
+		}
 		tgBot, err := telegram.New(cfg.TelegramBotToken, telegram.Deps{
 			Store:         st,
+			Elevated:      elevatedInput,
 			Runner:        agentRunner,
 			Router:        router,
 			Allowlist:     allowlist,
@@ -678,6 +717,9 @@ func run() error {
 			groupManager.Notify = tgBot.NotifyOwner
 		}
 
+		if elevated != nil {
+			elevated.Notify = tgBot.NotifyOwner
+		}
 		restart.notify = tgBot.SendRestartNotice
 		control.RegisterRestartLifecycle(router, restart.command)
 		control.RegisterStopCommand(router, tgBot.StopCurrentTurn)
@@ -706,6 +748,9 @@ func run() error {
 			tgBot.SetQueue(agentQueue)
 			restart.queue = agentQueue
 			restart.runtime, _ = any(agentRunner).(restartRuntime)
+			if elevated != nil {
+				restart.runtime = elevatedRestart{ordinary: restart.runtime, host: elevated}
+			}
 			restart.app = ctx
 			// Managed task recovery is inspect-only until execution lands (CP-004
 			// PR 3): no handler, so nothing managed runs, but possibly started

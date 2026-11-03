@@ -41,6 +41,7 @@ import (
 // at construction time. Bundling them in a struct keeps New()'s
 // signature stable as new fields land.
 type Deps struct {
+	Elevated ElevatedInput
 	// Store is the SQLite handle. Required.
 	Store *store.Store
 
@@ -88,6 +89,7 @@ type Deps struct {
 // cancelled (typically by SIGINT/SIGTERM in main). One Bot instance
 // corresponds to one Telegram bot token.
 type Bot struct {
+	elevated      ElevatedInput
 	capabilities  *capabilityCache
 	api           *bot.Bot
 	store         *store.Store
@@ -254,6 +256,7 @@ func New(token string, deps Deps) (*Bot, error) {
 	b := &Bot{
 		store:         deps.Store,
 		runner:        deps.Runner,
+		elevated:      deps.Elevated,
 		queue:         deps.Queue,
 		router:        deps.Router,
 		allowlist:     deps.Allowlist,

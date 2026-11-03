@@ -45,6 +45,10 @@ jobs:
         env:
           GOPOD_TEST_SH_IMAGE: redis:7-alpine
         run: go test -tags docker_integration -count=1 -v ./internal/runner -run '^TestIntegration(Stream|Lifecycle|FreshPreemption)'
+      - name: Verify elevated supervisor cancellation (no host mounts or accounts)
+        run: |
+          docker build -f container/elevated/Dockerfile.supervisor-test -t gopod-elevated-supervisor:ci .
+          GOPOD_ELEVATED_TEST_IMAGE=gopod-elevated-supervisor:ci go test -tags integration ./internal/runner -run '^TestElevatedExecSupervisorDocker$' -count=1 -timeout 45s
       - name: Qualify production group native policy (no accounts or inference)
         env:
           GOPOD_GROUP_NATIVE_TEST: '1'
