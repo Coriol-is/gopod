@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-03 (parallel wave deployed and final Telegram regression passed)
+**Last updated:** 2026-11-03 (next CP-002 / CP-016 / healthchecks wave started)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -13,7 +13,26 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — parallel follow-up, 2026-11-03
+## Resume here — final plans, quiescence and healthchecks
+
+Owner approved the next three parallel streams after deployment `e6f0fad`.
+Base main `f4d71f3`; production remains `e6f0fad`. Existing worktrees retained.
+
+- `feat/final-publication-plan`, `../gopod-final-plan`: CP-002 immutable final
+  text/code/voice publication and cancellation settlement toward safe activation.
+- `feat/topic-quiescence`, `../gopod-topic-quiescence`: CP-016 native/transport
+  quiescence, queued work and thread-aware edits toward safe topic deletion.
+- `feat/container-healthchecks`, `../gopod-healthchecks`: offline read-only
+  health/readiness probes for long-running containers and one-shot exit checks.
+
+Workers must coordinate shared runner/Telegram ownership before edits. Root owns
+independent review, global documentation, sequential integration/CI and deployment.
+Do not claim full completion or activate incomplete paths. No host reboot,
+provider login, paid test call or deletion of existing user data is implied.
+Dedicated reports track intermediate implementation evidence. This stage has
+not changed production; first action is to review concrete stream plans.
+
+## Previous completed wave — parallel follow-up, 2026-11-03
 
 Owner approved three parallel streams, with sequential review/integration/deploy.
 Base main `09dbaf4`; production controller `e6f0fad` since 16:29:08 UTC. Existing worktrees retained.
