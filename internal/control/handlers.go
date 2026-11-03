@@ -16,10 +16,15 @@ import (
 // Commands that depend on external state (login, register, chats.list)
 // are registered by the subsystem that owns them — typically in
 // main.go or in the telegram package, using Router.Register directly.
-func RegisterBuiltins(r *Router) {
+// An optional build version carries the application's link-time release identity.
+func RegisterBuiltins(r *Router, buildVersion ...string) {
+	version := ""
+	if len(buildVersion) > 0 {
+		version = buildVersion[0]
+	}
 	r.Register("help", "help", "list available commands", PermPublic, helpHandler(r))
 	r.Register("ping", "ping", "check the bot is alive", PermPublic, pingHandler)
-	r.Register("version", "version", "show build info", PermPublic, versionHandler)
+	r.Register("version", "version", "show build info", PermPublic, versionHandler(version))
 }
 
 func helpHandler(r *Router) Handler {
@@ -275,23 +280,23 @@ func modelPickerButtons(folder, current string, choicesFn func(string) []string)
 	return pickerButtons("model", append(choices, "default"), current)
 }
 
-func versionHandler(_ context.Context, _ Command) (Response, error) {
-	ver := "dev"
-	if info, ok := debug.ReadBuildInfo(); ok {
-		for _, s := range info.Settings {
-			if s.Key == "vcs.revision" && s.Value != "" {
-				if len(s.Value) > 12 {
-					ver = s.Value[:12]
-				} else {
-					ver = s.Value
+func versionHandler(buildVersion string) Handler {
+	ver := buildVersion
+	if ver == "" {
+		ver = "dev"
+		if info, ok := debug.ReadBuildInfo(); ok {
+			for _, setting := range info.Settings {
+				if setting.Key == "vcs.revision" && setting.Value != "" {
+					ver = setting.Value[:min(12, len(setting.Value))]
+					break
 				}
-				break
 			}
 		}
 	}
-	text := fmt.Sprintf("gopod %s (go %s)", ver, runtime.Version())
-	return Response{
-		Text: text,
-		Data: map[string]any{"version": ver, "go": runtime.Version()},
-	}, nil
+	return func(context.Context, Command) (Response, error) {
+		return Response{
+			Text: fmt.Sprintf("gopod %s (%s)", ver, runtime.Version()),
+			Data: map[string]any{"version": ver, "go": runtime.Version()},
+		}, nil
+	}
 }

@@ -459,7 +459,7 @@ func run() error {
 		}
 	}
 	router := control.New(ctlLog)
-	control.RegisterBuiltins(router)
+	control.RegisterBuiltins(router, buildVersion())
 	if groupManager != nil {
 		control.RegisterIsolationCommands(router, control.IsolationActions{Status: groupManager.Status, Prepare: groupAction(st, agentRunner, groupManager.Prepare), Enable: groupAction(st, agentRunner, groupManager.Enable), Disable: groupManager.Disable})
 	}

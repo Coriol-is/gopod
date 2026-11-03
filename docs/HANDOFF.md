@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-03 (autonomous acceptance; picker fix and CP-002/CP-016 prerequisites merged; no deployment in this wave)
+**Last updated:** 2026-11-03 (backlog wave deployed; small version follow-up preparing)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -13,7 +13,20 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — next integration after PRs #159–161, 2026-11-03
+## Deployment checkpoint — 2026-11-03
+
+The owner authorized review/merge/deploy and subsequent small fixes without PRs.
+Target `4350e1b` is deployed after green main CI and independent review.
+Backups, runtime health and exact state preservation passed. Telegram silent
+on/off and model/default callbacks now retain their pickers; silent restored off.
+ROOT closed normally and is off. [Live rollout record](deployments/2026-11-03-backlog-wave.md).
+
+Resume here: the bounded `/version` fix passed independent review and full local
+build/vet/tests. Push without PR as authorized, wait exact main CI, then deploy
+and verify `/version` against startup. Preserve backups/auth homes and update this
+handoff after each stage. Full CP-002/CP-016 completion remains open.
+
+## Previous — next integration after PRs #159–161, 2026-11-03
 
 Picker fix PR #159 merged as `88a9aa3` after green CI and independent review.
 CP-002 atomic batch-start prerequisite PR #160 is merged as `f5ba97a` after

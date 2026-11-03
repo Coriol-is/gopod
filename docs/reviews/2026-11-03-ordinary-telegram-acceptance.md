@@ -54,3 +54,10 @@ A subsequent `/version` probe (3176256 → 3176257) returned
 verify it. This diagnostic discrepancy is noted for a separate fix; no deployment
 was inferred from that output. The last recorded deployment remains the elevated
 login rollout report, not a fresh binary-version verification in this session.
+
+## Post-deploy picker retest
+
+Build `4350e1b`: silent reply 3176275 retained buttons across on/off and restored
+off; model reply 3176277 retained the default picker after selection. ROOT status
+3176279 is off after normal deployment shutdown; session status 3176281 remains
+legacy. See [rollout](../deployments/2026-11-03-backlog-wave.md).

@@ -1,9 +1,8 @@
 # Live acceptance register
 
-Last reconciled: 2026-11-03. Latest recorded deployment: binary `8c21d58`
-(source equivalent to `1a3b9e1`), per [login rollout](deployments/2026-11-03-elevated-login.md).
-The current `/version` probe reports `dev`, so it does not independently verify
-the deployed SHA; see [acceptance evidence](reviews/2026-11-03-ordinary-telegram-acceptance.md).
+Last reconciled: 2026-11-03. Latest deployment: `4350e1b`, verified through
+startup/image and [backlog rollout](deployments/2026-11-03-backlog-wave.md).
+The `/version` identity follow-up is preparing; the previous command reported `dev`.
 Code merged/deployed is distinct from a real-client scenario being accepted.
 Items below are pending unless explicit evidence is linked. Do not infer a pass
 from unit tests, CLI --help/version, startup notices or a green CI job.
@@ -11,8 +10,8 @@ from unit tests, CLI --help/version, startup notices or a green CI job.
 ## Latest open gates
 - 2026-11-03: ordinary command callbacks exercised autonomously: task Next/Previous
   edit the same message, and doctor refresh returns fresh `getMe`. Silent/model
-  selection drops the picker on the deployed build; fix #159 is merged but not
-  deployed by this session. Silent restored off. A01/A11/A18/A21
+  selection regression fixed and deployed in `4350e1b`; same-message silent
+  on/off and model/default callback retests passed. Silent restored off. A01/A11/A18/A21
   remain partial; see [evidence](reviews/2026-11-03-ordinary-telegram-acceptance.md).
 - 2026-11-02: five owner-authorized status/picker commands delivered with exact reply IDs and markup evidence in [release qualification](reviews/2026-11-02-release-qualification.md#owner-authorized-command-probes). Task panel returned page 1/5 for 15 tasks; silent was off; model default; session mapping legacy. Rendering, callbacks and provider behavior remain open.
 - Rich IPC P1: inspect Markdown/HTML rendering in the owner client; two API acknowledgements are recorded.
