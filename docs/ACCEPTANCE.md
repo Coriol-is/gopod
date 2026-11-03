@@ -1,13 +1,18 @@
 # Live acceptance register
 
-Last reconciled: 2026-11-03. Latest deployment: `ec51ee6`, verified through
-startup/image and [backlog rollout](deployments/2026-11-03-backlog-wave.md).
-Telegram `/version` reply 3176289 returns `gopod ec51ee6 (go1.26.10)`, matching startup.
+Last reconciled: 2026-11-03. Latest deployment: `e6f0fad`, verified through
+startup/image and [parallel rollout](deployments/2026-11-03-parallel-wave.md).
+Telegram `/version` reply `3176372` confirms `gopod e6f0fad (go1.26.10)`.
 Code merged/deployed is distinct from a real-client scenario being accepted.
 Items below are pending unless explicit evidence is linked. Do not infer a pass
 from unit tests, CLI --help/version, startup notices or a green CI job.
 
 ## Latest open gates
+- 2026-11-03: ordinary Codex nonce continuity, bounded Stop/process exit and
+  post-Stop resume passed; tiny PDF delivered into test topic `3176309` and
+  verified. Refusal warning routing/wording defect fixed in deployed `e6f0fad`,
+  live regression passed: source_missing warning `3176369` stayed in topic
+  `3176309` with truthful wording and no observed main leak. [Evidence](reviews/2026-11-03-acceptance-next.md).
 - 2026-11-03: ordinary command callbacks exercised autonomously: task Next/Previous
   edit the same message, and doctor refresh returns fresh `getMe`. Silent/model
   selection regression fixed and deployed in `4350e1b`; same-message silent

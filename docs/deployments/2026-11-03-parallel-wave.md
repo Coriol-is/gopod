@@ -47,3 +47,28 @@ SSH then failed before executing the rollout script: the 1Password agent refused
 the main SSH key signature and the server disconnected for authentication attempts.
 No controller stop or production switch occurred. Production remains `ec51ee6`;
 owner was asked to unlock the existing SSH agent. Credentials/config unchanged.
+
+## Successful retry rollout
+
+Owner requested retry; SSH access recovered. Idle gate reported all seven
+counters zero. Matched-stopped backup `20261103T162832Z-ms-0c657f89` verified:
+43 tables, 9,028 rows, four files including artifact blobs. Existing backups,
+auth homes, workspace files and rollback tags retained. No credentials changed.
+
+Controller started `e6f0fad` / Go 1.26.10 at 16:29:08 UTC, ready 16:29:14.
+Image matches the candidate above. Exact registered-chat/session/scheduled-task
+fingerprints matched; SQLite integrity OK. Initial running state: zero restarts,
+OOM false, no warning/error startup logs; six external service healthchecks healthy.
+Final scoped Telegram regression passed: one missing-file request `3176367`
+in test topic `3176309`; host warning `3176369` stayed there and used truthful
+source_missing wording. No notice appeared in main within the bounded probe
+history. Native turn 263 finished once, with no unfinished turns. `/version`
+3176371 → 3176372 returned `gopod e6f0fad (go1.26.10)`.
+At 16:30:49 UTC (>100 seconds after start): running, zero restarts, OOM false,
+all seven idle counters zero. No warning/error startup entries. Existing test
+PDF and topic retained; no auth/provider/config changes.
+
+Rollback image/tag and verified backup above remain available. No schema or
+new freeze activation occurred. Use the same idle gate before switching back
+to retained `ec51ee6`; do not erase results or restore over live work blindly.
+The rollout and bounded live regression are complete.

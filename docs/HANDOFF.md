@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-03 (parallel CP-002 / CP-016 implementation and Telegram acceptance started)
+**Last updated:** 2026-11-03 (parallel wave deployed and final Telegram regression passed)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -16,7 +16,7 @@ owner. No acceptance result or deployment status changes with this instruction.
 ## Resume here — parallel follow-up, 2026-11-03
 
 Owner approved three parallel streams, with sequential review/integration/deploy.
-Base main `09dbaf4`; production controller `ec51ee6`. Existing worktrees retained.
+Base main `09dbaf4`; production controller `e6f0fad` since 16:29:08 UTC. Existing worktrees retained.
 
 - `feat/freeze-next` in `../gopod-freeze-next`: CP-002 ordinary eligibility,
   frozen-result recovery and publication integration; queue/runner adapter ownership.
@@ -41,7 +41,7 @@ tests passed, live topic `3176309` created for this acceptance wave. PDF arrived
 there and its test bytes were verified. The first source-missing warning leaked
 to main and falsely claimed the file remained; a separate bounded IPC notice fix
 passed review/full/race tests as `f5768ba`, integrated as `33ba30a` without PR
-under the owner-approved small-fix exception. Topic retained; Telegram probes are paused. Toolkit main
+under the owner-approved small-fix exception. The live regression passed after rollout (see below). Topic retained; Telegram probes are paused. Toolkit main
 `c28367d` is published and installed locally.
 
 Root owns global handoff/roadmap, integration and release. Each stream records
@@ -49,15 +49,23 @@ intermediate evidence in its own review report. Source changes require independe
 review, full checks and exact CI; only bounded small fixes retain the owner's
 no-PR exception. Do not enable `/thread delete` or managed tasks from incomplete
 prerequisites. Combined source passed full build/vet/tests and affected race suites; source
-identity matches the reviewed integration worktree. Resume: wait final main CI,
-then perform one idle/backup-gated rollout and the scoped missing-file regression.
-Release candidate `e6f0fad` passed isolated Pi boot; exact main
-[CI 41654649071](https://github.com/Coriol-is/gopod/actions/runs/41654649071) passed (test and isolation-spike).
-[Rollout record](deployments/2026-11-03-parallel-wave.md). No production switch yet: SSH connection failed before remote script execution
-(1Password agent refused main-ssh-key signature). Owner was asked to unlock the
-agent; do not relogin providers or alter credentials. After unlock, rerun the
-reviewed `/tmp/gopod-backlog-e6f0fad/gopod-wave-deploy-e6f0fad.sh` on Pi; it
-rechecks idle before stopping anything.
+identity matches the reviewed integration worktree. Exact main
+[CI 41654649071](https://github.com/Coriol-is/gopod/actions/runs/41654649071) passed.
+
+Owner-requested SSH retry succeeded. Release `e6f0fad` is deployed; backup
+`20261103T162832Z-ms-0c657f89` verified (43 tables, 9,028 rows, four files).
+Registered chats/sessions/scheduled tasks matched exactly; SQLite integrity OK.
+Startup/readiness, zero restarts/OOM and six external healthy services verified.
+[Rollout record](deployments/2026-11-03-parallel-wave.md).
+Final Telegram regression passed: warning `3176369` stayed in test topic
+`3176309`, reported source_missing truthfully, and did not leak into main.
+`/version` reply `3176372`: `gopod e6f0fad (go1.26.10)`. At 16:30:49 UTC:
+running, zero restarts/OOM, all seven idle counters zero. Test topic/PDF retained.
+
+Resume next: CP-002 immutable voice/code/stream final publication plan and late
+cancellation settlement; CP-016 native/transport quiescence, queued-turn handling
+and thread-aware edit ownership. Neither foreground freeze nor `/thread delete`
+is activated. This review/integration/deploy/acceptance wave is complete.
 
 ## Deployment checkpoint — 2026-11-03
 
