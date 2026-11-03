@@ -383,7 +383,7 @@ func (e *Elevated) Run(ctx context.Context, text string) (string, error) {
 	if s.Provider == "codex" {
 		reply, native = parseElevatedCodex(result.Stdout)
 	} else {
-		parsed := readStructuredStream(strings.NewReader(result.Stdout), strings.NewReader(result.Stderr), p.(*ClaudeProvider).ParseStreamLine, func(string) {}, func(ProgressEvent) {})
+		parsed := readStructuredStream(strings.NewReader(result.Stdout), strings.NewReader(result.Stderr), p.(*ClaudeProvider).ParseStreamLine, func(string) { /* Elevated answers are buffered until journal settlement. */ }, func(ProgressEvent) { /* Tool events are intentionally not published as answers. */ })
 		reply = parsed.Text
 		native = parsed.SessionID
 		if native == "" && result.ExitCode == 0 {

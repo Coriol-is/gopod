@@ -26,9 +26,9 @@ func TestElevatedOnlyFreshOwnerTextAndEveryChunkMarked(t *testing.T) {
 	b.elevated = p
 	m := &models.Message{ID: 20, Date: 101, Text: "hello", Chat: models.Chat{ID: b.ownerChatID, Type: models.ChatTypePrivate}, From: &models.User{ID: b.ownerChatID}}
 	for _, mutate := range []func(*models.Message){func(m *models.Message) { m.Chat.Type = models.ChatTypeGroup }, func(m *models.Message) { m.Chat.ID++ }, func(m *models.Message) { m.From = &models.User{ID: 999} }} {
-		copy := *m
-		mutate(&copy)
-		if b.handleElevated(t.Context(), &copy) {
+		messageCopy := *m
+		mutate(&messageCopy)
+		if b.handleElevated(t.Context(), &messageCopy) {
 			t.Fatal("consumed non-owner private input")
 		}
 	}
