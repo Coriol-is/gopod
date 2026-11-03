@@ -6,6 +6,15 @@ Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
 [ACCEPTANCE](ACCEPTANCE.md) for pending real-client verification.
 
+## Documentation queue reconciliation — 2026-11-03
+
+Owner authorized merging all remaining documentation PRs (#108 and #149).
+CP-028 is a saved proposed design with unresolved choices, not implemented or
+activated. Its session-storage ADR number will be assigned at implementation;
+all proposed write defaults consistently require confirmation. Documentation-only
+updates now use the owner-approved exception in CLAUDE.md: no mandatory PR or
+full verification, with diff/link/consistency checks retained.
+
 ## Resume here — E0–E2 deployed, 2026-11-03
 
 Pi runs `75b3be3` (PR #152) since 09:47:51 UTC. Independent E2 review,
