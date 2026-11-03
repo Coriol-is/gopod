@@ -6,6 +6,13 @@ Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
 [ACCEPTANCE](ACCEPTANCE.md) for pending real-client verification.
 
+**Acceptance authorization (2026-11-03):** The owner explicitly permits agents
+to access Telegram and run gopod acceptance checks themselves, including test
+messages, commands, attachments and supported button interactions, without
+per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older references
+to "owner in Telegram" do not require handing automatable checks back to the
+owner. No acceptance result or deployment status changes with this instruction.
+
 ## Resume here — elevated login completion fixed and deployed
 
 PR #158 merged as `1a3b9e1`; controller binary `8c21d58` (identical source tree)

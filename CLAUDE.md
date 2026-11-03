@@ -114,6 +114,16 @@ the user before any spec or code exists for it.
 
 ## Workflow rules
 
+- **Autonomous Telegram acceptance (owner-approved 2026-11-03).** Agents may
+  access Telegram themselves to perform acceptance checks for gopod, without
+  asking the owner to send each message or approve each check. This includes
+  reading the bot conversation, sending test messages, commands and attachments,
+  exercising buttons where supported, and checking replies through the available
+  Telegram CLI or client. Use the owner's bot conversation or designated test
+  chats and keep actions scoped to the feature under acceptance. Record what was
+  actually observed; API delivery alone does not prove visual client rendering.
+  This permission does not authorize unrelated messages to other people,
+  production deployment, host changes, or deletion of existing user data.
 - **Before doing work:** read HANDOFF.md, the relevant doc(s), and the part
   of the code you're about to touch.
 - **While doing work:** keep the change focused. If you hit something out of
