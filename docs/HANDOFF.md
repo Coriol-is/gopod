@@ -6,6 +6,17 @@ Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
 [ACCEPTANCE](ACCEPTANCE.md) for pending real-client verification.
 
+## CI policy — Sonar soft gate, 2026-11-03
+
+Owner requested advisory Sonar: failures/cancellations/stale analyses are reported
+but do not block merge/deploy. Build/vet/test and Docker isolation remain required.
+Live configuration verified: Sonar is a separate app check, not a step in `ci`;
+repository ruleset `24430037` does not require Sonar. No workflow or remote rule
+change was necessary. CLAUDE.md now makes this explicit for every harness.
+PR #154 Sonar gate is OK; main's last analysis is stale (2026-10-26, `4e3031a`),
+with security rating E. This remains an open analysis-maintenance issue, not a
+reason to fail the otherwise successful CI/deployment.
+
 ## Documentation queue reconciliation — 2026-11-03
 
 Owner authorized merging all remaining documentation PRs (#108 and #149).
