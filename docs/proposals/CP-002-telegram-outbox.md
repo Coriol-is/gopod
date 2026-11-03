@@ -68,3 +68,8 @@ frozen-result publication recovery and cutover remain open. See
 ## Parallel follow-up checkpoint
 
 Ordinary frozen-result recovery/visible holds and NoReplay transport handling merged in PR #164 (`e8b58b8`). Published plans remain outbox-owned; unpublished results are not guessed into text-only plans. Foreground freeze/publication activation remains gated on voice/code/stream plan parity and late cancellation settlement. [Evidence](../reviews/2026-11-03-freeze-next.md).
+
+## Implementation checkpoint — 2026-11-03
+
+Immutable final intents, atomic multi-preparation publication and ready-plan boot recovery deployed in `a25f22a` (#166, D063). Foreground producer, preview/cancellation and conditional code-upload fallback remain gated.
+See the [rollout evidence and remaining gates](../deployments/2026-11-03-final-plans-health.md). Status remains in-progress.

@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-03 (next CP-002 / CP-016 / healthchecks wave started)
+**Last updated:** 2026-11-03 (a25f22a deployed and verified)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -13,50 +13,39 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — final plans, quiescence and healthchecks
+## Resume here — deployed final plans, quiescence and healthchecks
 
-Owner approved the next three parallel streams after deployment `e6f0fad`.
-Base main `f4d71f3`; production remains `e6f0fad`. Existing worktrees retained.
+The owner-approved parallel wave is complete. Production is `a25f22a` since
+2026-11-03 17:13:09 UTC. Health #165 (`067c016`), final plans #166 (`de8293b`)
+and topic quiescence #167 (`a25f22a`) passed independent review, full local
+checks/races and required PR CI. Exact [main CI](https://github.com/Coriol-is/gopod/actions/runs/41681289877)
+passed. D063/D064 record the accepted contracts. [Rollout evidence](deployments/2026-11-03-final-plans-health.md).
 
-- `feat/final-publication-plan`, `../gopod-final-plan`: CP-002 immutable final
-  text/code/voice publication and cancellation settlement toward safe activation.
-- `feat/topic-quiescence`, `../gopod-topic-quiescence`: CP-016 native/transport
-  quiescence, queued work and thread-aware edits toward safe topic deletion.
-- `feat/container-healthchecks`, `../gopod-healthchecks`: offline read-only
-  health/readiness probes for long-running containers and one-shot exit checks.
+Nine image overlays are installed; controller and owner Codex runtime were
+healthy at 17:14:23 UTC, zero restarts/OOM and all eight idle counters zero.
+Verified backup `20261103T171231Z-ms-c88b23ae` (43 tables, 9,103 rows, four files)
+and registered chats/sessions/scheduled tasks matched. `/version` reply `3176409`
+in test topic `3176309` confirms `gopod a25f22a (go1.26.10)`. Existing auth homes,
+workspaces, test topic/PDF, worktrees and rollback images are preserved.
 
-Workers must coordinate shared runner/Telegram ownership before edits. Root owns
-independent review, global documentation, sequential integration/CI and deployment.
-Do not claim full completion or activate incomplete paths. No host reboot,
-provider login, paid test call or deletion of existing user data is implied.
-Dedicated reports track intermediate implementation evidence. This stage has
-not changed production. Concrete stream plans reviewed:
-CP-002 persists final intent and atomically publishes deterministic text/code/voice
-plans, with boot recovery before ordinary classification (D063 reserved).
-CP-016 adds per-conversation native/queue/transport leases and scoped edit ownership;
-quiescence must prove actual native completion, not just handler return (D064 reserved).
-Healthchecks add local controller responsiveness/store readiness and offline image
-prerequisites with disposable Docker qualification; no host reboot in this wave.
-Full activation/command exposure depends on the remaining gates actually passing.
+Sonar #165 is advisory ERROR for loopback HTTP/security B; #166/#167 are OK.
+Main Sonar baseline is stale (`4e3031a`, 2026-10-26). No finding was suppressed.
+No reboot, new provider login, paid inference or live deletion occurred.
 
-Checkpoint: healthchecks source `14d40d0` is independently reviewed; full local
-build/vet/tests, affected races and disposable offline Docker matrix passed.
-[PR #165](https://github.com/Coriol-is/gopod/pull/165) passed required CI and
-merged as `067c016`. Sonar advisory ERROR: loopback HTTP (S5332), security B;
-probe is restricted to literal loopback, no proxy/redirect or user data.
-CP-002 immutable-plan persistence/preparation/boot recovery passed independent
-review, full local checks and affected races: [PR #166](https://github.com/Coriol-is/gopod/pull/166),
-`149e1d8`, merged as `de8293b` after required CI and Sonar OK. D063 records
-the contract; foreground activation remains off. CP-016 independent review found and fixed unknown-edit lease tracking and
-refused-reopen lock inversion; targeted races passed. Final full tests and
-combined-source integration remain pending. Legacy fallback-message origin
-after restart/cache eviction is still an activation gate; no delete command.
-Final CP-016 source `5a7a4da` in [PR #167](https://github.com/Coriol-is/gopod/pull/167)
-passed independent review after fixing async login completion lifetime and adding
-an explicit active-login blocker. Targeted races passed; exact full checks and CI
-remain pending. Existing managed queue stress timeout was reproduced on unchanged
-main `572e246` (three failures in 100 repetitions); track separately, not suppressed.
-Combined tree compiled for linux/arm64 with Go 1.26.10. Production remains unchanged.
+Next work, without claiming these CPs complete:
+1. CP-002: wire foreground final-plan producer only after conditional code-upload
+   fallback, preview ownership, late cancellation and reply-action parity qualify.
+   Immutable ready-plan boot publication is deployed; unknown paid preparation
+   remains held with no rebilling.
+2. CP-016: durable old fallback-message ownership, ambiguity reconciliation,
+   ledger-aware managed cancellation, native-login exit qualification and the
+   confirmed deletion/retirement command. Runtime fences restore conservatively;
+   `/thread delete` remains unavailable.
+3. Investigate pre-existing managed queue stress timeout: unchanged main `572e246`,
+   `TestConcurrentDispatchAndEnqueueRace -count=100`, three failures with 8–11/12
+   settlements. Current release full/race/CI passed; do not erase baseline evidence.
+4. Qualify optional native/relay runtimes when used and host reboot only when
+   separately authorized. Managed tasks remain off.
 
 ## Previous completed wave — parallel follow-up, 2026-11-03
 
@@ -216,7 +205,7 @@ full verification, with diff/link/consistency checks retained.
 
 Recorded in [ROADMAP](../ROADMAP.md#owner-todo--container-healthchecks-2026-11-03):
 add meaningful health/readiness checks for every gopod-owned container, including
-Claude/Codex elevated images. Implemented in PR #165; production rollout is pending in the current wave.
+Claude/Codex elevated images. Implemented in PR #165 and deployed in `a25f22a`; controller and owner runtime healthy.
 See [health matrix](CONTAINER-HEALTH.md); host reboot remains separate.
 
 ## Resume here — integrated elevated completion, 2026-11-03

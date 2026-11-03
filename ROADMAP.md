@@ -80,7 +80,7 @@ has passed. The proposal registry remains the single CP status source;
 |---|---|---|---|
 | 1 | Qualify the deployed release | Tasks panel, delivery, upgraded CLIs, quota/provider continuity, Stop/recovery and media baseline — A01–A17 | Implemented/deployed baseline; live checks open |
 | 2 | Reliability and diagnostics | CP-017 Telegram diagnosis -> CP-002 bounded outbox/uncertain delivery -> CP-004 isolated task sessions -> CP-007 scheduled backups/restore -> CP-006 maintenance/quiet hours | CP-017 private-DM slice implemented; live acceptance pending; CP-002/003/004/007 partially implemented and deployed; full cutover, managed execution and restore gates remain open; CP-006 planned |
-| 3 | Conversation management | CP-016 topic deletion/retirement -> CP-018 per-conversation providers/models/quota scope | CP-016 store foundation deployed, durable outbox fences deployed; runtime integration and CP-018 pending |
+| 3 | Conversation management | CP-016 topic deletion/retirement -> CP-018 per-conversation providers/models/quota scope | CP-016 store/outbox/runtime fences deployed; command/reconciliation and CP-018 pending |
 | 4 | Group service UX | CP-019 ephemeral command/service/error replies; T14 scoped menu/strings work coordinated with transport | Spec saved; ordinary output stays public |
 | 5 | Media, three queues | CP-014 Q1 cards/links/attachment fidelity -> Q2 document/OCR/image/speech -> Q3 video speech+frames/export; CP-003 typed IPC artifacts and CP-005 qualified tools support appropriate slices | Specs/proposals only beyond existing baseline |
 | 6 | Platform extensions | CP-011 runtime, CP-012 registry; then additional providers/sandboxes, bounded bot-to-bot experiment if useful; secret gateway/MCP/metrics stay deferred | Design/research/deferred; no new backend or peer enabled |
@@ -136,6 +136,15 @@ Full foreground ownership and topic deletion remain incomplete and disabled.
 Native Codex continuity/Stop and topic PDF delivery were observed; an attachment
 refusal notice routing/wording defect is fixed in `33ba30a`. These slices are
 deployed in `e6f0fad`; verified backup, exact state preservation and startup passed.
+
+Final-plan/quiescence/health wave deployed as `a25f22a`: #165 healthchecks,
+#166 immutable final intents/atomic preparation publication/ready-plan recovery,
+#167 native/queue/transport leases and conservative fence restoration. Independent
+review, full/race tests, required exact CI, backup/state checks and scoped Telegram
+version acceptance passed. Full foreground cutover and `/thread delete` remain off.
+[Rollout and remaining gates](docs/deployments/2026-11-03-final-plans-health.md).
+Known separate follow-up: managed queue concurrent Dispatch/Enqueue stress timeout
+reproduces on pre-wave main (three failures in 100 repetitions); not masked by this release.
 
 ## Planning candidates — 2026-10-26
 
@@ -369,7 +378,7 @@ implementation.
 
 | Proposal | Status | Implementation scope |
 |---|---|---|
-| CP-016 topic deletion | 🟦 | Store retirement foundation #144 and durable outbox fences #161 merged; command, runtime/stream/recovery/callback fences and client acceptance still open; no deleted-topic event assumed |
+| CP-016 topic deletion | 🟦 | Store/outbox/ingress and native/queue/transport fences through #167 deployed; command, durable legacy ownership/reconciliation and destructive acceptance remain open |
 | CP-017 Telegram diagnostics | ✅ | Separate Telegram settings, subscriptions, code support and contextual rights; owner doctor and scoped help; [execution plan](docs/superpowers/plans/2026-10-25-telegram-capability-diagnostics.md) implemented for private DMs; group reports/notices deferred |
 | CP-018 per-thread providers | ⬜ | Chat default plus topic overrides, provider-specific models and scoped confirmed quota fallback |
 | CP-019 ephemeral command/service/error replies | ⬜ | Public conversational messages unchanged; private delivery never falls back to public |
@@ -436,5 +445,6 @@ Buttons/hooks, inbound/outbound stickers and thread awareness remain separate wo
   Implemented in PR #165 (`067c016`): controller/relay readiness and native
   offline prerequisites, with explicit one-shot exceptions. Local full/race
   checks, disposable Docker matrix and required CI passed. Production rollout
-  remains pending; reboot qualification is separately authorized.
+  completed in `a25f22a`; controller and owner Codex runtime are healthy. Optional
+  runtime acceptance and separately authorized reboot qualification remain.
   [Health matrix and runbook](docs/CONTAINER-HEALTH.md).

@@ -19,8 +19,9 @@ slices. The owner resumed implementation on 2026-11-02 as conversation-managemen
 workstream 3. The first slice implements the store journal, scoped retirement
 transaction and continuity/admission write fences; see the
 [foundation and remaining integration gates](../superpowers/plans/2026-11-02-topic-retirement-foundation.md).
-The command, native quiescence, output/recovery/control fencing and real-client
-acceptance are still pending. No real Telegram topic is deleted by this slice.
+The command and destructive real-client acceptance remain pending; later
+checkpoints below record runtime/fencing implementation. No real Telegram topic
+has been deleted by these slices.
 
 ## Out of scope
 Enabling modes, deleting real topics, changing provider routing or adding
@@ -41,3 +42,8 @@ quiescence and command/recovery/stream/callback integration remain open. See
 ## Parallel follow-up checkpoint
 
 Ingress/callback/native-admission and guarded output fences merged in PR #163 (`b62eb22`). Original-topic identity survives final fallback chunks, retries and code uploads. Native/transport quiescence, queued-turn settlement and threadless edit ownership still block `/thread delete`. [Evidence](../reviews/2026-11-03-topic-next.md).
+
+## Implementation checkpoint — 2026-11-03
+
+Native/queue/transport leases, scoped edits and conservative startup fence restoration deployed in `a25f22a` (#167, D064). Active login blocks quiescence; deletion command, durable legacy ownership and uncertainty/managed settlement remain gated.
+See the [rollout evidence and remaining gates](../deployments/2026-11-03-final-plans-health.md). Status remains in-progress.
