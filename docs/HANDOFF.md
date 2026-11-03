@@ -47,7 +47,7 @@ P1 is already merged: E2/E3 must explicitly reconcile elevated native context
 ownership with the durable adapter's registered-scope requirement. Never make
 the reserved folder registerable to work around that check.
 
-Current deployed code remains `a0de4dc`; deployment documentation PR #149 is
+At that E0 checkpoint deployed code was `a0de4dc`; deployment documentation PR #149 is
 preserved in the reliability rollout report. The older rollout statements below are historical.
 Elevated host tests/activation are separate gates; no provider sign-in, host
 privileged session or ordinary profile change was performed in E0.
