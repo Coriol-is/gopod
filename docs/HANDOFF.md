@@ -30,7 +30,22 @@ independent review, global documentation, sequential integration/CI and deployme
 Do not claim full completion or activate incomplete paths. No host reboot,
 provider login, paid test call or deletion of existing user data is implied.
 Dedicated reports track intermediate implementation evidence. This stage has
-not changed production; first action is to review concrete stream plans.
+not changed production. Concrete stream plans reviewed:
+CP-002 persists final intent and atomically publishes deterministic text/code/voice
+plans, with boot recovery before ordinary classification (D063 reserved).
+CP-016 adds per-conversation native/queue/transport leases and scoped edit ownership;
+quiescence must prove actual native completion, not just handler return (D064 reserved).
+Healthchecks add local controller responsiveness/store readiness and offline image
+prerequisites with disposable Docker qualification; no host reboot in this wave.
+Full activation/command exposure depends on the remaining gates actually passing.
+
+Checkpoint: healthchecks source `14d40d0` is independently reviewed; full local
+build/vet/tests, affected races and disposable offline Docker matrix passed.
+[PR #165](https://github.com/Coriol-is/gopod/pull/165) is awaiting required CI.
+CP-002 immutable-plan persistence/preparation/boot recovery is implemented and
+under regression review; foreground activation remains off. CP-016 leases are
+under independent race review, including unknown edit ownership and late queue
+admission. Production remains unchanged.
 
 ## Previous completed wave — parallel follow-up, 2026-11-03
 
