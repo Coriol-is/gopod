@@ -1,56 +1,38 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-03 (E3–E5 merged/deployed; rpi4 flag enabled; native acceptance open)
+**Last updated:** 2026-11-03 (elevated login merged; auth-preserving guard; owner browser login required)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
 [ACCEPTANCE](ACCEPTANCE.md) for pending real-client verification.
 
-## Follow-up — protect existing elevated authorization
+## Resume here — elevated login and credential-preserving preflight
 
-PR #156 merged as `474aac0`; corrected controller `4aac936` is deployed on Pi
-since 12:42:52 UTC, ready 12:43:00, restart count zero. Live Telegram Claude
-login button and Codex `/login elevated` prompts and cancellation passed.
-However native Codex re-login deletes existing credentials before completion:
-our cancelled acceptance probe changed the owner-provided elevated auth from
-logged in to logged out. No ordinary credentials were copied; new browser
-confirmation is required. ROOT is closed; do not resume the stopped host scan.
-`fix/elevated-login-auth-guard` now preflights explicit native auth under the same
-lease and refuses existing, malformed or unproven status before invoking login.
-This follow-up must pass review/CI and deploy before repeating login acceptance.
+PR #155 (`500a094`, D062) adds `/root login`, `/login elevated` and the login
+button for the explicitly confirmed ROOT provider. PR #156 (`474aac0`) fixes
+duplicate command registration discovered during rollout; an actual startup
+regression and real-image Pi boot check now cover that path. PR #157 (`8412e3b`)
+preflights native auth under the execution lease and refuses existing, ambiguous
+or unproven status before starting potentially destructive native login.
+All three passed independent review and mandatory CI; Sonar CLI gates were OK.
 
-## Startup correction — elevated login rollout
+Live Telegram checks confirmed both private prompts, Claude button, Codex alias,
+`/stop` process cancellation and `/root stop` removal. **The Codex re-login probe
+cleared the owner's previous elevated authorization before cancellation.** A new
+owner browser login is required. Do not claim native end-to-end completion or
+copy ordinary credentials to repair it. The long owner-stopped Codex/du host scan
+must not be resumed. Test sessions were closed; a fresh Codex login is now
+awaiting owner browser confirmation (Telegram prompt 3176200). Do not start a
+second login while it is pending. Controller `f8939b7` / source `8412e3b` runs
+on Pi since 12:52:11 UTC, readiness 12:52:19, restart count zero.
 
-PR #155's first Pi startup exposed duplicate `/root` registration (before and
-after Telegram construction), causing a panic/restart loop. Controller and both
-provider tags were rolled back to the verified pre-login versions; Pi is stable
-on `124bc1a`, source checkout `294e8a7`. No schema rollback was required.
-`fix/elevated-login-registration` changes registration to return a mutex-protected
-late binder and registers the command once. A subprocess fixture now executes
-real `run()` with Telegram/elevated enabled, mock HTTP, a missing Docker socket
-and a disposable store, verifying readiness and clean shutdown. Independent
-review, boot regression and targeted race tests passed; final CI/rollout pending.
-Matched-stopped backup `20261103T122519Z-ms-e5af8b89` verified (43 tables, 8,487
-rows). Owner stopped the long host inspection; `/root stop` removed the runtime
-and all observed Codex/du processes before deployment. Do not resume that scan.
-
-## Resume here — elevated login implementation, 2026-11-03
-
-`feat/elevated-login` in `gopod-elevated-login` adds explicit `/root login`,
-`/login elevated` and a generation-bound login button (D062). It reuses private
-OAuth/device delivery while holding the elevated lifecycle/capacity lease.
-Fixed login/status calls are journaled without credentials; Stop/close/restart
-cancel the supervisor, and success needs separate native auth verification.
-Nonzero inference exit no longer falsely asserts that login is required.
-Full build/vet/test, affected race tests and real-Docker interactive-stdin plus
-cancellation proof passed. Independent review PASS; PR #155 merged as `500a094` after green CI.
-Exact main CI `41632378323` also passed; Sonar advisory gate OK.
-Both Pi provider candidate images are built and smoke-tested; controller build
-is being prepared as `gopod-gopod:login-candidate-f3e87b2` (source tree equals
-`500a094`). Production still runs `124bc1a`. Deployment is waiting for the active
-owner ROOT request (Codex/du) to settle; ordinary `backup idle` counters do not
-cover elevated execs, so also inspect ROOT process/journal state. Online backup
-`20261103T115950Z-db-a3c9bbeb` verified; rollback controller/provider tags retained.
+Rollout evidence, backups, rollback, data hashes and the credential-loss incident:
+[deployment report](deployments/2026-11-03-elevated-login.md). The final guard
+rollout is recorded there. The controller default remains off; rpi4 remains on.
+Next: owner completes fresh elevated Codex login, then checks a bounded native
+reply. Claude browser authorization remains open. Container healthchecks remain
+queued. The unrelated pi-agent assistant container was absent before this
+rollout; do not infer its health from the six remaining healthy services.
 
 ## CI policy — Sonar soft gate, 2026-11-03
 
