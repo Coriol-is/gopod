@@ -249,7 +249,7 @@ func (b *Bot) sendVoiceReply(ctx context.Context, chatID int64, thread int, repl
 		params.MessageThreadID = 0
 		params.ReplyParameters = nil
 	}
-	_, err := b.api.SendVoice(ctx, params)
+	err := b.topicRequest(ctx, chatID, thread, func(requestCtx context.Context) error { _, err := b.api.SendVoice(requestCtx, params); return err })
 	// Not retried to main: the upload reader is spent, and the text
 	// reply carries the answer. Marking keeps later sends out of the topic.
 	b.checkThreadGone(chatID, params.MessageThreadID, err)

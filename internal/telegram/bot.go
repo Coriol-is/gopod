@@ -89,21 +89,29 @@ type Deps struct {
 // cancelled (typically by SIGINT/SIGTERM in main). One Bot instance
 // corresponds to one Telegram bot token.
 type Bot struct {
-	elevated      ElevatedInput
-	capabilities  *capabilityCache
-	api           *bot.Bot
-	store         *store.Store
-	runner        *runner.Runner
-	queue         *queue.Queue
-	router        *control.Router
-	allowlist     *mountsec.Allowlist
-	ownerChatID   int64
-	resolveTries  int   // test seam: negative skips the startup username resolution
-	botID         int64 // from the token; identifies replies to and mentions of this bot
-	groupReason   func(ctx context.Context, jid string) string
-	log           *slog.Logger
-	logins        *loginSessions
-	streamEnabled bool
+	topicTransport    runner.ConversationGate
+	topicIngress      runner.ConversationGate
+	topicFences       map[chatThread]topicFence
+	topicMu           sync.Mutex
+	topicMessages     map[topicMessageKey]chatThread
+	topicMessageOrder []topicMessageKey
+	topicUncertain    map[chatThread]bool
+	topicQuiesceMu    sync.Mutex
+	elevated          ElevatedInput
+	capabilities      *capabilityCache
+	api               *bot.Bot
+	store             *store.Store
+	runner            *runner.Runner
+	queue             *queue.Queue
+	router            *control.Router
+	allowlist         *mountsec.Allowlist
+	ownerChatID       int64
+	resolveTries      int   // test seam: negative skips the startup username resolution
+	botID             int64 // from the token; identifies replies to and mentions of this bot
+	groupReason       func(ctx context.Context, jid string) string
+	log               *slog.Logger
+	logins            *loginSessions
+	streamEnabled     bool
 
 	// tts is a test seam for the legacy personal TTS call; nil means the
 	// OpenAI endpoint (textToSpeech).

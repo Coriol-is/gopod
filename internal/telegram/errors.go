@@ -222,8 +222,7 @@ func (b *Bot) sendErrorReply(ctx context.Context, item queue.Item, text string, 
 				AllowSendingWithoutReply: true,
 			}
 		}
-		_, err := b.api.SendMessage(ctx, params)
-		return err
+		return b.topicRequest(ctx, item.ChatID, item.ThreadID, func(requestCtx context.Context) error { _, err := b.api.SendMessage(requestCtx, params); return err })
 	}
 	var err error
 	if !b.threadGone(item.ChatID, item.ThreadID) {

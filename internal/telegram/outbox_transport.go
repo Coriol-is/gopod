@@ -112,20 +112,37 @@ type ArtifactOpener interface {
 
 // botTransport is the Telegram implementation.
 type botTransport struct {
-	api       outboxAPI
-	artifacts ArtifactOpener
-	log       *slog.Logger // optional; nil logs nothing
+	topicGuard func(context.Context, int64, int) (context.Context, func(), error)
+	api        outboxAPI
+	artifacts  ArtifactOpener
+	log        *slog.Logger // optional; nil logs nothing
 }
 
 // NewOutboxTransport returns the single-attempt transport over the bot API.
 func (b *Bot) NewOutboxTransport(artifacts ArtifactOpener) *botTransport {
-	return &botTransport{api: b.api, artifacts: artifacts, log: b.log}
+	return &botTransport{api: b.api, artifacts: artifacts, log: b.log, topicGuard: func(ctx context.Context, chat int64, thread int) (context.Context, func(), error) {
+		if err := b.topicAdmission(ctx, chat, thread); err != nil {
+			return ctx, nil, err
+		}
+		if chat <= 0 || thread <= 0 {
+			return ctx, func() {}, nil
+		}
+		return b.topicTransport.Enter(ctx, strconv.FormatInt(chat, 10), thread)
+	}}
 }
 
 func refused(code string) Outcome { return Outcome{Kind: OutcomeRefused, Code: code} }
 
 // Attempt performs one API call. It never retries and never falls back.
 func (t *botTransport) Attempt(ctx context.Context, req SendRequest) Outcome {
+	if t.topicGuard != nil {
+		child, release, err := t.topicGuard(ctx, req.ChatID, req.Thread)
+		if err != nil {
+			return Outcome{Kind: OutcomeNotSent, Code: "canceled_before_dispatch"}
+		}
+		defer release()
+		ctx = child
+	}
 	if ctx.Err() != nil {
 		return Outcome{Kind: OutcomeNotSent, Code: "canceled_before_dispatch"}
 	}

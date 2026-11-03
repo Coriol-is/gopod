@@ -153,13 +153,18 @@ func (b *Bot) sendDraftOpts(ctx context.Context, chatID int64, threadID int, dra
 	if b.threadGone(chatID, threadID) {
 		return errThreadGone
 	}
-	ok, err := b.api.SendMessageDraft(ctx, &bot.SendMessageDraftParams{
-		ChatID:          chatID,
-		MessageThreadID: threadID,
-		DraftID:         strconv.Itoa(draftID),
-		Text:            text,
-		CanStop:         opts.CanStop,
-		KeepOnStop:      opts.KeepOnStop,
+	var ok bool
+	err := b.topicRequest(ctx, chatID, threadID, func(requestCtx context.Context) error {
+		var err error
+		ok, err = b.api.SendMessageDraft(requestCtx, &bot.SendMessageDraftParams{
+			ChatID:          chatID,
+			MessageThreadID: threadID,
+			DraftID:         strconv.Itoa(draftID),
+			Text:            text,
+			CanStop:         opts.CanStop,
+			KeepOnStop:      opts.KeepOnStop,
+		})
+		return err
 	})
 	if err != nil {
 		switch {

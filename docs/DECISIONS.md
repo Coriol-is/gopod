@@ -2195,3 +2195,32 @@ private stdin and requires exit inspection. Stop/close/restart cancel login and
 unknown exit remains blocked. Success requires completed exec, settled journal
 and same-generation native auth status. It is never inferred from printed CLI
 success. Native login profiles remain separate and persist after container close.
+
+## D064 — Exact-topic quiescence leases and conservative restart restoration
+
+**Status:** accepted implementation contract, 2026-11-03, CP-016 continuation.
+
+A persisted topic-deletion intent closes independent ingress, queue, native and
+transport lanes. Native leases cover actual stream exit/cleanup, session
+maintenance and extraction; a returned handler is not exit proof. Queue joining
+includes accepted input between durable insertion and scheduling. Canceled rows
+are removed/notified only after checked terminal persistence; ledger-managed work
+requires its own settlement and blocks this path. Durable unfinished turns and
+execution claims are checked before reporting readiness.
+
+Transport sealing joins issued requests without canceling them as proof of
+non-delivery. Unknown outcomes remain explicit blockers; durable outbox sending
+and uncertain attempts must settle independently. Threadless edits use bounded
+host ownership or validated durable controls; unknown private edits hold a
+chat-wide lease. Closing a topic also seals that unknown lane without canceling
+known sibling/main traffic. The unknown lane stays conservatively sealed for the
+process lifetime. Refusal reopening requires exact generation and durable intent;
+queue-to-Store lock order is retained during the atomic validation/release.
+
+Pending durable intents restore before queue recovery. A restored intent cannot
+prove pre-crash legacy HTTP requests absent and requires explicit reconciliation;
+startup never retries deletion or erases context. This slice does not expose
+`/thread delete`. Before activation, qualify durable origins for all legacy
+fallback-to-main controls, remote ambiguity reconciliation, managed queue
+settlement, and the confirmed command's complete API/outcome/retirement sequence.
+See `docs/reviews/2026-11-03-topic-quiescence.md` for evidence and boundaries.

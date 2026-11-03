@@ -11,15 +11,18 @@ import (
 // react sets a single emoji reaction on a message. Best-effort:
 // failures are logged at debug (reactions are UX sugar, not critical).
 func (b *Bot) react(ctx context.Context, chatID int64, messageID int, emoji string) {
-	_, err := b.api.SetMessageReaction(ctx, &bot.SetMessageReactionParams{
-		ChatID:    chatID,
-		MessageID: messageID,
-		Reaction: []models.ReactionType{{
-			Type: models.ReactionTypeTypeEmoji,
-			ReactionTypeEmoji: &models.ReactionTypeEmoji{
-				Emoji: emoji,
-			},
-		}},
+	err := b.topicEditRequest(ctx, chatID, messageID, func(ctx context.Context) error {
+		_, e := b.api.SetMessageReaction(ctx, &bot.SetMessageReactionParams{
+			ChatID:    chatID,
+			MessageID: messageID,
+			Reaction: []models.ReactionType{{
+				Type: models.ReactionTypeTypeEmoji,
+				ReactionTypeEmoji: &models.ReactionTypeEmoji{
+					Emoji: emoji,
+				},
+			}},
+		})
+		return e
 	})
 	if err != nil {
 		b.log.Debug("react failed",
@@ -31,10 +34,13 @@ func (b *Bot) react(ctx context.Context, chatID int64, messageID int, emoji stri
 
 // clearReaction removes all reactions from a message.
 func (b *Bot) clearReaction(ctx context.Context, chatID int64, messageID int) {
-	b.api.SetMessageReaction(ctx, &bot.SetMessageReactionParams{
-		ChatID:    chatID,
-		MessageID: messageID,
-		Reaction:  []models.ReactionType{},
+	_ = b.topicEditRequest(ctx, chatID, messageID, func(ctx context.Context) error {
+		_, e := b.api.SetMessageReaction(ctx, &bot.SetMessageReactionParams{
+			ChatID:    chatID,
+			MessageID: messageID,
+			Reaction:  []models.ReactionType{},
+		})
+		return e
 	})
 }
 

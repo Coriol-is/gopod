@@ -169,18 +169,22 @@ func (r *statusReactor) finished() bool {
 
 // turnStatus is the reactor of the turn's user message.
 func (b *Bot) turnStatus(item queue.Item) *statusReactor {
+	b.rememberTopicMessage(context.Background(), item.ChatID, item.ThreadID, item.MessageID)
 	return b.newStatusReactor(item.ChatID, item.MessageID)
 }
 
 // setReaction sets emoji as the message's whole reaction set.
 func (b *Bot) setReaction(ctx context.Context, chatID int64, msgID int, emoji string) error {
-	_, err := b.api.SetMessageReaction(ctx, &bot.SetMessageReactionParams{
-		ChatID:    chatID,
-		MessageID: msgID,
-		Reaction: []models.ReactionType{{
-			Type:              models.ReactionTypeTypeEmoji,
-			ReactionTypeEmoji: &models.ReactionTypeEmoji{Emoji: emoji},
-		}},
+	err := b.topicEditRequest(ctx, chatID, msgID, func(ctx context.Context) error {
+		_, e := b.api.SetMessageReaction(ctx, &bot.SetMessageReactionParams{
+			ChatID:    chatID,
+			MessageID: msgID,
+			Reaction: []models.ReactionType{{
+				Type:              models.ReactionTypeTypeEmoji,
+				ReactionTypeEmoji: &models.ReactionTypeEmoji{Emoji: emoji},
+			}},
+		})
+		return e
 	})
 	return err
 }

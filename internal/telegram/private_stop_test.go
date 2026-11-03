@@ -3,7 +3,9 @@ package telegram
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -101,7 +103,13 @@ func TestPrivateStopPlaceholderSurvivesWaitAndStreaming(t *testing.T) {
 }
 
 func TestPrivateStopCommandCancelsBufferedAnswer(t *testing.T) {
-	fake := &fakeTelegram{respond: okResponder}
+	var messageID atomic.Int64
+	fake := &fakeTelegram{respond: func(method string, form map[string]string) (int, string) {
+		if method == "sendMessage" {
+			return sentMessage(strconv.FormatInt(700+messageID.Add(1), 10))
+		}
+		return okResponder(method, form)
+	}}
 	b, item := newStreamFixture(t, fake)
 	item.ThreadID = 7
 	b.router = control.New(nil)

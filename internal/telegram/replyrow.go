@@ -123,7 +123,11 @@ func (b *Bot) newestReply(ctx context.Context, chatID int64, thread int, msgID i
 	}
 	b.rowMu.Unlock()
 	if prev.msgID != 0 && prev.msgID != msgID {
-		b.clearKeyboard(context.WithoutCancel(ctx), chatID, prev.msgID)
+		_ = b.topicRequest(context.WithoutCancel(ctx), chatID, thread, func(leaseCtx context.Context) error {
+			editCtx := context.WithValue(leaseCtx, topicOutputOriginKey{}, chatThread{chatID, thread})
+			b.clearKeyboard(editCtx, chatID, prev.msgID)
+			return nil
+		})
 	}
 }
 

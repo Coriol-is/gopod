@@ -254,3 +254,81 @@ func topicFolderAdmissionQ(ctx context.Context, q taskSQL, folder string, thread
 	}
 	return ErrTopicDeleting
 }
+
+// PendingTopicDeletions returns durable fences to restore before queue/polling
+// recovery. Refused and fully retired intents need no transient runtime lease.
+// Recorded registration identity is retained even when current metadata drifted.
+func (s *Store) PendingTopicDeletions(ctx context.Context) ([]TopicDeletion, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT namespace_id,namespace_epoch,registration_revision,chat_jid,folder,thread_id,intent_id,state FROM topic_deletions WHERE state IN ('deleting','uncertain','deleted') ORDER BY namespace_id,namespace_epoch,thread_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []TopicDeletion
+	for rows.Next() {
+		var d TopicDeletion
+		if err := rows.Scan(&d.Scope.NamespaceID, &d.Scope.NamespaceEpoch, &d.Scope.RegistrationRevision, &d.Scope.JID, &d.Scope.Folder, &d.ThreadID, &d.IntentID, &d.State); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// TopicDeletionTransportIdle preserves issued-request evidence. Neither pending
+// cancellation nor a returned handler can prove sending/uncertain work absent.
+func (s *Store) TopicDeletionTransportIdle(ctx context.Context, expected TopicDeletion) error {
+	_, err := s.withTx(ctx, func(q taskSQL) error {
+		if _, err := ownedTopicDeletionQ(ctx, q, expected); err != nil {
+			return err
+		}
+		var busy bool
+		err := q.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM outbox_parts p JOIN delivery_groups g ON g.delivery_id=p.delivery_id WHERE g.namespace_id=? AND g.namespace_epoch=? AND g.thread_id=? AND p.state IN ('sending','uncertain'))`, expected.Scope.NamespaceID, expected.Scope.NamespaceEpoch, expected.ThreadID).Scan(&busy)
+		if err != nil {
+			return err
+		}
+		if busy {
+			return ErrTopicTransportBusy
+		}
+		return nil
+	})
+	return err
+}
+
+var ErrTopicTransportBusy = errors.New("store: topic has in-flight or uncertain transport")
+
+// TopicDeletionWorkIdle also checks durable rows, covering accepted input that
+// was committed before the intent but has not reached the in-memory queue yet.
+func (s *Store) TopicDeletionWorkIdle(ctx context.Context, expected TopicDeletion) error {
+	_, err := s.withTx(ctx, func(q taskSQL) error {
+		if _, err := ownedTopicDeletionQ(ctx, q, expected); err != nil {
+			return err
+		}
+		var busy bool
+		err := q.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM turns WHERE chat_folder=? AND thread_id=? AND status NOT IN ('done','failed','stopped')) OR EXISTS(SELECT 1 FROM execution_claims c JOIN execution_sessions s ON s.session_id=c.session_id WHERE s.namespace_id=? AND s.namespace_epoch=? AND s.thread_id=?)`, expected.Scope.Folder, expected.ThreadID, expected.Scope.NamespaceID, expected.Scope.NamespaceEpoch, expected.ThreadID).Scan(&busy)
+		if err != nil {
+			return err
+		}
+		if busy {
+			return ErrSessionBusy
+		}
+		return nil
+	})
+	return err
+}
+
+// WithRefusedTopicFence serializes a runtime-only release with durable intent
+// creation/registration changes. release must not call back into Store.
+func (s *Store) WithRefusedTopicFence(ctx context.Context, expected TopicDeletion, release func() error) error {
+	_, err := s.withTx(ctx, func(q taskSQL) error {
+		d, err := ownedTopicDeletionQ(ctx, q, expected)
+		if err != nil {
+			return err
+		}
+		if d.State != "refused" {
+			return ErrTopicDeletionState
+		}
+		return release()
+	})
+	return err
+}

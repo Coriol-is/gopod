@@ -45,10 +45,13 @@ func (b *Bot) chatAction(ctx context.Context, chatID int64, thread int, action m
 	if b.threadGone(chatID, thread) {
 		thread = 0
 	}
-	_, err := b.api.SendChatAction(ctx, &bot.SendChatActionParams{
-		ChatID:          chatID,
-		MessageThreadID: thread,
-		Action:          action,
+	err := b.topicRequest(ctx, chatID, thread, func(requestCtx context.Context) error {
+		_, err := b.api.SendChatAction(requestCtx, &bot.SendChatActionParams{
+			ChatID:          chatID,
+			MessageThreadID: thread,
+			Action:          action,
+		})
+		return err
 	})
 	if err != nil {
 		b.log.Debug("SendChatAction failed",
@@ -62,11 +65,16 @@ func (b *Bot) uploadDocument(ctx context.Context, chatID int64, thread int, name
 	if err := b.topicAdmission(ctx, chatID, thread); err != nil {
 		return 0, err
 	}
-	msg, err := b.api.SendDocument(ctx, &bot.SendDocumentParams{
-		ChatID:          chatID,
-		MessageThreadID: thread,
-		Document:        &models.InputFileUpload{Filename: name, Data: bytes.NewReader(data)},
-		Caption:         caption,
+	var msg *models.Message
+	err := b.topicRequest(ctx, chatID, thread, func(requestCtx context.Context) error {
+		var err error
+		msg, err = b.api.SendDocument(requestCtx, &bot.SendDocumentParams{
+			ChatID:          chatID,
+			MessageThreadID: thread,
+			Document:        &models.InputFileUpload{Filename: name, Data: bytes.NewReader(data)},
+			Caption:         caption,
+		})
+		return err
 	})
 	if err != nil {
 		return 0, fmt.Errorf("sendDocument %s: %w", name, err)

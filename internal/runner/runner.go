@@ -27,6 +27,7 @@ import (
 // is the job of M3 GroupQueue. Until then a small per-chat sync.Mutex
 // inside lastTouchMu serializes EnsureRunning calls for the same chat.
 type Runner struct {
+	conversations ConversationGate
 	profilePolicy *admissionPolicy
 	groups        GroupRuntime
 	d             *Docker
@@ -318,6 +319,12 @@ func (r *Runner) Run(
 	allowlist *mountsec.Allowlist,
 	prompt string,
 ) (reply string, retErr error) {
+	var releaseConversation func()
+	ctx, releaseConversation, retErr = r.conversations.Enter(ctx, chatFolder, thread)
+	if retErr != nil {
+		return "", retErr
+	}
+	defer releaseConversation()
 	if err := validateResultFreeze(ctx, chatFolder, thread); err != nil {
 		return "", err
 	}
@@ -476,6 +483,17 @@ func (r *Runner) RunStream(
 	allowlist *mountsec.Allowlist,
 	prompt string,
 ) (stream *AgentStream, retErr error) {
+	var releaseConversation func()
+	ctx, releaseConversation, retErr = r.conversations.Enter(ctx, chatFolder, thread)
+	if retErr != nil {
+		return nil, retErr
+	}
+	handedOff := false
+	defer func() {
+		if !handedOff {
+			releaseConversation()
+		}
+	}()
 	if err := validateResultFreeze(ctx, chatFolder, thread); err != nil {
 		return nil, err
 	}
@@ -519,7 +537,7 @@ func (r *Runner) RunStream(
 	}
 	group = group || restrictedGroupProvider(prov)
 	originalRelease := releaseSlot
-	releaseSlot = func() { cancelTurn(); releaseRuntime(); originalRelease() }
+	releaseSlot = func() { cancelTurn(); releaseRuntime(); originalRelease(); releaseConversation() }
 	r.touch(chatFolder)
 
 	// Build memory context (same as Run).
@@ -545,7 +563,9 @@ func (r *Runner) RunStream(
 		return withModel(prov.RunCmd(agentPrompt, systemPrompt, ref), prov, model)
 	}
 	transferred = true
-	return r.startStream(ctx, id, convKey{chatFolder, thread}, tier, allowlist, prov, prompt, mkCmd, releaseSlot)
+	stream, retErr = r.startStream(ctx, id, convKey{chatFolder, thread}, tier, allowlist, prov, prompt, mkCmd, releaseSlot)
+	handedOff = retErr == nil
+	return stream, retErr
 }
 
 // startStream runs the agent command mkCmd builds for the
@@ -1138,6 +1158,11 @@ func (r *Runner) SetCompactAfter(n int) { r.compactAfter = n }
 // session as before. Old native files are retained but never resumed by the
 // continuity-aware path.
 func (r *Runner) ClearSession(ctx context.Context, chatFolder string, thread int, tier Tier, allowlist *mountsec.Allowlist) error {
+	ctx, releaseConversation, err := r.conversations.Enter(ctx, chatFolder, thread)
+	if err != nil {
+		return err
+	}
+	defer releaseConversation()
 	if err := r.authorizeProfile(ctx, chatFolder); err != nil {
 		return err
 	}
@@ -1184,6 +1209,11 @@ func (r *Runner) ClearSession(ctx context.Context, chatFolder string, thread int
 // the bridge between the old conversation and the new one — the
 // Context Compiler injects it via the reserved summary slot.
 func (r *Runner) CompactSession(ctx context.Context, chatFolder string, thread int, tier Tier, allowlist *mountsec.Allowlist) (string, error) {
+	ctx, releaseConversation, err := r.conversations.Enter(ctx, chatFolder, thread)
+	if err != nil {
+		return "", err
+	}
+	defer releaseConversation()
 	if err := r.authorizeProfile(ctx, chatFolder); err != nil {
 		return "", err
 	}
@@ -1259,6 +1289,11 @@ func (r *Runner) activeConversations() []convKey {
 // after each successful agent turn — extracts structured facts and
 // stores them in memory under the turn's conversation.
 func (r *Runner) extractAndIngest(ctx context.Context, chatFolder string, thread int, userMsg, agentReply string) {
+	ctx, releaseConversation, err := r.conversations.Enter(ctx, chatFolder, thread)
+	if err != nil {
+		return
+	}
+	defer releaseConversation()
 	if r.extractFn != nil {
 		r.extractFn(ctx, chatFolder, thread, userMsg, agentReply)
 	}

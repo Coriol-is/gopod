@@ -198,6 +198,24 @@ func (b *Bot) dispatchCallback(ctx context.Context, cq *models.CallbackQuery, an
 		Data:      data,
 		answer:    answer,
 	}
+	origin := chatThread{q.ChatID, q.ThreadID}
+	b.topicMu.Lock()
+	if owner, ok := b.topicMessages[topicMessageKey{q.ChatID, q.MessageID}]; ok {
+		origin = owner
+	}
+	b.topicMu.Unlock()
+	ctx = context.WithValue(ctx, topicOutputOriginKey{}, origin)
+	if b.topicAdmission(ctx, origin.chat, origin.thread) != nil {
+		return cbToastExpired
+	}
+	if origin.chat > 0 && origin.thread > 0 {
+		child, release, err := b.topicIngress.Enter(ctx, buildChatJID(origin.chat), origin.thread)
+		if err != nil {
+			return cbToastExpired
+		}
+		defer release()
+		ctx = child
+	}
 	toast, err := h(ctx, q)
 	if err != nil {
 		b.log.ErrorContext(ctx, "callback action failed",

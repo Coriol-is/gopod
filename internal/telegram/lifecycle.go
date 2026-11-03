@@ -319,14 +319,18 @@ func (b *Bot) sendNotice(ctx context.Context, chatID int64, thread int, text str
 	if b.threadGone(chatID, thread) {
 		thread = 0
 	}
-	_, err := b.api.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: chatID, MessageThreadID: thread, Text: text,
+	err := b.topicRequest(ctx, chatID, originalThread, func(requestCtx context.Context) error {
+		_, err := b.api.SendMessage(requestCtx, &bot.SendMessageParams{ChatID: chatID, MessageThreadID: thread, Text: text})
+		return err
 	})
 	if err != nil && b.checkThreadGone(chatID, thread, err) {
 		if err := b.topicAdmission(ctx, chatID, originalThread); err != nil {
 			return err
 		}
-		_, err = b.api.SendMessage(ctx, &bot.SendMessageParams{ChatID: chatID, Text: text})
+		err = b.topicRequest(ctx, chatID, originalThread, func(requestCtx context.Context) error {
+			_, err := b.api.SendMessage(requestCtx, &bot.SendMessageParams{ChatID: chatID, Text: text})
+			return err
+		})
 	}
 	if err != nil {
 		return fmt.Errorf("send notice: %w", err)

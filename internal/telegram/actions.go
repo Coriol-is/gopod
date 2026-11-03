@@ -142,7 +142,18 @@ func (b *Bot) loginCallback(ctx context.Context, q cbQuery) (string, error) {
 	// The flow needs the chat only; it is registered (the dispatcher
 	// checked).
 	m := &models.Message{ID: q.MessageID, Chat: models.Chat{ID: q.ChatID, Type: models.ChatTypePrivate}, From: &models.User{ID: q.UserID}}
-	go b.loginReserved(ctx, m, q.ThreadID, q.Chat)
+	// Transfer asynchronous startup to its own lease before callback release.
+	loginCtx := context.WithoutCancel(ctx)
+	release := func() {}
+	if q.ChatID > 0 && q.ThreadID > 0 {
+		var err error
+		loginCtx, release, err = b.topicIngress.Enter(loginCtx, buildChatJID(q.ChatID), q.ThreadID)
+		if err != nil {
+			b.logins.release(q.ChatID)
+			return cbToastExpired, nil
+		}
+	}
+	go func() { defer release(); b.loginReserved(loginCtx, m, q.ThreadID, q.Chat) }()
 	return loginToastStarting, nil
 }
 

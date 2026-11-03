@@ -50,7 +50,15 @@ func (b *Bot) sendPlaceholderText(ctx context.Context, chatID int64, thread int,
 		}
 	}
 
-	sent, err := b.api.SendMessage(ctx, params)
+	var sent *models.Message
+	err := b.topicRequest(ctx, chatID, thread, func(requestCtx context.Context) error {
+		var err error
+		sent, err = b.api.SendMessage(requestCtx, params)
+		return err
+	})
+	if sent != nil {
+		b.rememberTopicMessage(ctx, chatID, thread, sent.ID)
+	}
 	if err != nil {
 		if b.checkThreadGone(chatID, thread, err) {
 			return 0
@@ -91,11 +99,14 @@ func (b *Bot) editMessageKBLocked(ctx context.Context, chatID int64, msgID int, 
 	if text == "" {
 		text = "\u2758" // keep cursor visible if empty
 	}
-	_, err := b.api.EditMessageText(ctx, &bot.EditMessageTextParams{
-		ChatID:      chatID,
-		MessageID:   msgID,
-		Text:        text,
-		ReplyMarkup: markup,
+	err := b.topicEditRequest(ctx, chatID, msgID, func(requestCtx context.Context) error {
+		_, err := b.api.EditMessageText(requestCtx, &bot.EditMessageTextParams{
+			ChatID:      chatID,
+			MessageID:   msgID,
+			Text:        text,
+			ReplyMarkup: markup,
+		})
+		return err
 	})
 	if err != nil {
 		b.log.Debug("editMessage failed",
@@ -140,12 +151,15 @@ func (b *Bot) editMessageHTMLKBLocked(ctx context.Context, chatID int64, msgID i
 	if html == "" {
 		return nil
 	}
-	_, err := b.api.EditMessageText(ctx, &bot.EditMessageTextParams{
-		ChatID:      chatID,
-		MessageID:   msgID,
-		Text:        html,
-		ParseMode:   models.ParseModeHTML,
-		ReplyMarkup: markup,
+	err := b.topicEditRequest(ctx, chatID, msgID, func(requestCtx context.Context) error {
+		_, err := b.api.EditMessageText(requestCtx, &bot.EditMessageTextParams{
+			ChatID:      chatID,
+			MessageID:   msgID,
+			Text:        html,
+			ParseMode:   models.ParseModeHTML,
+			ReplyMarkup: markup,
+		})
+		return err
 	})
 	if err != nil {
 		if isNotModified(err) {
@@ -245,6 +259,7 @@ func (b *Bot) runAgentStreaming(ctx context.Context, item queue.Item) error {
 // text so far as the reply (see finishStopped) and returns
 // queue.ErrStopped. Otherwise streamReply returns nil.
 func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.AgentStream) error {
+	ctx = withTopicOutputOrigin(ctx, item.ChatID, item.ThreadID)
 	const editLimit = 4000 // safe limit under Telegram's 4096
 
 	stop := b.inflightStop(item.ID) // nil: not stoppable, never fires
