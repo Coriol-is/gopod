@@ -46,9 +46,11 @@ merged as `067c016`. Sonar advisory ERROR: loopback HTTP (S5332), security B;
 probe is restricted to literal loopback, no proxy/redirect or user data.
 CP-002 immutable-plan persistence/preparation/boot recovery passed independent
 review, full local checks and affected races: [PR #166](https://github.com/Coriol-is/gopod/pull/166),
-`149e1d8`, awaiting CI. D063 records the contract; foreground activation remains off. CP-016 leases are
-under independent race review, including unknown edit ownership and late queue
-admission. Production remains unchanged.
+`149e1d8`, merged as `de8293b` after required CI and Sonar OK. D063 records
+the contract; foreground activation remains off. CP-016 independent review found and fixed unknown-edit lease tracking and
+refused-reopen lock inversion; targeted races passed. Final full tests and
+combined-source integration remain pending. Legacy fallback-message origin
+after restart/cache eviction is still an activation gate; no delete command. Production remains unchanged.
 
 ## Previous completed wave — parallel follow-up, 2026-11-03
 
