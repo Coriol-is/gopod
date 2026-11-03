@@ -1,10 +1,22 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-03 (elevated login merged; auth-preserving guard; owner browser login required)
+**Last updated:** 2026-11-03 (elevated login merged; auth-preserving guard; Codex authorized; completion notification correction)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
 [ACCEPTANCE](ACCEPTANCE.md) for pending real-client verification.
+
+## Current follow-up — successful login completion notification
+
+Owner completed Codex browser authorization; native status is `Logged in using
+ChatGPT` and the login process has exited. Telegram falsely reported output
+unavailable because normal runner completion cancelled the context watched by
+Telegram cleanup, which could close the reader before EOF/verification.
+`fix/elevated-login-completion` separates UI lifetime from execution completion:
+natural completion leaves the stream readable until consumer verification and
+cleanup; Stop/timeout still propagate cancellation. The regression simulates the
+Telegram cleanup watcher using the real login handle and fails on old code.
+Review/CI/deployment are pending. Do not repeat native login or clear credentials.
 
 ## Resume here — elevated login and credential-preserving preflight
 
@@ -18,18 +30,16 @@ All three passed independent review and mandatory CI; Sonar CLI gates were OK.
 
 Live Telegram checks confirmed both private prompts, Claude button, Codex alias,
 `/stop` process cancellation and `/root stop` removal. **The Codex re-login probe
-cleared the owner's previous elevated authorization before cancellation.** A new
-owner browser login is required. Do not claim native end-to-end completion or
+cleared the owner's previous elevated authorization before cancellation.** Owner browser login has since restored authorization. Do not claim native end-to-end completion or
 copy ordinary credentials to repair it. The long owner-stopped Codex/du host scan
-must not be resumed. Test sessions were closed; a fresh Codex login is now
-awaiting owner browser confirmation (Telegram prompt 3176200). Do not start a
-second login while it is pending. Controller `f8939b7` / source `8412e3b` runs
+must not be resumed. Test sessions were closed; Codex login from prompt 3176200 is complete. Native status confirms auth;
+Telegram completion notification is being corrected (see above). Controller `f8939b7` / source `8412e3b` runs
 on Pi since 12:52:11 UTC, readiness 12:52:19, restart count zero.
 
 Rollout evidence, backups, rollback, data hashes and the credential-loss incident:
 [deployment report](deployments/2026-11-03-elevated-login.md). The final guard
 rollout is recorded there. The controller default remains off; rpi4 remains on.
-Next: owner completes fresh elevated Codex login, then checks a bounded native
+Next: deploy completion notification correction, then check a bounded native
 reply. Claude browser authorization remains open. Container healthchecks remain
 queued. The unrelated pi-agent assistant container was absent before this
 rollout; do not infer its health from the six remaining healthy services.
