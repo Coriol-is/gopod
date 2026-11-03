@@ -3,7 +3,7 @@
 **Proposal:** [CP-038](../../proposals/CP-038-elevated-host-session.md) ·
 **Spec:** [Architecture and contract](../specs/2026-11-01-elevated-host-session.md)
 
-Not a development authorisation. Each slice is a worktree, a PR, an independent
+Implementation authorized by the owner on 2026-11-03. Each slice is a worktree, a PR, an independent
 source review and green CI before the next starts. `GOPOD_ELEVATED` stays off
 through every slice, so nothing here changes a running deployment.
 
@@ -21,18 +21,18 @@ through every slice, so nothing here changes a running deployment.
 Notes.
 
 - E-pre is done. It shipped on its own because it repairs `/restart`'s buttons
-  on `main` (`5c36b81`, undeployed; the Pi's `8a3ce75` has no argument forms),
+  on `main` (included in deployed `a0de4dc`),
   and E3 could not be accepted without it. The same change set closed the
   review's drift findings and the routing gap in the spec.
 - E1 is where a mistake is expensive: it touches the file every ordinary turn
   goes through and the digest every existing container is compared against. Its
   first two tests — the byte-identical builder fixture and the unchanged digest
   for an existing container — are written before the new builder exists.
-- CP-037 is not a dependency. The reserved folder reuses the folder-keyed
-  machinery that already exists rather than anticipating P1's session entity.
-  When P1 lands, folding the reserved folder into it is a reconciliation slice
-  of its own, and the single teardown function plus the single reserved name are
-  what keep that small.
+- CP-037 P1 is now merged. Before E2/E3, reconcile the reserved unregistered
+  folder with `cmd/gopod/session_adapter.go`: its durable adapter requires
+  a registered SnapshotScope. Do not register elevated or bypass the ordinary
+  scope checks. Keep elevated native context and transcript ownership explicit,
+  and test legacy and durable mapping modes.
 - E6 is evidence, not activation. Enabling the flag on the Pi is a separate
   owner decision, and the owner has deferred Pi deployment until CP-037 is
   complete.

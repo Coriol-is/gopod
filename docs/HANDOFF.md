@@ -1,12 +1,32 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-02 (Claude session recovered in Codex; approved queue streams 1–3 resumed in parallel)
+**Last updated:** 2026-11-03 (CP-038 implementation authorized; E0 images qualified)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
 [ACCEPTANCE](ACCEPTANCE.md) for pending real-client verification.
 
-## Resume here — parallel queue streams 1–3, 2026-11-02
+## Resume here — CP-038 E0 implementation, 2026-11-03
+
+Owner asked to finish elevated. CP-038 is now in-progress; worktree
+`gopod-elevated-e0`, branch `feat/elevated-e0` contains separate Claude/Codex
+ARM64 images and local smoke checks. [Evidence](reviews/2026-11-03-elevated-e0.md)
+records image digests, native CLI versions, Docker API compatibility with the Pi
+and passed build/vet/full tests. No elevated runtime or flag is implemented.
+
+Next: E0 independent source review, green PR CI and merge, then E1 per the
+[staged plan](superpowers/plans/2026-11-01-elevated-host-session.md).
+P1 is already merged: E2/E3 must explicitly reconcile elevated native context
+ownership with the durable adapter's registered-scope requirement. Never make
+the reserved folder registerable to work around that check.
+
+Current deployed code remains `a0de4dc`; deployment documentation PR #149 is
+open pending GitHub approval. The older rollout statements below are historical.
+Elevated host tests/activation are separate gates; no provider sign-in, host
+privileged session or ordinary profile change was performed in E0.
+
+## Previous — parallel queue streams 1–3, 2026-11-02
+
 
 The owner asked Claude to run approved queue items **1–3 in parallel**: release
 qualification, reliability, and conversation management. Recovered session

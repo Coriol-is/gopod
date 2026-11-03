@@ -16,7 +16,10 @@ sh container/build-profiles.sh
 
 That builds every maintained profile: `container/personal/Dockerfile` and
 `Dockerfile.codex` for the private chat, and the three `container/group/`
-images. CI builds only two of them, `container/group/Dockerfile.codex` and
+images, plus `container/elevated/Dockerfile` and `Dockerfile.codex`
+(`gopod-agent-elevated`, `gopod-agent-elevated-codex`). Elevated images run as
+root with host administration tools; building them does not enable CP-038.
+CI builds only two of them, `container/group/Dockerfile.codex` and
 `Dockerfile.tools` (`.github/workflows/ci.yml`).
 
 **`container/Dockerfile` and `container/Dockerfile.codex` are not build
@@ -33,7 +36,7 @@ If the submodule was not pulled at clone time, run
 `git submodule update --init --recursive` first — otherwise stage 1
 fails with `"/skills/frf-tui": not found`.
 
-The resulting image runs as the non-root `node` user inside, but
+The personal/group agent image runs as the non-root `node` user inside, but
 gopod overrides this at spawn time with `--user <host_uid>:<host_gid>`
 so bind-mounted files stay owned by the operator on the host
 ([D013](../docs/DECISIONS.md) / ISOLATION.md §6.1).

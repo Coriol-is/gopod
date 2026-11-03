@@ -35,11 +35,11 @@ in contract D. These remain specifications only.
 Owner authorized P0 code, parallel worktrees, acceptance and automatic merge.
 T5/T5b parallel-runtime implementation remains paused; deployment and T9 reboot are not authorized.
 
-## Elevated host session — CP-038 (design only)
+## Elevated host session — CP-038 (implementation authorized)
 
 ⬜ Design merged as `2ca967c` via [PR #128](https://github.com/Coriol-is/gopod/pull/128).
-Nothing implemented, no feature flag, not deployed. [CP-038](docs/proposals/CP-038-elevated-host-session.md)
-stays `proposed` and needs owner acceptance before any code.
+E0 images are in progress on `feat/elevated-e0`; E1–E6 remain pending. No feature flag or elevated runtime is deployed. [CP-038](docs/proposals/CP-038-elevated-host-session.md)
+is `in-progress`: owner authorized implementation on 2026-11-03.
 
 An explicitly started owner-private conversation with host authority on the Pi:
 `Privileged: true` plus host PID/network/IPC, the Docker socket and the host root at
