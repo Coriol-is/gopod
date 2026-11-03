@@ -58,8 +58,11 @@ session starts automatically; live elevated session count is zero. All nine
 containers run and all seven configured healthchecks pass. Data hashes unchanged.
 [Deployment evidence](deployments/2026-11-03-elevated-host-qualification.md#controller-rollout-and-rpi4-activation).
 
-Next: separate native provider login, authenticated new/resume/tool checks and
-real Telegram confirmation/Stop callback acceptance. Ordinary credentials were
+Telegram picker, warning/Cancel, both provider starts, Stop button and /stop,
+journal, close button and /root stop, and stale-close rejection passed live.
+[Evidence](reviews/2026-11-03-elevated-telegram-acceptance.md) records message IDs.
+Both elevated native profiles are unauthenticated; both test sessions are closed.
+Next: separate provider login and authenticated new/resume/tool checks. Ordinary credentials were
 not copied. `/login` still means ordinary-chat login. Healthchecks remain queued.
 
 ## Previous — E0–E2 deployed, 2026-11-03
