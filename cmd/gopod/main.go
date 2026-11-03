@@ -1162,6 +1162,14 @@ func (a turnStoreAdapter) InsertTurn(ctx context.Context, it queue.Item) (int64,
 	})
 }
 
+func (a turnStoreAdapter) StartBatch(ctx context.Context, items []queue.Item) ([]int, error) {
+	batch := make([]store.TurnStart, len(items))
+	for i, it := range items {
+		batch[i] = store.TurnStart{ID: it.ID, Folder: it.Folder, ThreadID: it.ThreadID, Source: it.Source, Attempts: it.Attempts}
+	}
+	return a.st.StartTurnBatch(ctx, batch)
+}
+
 func (a turnStoreAdapter) MarkRunning(ctx context.Context, id int64) error {
 	return a.st.MarkTurnRunning(ctx, id)
 }

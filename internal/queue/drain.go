@@ -33,7 +33,7 @@ func (q *Queue) beginBatch(ctx context.Context, folder string) ([]Item, context.
 	if q.running == nil {
 		q.running = make(map[string]*activeBatch)
 	}
-	q.running[folder] = &activeBatch{items: items, cancel: cancel}
+	q.running[folder] = &activeBatch{items: append([]Item(nil), items...), cancel: cancel}
 	q.signalDrainLocked()
 	return items, runCtx
 }

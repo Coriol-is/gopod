@@ -93,6 +93,13 @@ type TurnStore interface {
 	LoadUnfinished(ctx context.Context) ([]Item, error)
 }
 
+// BatchStarter is implemented by durable stores that can atomically start all
+// members and return authoritative attempt numbers. A failure must leave the
+// entire batch unchanged. Managed tasks use their separate reservation ledger.
+type BatchStarter interface {
+	StartBatch(ctx context.Context, items []Item) ([]int, error)
+}
+
 // Handler is the callback the queue invokes for each agent turn.
 // It receives the item(s) pending for a chat and is responsible for
 // running the agent, sending the Telegram reply, and returning any
@@ -433,7 +440,13 @@ func (q *Queue) worker(ctx context.Context, folder string) {
 				q.deactivate(folder)
 				return
 			}
-			q.markRunning(ctx, items)
+			if err := q.awaitBatchStart(runCtx, items); err != nil {
+				// No handler ran for this attempt. Keep durable rows as-is;
+				// pending input is recoverable and started input follows the
+				// existing execution-unknown reconciliation at startup.
+				q.deactivate(folder)
+				return
+			}
 			err := q.handler(runCtx, items)
 			if q.batchForced(folder) {
 				q.finish(items, StatusFailed, errors.New("execution_unknown: forced restart cancellation requested"))
@@ -518,6 +531,67 @@ func (q *Queue) worker(ctx context.Context, folder string) {
 			}
 		}
 	}
+}
+
+// awaitBatchStart retains the same batch while persistence is unavailable, so
+// newer input cannot overtake it. Backoff is bounded; retries are pre-execution
+// and do not report OnDone or consume model retry budget. Cancellation leaves
+// durable rows for the existing startup/forced-restart reconciliation.
+func (q *Queue) awaitBatchStart(ctx context.Context, items []Item) error {
+	for retry := 1; ; retry++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := q.startBatch(ctx, items); err == nil {
+			return nil
+		} else {
+			q.log.Warn("queue: waiting for durable batch start", slog.String("folder", items[0].Folder), slog.Any("err", err))
+		}
+		timer := time.NewTimer(q.BackoffFunc(retry))
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		}
+	}
+}
+
+// startBatch must succeed before any ordinary handler can run. The production
+// adapter commits all members in one transaction. The compatibility path for
+// other stores still refuses execution on a failed write.
+func (q *Queue) startBatch(ctx context.Context, items []Item) error {
+	if q.store == nil {
+		return nil
+	}
+	if st, ok := q.store.(BatchStarter); ok {
+		attempts, err := st.StartBatch(ctx, append([]Item(nil), items...))
+		if err != nil {
+			return err
+		}
+		if len(attempts) != len(items) {
+			return errors.New("queue: invalid committed attempt membership")
+		}
+		for i, n := range attempts {
+			if n != items[i].Attempts+1 {
+				return errors.New("queue: invalid committed attempt number")
+			}
+		}
+		for i, n := range attempts {
+			items[i].Attempts = n
+		}
+		return nil
+	}
+	for i := range items {
+		if items[i].ID == 0 {
+			continue
+		}
+		if err := q.store.MarkRunning(ctx, items[i].ID); err != nil {
+			return err
+		}
+		items[i].Attempts++
+	}
+	return nil
 }
 
 // markRunning flips every item in the batch to running. Store errors
