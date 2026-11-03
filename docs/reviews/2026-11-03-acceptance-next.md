@@ -115,3 +115,33 @@ Telegram writes paused after the finished PDF turn, allowing root to coordinate
 further changes/deployment. Parent owns the central HANDOFF/ACCEPTANCE register
 updates and the refusal-routing/wording fixes. No acceptance status here implies
 Claude, group behavior, full topic isolation or visual-client qualification.
+
+## Postdeployment refusal regression — e6f0fad
+
+Root explicitly released the sole Telegram actor after deployment/startup and
+state checks. Before the probe, read-only SQLite showed no unfinished turns;
+`/root status` 3176365 → 3176366 confirmed ROOT off.
+
+One prompt 3176367 in retained topic 3176309 requested an intentionally missing
+`/workspace/chat/gopod-missing-acceptance-20261103-1631-q7.pdf`, explicitly forbidding
+creation, changes to other files/settings, network access and retry. This exercised
+the host refusal path; it was not merely an agent-side refusal to submit.
+
+- Progress/final answer 3176368 stayed in topic 3176309, replying to 3176367.
+- Host warning 3176369 stayed in topic 3176309 (`reply_to` 3176309), identified
+  `source_missing` and used the corrected text: the file was not sent; check path
+  and existence before retrying. It did not claim the nonexistent file remained.
+- Bounded message inspection after 3176367, through the completed probe, found
+  no corresponding warning or path in main. No operator resend occurred.
+- Final agent answer reported exactly one request, no creation and no retry.
+  This is agent-reported behavior; the observed host warning proves refusal
+  routing and wording independently, not a filesystem audit of all agent actions.
+- Durable turn 263: `done`, attempts 1, thread 3176309. Final read-only unfinished
+  turn query was empty.
+- Final `/version` 3176371 → 3176372: `gopod e6f0fad (go1.26.10)`.
+
+Result: the two observed PDF-refusal defects are live-qualified as fixed for this
+bounded missing-file case. Existing successful PDF and test topic were retained.
+API-message evidence does not establish native visual rendering or all refusal
+codes. No provider/auth change, restart, deployment or deletion was performed by
+this acceptance actor. Telegram writes are paused again at the idle checkpoint.
