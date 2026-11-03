@@ -22,6 +22,9 @@ func (b *Bot) loginHandler(ctx context.Context, api *bot.Bot, update *models.Upd
 		}
 		return
 	}
+	if b.dispatchElevatedLoginAlias(ctx, update.Message) {
+		return
+	}
 	if b.runner != nil {
 		b.loginHandlerReal(ctx, api, update)
 		return

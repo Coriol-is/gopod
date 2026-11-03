@@ -274,69 +274,12 @@ func (e *Elevated) Close(ctx context.Context, reason string) error {
 }
 
 func (e *Elevated) Run(ctx context.Context, text string) (string, error) {
-	e.mu.Lock()
-	if e.session.ID == "" || e.blocked || e.draining || e.busy {
-		e.mu.Unlock()
-		return "", errors.New("ROOT не готов или занят. Сообщение не поставлено в очередь; /root status")
+	x, err := e.beginExecution(ctx)
+	if err != nil {
+		return "", err
 	}
-	ctx, cancel := context.WithCancel(ctx)
-	e.cancel = cancel
-	e.busy = true
-	e.done = make(chan struct{})
-	done := e.done
-	s, cfg, id := e.session, e.base, e.container
-	e.mu.Unlock()
-	defer func() {
-		cancel()
-		e.mu.Lock()
-		e.cancel = nil
-		e.busy = false
-		e.done = nil
-		close(done)
-		e.mu.Unlock()
-	}()
-	facts, inspectErr := e.engine.InspectContainer(ctx, ContainerName(ElevatedFolder))
-	if inspectErr != nil || facts == nil || !facts.Running || facts.ID != id {
-		e.mu.Lock()
-		e.blocked = true
-		e.mu.Unlock()
-		return "", errors.New("ROOT: контейнер потерян; автоматического пересоздания нет. /root stop")
-	}
-	plan, err := elevatedPlan(cfg)
-	image, imageErr := e.engine.ImageID(ctx, cfg.Image)
-	if err != nil || imageErr != nil || facts.Labels[LabelPolicyConfig] != plan.Conf.Labels[LabelPolicyConfig] || decideContainer(plan, facts, image, nil).Action != actReuse {
-		e.mu.Lock()
-		e.blocked = true
-		e.mu.Unlock()
-		return "", errors.New("ROOT: контейнер потерян или изменён. Выполнение запрещено; /root stop")
-	}
-	var release func()
-	if e.admission != nil {
-		release, err = e.admission.acquireAgentSlot(ctx, ElevatedFolder)
-		if err != nil {
-			return "", err
-		}
-	}
-	if release != nil {
-		releaseSlot := release
-		releaseGate, gateErr := e.admission.admit(ctx, ElevatedFolder, ClassInteractive)
-		if gateErr != nil {
-			releaseSlot()
-			return "", gateErr
-		}
-		release = func() { releaseGate(); releaseSlot() }
-	}
-	if release != nil {
-		defer func() {
-			e.mu.Lock()
-			defer e.mu.Unlock()
-			if e.blocked {
-				e.heldRelease = release
-			} else {
-				release()
-			}
-		}()
-	}
+	defer x.finish()
+	ctx, s, cfg, id := x.ctx, x.session, x.cfg, x.id
 	if err = e.st.AppendElevatedTranscript(ctx, s.ID, "user", text); err != nil {
 		return "", err
 	}
@@ -405,7 +348,7 @@ func (e *Elevated) Run(ctx context.Context, text string) (string, error) {
 		return "", err
 	}
 	if result.ExitCode != 0 {
-		return "", fmt.Errorf("ROOT: провайдер завершился с кодом %d. Требуется отдельный elevated login; проверьте /root log. Автоматического повтора нет", result.ExitCode)
+		return "", fmt.Errorf("ROOT: провайдер завершился с кодом %d. Проверьте авторизацию через /root login и журнал /root log; ненулевой код не всегда означает ошибку входа. Автоматического повтора нет", result.ExitCode)
 	}
 	if err = e.st.AppendElevatedTranscript(ctx, s.ID, "assistant", reply); err != nil {
 		return "", err

@@ -38,7 +38,7 @@ T5/T5b parallel-runtime implementation remains paused; T9 memory-cgroup reboot w
 ## Elevated host session — CP-038 (implementation authorized)
 
 🟦 Design merged as `2ca967c` via [PR #128](https://github.com/Coriol-is/gopod/pull/128).
-E0 images (#150), E1 profile/guard (#151, D059) and E2 journal/reserved identity (#152, D060) are merged and deployed as `75b3be3`; E3–E5 merged in PR #154 (`294e8a7`) after independent review and green CI, and deployed on Pi. E6 host cgroups and lifecycle are qualified on Pi; Telegram lifecycle/callback acceptance passed; authenticated native provider acceptance remains open. Controller flag defaults off; owner-authorized rpi4 configuration is on. No elevated session is active. [CP-038](docs/proposals/CP-038-elevated-host-session.md)
+E0 images (#150), E1 profile/guard (#151, D059) and E2 journal/reserved identity (#152, D060) are merged and deployed as `75b3be3`; E3–E5 merged in PR #154 (`294e8a7`) after independent review and green CI, and deployed on Pi. E6 host cgroups and lifecycle are qualified on Pi; Telegram lifecycle/callback acceptance passed; authenticated native provider acceptance remains open. Explicit Telegram login for the separate elevated profile is implemented on `feat/elevated-login` (D062), pending final review/CI/rollout. Controller flag defaults off; owner-authorized rpi4 configuration is on. No elevated session is active. [CP-038](docs/proposals/CP-038-elevated-host-session.md)
 is `in-progress`: owner authorized implementation on 2026-11-03.
 
 An explicitly started owner-private conversation with host authority on the Pi:

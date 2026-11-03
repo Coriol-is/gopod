@@ -77,3 +77,32 @@ func TestRootStaleCloseButtonCannotCloseNewGeneration(t *testing.T) {
 		t.Fatal(resp, err)
 	}
 }
+
+func TestRootLoginRequiresOwnerActiveSessionAndCurrentGeneration(t *testing.T) {
+	r := New(nil)
+	p := &rootProbe{}
+	calls := 0
+	RegisterElevated(r, 123, p, func(context.Context, Command) (Response, error) { calls++; return Response{Text: "login"}, nil })
+	caller := Caller{IsOwner: true, Source: SourceTelegram, ChatKind: "private", ChatID: 123, UserID: 123, MessageID: 12}
+	cmd := Command{Name: "root", Args: []string{"login"}, Caller: caller}
+	res, _ := r.Dispatch(t.Context(), cmd)
+	if res.Code == 0 || calls != 0 {
+		t.Fatal("inactive login accepted")
+	}
+	p.active = true
+	cmd.Args = []string{"login", "old-generation"}
+	res, _ = r.Dispatch(t.Context(), cmd)
+	if res.Code == 0 || calls != 0 {
+		t.Fatal("stale login accepted")
+	}
+	cmd.Args = []string{"login", "live-generation"}
+	res, _ = r.Dispatch(t.Context(), cmd)
+	if res.Code != 0 || calls != 1 {
+		t.Fatal(res, calls)
+	}
+	cmd.Caller.UserID = 999
+	res, _ = r.Dispatch(t.Context(), cmd)
+	if res.Code == 0 || calls != 1 {
+		t.Fatal("wrong actor accepted")
+	}
+}

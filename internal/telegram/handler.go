@@ -59,12 +59,6 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 		b.replyTo(ctx, m.Chat.ID, inboundThreadID(m), m.ID, "⚠️ ROOT: данные входа не переданы агенту. Завершите вход отдельно.")
 		return
 	}
-	if !sensitiveLogin && b.handleElevated(ctx, m) {
-		return
-	}
-	if !sensitiveLogin && !isLoginCommand(strings.TrimSpace(messageText(m))) {
-		b.persistMessage(ctx, m)
-	}
 	if sensitiveLogin {
 		// A reply/quote of the login URL/device-code message is credential-bearing
 		// metadata even when its new text is an ordinary command or device-flow chat.
@@ -73,6 +67,12 @@ func (b *Bot) defaultHandler(ctx context.Context, _ *bot.Bot, update *models.Upd
 		clean.Quote = nil
 		clean.ExternalReply = nil
 		m = &clean
+	}
+	if (!sensitiveLogin || strings.HasPrefix(strings.TrimSpace(messageText(m)), "/")) && b.handleElevated(ctx, m) {
+		return
+	}
+	if !sensitiveLogin && !isLoginCommand(strings.TrimSpace(messageText(m))) {
+		b.persistMessage(ctx, m)
 	}
 	b.noteInboundThread(m)
 	if b.dispatchRawTelegramDiagnostics(ctx, m, strings.TrimSpace(messageText(m))) {
