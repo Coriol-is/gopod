@@ -845,6 +845,11 @@ func run() error {
 				}
 				logger.Info("released stale execution claims", slog.Int("count", n))
 			}
+			if cfg.OutboxDispatcherEnabled {
+				if err := recoverReadyFinalReplies(ctx, st, logger); err != nil {
+					return err
+				}
+			}
 			n, err := agentQueue.Recover(ctx)
 			if errors.Is(err, queue.ErrHoldsUnknown) {
 				// Serving beside a possibly running task attempt is unsafe.

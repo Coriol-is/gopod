@@ -245,3 +245,29 @@ func TestOutcomeDiagnosticIsFixedFieldsOnly(t *testing.T) {
 		t.Fatal(d)
 	}
 }
+
+func TestBotTransportPreservesExplicitReplyTarget(t *testing.T) {
+	api := &fakeAPI{msg: &models.Message{ID: 8}}
+	transport := &botTransport{api: api, artifacts: fakeOpener{}}
+	req := textReq()
+	req.ReplyToMessageID = 13
+	if out := transport.Attempt(t.Context(), req); out.Kind != OutcomeAck {
+		t.Fatal(out)
+	}
+	if p := api.lastSend.ReplyParameters; p == nil || p.MessageID != 13 || !p.AllowSendingWithoutReply {
+		t.Fatal(p)
+	}
+	req.Kind = store.PartUpload
+	req.ArtifactRef = "a"
+	req.ParseMode = ""
+	if out := transport.Attempt(t.Context(), req); out.Kind != OutcomeAck {
+		t.Fatal(out)
+	}
+	if p := api.lastDoc.ReplyParameters; p == nil || p.MessageID != 13 {
+		t.Fatal(p)
+	}
+	req.ReplyToMessageID = -1
+	if out := transport.Attempt(t.Context(), req); out.Kind != OutcomeRefused {
+		t.Fatal(out)
+	}
+}
