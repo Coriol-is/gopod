@@ -212,9 +212,15 @@ func (b *Bot) repairControl(ctx context.Context, c store.ControlMessage) error {
 	if c.Terminal && c.HTML {
 		parse = models.ParseModeHTML
 	}
-	_, err = b.api.EditMessageText(ctx, &bot.EditMessageTextParams{ChatID: c.ChatID, MessageID: c.MessageID, Text: text, ParseMode: parse, ReplyMarkup: noKeyboard()})
+	err = b.topicEditRequest(ctx, c.ChatID, c.MessageID, func(ctx context.Context) error {
+		_, e := b.api.EditMessageText(ctx, &bot.EditMessageTextParams{ChatID: c.ChatID, MessageID: c.MessageID, Text: text, ParseMode: parse, ReplyMarkup: noKeyboard()})
+		return e
+	})
 	if err != nil && c.HTML && c.Terminal && strings.Contains(err.Error(), "parse entities") {
-		_, err = b.api.EditMessageText(ctx, &bot.EditMessageTextParams{ChatID: c.ChatID, MessageID: c.MessageID, Text: htmlToPlain(text), ReplyMarkup: noKeyboard()})
+		err = b.topicEditRequest(ctx, c.ChatID, c.MessageID, func(ctx context.Context) error {
+			_, e := b.api.EditMessageText(ctx, &bot.EditMessageTextParams{ChatID: c.ChatID, MessageID: c.MessageID, Text: htmlToPlain(text), ReplyMarkup: noKeyboard()})
+			return e
+		})
 	}
 	success := err == nil || isNotModified(err)
 	// A terminally unavailable message is no longer retried; no fallback send can

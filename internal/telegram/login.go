@@ -35,14 +35,15 @@ func privateLoginMessage(m *models.Message) bool {
 
 // loginSession holds the state for one in-progress /login flow.
 type loginSession struct {
-	submitMu  sync.Mutex
-	submitted bool
-	elevated  interface{ Verified(context.Context) bool }
-	exec      loginIO
-	ctx       context.Context
-	cancel    context.CancelFunc
-	chatID    int64
-	folder    string
+	topicOrigin chatThread
+	submitMu    sync.Mutex
+	submitted   bool
+	elevated    interface{ Verified(context.Context) bool }
+	exec        loginIO
+	ctx         context.Context
+	cancel      context.CancelFunc
+	chatID      int64
+	folder      string
 	// thread is the private-chat topic /login was sent in (0 = main
 	// chat). The session stays per chat; every message of the flow
 	// answers in this topic.
@@ -287,6 +288,7 @@ func (b *Bot) runLoginTarget(ctx context.Context, m *models.Message, thread int,
 }
 
 func (b *Bot) publishLogin(ctx context.Context, m *models.Message, session *loginSession, prov runner.AgentProvider) bool {
+	session.topicOrigin = topicOrigin(ctx, m.Chat.ID, session.thread)
 	exec, loginCtx, loginCancel, thread := session.exec, session.ctx, session.cancel, session.thread
 	// Read lines looking for URL and optional device code.
 	var url, deviceCode string
@@ -371,7 +373,37 @@ func (b *Bot) publishLogin(ctx context.Context, m *models.Message, session *logi
 	// in the browser. Wait for it in the background instead of leaving
 	// the session open for the next message to fall into.
 	if !session.awaitsCode {
-		go b.finishLogin(ctx, m.Chat.ID, session)
+		origin := topicOrigin(ctx, m.Chat.ID, thread)
+		finishCtx, cancelFinish := context.WithTimeout(context.WithoutCancel(ctx), loginTimeout)
+		release := func() {}
+		if origin.chat > 0 && origin.thread > 0 {
+			var err error
+			finishCtx, release, err = b.topicIngress.Enter(finishCtx, buildChatJID(origin.chat), origin.thread)
+			if err != nil {
+				cancelFinish()
+				b.cleanupLoginSession(m.Chat.ID, session)
+				return false
+			}
+		}
+		go func() {
+			defer cancelFinish()
+			defer release()
+			// A canceled attachment is not native exit proof. Preserve a hold
+			// before releasing the completion lease if verification was cut off.
+			defer func() {
+				if finishCtx.Err() != nil && origin.chat > 0 && origin.thread > 0 {
+					b.topicMu.Lock()
+					if b.topicUncertain == nil {
+						b.topicUncertain = make(map[chatThread]bool)
+					}
+					b.topicUncertain[origin] = true
+					b.topicMu.Unlock()
+				}
+			}()
+			stop := context.AfterFunc(finishCtx, func() { _ = session.exec.Close() })
+			defer stop()
+			b.finishLogin(finishCtx, m.Chat.ID, session)
+		}()
 	}
 
 	// Background cleanup goroutine: if the timeout fires before

@@ -832,6 +832,10 @@ func run() error {
 			}
 		}
 
+		if err := tgBot.RestoreTopicFences(ctx); err != nil {
+			return fmt.Errorf("restore topic admission fences: %w", err)
+		}
+
 		// Recover turns left unfinished by a crash/shutdown. Must run after
 		// the scheduler hook is registered and before the bot polls.
 		replayed := 0

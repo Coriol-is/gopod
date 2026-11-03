@@ -51,8 +51,19 @@ func (b *Bot) topicAdmissionMiddleware(next bot.HandlerFunc) bot.HandlerFunc {
 	return func(ctx context.Context, api *bot.Bot, update *models.Update) {
 		if update != nil && update.Message != nil {
 			m := update.Message
-			if m.Chat.Type == models.ChatTypePrivate && b.topicAdmission(ctx, m.Chat.ID, inboundThreadID(m)) != nil {
-				return
+			thread := inboundThreadID(m)
+			if m.Chat.Type == models.ChatTypePrivate && thread > 0 {
+				if b.topicAdmission(ctx, m.Chat.ID, thread) != nil {
+					return
+				}
+				var release func()
+				var err error
+				ctx, release, err = b.topicIngress.Enter(ctx, buildChatJID(m.Chat.ID), thread)
+				if err != nil {
+					return
+				}
+				defer release()
+				ctx = withTopicOutputOrigin(ctx, m.Chat.ID, thread)
 			}
 		}
 		next(ctx, api, update)

@@ -84,10 +84,16 @@ func (b *Bot) sendPrivateLoginText(ctx context.Context, chatID int64, thread int
 	}
 	sendCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	sent, err := b.api.SendMessage(sendCtx, &bot.SendMessageParams{ChatID: chatID, MessageThreadID: thread, Text: markdownToTelegramHTML(text), ParseMode: models.ParseModeHTML, ReplyMarkup: markup})
+	var sent *models.Message
+	err := b.topicRequest(sendCtx, chatID, thread, func(sendCtx context.Context) error {
+		var e error
+		sent, e = b.api.SendMessage(sendCtx, &bot.SendMessageParams{ChatID: chatID, MessageThreadID: thread, Text: markdownToTelegramHTML(text), ParseMode: models.ParseModeHTML, ReplyMarkup: markup})
+		return e
+	})
 	if err != nil || sent == nil || sent.ID == 0 {
 		return 0, errors.New("private login delivery failed")
 	}
+	b.rememberTopicMessage(ctx, chatID, thread, sent.ID)
 	return sent.ID, nil
 }
 func (b *Bot) replyLoginText(ctx context.Context, chatID int64, thread int, text string) {

@@ -32,6 +32,7 @@ import (
 
 // Item is one enqueued message waiting for an agent turn.
 type Item struct {
+	cancellationError error
 	// Durability fields. Zero when the queue has no TurnStore.
 	ID       int64  // turns.id
 	Source   string // "telegram" | "task"
@@ -116,12 +117,15 @@ type Handler func(ctx context.Context, items []Item) error
 
 // Queue is gopod's agent-run scheduler.
 type Queue struct {
-	handler    Handler
-	maxConc    int
-	sem        chan struct{} // buffered channel, size = maxConc
-	log        *slog.Logger
-	maxRetries int
-	store      TurnStore // nil = memory only
+	conversationBlocks     map[conversationKey]uint64
+	conversationGeneration uint64
+	enqueueing             map[conversationKey]int
+	handler                Handler
+	maxConc                int
+	sem                    chan struct{} // buffered channel, size = maxConc
+	log                    *slog.Logger
+	maxRetries             int
+	store                  TurnStore // nil = memory only
 
 	// BackoffFunc computes the wait duration for a given retry count.
 	// Defaults to the exponential backoffDuration. Tests override this
@@ -230,6 +234,26 @@ func (q *Queue) Close() {
 // caller's ctx, which for Telegram is request-scoped and cancelled
 // when the handler returns.
 func (q *Queue) Enqueue(ctx context.Context, item Item) (int64, bool) {
+	q.mu.Lock()
+	key := conversationKey{item.Folder, item.ThreadID}
+	if q.closed || q.conversationBlockedLocked(item.Folder, item.ThreadID) {
+		q.mu.Unlock()
+		return 0, false
+	}
+	if q.enqueueing == nil {
+		q.enqueueing = make(map[conversationKey]int)
+	}
+	q.enqueueing[key]++
+	q.mu.Unlock()
+	defer func() {
+		q.mu.Lock()
+		q.enqueueing[key]--
+		if q.enqueueing[key] == 0 {
+			delete(q.enqueueing, key)
+		}
+		q.signalDrainLocked()
+		q.mu.Unlock()
+	}()
 	if q.store != nil {
 		id, dup, err := q.store.InsertTurn(ctx, item)
 		if err != nil {
@@ -409,6 +433,7 @@ func (q *Queue) worker(ctx context.Context, folder string) {
 		}
 	}()
 
+workLoop:
 	for {
 		// select picks randomly when both cases are ready, so re-check.
 		if ctx.Err() != nil {
@@ -424,6 +449,10 @@ func (q *Queue) worker(ctx context.Context, folder string) {
 		if len(items) == 0 {
 			q.deactivate(folder)
 			return
+		}
+		if runCtx.Err() != nil && q.batchConversationCancelled(folder) {
+			q.settleCancelledBatch(items, nil)
+			continue workLoop
 		}
 		if runCtx.Err() != nil {
 			q.finish(items, StatusStopped, ErrForcedRestart)
@@ -449,12 +478,20 @@ func (q *Queue) worker(ctx context.Context, folder string) {
 		// New messages arriving during backoff append to pending
 		// and get picked up in the NEXT outer-loop iteration.
 		for {
+			if q.batchConversationCancelled(folder) {
+				q.settleCancelledBatch(items, nil)
+				continue workLoop
+			}
 			if runCtx.Err() != nil {
 				q.finish(items, StatusStopped, ErrForcedRestart)
 				q.deactivate(folder)
 				return
 			}
 			if err := q.awaitBatchStart(runCtx, items); err != nil {
+				if q.batchConversationCancelled(folder) {
+					q.settleCancelledBatch(items, nil)
+					continue workLoop
+				}
 				var hold interface{ HoldBatch() bool }
 				if errors.As(err, &hold) && hold.HoldBatch() {
 					q.holdOrdinary(folder, "batch requires result/terminal reconciliation", items)
@@ -467,6 +504,10 @@ func (q *Queue) worker(ctx context.Context, folder string) {
 				return
 			}
 			err := q.handler(runCtx, items)
+			if q.batchConversationCancelled(folder) {
+				q.settleCancelledBatch(items, err)
+				continue workLoop
+			}
 			if q.batchForced(folder) {
 				q.finish(items, StatusFailed, errors.New("execution_unknown: forced restart cancellation requested"))
 				q.deactivate(folder)
@@ -536,6 +577,10 @@ func (q *Queue) worker(ctx context.Context, folder string) {
 				}
 				// retry same items
 			case <-runCtx.Done():
+				if q.batchConversationCancelled(folder) {
+					q.settleCancelledBatch(items, nil)
+					continue workLoop
+				}
 				if q.batchForced(folder) {
 					q.finish(items, StatusFailed, errors.New("execution_unknown: forced restart cancellation requested"))
 				} else {
@@ -715,19 +760,25 @@ func (q *Queue) drainPendingLocked(folder string) []Item {
 	if q.draining || cs == nil || len(cs.pending) == 0 {
 		return nil
 	}
-	// Take only the leading run sharing one ThreadID: a batch is one
-	// conversation. The rest stays pending and the worker drains it next,
-	// so per-chat order is kept. Thread-0-only traffic batches as before.
-	n := 1
-	for n < len(cs.pending) && sameBatch(cs.pending[n], cs.pending[0]) {
-		n++
+	var selected []Item
+	keep := make([]Item, 0, len(cs.pending))
+	ended := false
+	for _, it := range cs.pending {
+		if q.conversationBlockedLocked(folder, it.ThreadID) {
+			keep = append(keep, it)
+			continue
+		}
+		if len(selected) > 0 && !sameBatch(it, selected[0]) {
+			ended = true
+		}
+		if ended {
+			keep = append(keep, it)
+		} else {
+			selected = append(selected, it)
+		}
 	}
-	items := append([]Item(nil), cs.pending[:n]...)
-	cs.pending = cs.pending[n:]
-	if len(cs.pending) == 0 {
-		cs.pending = nil
-	}
-	return items
+	cs.pending = keep
+	return selected
 }
 
 func (q *Queue) deactivate(folder string) {

@@ -57,7 +57,10 @@ func (a *IPCSink) send(ctx context.Context, chatJID string, thread int, text str
 				return fmt.Errorf("conversation unavailable: %w: %w", err, ipc.ErrPermanent)
 			}
 		}
-		if _, err := a.bot.api.SendMessage(ctx, &bot.SendMessageParams{ChatID: id, MessageThreadID: thread, Text: part}); err != nil {
+		if err := a.bot.topicRequest(ctx, id, thread, func(requestCtx context.Context) error {
+			_, err := a.bot.api.SendMessage(requestCtx, &bot.SendMessageParams{ChatID: id, MessageThreadID: thread, Text: part})
+			return err
+		}); err != nil {
 			if i > 0 {
 				return fmt.Errorf("partial delivery: %d of %d parts accepted; remaining delivery uncertain, do not retry whole message: %w: %w", i, len(parts), err, ipc.ErrPermanent)
 			}

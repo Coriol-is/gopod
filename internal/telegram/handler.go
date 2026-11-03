@@ -439,6 +439,7 @@ func SetReplyMode(chatID int64, mode string) {
 // runAgentSync is the synchronous agent path. Used as the queue
 // handler callback (and directly when Queue is nil).
 func (b *Bot) runAgentSync(ctx context.Context, item queue.Item) error {
+	ctx = withTopicOutputOrigin(ctx, item.ChatID, item.ThreadID)
 	runCtx, cancelRun := context.WithCancel(ctx)
 	defer cancelRun()
 	defer b.registerInflight(item.ID, item.ChatID, item.ThreadID, cancelRun)()
@@ -492,7 +493,10 @@ func (b *Bot) runAgentSyncContext(ctx, runCtx context.Context, item queue.Item) 
 			// The Stop placeholder must not turn a buffered voice-only answer
 			// into voice+text. Retire the control, then keep the original delivery.
 			ph := b.popWaitPlaceholder(item)
-			if _, err := b.api.DeleteMessage(ctx, &bot.DeleteMessageParams{ChatID: item.ChatID, MessageID: ph}); err != nil {
+			if err := b.topicEditRequest(ctx, item.ChatID, ph, func(ctx context.Context) error {
+				_, e := b.api.DeleteMessage(ctx, &bot.DeleteMessageParams{ChatID: item.ChatID, MessageID: ph})
+				return e
+			}); err != nil {
 				b.log.Warn("remove voice reply placeholder", slog.Any("err", err))
 				b.editMessage(ctx, item.ChatID, ph, "Finished.")
 			}
@@ -671,10 +675,13 @@ func (b *Bot) startTyping(ctx context.Context, chatID int64, thread int) func() 
 		if b.threadGone(chatID, thread) {
 			return // no typing into a topic that no longer exists
 		}
-		_, err := b.api.SendChatAction(ctx, &bot.SendChatActionParams{
-			ChatID:          chatID,
-			MessageThreadID: thread,
-			Action:          models.ChatActionTyping,
+		err := b.topicRequest(ctx, chatID, thread, func(ctx context.Context) error {
+			_, e := b.api.SendChatAction(ctx, &bot.SendChatActionParams{
+				ChatID:          chatID,
+				MessageThreadID: thread,
+				Action:          models.ChatActionTyping,
+			})
+			return e
 		})
 		if err != nil && !b.checkThreadGone(chatID, thread, err) {
 			// Best-effort; don't spam logs on every refresh failure.
@@ -788,7 +795,16 @@ func (b *Bot) sendChunks(ctx context.Context, chatID int64, thread int, replyToM
 		if err := b.topicAdmission(ctx, chatID, sourceThread); err != nil {
 			return nil, err
 		}
-		return b.api.SendMessage(ctx, params)
+		var sent *models.Message
+		err := b.topicRequest(ctx, chatID, sourceThread, func(requestCtx context.Context) error {
+			var err error
+			sent, err = b.api.SendMessage(requestCtx, params)
+			return err
+		})
+		if sent != nil {
+			b.rememberTopicMessage(ctx, chatID, sourceThread, sent.ID)
+		}
+		return sent, err
 	}
 	const maxLen = 4000
 	last := 0

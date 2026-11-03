@@ -8,9 +8,10 @@ import (
 var ErrForcedRestart = errors.New("forced restart: cancellation requested")
 
 type activeBatch struct {
-	items  []Item
-	cancel context.CancelFunc
-	forced bool
+	conversationCancelled bool
+	items                 []Item
+	cancel                context.CancelFunc
+	forced                bool
 }
 
 // BeginDrain closes dispatch, not ingress. Accepted input remains durable/pending.
