@@ -105,16 +105,16 @@ func (e *Elevated) BeginLogin(ctx context.Context) (*ElevatedLogin, error) {
 	}
 	input, inputWriter := io.Pipe()
 	output, outputWriter := io.Pipe()
-	l := &ElevatedLogin{ctx: x.ctx, Provider: provider, reader: bufio.NewScanner(output), output: output, input: inputWriter, cancel: cancel, done: make(chan struct{}), manager: e, generation: x.session.ID}
+	// The UI lifetime ends on consumer cleanup or cancellation, not exec completion.
+	l := &ElevatedLogin{ctx: loginCtx, Provider: provider, reader: bufio.NewScanner(output), output: output, input: inputWriter, cancel: cancel, done: make(chan struct{}), manager: e, generation: x.session.ID}
 	// Closing both pipes also unblocks a stalled reader/writer on timeout or Close.
-	stop := context.AfterFunc(x.ctx, func() { _ = input.Close(); _ = outputWriter.Close() })
+	stop := context.AfterFunc(x.ctx, func() { cancel(); _ = input.Close(); _ = outputWriter.Close() })
 	go func() {
 		defer func() {
 			stop()
 			_ = input.Close()
 			_ = outputWriter.Close()
 			x.finish()
-			cancel()
 			close(l.done)
 		}()
 		result, runErr := runElevatedJournaled(x.ctx, e.st, x.session.ID, provider.LoginCmd(), func() (*ExecResult, error) {

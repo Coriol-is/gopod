@@ -112,6 +112,11 @@ func TestElevatedLoginStopSettlesAndUncertainRemainsBlocked(t *testing.T) {
 			if l.Verified(ctx) {
 				t.Fatal("cancelled login verified")
 			}
+			select {
+			case <-l.Context().Done():
+			case <-time.After(time.Second):
+				t.Fatal("stop did not cancel login UI")
+			}
 			e.mu.Lock()
 			blocked, busy := e.blocked, e.busy
 			e.mu.Unlock()
@@ -196,5 +201,53 @@ func TestElevatedLoginRejectsAmbiguousNativeStatus(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// Telegram's timeout watcher closes the handle when Context is cancelled.
+// Finishing exec must leave the output readable until the consumer verifies it.
+func TestElevatedLoginCompletionDoesNotTriggerConsumerCancellation(t *testing.T) {
+	e, f := elevatedFixture(t)
+	calls := 0
+	f.run = func(context.Context) (*ExecResult, error) {
+		calls++
+		if calls == 1 {
+			return &ExecResult{ExitCode: 1, Stderr: "Not logged in"}, nil
+		}
+		return &ExecResult{Stdout: "Logged in using ChatGPT"}, nil
+	}
+	e.engine = &loginEngineFake{elevatedFake: f, login: func(context.Context, io.ReadCloser, io.Writer) (*ExecResult, error) { return &ExecResult{}, nil }}
+	if _, err := e.Start(t.Context(), "codex"); err != nil {
+		t.Fatal(err)
+	}
+	l, err := e.BeginLogin(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	watcherDone := make(chan struct{})
+	go func() { <-l.Context().Done(); _ = l.Close(); close(watcherDone) }()
+	select {
+	case <-l.done:
+	case <-time.After(time.Second):
+		t.Fatal("completion stalled")
+	}
+	if err := l.Context().Err(); err != nil {
+		t.Fatalf("successful exec cancelled UI before verification: %v", err)
+	}
+	if _, err := l.ReadLine(); err != io.EOF {
+		t.Fatalf("expected clean EOF: %v", err)
+	}
+	if !l.Verified(t.Context()) {
+		t.Fatal("completed login not verified")
+	}
+	_ = l.Close()
+	select {
+	case <-watcherDone:
+	case <-time.After(time.Second):
+		t.Fatal("consumer cleanup leaked watcher")
+	}
+	if err := e.Close(t.Context(), "test"); err != nil {
+		t.Fatal(err)
 	}
 }
