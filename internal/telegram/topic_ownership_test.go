@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -319,5 +320,20 @@ func TestTopicOwnershipUnknownPlaceholderDoesNotFallback(t *testing.T) {
 	err := b.streamReply(t.Context(), queue.Item{ChatID: streamChat, Folder: "owner"}, &runner.AgentStream{Chunks: chunks, Result: result})
 	if !noReplayError(err) || len(fake.callsTo("sendMessage")) != 1 {
 		t.Fatalf("placeholder replay %v calls%d", err, len(fake.callsTo("sendMessage")))
+	}
+}
+
+func TestTopicOwnershipFailureNeverReclassifiedAsRefusal(t *testing.T) {
+	for _, cause := range []error{
+		fmt.Errorf("can't parse entities; message thread not found; inline keyboard: %w", bot.ErrorBadRequest),
+		&bot.TooManyRequestsError{RetryAfter: 1},
+	} {
+		err := &ownershipSendError{cause: cause, attempted: true}
+		if isKeyboardRefusal(err) || isParseRefusal(err) || isThreadGone(err) {
+			t.Fatal("ownership failure classified as resend permission")
+		}
+		if _, retry := retryAfter(err); retry {
+			t.Fatal("ownership failure classified as retry permission")
+		}
 	}
 }

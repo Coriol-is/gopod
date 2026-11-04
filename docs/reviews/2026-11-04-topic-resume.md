@@ -65,3 +65,20 @@ not reconstructed. Main-message ownership retention/compaction remains explicit
 future work. Noncontrol lifecycle/restart/IPC output, ordinary native-login exit
 qualification, managed queue settlement, remote ambiguity reconciliation and the
 confirmed delete/outcome/local-retirement sequence remain outside this slice.
+
+## Combined-source review checkpoint
+
+Integrated main through PR #169 (`c1966dc`). Its direct-presentation test reused
+remote message ID 555 for every chunk; the new immutable ownership constraint
+correctly rejected the second different send. The fixture now returns monotonic
+IDs, matching Telegram, without changing message/voice/document expectations or
+weakening ownership. Combined focused ownership, silent-Stop and frozen-final
+parity tests pass under the race detector.
+
+Independent review corrections are implemented: pending attempts do not suppress
+independent same-source sends (tested concurrent, same-process later and after
+restart); Retry/error controls use the ownership helper; receipt/unknown failures
+cannot be classified as keyboard/parse/thread or 429 retry permission. Ambiguous
+placeholder output propagates NoReplay through stream drain, preserving the native
+result without hidden final replacement. Scope of raw noncontrol notices remains
+explicit above. Final full build/vet/test and store/telegram race checks follow.

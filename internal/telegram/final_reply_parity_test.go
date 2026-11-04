@@ -3,7 +3,9 @@ package telegram
 import (
 	"encoding/json"
 	"reflect"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/Coriol-is/gopod/internal/store"
@@ -36,7 +38,10 @@ func TestFrozenFinalReplyMatchesDirectPresentation(t *testing.T) {
 			t.Setenv("OPENAI_API_KEY", "fake")
 			SetReplyMode(streamChat, c.mode)
 			t.Cleanup(func() { SetReplyMode(streamChat, "") })
-			fake := &fakeTelegram{respond: func(string, map[string]string) (int, string) { return sentMessage("555") }}
+			var messageID atomic.Int64
+			fake := &fakeTelegram{respond: func(string, map[string]string) (int, string) {
+				return sentMessage(strconv.FormatInt(554+messageID.Add(1), 10))
+			}}
 			direct, item := newStreamFixture(t, fake)
 			directRec := &ttsRecorder{audio: []byte("OggS-audio")}
 			directPD := enablePrepared(t, direct, recSpeech{directRec})
