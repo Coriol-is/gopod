@@ -46,6 +46,13 @@ owner lowered backup recovery; downstream CPs are queued, not all active at once
 | CP-002/003 delivery | `../gopod-delivery-resume`, `feat/delivery-resume` | Final-reply preparation/fallback parity and its tests; stream report `docs/reviews/2026-11-04-delivery-resume.md`. Producer activation still requires every D063 gate. |
 | CP-016 topic lifecycle | `../gopod-topic-resume`, `feat/topic-resume` | Durable legacy ownership/quiescence prerequisites and tests; stream report `docs/reviews/2026-11-04-topic-resume.md`. No delete command activation before D064 gates. |
 
+Checkpoint: delivery parity source is ready for independent review. New tests
+failed against the old implementation for sync voice ordering, voice+code,
+streaming document routing and multi-chunk reply routing; the fixed 12-case
+comparison passes. Full test/race results are pending. Topic ownership journal
+implementation is in progress; no source slice is merged yet. Main CI for
+`01cc7e0`, `e7848f4`, `71ff629` and `25f4333` passed after the prior checkpoint.
+
 Root owns integration, independent review and global documents; source owners
 coordinate shared-file changes before editing. Each slice needs full checks,
 relevant races and required CI before merge. No deployment, live deletion or
