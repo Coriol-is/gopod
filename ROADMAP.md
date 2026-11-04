@@ -82,6 +82,11 @@ CP-039 migration, new providers/runtimes and other proposed research stay deferr
 CP-011/012/032/034 remain accepted designs outside this execution sequence.
 No new dates or effort estimates are asserted before each slice is scoped.
 
+CP-002/003 successful presentation parity merged in PR #169 (`c1966dc`) with
+review, full checks and green required CI/Sonar; remaining foreground gates stay
+open. CP-016 durable topic ownership is still in review in its separate worktree. [HANDOFF](docs/HANDOFF.md#active-implementation-wave--2026-11-04)
+tracks ownership. Downstream items remain queued; this does not activate CP-037.
+
 ## Parallel sessions — CP-037 (P0 and P1 merged and deployed in legacy mode, P2+ not started)
 
 🟦 P0 lifecycle safety merged as `5c36b81` via [PR #126](https://github.com/Coriol-is/gopod/pull/126)

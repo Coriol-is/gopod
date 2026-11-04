@@ -93,12 +93,17 @@ func (b *Bot) PrepareFrozenFinalReply(ctx context.Context, resultID string, pres
 			}
 			extracted[i] = true
 			plan.Preparations = append(plan.Preparations, prep)
-			plan.Request.Parts = append(plan.Request.Parts, store.DeliveryPart{Kind: store.PartUpload, Payload: []byte(doc.caption()), ArtifactRef: ref, ReplyToMessageID: presentation.ReplyToMessageID})
+			plan.Request.Parts = append(plan.Request.Parts, store.DeliveryPart{Kind: store.PartUpload, Payload: []byte(doc.caption()), ArtifactRef: ref})
 		}
 		rendered := finalReplyHTML(split.text(extracted))
 		chunks := chunkHTML(rendered, 4000)
 		for i, chunk := range chunks {
-			part := store.DeliveryPart{Kind: store.PartText, Payload: []byte(chunk), ParseMode: "HTML", ReplyToMessageID: presentation.ReplyToMessageID}
+			part := store.DeliveryPart{Kind: store.PartText, Payload: []byte(chunk), ParseMode: "HTML"}
+			// Match sendChunks: only the first text chunk threads to the input.
+			// Documents have their own captions and never take that reply target.
+			if i == 0 {
+				part.ReplyToMessageID = presentation.ReplyToMessageID
+			}
 			if presentation.EditMessageID != 0 && len(chunks) == 1 {
 				part.Kind = store.PartEdit
 				part.TargetMessageID = presentation.EditMessageID
@@ -130,7 +135,14 @@ func (b *Bot) PrepareFrozenFinalReply(ctx context.Context, resultID string, pres
 					plan.Notes = append(plan.Notes, "voice_"+speechErrKind(err))
 				} else {
 					plan.Preparations = append(plan.Preparations, speech.PreparationID)
-					plan.Request.Parts = append(plan.Request.Parts, store.DeliveryPart{Kind: store.PartUpload, ArtifactRef: speech.Ref, ParseMode: store.UploadPresentationVoice, ReplyToMessageID: presentation.ReplyToMessageID})
+					voice := store.DeliveryPart{Kind: store.PartUpload, ArtifactRef: speech.Ref, ParseMode: store.UploadPresentationVoice, ReplyToMessageID: presentation.ReplyToMessageID}
+					if presentation.Streaming {
+						plan.Request.Parts = append(plan.Request.Parts, voice)
+					} else {
+						// deliverSyncReply sends voice before documents and text.
+						// Preparation still completes before any dispatch or publish.
+						plan.Request.Parts = append([]store.DeliveryPart{voice}, plan.Request.Parts...)
+					}
 				}
 			}
 		}
