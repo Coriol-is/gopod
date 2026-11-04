@@ -47,3 +47,13 @@ Ingress/callback/native-admission and guarded output fences merged in PR #163 (`
 
 Native/queue/transport leases, scoped edits and conservative startup fence restoration deployed in `a25f22a` (#167, D064). Active login blocks quiescence; deletion command, durable legacy ownership and uncertainty/managed settlement remain gated.
 See the [rollout evidence and remaining gates](../deployments/2026-11-03-final-plans-health.md). Status remains in-progress.
+
+## 2026-11-04 durable main control provenance
+
+PR #170 (`dacefc0`) implements metadata-only pre-send ownership for registered
+private main/fallback text controls, durable callback/edit lookup and no-replay
+receipt failures. Ambiguity blocks quiescence but independent replies remain
+available. [Evidence](../reviews/2026-11-04-topic-resume.md) records review,
+combined tests and required CI. Historical provenance, noncontrol outputs,
+reconciliation, native-login/managed settlement and command orchestration remain
+open. This slice is merged, not deployed; CP-016 remains in progress.

@@ -90,3 +90,17 @@ path already did). The fallback now returns that ID with NoReplay, without
 claiming ownership settlement; a dedicated regression verifies two calls total
 (one definite parse refusal, one accepted send) and no third retry. Final source
 checks and independent review are reported in the parent integration handoff.
+
+## Integration checkpoint
+
+Final head `d368086` passed `go build ./...`, `go vet ./...`, the full test suite
+and full Store/Telegram race suites. Independent review covered initial source,
+review corrections, combined parity fixture and the final receipt-ID change;
+reviewer reran focused combined and final receipt tests under race. No blocking
+findings remain for this bounded slice.
+
+PR [#170](https://github.com/Coriol-is/gopod/pull/170) passed both required jobs in
+[CI 41925384728](https://github.com/Coriol-is/gopod/actions/runs/41925384728) and
+Sonar gate OK, then squash-merged as `dacefc0`. The superseded `741f729` CI was
+cancelled deliberately, not counted as a pass. Main CI is separate. No deployment
+or destructive/client acceptance occurred. Remaining gates above stay open.

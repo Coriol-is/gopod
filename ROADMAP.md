@@ -84,8 +84,11 @@ No new dates or effort estimates are asserted before each slice is scoped.
 
 CP-002/003 successful presentation parity merged in PR #169 (`c1966dc`) with
 review, full checks and green required CI/Sonar; remaining foreground gates stay
-open. CP-016 durable topic ownership is still in review in its separate worktree. [HANDOFF](docs/HANDOFF.md#active-implementation-wave--2026-11-04)
-tracks ownership. Downstream items remain queued; this does not activate CP-037.
+open. CP-016 main-control ownership merged in PR #170 (`dacefc0`) after combined
+checks, independent review and required CI/Sonar. Remaining ambiguity, native and
+managed settlement gates keep the delete command unavailable. Both slices await
+deployment; neither completes its parent proposal. [HANDOFF](docs/HANDOFF.md#completed-implementation-wave--2026-11-04)
+records evidence and remaining gates. Downstream items remain queued; CP-037 stays paused.
 
 ## Parallel sessions — CP-037 (P0 and P1 merged and deployed in legacy mode, P2+ not started)
 

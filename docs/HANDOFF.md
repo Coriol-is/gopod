@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-04 (code-backed backlog reprioritized)
+**Last updated:** 2026-11-04 (delivery and topic slices reviewed and merged)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -36,33 +36,36 @@ Managed-task credentials and CP-037 parallel execution remain deferred.
 Queue fix is integrated; production remains recorded as `a25f22a` with deployment
 outstanding. No production changes are part of this priority update.
 
-## Active implementation wave — 2026-11-04
+## Completed implementation wave — 2026-11-04
 
-Base `71ff629` includes queue fix #168. Two bounded streams started after the
-owner lowered backup recovery; downstream CPs are queued, not all active at once.
+Both bounded slices are integrated after independent review, full build/vet/test,
+affected full race suites and exact-head required PR CI. Sonar gates are OK.
 
-| Stream | Checkout / branch | Ownership and completion boundary |
+| Slice | Integration | Result / remaining boundary |
 |---|---|---|
-| CP-002/003 delivery | `../gopod-delivery-resume`, `feat/delivery-resume` | Final-reply preparation/fallback parity and its tests; stream report `docs/reviews/2026-11-04-delivery-resume.md`. Producer activation still requires every D063 gate. |
-| CP-016 topic lifecycle | `../gopod-topic-resume`, `feat/topic-resume` | Durable legacy ownership/quiescence prerequisites and tests; stream report `docs/reviews/2026-11-04-topic-resume.md`. No delete command activation before D064 gates. |
+| CP-002/003 successful final presentation | PR [#169](https://github.com/Coriol-is/gopod/pull/169), `c1966dc` (reviewed `ad8479f`) | Sync/stream voice ordering and document/first-text reply targets now match direct delivery. Old ready plans remain immutable. Conditional upload outcomes, preview/cancellation, reply bookkeeping and foreground binding remain open. |
+| CP-016 main control provenance | PR [#170](https://github.com/Coriol-is/gopod/pull/170), `dacefc0` (reviewed `d368086`) | Source/scope journal commits before main/fallback text controls; receipt crash gaps persist, callback/edit lookup survives restart. Pending ambiguity blocks quiescence without blocking independent replies. No delete command activation. |
 
-Checkpoint: delivery slice PR [#169](https://github.com/Coriol-is/gopod/pull/169)
-(`ad8479f`, source `904a632`) passed full build/vet/test, full Telegram race and
-independent review. Four selected cases fail on the prior implementation and
-all 12 differential cases pass with the fix; ready-plan immutability is covered.
-Required CI and Sonar passed; PR #169 merged as `c1966dc`. Foreground production
-is still disconnected. Topic ownership review found two blockers:
-a pending journal row must not permanently refuse independent later main replies,
-and `sendErrorReply` controls must use durable ownership across main fallback.
-Both are being corrected with regression tests before source approval.
-No producer activation or delete command is included. Main CI for `01cc7e0`,
-`e7848f4`, `71ff629` and `25f4333` passed after the prior checkpoint.
+[Delivery evidence](reviews/2026-11-04-delivery-resume.md) and
+[topic evidence](reviews/2026-11-04-topic-resume.md) record regression cases,
+review corrections and boundaries. Combined validation includes both slices;
+fixed test fixtures now use unique Telegram message IDs and register Stop before
+starting the stream goroutine, matching production ordering. No production code
+was weakened to accommodate those fixtures. Older topic CI `741f729` was
+cancelled when superseded; final `d368086` CI passed in
+[run 41925384728](https://github.com/Coriol-is/gopod/actions/runs/41925384728).
 
-Root owns integration, independent review and global documents; source owners
-coordinate shared-file changes before editing. Each slice needs full checks,
-relevant races and required CI before merge. No deployment, live deletion or
-provider-login change is included. CP-018 follows retirement prerequisites;
-CP-019, CP-033 and CP-014 follow the recorded queue; CP-007 is lowered, not closed.
+Next implementation: CP-002 durable refused/ambiguous upload alternatives and
+preview/cancellation ownership; CP-016 explicit ambiguity reconciliation and
+remaining ownership/native-login/managed-settlement prerequisites. CP-018 remains
+behind CP-016, then CP-019 → CP-033 → CP-014; CP-007 stays lowered. Neither CP-002
+nor CP-016 is complete merely because these slices merged.
+
+No deployment, live Telegram acceptance, delete or login action occurred in this
+wave. Production remains recorded as `a25f22a`; queue fix #168 and both slices are
+not deployed. Main CI for delivery `c1966dc`/docs `c356ce8` passed; topic merge CI
+runs separately and is not claimed complete here. The two temporary implementation
+worktrees are clean and may be removed after verifying integration.
 
 ## Current status — 2026-11-04
 
