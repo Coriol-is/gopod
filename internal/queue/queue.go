@@ -447,7 +447,7 @@ workLoop:
 		q.endBatch(folder)
 		items, runCtx := q.beginBatch(ctx, folder)
 		if len(items) == 0 {
-			q.deactivate(folder)
+			// beginBatch already retired us atomically with its idle read.
 			return
 		}
 		if runCtx.Err() != nil && q.batchConversationCancelled(folder) {

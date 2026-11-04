@@ -1053,3 +1053,36 @@ func TestFolderHeldReportsHolds(t *testing.T) {
 		t.Fatal("FolderHeld wrong")
 	}
 }
+
+// Model an old worker reaching its final empty read before a new admission.
+// Admission must start a successor even before the old worker returns/releases
+// its semaphore slot; otherwise that item waits indefinitely for more traffic.
+func TestIdleWorkerHandoffAcceptsNewWork(t *testing.T) {
+	for _, managed := range []bool{false, true} {
+		t.Run(fmt.Sprintf("managed=%t", managed), func(t *testing.T) {
+			h := newHarness(t, 1, nil)
+			h.q.mu.Lock()
+			h.q.chats["alice"] = &chatState{active: true}
+			h.q.mu.Unlock()
+			// Hold the departing worker's slot until the new item is admitted.
+			h.q.sem <- struct{}{}
+			items, _ := h.q.beginBatch(t.Context(), "alice")
+			if len(items) != 0 {
+				t.Fatal("expected an idle worker")
+			}
+			if managed {
+				it := h.ledger.admit(1, "alice", 0)
+				if ok, err := h.q.Dispatch(t.Context(), it.ID); err != nil || !ok {
+					t.Fatalf("dispatch = %v, %v", ok, err)
+				}
+			} else {
+				h.q.Enqueue(t.Context(), Item{Folder: "alice", Source: "telegram", Text: "next"})
+			}
+			<-h.q.sem
+			h.waitFor("successor", func() bool { return len(h.orderList()) == 1 })
+			if managed {
+				h.waitFor("settlement", func() bool { return len(h.outcomeStates()) == 1 })
+			}
+		})
+	}
+}

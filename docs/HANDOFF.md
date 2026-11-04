@@ -13,6 +13,20 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
+## Active queue fix — 2026-11-04
+
+Working branch `fix/queue-idle-handoff`, based on `c1fc6f4`. Root cause identified:
+`beginBatch` observed no runnable work, then `worker` called `deactivate` in a
+separate lock interval. Concurrent admission could append while `active` was
+still true and get stranded after retirement. This affects the shared ordinary
+and managed scheduling path, not just the managed test harness. No actual
+production loss has been observed; persisted pending turns remain recoverable.
+A deterministic test reproduces both ordinary and managed variants on baseline
+(two failures). Fix atomically retires the worker during the idle read and avoids
+any later mutation of a successor's folder. Full build/vet/test, queue race suite and 100-repeat stress/race checks pass.
+Independent review/CI are in progress;
+no deployment or flag change has occurred.
+
 ## Current status — 2026-11-04
 
 Read-only recheck at 08:50:42 UTC: Pi source `a25f22a`; controller running and
