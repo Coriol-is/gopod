@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-03 (a25f22a deployed and verified)
+**Last updated:** 2026-11-04 (repository, runtime and backlog reconciled)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -12,6 +12,24 @@ messages, commands, attachments and supported button interactions, without
 per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older references
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
+
+## Current status — 2026-11-04
+
+Read-only recheck at 08:50:42 UTC: Pi source `a25f22a`; controller running and
+healthy since 2026-11-03 17:13:09 UTC, zero restarts/OOM, all eight idle counters
+zero. Controller binary SHA256 still matches the release. Owner/group/relay/
+elevated runtime containers are absent in this snapshot; the owner health result
+below is historical, not a current running-container claim. Six unrelated services
+are healthy. No new Telegram/native acceptance, deployment or reboot was performed.
+
+At the start of this refresh, main/origin/main and this checkout were `ffe6570`,
+with clean trees and no open PRs. [CI for that tip](https://github.com/Coriol-is/gopod/actions/runs/41691871582)
+passed. Later status-only commits do not change the deployed application.
+[Current backlog](../ROADMAP.md#current-backlog--2026-11-04) distinguishes unfinished
+implementation, completed implementation awaiting acceptance, and deferred work.
+CP-038 is implemented/deployed; Claude browser completion remains an acceptance
+gap. CP-002/CP-016 remain in progress; CP-035 is proposed. No implementation stream
+is running. Recommended first next fix is the reproduced concurrent queue timeout.
 
 ## Repository cleanup — 2026-11-03
 
@@ -44,20 +62,18 @@ Sonar #165 is advisory ERROR for loopback HTTP/security B; #166/#167 are OK.
 Main Sonar baseline is stale (`4e3031a`, 2026-10-26). No finding was suppressed.
 No reboot, new provider login, paid inference or live deletion occurred.
 
-Next work, without claiming these CPs complete:
-1. CP-002: wire foreground final-plan producer only after conditional code-upload
-   fallback, preview ownership, late cancellation and reply-action parity qualify.
-   Immutable ready-plan boot publication is deployed; unknown paid preparation
-   remains held with no rebilling.
-2. CP-016: durable old fallback-message ownership, ambiguity reconciliation,
-   ledger-aware managed cancellation, native-login exit qualification and the
-   confirmed deletion/retirement command. Runtime fences restore conservatively;
-   `/thread delete` remains unavailable.
-3. Investigate pre-existing managed queue stress timeout: unchanged main `572e246`,
+Next work (recommended sequence; this refresh does not start implementation):
+1. Diagnose the reproduced managed queue stress timeout: main `572e246`,
    `TestConcurrentDispatchAndEnqueueRace -count=100`, three failures with 8–11/12
-   settlements. Current release full/race/CI passed; do not erase baseline evidence.
-4. Qualify optional native/relay runtimes when used and host reboot only when
-   separately authorized. Managed tasks remain off.
+   settlements. Keep baseline evidence; the released full/race/CI suites passed.
+2. CP-002 foreground producer: conditional code-upload fallback, preview ownership,
+   late cancellation and reply-action parity before activation.
+3. CP-016: durable legacy message ownership, uncertainty/managed settlement,
+   native-login exit qualification and confirmed deletion/retirement orchestration.
+4. CP-007 scheduled backups/restore qualification; remaining provider/client and
+   optional-runtime checks. A future reboot requires separate authorization.
+Managed tasks remain off; the task-role credential adapter is owner-deferred.
+CP-018 follows CP-016; CP-019 and CP-014 stay in the approved later queue.
 
 ## Previous completed wave — parallel follow-up, 2026-11-03
 

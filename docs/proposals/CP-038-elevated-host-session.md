@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | in-progress |
+| Status | implemented |
 | Date | 2026-11-01 |
 | Origin | Owner asked for an explicitly started, separately commanded agent session that holds host authority on the Pi, with the provider passed through, available only in the private chat |
 | Size | M |
@@ -11,7 +11,14 @@
 | Spec | [Elevated host session](../superpowers/specs/2026-11-01-elevated-host-session.md) |
 | Plan | [Staged delivery](../superpowers/plans/2026-11-01-elevated-host-session.md) |
 
-Owner authorized implementation on 2026-11-03 ("давай доделаем elevated"). E0 images are in progress; E1–E6 remain gated by the staged plan. Activation is separate.
+Owner authorized implementation on 2026-11-03 ("давай доделаем elevated").
+E0–E5 are merged and deployed; E6 host qualification and Telegram lifecycle checks
+passed. Explicit login and completion fixes are deployed; bounded native Codex
+reply/auth preservation passed. Claude browser completion remains open in the
+acceptance register. Default flag remains off; the owner-authorized Pi deployment
+has the elevated profile available, with no active elevated runtime in the
+2026-11-04 snapshot. [Rollout evidence](../deployments/2026-11-03-elevated-login.md).
+This is implemented code, not a claim that every provider/client scenario passed.
 
 ## Problem
 

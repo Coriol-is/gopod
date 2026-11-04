@@ -6,6 +6,11 @@ session boundary without turning into scope creep. ADRs record decisions
 already taken ([DECISIONS.md](../DECISIONS.md)); specs record approved
 designs (`docs/superpowers/specs/`); a CP records a candidate.
 
+Status reconciled 2026-11-04 against [HANDOFF](../HANDOFF.md) and
+[ROADMAP](../../ROADMAP.md#current-backlog--2026-11-04). CP-002/003/004/007/016
+retain incomplete scope; CP-020/038 have implemented code with named acceptance
+gaps; CP-035 remains proposed. A status refresh does not activate deferred work.
+
 ## Lifecycle
 
 ```
@@ -19,6 +24,7 @@ proposed ──► accepted ──► in-progress ──► done
 | `proposed` | Written down, not yet discussed to a decision | anyone |
 | `accepted` | Operator said go. Next step is the superpowers flow: brainstorm, then for S an in-chat design and direct execution, for M/L a spec + plan | operator |
 | `in-progress` | Spec exists, work started; CP links the spec and plan | session doing the work |
+| `implemented` | Implementation shipped; named provider/client qualification remains separate (CP-020/038) | session that shipped it |
 | `done` | Shipped on `main`; ROADMAP has a row; ADR written if a real decision was made | session that shipped it |
 | `rejected` | Decided against; keep the file with the reason so it is not re-proposed | operator |
 | `superseded` | Replaced by another CP or ADR; link it | anyone |
@@ -121,6 +127,6 @@ not enabling the feature merely by merging that document.
 | [CP-035](CP-035-agent-cli-hooks-research.md) | Research which in-container behaviors can move onto Claude Code and Codex hooks | proposed | S |
 | [CP-036](CP-036-private-chat-stop.md) | Explicit inline Stop and /stop for owner-private answers | done | M |
 | [CP-037](CP-037-parallel-sessions.md) | Parallel private topics and background sessions (P0 lifecycle implementation) | in-progress (P0 and P1 merged, deployed in legacy mapping) | L |
-| [CP-038](CP-038-elevated-host-session.md) | Explicitly started elevated host session for the owner's private chat | in-progress | M |
+| [CP-038](CP-038-elevated-host-session.md) | Elevated host session deployed; bounded Codex check passed, Claude browser completion open | implemented | M |
 | [CP-039](CP-039-full-backup-restore-migration.md) | Automatic full backup/restore (files, sessions, auth) and device migration (draft) | proposed | L |
 | [CP-040](CP-040-agent-attachments.md) | Agent attachments: discoverable file delivery from the agent on top of CP-003; honest refusal; document presentation ([spec](../superpowers/specs/2026-11-02-agent-attachments.md), [D058](../DECISIONS.md); real-client acceptance pending) | in-progress | M |

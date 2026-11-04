@@ -3,10 +3,13 @@
 **Proposal:** [CP-038](../../proposals/CP-038-elevated-host-session.md) ·
 **Spec:** [Architecture and contract](../specs/2026-11-01-elevated-host-session.md)
 
-Implementation authorized by the owner on 2026-11-03. E0–E2 landed sequentially.
-The owner subsequently requested one larger completion iteration: E3–E5 now share
-a worktree/PR with independent review and green CI; E6 evidence follows the integrated build. `GOPOD_ELEVATED` stays off
-through every slice, so nothing here changes a running deployment.
+**Status reconciled 2026-11-04:** implementation is merged/deployed. E0–E2
+landed sequentially; E3–E5 shipped in #154 (`294e8a7`). E6 host evidence and
+Telegram lifecycle passed. Login #155–158 and bounded native Codex acceptance
+followed; Claude browser completion remains open. Default `GOPOD_ELEVATED` is
+off; the Pi configuration was separately authorized and activated. No elevated
+runtime is present in the latest snapshot. [Evidence](../../deployments/2026-11-03-elevated-login.md).
+The table below preserves the original delivery contract, not an unstarted queue.
 
 | Slice | Scope | Depends on | Checks that must pass |
 |---|---|---|---|

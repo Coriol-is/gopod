@@ -1,11 +1,20 @@
 # Live acceptance register
 
-Last reconciled: 2026-11-03. Latest deployment: `a25f22a`, verified through
+Last reconciled: 2026-11-04. Latest deployment: `a25f22a`, verified through
 startup/image/health and [final-plan rollout](deployments/2026-11-03-final-plans-health.md).
-Telegram `/version` reply `3176409` confirms `gopod a25f22a (go1.26.10)`.
+Telegram `/version` reply `3176409` on 2026-11-03 confirms `gopod a25f22a (go1.26.10)`.
 Code merged/deployed is distinct from a real-client scenario being accepted.
 Items below are pending unless explicit evidence is linked. Do not infer a pass
 from unit tests, CLI --help/version, startup notices or a green CI job.
+
+## Operational recheck — 2026-11-04
+
+At 08:50:42 UTC, read-only Pi checks confirmed `a25f22a`, matching controller
+image/binary, running/healthy, zero restarts/OOM and eight zero idle counters.
+The owner runtime is absent now; its 2026-11-03 healthy result remains historical.
+Group/relay/elevated runtimes are also absent. No Telegram, model, login, destructive
+or reboot scenario was exercised by this status refresh. Existing acceptance IDs
+are not closed by a health check. [Release evidence](deployments/2026-11-03-final-plans-health.md).
 
 ## Latest open gates
 - 2026-11-03: ordinary Codex nonce continuity, bounded Stop/process exit and
