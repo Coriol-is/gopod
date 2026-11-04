@@ -10,6 +10,15 @@ Production observations remain the 2026-11-04 **08:50:42 UTC** read-only snapsho
 in [HANDOFF](HANDOFF.md#current-status--2026-11-04). This code audit did not deploy,
 change flags, invoke providers or perform new Telegram acceptance.
 
+## Current priority
+
+Use [ROADMAP execution priority](../ROADMAP.md#execution-priority--2026-11-04),
+reordered on 2026-11-04 after this audit: queue diagnosis → CP-007 recovery →
+CP-002/003 delivery → CP-016 retirement → CP-018 providers → CP-019 group UX →
+CP-033 readiness → CP-014 media. Acceptance of shipped features has a separate
+lane. Table order below is an inventory, not a competing execution queue.
+Owner-deferred managed-task credentials and parallel sessions remain deferred.
+
 ## Unfinished implementation
 
 | Item | Code present and actual runtime wiring | Remaining work / next action |

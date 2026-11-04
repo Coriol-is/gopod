@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-04 (code-backed backlog and agent instructions reconciled)
+**Last updated:** 2026-11-04 (code-backed backlog reprioritized)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -88,18 +88,17 @@ Sonar #165 is advisory ERROR for loopback HTTP/security B; #166/#167 are OK.
 Main Sonar baseline is stale (`4e3031a`, 2026-10-26). No finding was suppressed.
 No reboot, new provider login, paid inference or live deletion occurred.
 
-Next work (recommended sequence; this refresh does not start implementation):
-1. Diagnose the reproduced managed queue stress timeout: main `572e246`,
-   `TestConcurrentDispatchAndEnqueueRace -count=100`, three failures with 8–11/12
-   settlements. Keep baseline evidence; the released full/race/CI suites passed.
-2. CP-002 foreground producer: conditional code-upload fallback, preview ownership,
-   late cancellation and reply-action parity before activation.
-3. CP-016: durable legacy message ownership, uncertainty/managed settlement,
-   native-login exit qualification and confirmed deletion/retirement orchestration.
-4. CP-007 scheduled backups/restore qualification; remaining provider/client and
-   optional-runtime checks. A future reboot requires separate authorization.
-Managed tasks remain off; the task-role credential adapter is owner-deferred.
-CP-018 follows CP-016; CP-019 and CP-014 stay in the approved later queue.
+Next work follows [the 2026-11-04 execution priority](../ROADMAP.md#execution-priority--2026-11-04):
+1. Bound and diagnose the queue regression (fresh audit: 2/100 failures); establish
+   cause and regression proof, not a timeout increase or unproven production-loss claim.
+2. CP-007 full recoverability and isolated restore qualification, then timer/retention.
+3. CP-002/003 foreground delivery; CP-016 retirement; CP-018 providers; CP-019 group
+   UX; CP-033 readiness/discovery; CP-014 media, in that order.
+Acceptance is a separate lane: CP-040 A22–A25, ordinary Stop/restart, CP-020;
+serialize Telegram activity. CP-038 browser completion waits for the required
+owner login interaction. Managed-task credentials/activation and CP-037 parallel
+execution remain owner-deferred. A confirmed live defect can override feature
+priority when its evidence is recorded. Reprioritization starts no implementation.
 
 ## Previous completed wave — parallel follow-up, 2026-11-03
 

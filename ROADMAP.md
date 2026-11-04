@@ -43,6 +43,42 @@ CP-003, CP-033 and CP-037 retain partial implementation scope. CP-040 is
 implemented/deployed, with A22–A25 acceptance gaps; CP-033 templates/outcome display
 are already wired, while connector readiness/probes remain open. No work starts merely because this table is refreshed.
 
+## Execution priority — 2026-11-04
+
+Reprioritized at the owner's request after the code audit (`d3be6f8`). This order
+supersedes the 2026-10-25 queue and the earlier November handoff recommendations.
+It changes priority, not CP lifecycle, architectural contracts, activation flags
+or owner-deferred scope. No implementation starts in this documentation pass.
+
+| Order | Deliverable | Why now / completion gate |
+|---|---|---|
+| 1 | Classify and resolve the concurrent queue regression | Reproduced twice in 100 iterations. Begin with a bounded diagnostic slice: trace admitted/dispatched/settled IDs and determine queue vs harness/timing cause. Completion requires a causal explanation and regression coverage, not a longer timeout alone. Managed tasks are off; production task loss is not established. If diagnosis remains inconclusive, record the reproducer/blocker and continue independent recovery work rather than blocking the entire backlog. |
+| 2 | CP-007 recoverability, then automation | Existing snapshots do not cover full session/auth/workspace recovery. First complete capture coverage, restore epoch handling and the restore/activation path; qualify an isolated scratch restore and Pi drill without overwriting live state. Then timer/retention under the accepted maintenance window. Do not expand this into CP-039 migration or online matched mode. |
+| 3 | CP-002 foreground delivery, with the necessary CP-003 slices | Finish an existing reliability investment: wire freeze/preparation/publication with fallback, previews, cancellation and reply-action parity. D063 and staged acceptance remain the activation gates. Protected-challenge work follows its existing contract; do not redo shipped attachment delivery. |
+| 4 | CP-016 complete topic retirement | Finish durable ownership, ambiguity reconciliation and managed settlement before command orchestration. Qualify native-login exit and the full confirmed API/outcome/retirement path under D064. The command stays unavailable until these gates pass. |
+| 5 | CP-018 per-conversation provider/model selection | Follows CP-016 as already agreed; delivers everyday conversation control. Reconcile with CP-037 routing contracts without activating paused parallel execution. |
+| 6 | CP-019 group command/service UX | Bounded user-visible improvement after core conversation reliability; keep ordinary group output public. |
+| 7 | CP-033 connector readiness and discovery | Finish probe/setup/recheck/offer behavior around already shipped presets. Do not add more presets before readiness is trustworthy; connector consent remains with the owner. |
+| 8 | CP-014 media queues | Q1 fidelity/cards/links first, then Q2 document/image/speech, then Q3 video. Keep each queue separately reviewable. |
+
+**Acceptance lane, alongside independent implementation:** CP-040 A22–A25 first,
+then remaining ordinary Stop/restart and CP-020 provider/isolation checks. Keep
+one Telegram actor and avoid overlapping tests with deployment or auth changes.
+Record partial results honestly; visual/native checks require their actual evidence.
+Flag-off/restart cases need a suitable isolated setup or the applicable operational
+authorization. CP-038 Claude browser completion waits for the owner-mediated login
+step; it does not block ordinary reliability work. Optional-runtime health checks
+run when those runtimes are used; no standalone reboot project is introduced.
+Any confirmed security, data-loss or ordinary user-facing failure found here moves
+ahead of feature work, with the evidence and revised priority recorded.
+
+**Held outside the active sequence:** CP-004 broad managed-task activation remains
+blocked on the owner-deferred credential adapter; only settlement primitives needed
+by items 1/4 belong in those slices. CP-037 P2–P7/T5/T5b remain paused. CP-035 hooks,
+CP-039 migration, new providers/runtimes and other proposed research stay deferred.
+CP-011/012/032/034 remain accepted designs outside this execution sequence.
+No new dates or effort estimates are asserted before each slice is scoped.
+
 ## Parallel sessions — CP-037 (P0 and P1 merged and deployed in legacy mode, P2+ not started)
 
 🟦 P0 lifecycle safety merged as `5c36b81` via [PR #126](https://github.com/Coriol-is/gopod/pull/126)
@@ -96,9 +132,10 @@ See [acceptance evidence and limits](docs/reviews/2026-10-31-security-wave-accep
 Deployed to Pi as `e3b5401` on 2026-10-31 00:24 UTC; [operational checks passed](docs/deployments/2026-10-31-security-wave.md).
 Existing feature flags preserved. M9 credential derivation and real-client acceptance remain open. This does not mark the larger CP-002/003/004 streams complete.
 
-## Approved delivery queue — 2026-10-25
+## Historical approved delivery queue — 2026-10-25
 
-The owner approved this order. This is prioritization, not a claim that all
+Superseded for execution order by [the 2026-11-04 reprioritization](#execution-priority--2026-11-04).
+The owner approved this historical order. This is prioritization, not a claim that all
 proposed designs are implemented or that every implementation's live acceptance
 has passed. The proposal registry remains the single CP status source;
 [ACCEPTANCE.md](docs/ACCEPTANCE.md) tracks live checks separately.

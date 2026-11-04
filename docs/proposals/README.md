@@ -82,7 +82,8 @@ Bullet list someone else can verify.
 
 ## Index
 
-Priority/order lives in [ROADMAP.md](../../ROADMAP.md), approved 2026-10-25.
+Priority/order lives in [ROADMAP execution priority](../../ROADMAP.md#execution-priority--2026-11-04),
+reprioritized 2026-11-04 after the code audit; the 2026-10-25 order is historical.
 The [2026-10-26 adoption map](2026-10-26-codex-agent-adoption.md) groups new and
 updated designs for discussion; it does not replace that approved queue.
 `done` means implemented on main; live acceptance remains a separate register.
