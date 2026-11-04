@@ -28,6 +28,16 @@ func (q *Queue) beginBatch(ctx context.Context, folder string) ([]Item, context.
 	defer q.mu.Unlock()
 	items := q.drainPendingLocked(folder)
 	if len(items) == 0 {
+		// Retire under the same lock as the empty/blocked read. Otherwise an
+		// admission can see active=true, leave its item for this worker, and
+		// then be stranded when the worker deactivates after unlocking.
+		// The caller must return without touching this folder again: a new
+		// worker may own it as soon as this lock is released.
+		if cs := q.chats[folder]; cs != nil {
+			cs.active = false
+			cs.retries = 0
+			cs.resumeAfterDrain = false
+		}
 		return nil, ctx
 	}
 	runCtx, cancel := context.WithCancel(ctx)

@@ -28,7 +28,7 @@ are open. [HANDOFF](docs/HANDOFF.md#current-status--2026-11-04) records the evid
 
 | Work | Current status | Remaining step |
 |---|---|---|
-| Concurrent managed queue timeout | Reproduced test regression; root cause open | Fresh 100-run test failed twice; diagnose queue vs harness/timing before claiming production loss |
+| Concurrent queue idle handoff | Confirmed shared scheduling defect; local fix and regression tests pass | Review/full checks/CI/integration pending; [evidence](docs/reviews/2026-11-04-queue-idle-handoff.md); not deployed |
 | CP-002 final delivery | In progress; immutable ready plans and recovery deployed | Foreground cutover, code-upload fallback, preview/cancellation/reply-action parity |
 | CP-016 topic deletion | In progress; runtime/store/outbox fences deployed | Durable legacy ownership, ambiguity/managed settlement, native-login qualification, confirmed delete command |
 | CP-007 backups | In progress; backup foundation deployed | Timer/retention, full capture and restore command/drill; leases only for online matched mode |
