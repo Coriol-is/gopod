@@ -337,3 +337,25 @@ func TestTopicOwnershipFailureNeverReclassifiedAsRefusal(t *testing.T) {
 		}
 	}
 }
+
+func TestTopicOwnershipPlainFallbackKeepsAcceptedReceipt(t *testing.T) {
+	fake := &fakeTelegram{}
+	b, path, _ := ownershipFixture(t, fake)
+	calls := 0
+	fake.respond = func(method string, _ map[string]string) (int, string) {
+		if method != "sendMessage" {
+			return http.StatusOK, `{"ok":true,"result":true}`
+		}
+		calls++
+		if calls == 1 {
+			return apiError(400, "Bad Request: can't parse entities")
+		}
+		_ = b.store.Close()
+		return sentMessage("930")
+	}
+	id, err := b.sendChunks(t.Context(), streamChat, 0, 0, "text", markdownToTelegramHTML, nil, 7)
+	if id != 930 || !noReplayError(err) || calls != 2 {
+		t.Fatalf("plain receipt id%d err%v calls%d", id, err, calls)
+	}
+	reopenOwnership(t, b, path)
+}

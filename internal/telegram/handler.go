@@ -878,6 +878,9 @@ func (b *Bot) sendChunks(ctx context.Context, chatID int64, thread int, replyToM
 					pp.ReplyMarkup = nil
 					sent, err = send(pp)
 				}
+				if sent != nil {
+					last = sent.ID
+				}
 				if err != nil {
 					b.log.Error("SendMessage failed",
 						slog.Int64("chat_id", chatID),

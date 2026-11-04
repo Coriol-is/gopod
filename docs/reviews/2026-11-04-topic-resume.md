@@ -82,3 +82,11 @@ cannot be classified as keyboard/parse/thread or 429 retry permission. Ambiguous
 placeholder output propagates NoReplay through stream drain, preserving the native
 result without hidden final replacement. Scope of raw noncontrol notices remains
 explicit above. Final full build/vet/test and store/telegram race checks follow.
+
+Full tests and full store/Telegram race suites passed at `741f729` after the parity
+fixture correction. Final self-review found plain-text fallback needed to retain
+its accepted remote ID when ownership acknowledgement fails (the primary HTML
+path already did). The fallback now returns that ID with NoReplay, without
+claiming ownership settlement; a dedicated regression verifies two calls total
+(one definite parse refusal, one accepted send) and no third retry. Final source
+checks and independent review are reported in the parent integration handoff.
