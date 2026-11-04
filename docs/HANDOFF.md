@@ -36,6 +36,22 @@ Managed-task credentials and CP-037 parallel execution remain deferred.
 Queue fix is integrated; production remains recorded as `a25f22a` with deployment
 outstanding. No production changes are part of this priority update.
 
+## Active implementation wave — 2026-11-04
+
+Base `71ff629` includes queue fix #168. Two bounded streams started after the
+owner lowered backup recovery; downstream CPs are queued, not all active at once.
+
+| Stream | Checkout / branch | Ownership and completion boundary |
+|---|---|---|
+| CP-002/003 delivery | `../gopod-delivery-resume`, `feat/delivery-resume` | Final-reply preparation/fallback parity and its tests; stream report `docs/reviews/2026-11-04-delivery-resume.md`. Producer activation still requires every D063 gate. |
+| CP-016 topic lifecycle | `../gopod-topic-resume`, `feat/topic-resume` | Durable legacy ownership/quiescence prerequisites and tests; stream report `docs/reviews/2026-11-04-topic-resume.md`. No delete command activation before D064 gates. |
+
+Root owns integration, independent review and global documents; source owners
+coordinate shared-file changes before editing. Each slice needs full checks,
+relevant races and required CI before merge. No deployment, live deletion or
+provider-login change is included. CP-018 follows retirement prerequisites;
+CP-019, CP-033 and CP-014 follow the recorded queue; CP-007 is lowered, not closed.
+
 ## Current status — 2026-11-04
 
 Read-only recheck at 08:50:42 UTC: Pi source `a25f22a`; controller running and
