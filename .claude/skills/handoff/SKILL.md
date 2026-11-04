@@ -5,8 +5,8 @@ description: Update docs/HANDOFF.md (and ROADMAP.md if a milestone moved) at the
 
 # gopod handoff
 
-`docs/HANDOFF.md` is the only file a fresh session reads to learn where the
-project actually is. It is worth exactly as much as its last update. This
+`docs/HANDOFF.md` is the entry point a fresh session reads to learn where the
+project actually is; it links the backlog, roadmap and acceptance evidence. It is worth exactly as much as its last update. This
 skill is the write half of that contract; the SessionStart hook
 (`.claude/hooks/handoff-status.sh`) is the read half.
 
@@ -57,12 +57,18 @@ touched. Drift here is common and silent: in September 2026 the table still
 listed P3 and P4 as ⬜ while both were fully implemented in
 `cmd/gopod/main.go`. If a status is wrong, fix it in the same pass.
 
+Read `docs/BACKLOG.md` and refresh affected implementation claims from code:
+check production callers, flags/defaults and missing orchestration separately
+from test coverage and live acceptance. Record the audited revision and observed
+failures. Do not call an unconnected helper an activated feature.
+
 ### 4b. Cross-check the CP registry
 
 Open `docs/proposals/README.md`. Every CP you touched this session must
 have the right status in its own file *and* in the index table
-(`proposed` → `accepted` → `in-progress` → `done`), and an `in-progress`
-or `done` CP must link its spec. A CP that shipped gets a ROADMAP row in
+(`proposed` → `accepted` → `in-progress` → `implemented` / `done`), and an
+`in-progress`, `implemented` or `done` CP must link its spec. Keep implementation
+completion separate from the named live acceptance gaps in `docs/ACCEPTANCE.md`. A CP that shipped gets a ROADMAP row in
 the same pass.
 
 ### 5. ADR if you decided something
@@ -74,8 +80,11 @@ append a superseding one.
 
 ### 6. Stop
 
-Do not commit. `CLAUDE.md` forbids committing without an explicit request
-from the user — report what you changed and let them ask.
+Follow current `CLAUDE.md` workflow rules and the owner’s session authorization.
+Documentation-only changes may be committed and pushed without a PR after
+`git diff --check`, changed local-link checks and state consistency checks. Source,
+dependency, workflow and executable-configuration changes retain their normal
+review/testing/CI gates. Record what was committed/pushed versus only edited.
 
 ## Quality bar
 

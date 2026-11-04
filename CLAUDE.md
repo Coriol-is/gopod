@@ -16,7 +16,10 @@ source of truth for *how* to work in this repo. The *what* lives in `docs/`.
    the file is behind HEAD; if it says the gap is large, trust ROADMAP.md
    and the git log over HANDOFF until you have reconciled them.
 2. **[ROADMAP.md](ROADMAP.md)** — milestone status. Cross-check what HANDOFF
-   says against the milestone you're touching.
+   says against the milestone you're touching. Read [docs/BACKLOG.md](docs/BACKLOG.md)
+   for code-backed implementation gaps before selecting work. Status changes must
+   distinguish definitions/tests from production callers, enabled configuration
+   and live acceptance; refresh the backlog when those boundaries change.
 3. **[docs/DECISIONS.md](docs/DECISIONS.md)** — already-decided questions.
    Don't re-litigate them; if you genuinely need to overturn one, append a
    superseding ADR rather than editing the old one in place.

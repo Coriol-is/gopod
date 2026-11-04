@@ -2,15 +2,23 @@
 
 | | |
 |---|---|
-| Status | in-progress (accepted by the owner 2026-11-02; implementation on `feat/cp040-agent-attachments`, real-client acceptance A22–A25 pending) |
+| Status | implemented (code audited 2026-11-04; deployed; full real-client acceptance A22–A25 remains open) |
 | Date | 2026-11-01 |
 | Origin | Owner: the agent produced `banks/preduzetnik-bank-assessment.pdf` in the chat workspace and answered that it has no way to attach it ("нужна поддержка sendDocument в gopod"); a pasted path never becomes a Telegram attachment |
 | Size | M |
 | Touches | `internal/runner/chattmpl/` and `container/skills/` (agent-facing contract), `internal/ipc` (request validation/receipts, document vs photo intent), `internal/telegram` outbox transport (document presentation, size limits), `internal/config`/deploy (activation), `docs/SKILLS.md`, `docs/ACCEPTANCE.md` |
-| Depends on | CP-003 (host artifact pipeline, PRs 4–5 merged, flag `GOPOD_OUTBOX_ARTIFACTS` off, [D039](../DECISIONS.md)); CP-002 outbox; CP-007 matched backups (artifact blobs are already covered by `matched_stopped` sets); CP-019 for group delivery targets |
+| Depends on | CP-003 (host artifact pipeline, PRs 4–5 merged, flag `GOPOD_OUTBOX_ARTIFACTS` enabled in recorded rollout, [D039](../DECISIONS.md)); CP-002 outbox; CP-007 matched backups (artifact blobs are already covered by `matched_stopped` sets); CP-019 for group delivery targets |
 | Spec | [agent attachments](../superpowers/specs/2026-11-02-agent-attachments.md) (host side: [immutable artifact delivery](../superpowers/specs/2026-10-26-immutable-artifact-delivery.md)); plan [2026-11-02-agent-attachments](../superpowers/plans/2026-11-02-agent-attachments.md); [D058](../DECISIONS.md) |
 
-## Problem
+## Current implementation — 2026-11-04
+
+Owner attachment templates/skill, IPC presentation selection and transport/refusal
+handling are shipped. See [code-backed backlog](../BACKLOG.md) for call sites and
+remaining A22–A25 checks. The original problem below describes the pre-rollout
+state; the pipeline is now enabled in the recorded deployment. The old feature
+branch was integrated and removed during authorized cleanup.
+
+## Original problem
 
 The host can already snapshot a file under `/workspace/chat`, hash it, publish it
 through the outbox and send it with `SendDocument`/`SendPhoto`

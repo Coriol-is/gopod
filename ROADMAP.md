@@ -18,6 +18,9 @@ right now" view, see [docs/HANDOFF.md](docs/HANDOFF.md).
 
 ## Current backlog — 2026-11-04
 
+The [code-backed backlog](docs/BACKLOG.md) records production call sites, gaps and
+verification at `38e8eba`; use it before selecting implementation work.
+
 Production `a25f22a` was rechecked at 08:50:42 UTC: controller healthy, no restarts
 or OOM, all eight idle counters zero. No owner/group/relay/elevated runtime is
 present in this snapshot. Main baseline `ffe6570` is pushed and CI-green; no PRs
@@ -25,10 +28,10 @@ are open. [HANDOFF](docs/HANDOFF.md#current-status--2026-11-04) records the evid
 
 | Work | Current status | Remaining step |
 |---|---|---|
-| Concurrent managed queue timeout | Open defect; reproduced on baseline, not fixed | Diagnose missing 1–4 outcomes under concurrent Dispatch/Enqueue; recommended first fix |
+| Concurrent managed queue timeout | Reproduced test regression; root cause open | Fresh 100-run test failed twice; diagnose queue vs harness/timing before claiming production loss |
 | CP-002 final delivery | In progress; immutable ready plans and recovery deployed | Foreground cutover, code-upload fallback, preview/cancellation/reply-action parity |
 | CP-016 topic deletion | In progress; runtime/store/outbox fences deployed | Durable legacy ownership, ambiguity/managed settlement, native-login qualification, confirmed delete command |
-| CP-007 backups | In progress; backup foundation deployed | Schedule, artifact leases and restore qualification |
+| CP-007 backups | In progress; backup foundation deployed | Timer/retention, full capture and restore command/drill; leases only for online matched mode |
 | CP-004 managed tasks | Partial implementation; activation off | Settlement/visibility and schedule policy; credential adapter remains owner-deferred |
 | Healthchecks | Implemented/deployed; controller healthy now | Optional-runtime acceptance and separately authorized reboot qualification |
 | CP-038 elevated | Implemented/deployed; bounded native Codex acceptance passed | Claude browser-completion acceptance; no current elevated runtime |
@@ -36,8 +39,9 @@ are open. [HANDOFF](docs/HANDOFF.md#current-status--2026-11-04) records the evid
 | CP-018 / CP-019 / CP-014 | Accepted designs, implementation queued | Per-conversation providers after CP-016; group UX; media queues |
 | CP-035 hooks | Proposed research; documents merged | Research decision/experiments, no hooks activated |
 
-CP-003, CP-033, CP-037 and CP-040 retain their partial/deferred scope and acceptance
-gates in the proposal registry. No work starts merely because this table is refreshed.
+CP-003, CP-033 and CP-037 retain partial implementation scope. CP-040 is
+implemented/deployed, with A22–A25 acceptance gaps; CP-033 templates/outcome display
+are already wired, while connector readiness/probes remain open. No work starts merely because this table is refreshed.
 
 ## Parallel sessions — CP-037 (P0 and P1 merged and deployed in legacy mode, P2+ not started)
 

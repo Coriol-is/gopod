@@ -38,7 +38,8 @@ files. Off-host transport and a healthcheck are distinct acceptance claims.
 ## 2026-10-26 adoption design
 
 The linked spec now defines this candidate in the [adoption map](2026-10-26-codex-agent-adoption.md),
-wave **1 support**. Status remains proposed; a saved design does not approve
+wave **1 support**. At that historical checkpoint the status was proposed
+(superseded by the implementation entry below); a saved design does not approve
 implementation or change the existing delivery queue. New acceptance/migration
 requirements in the dated spec supersede conflicting early shorthand here.
 

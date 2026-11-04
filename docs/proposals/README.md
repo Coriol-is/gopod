@@ -6,9 +6,10 @@ session boundary without turning into scope creep. ADRs record decisions
 already taken ([DECISIONS.md](../DECISIONS.md)); specs record approved
 designs (`docs/superpowers/specs/`); a CP records a candidate.
 
-Status reconciled 2026-11-04 against [HANDOFF](../HANDOFF.md) and
+Status reconciled 2026-11-04 against [code-backed BACKLOG](../BACKLOG.md),
+[HANDOFF](../HANDOFF.md) and
 [ROADMAP](../../ROADMAP.md#current-backlog--2026-11-04). CP-002/003/004/007/016
-retain incomplete scope; CP-020/038 have implemented code with named acceptance
+retain incomplete scope; CP-020/038/040 have implemented code with named acceptance
 gaps; CP-035 remains proposed. A status refresh does not activate deferred work.
 
 ## Lifecycle
@@ -24,7 +25,7 @@ proposed ──► accepted ──► in-progress ──► done
 | `proposed` | Written down, not yet discussed to a decision | anyone |
 | `accepted` | Operator said go. Next step is the superpowers flow: brainstorm, then for S an in-chat design and direct execution, for M/L a spec + plan | operator |
 | `in-progress` | Spec exists, work started; CP links the spec and plan | session doing the work |
-| `implemented` | Implementation shipped; named provider/client qualification remains separate (CP-020/038) | session that shipped it |
+| `implemented` | Implementation shipped; named provider/client qualification remains separate (CP-020/038/040) | session that shipped it |
 | `done` | Shipped on `main`; ROADMAP has a row; ADR written if a real decision was made | session that shipped it |
 | `rejected` | Decided against; keep the file with the reason so it is not re-proposed | operator |
 | `superseded` | Replaced by another CP or ADR; link it | anyone |
@@ -96,7 +97,7 @@ not enabling the feature merely by merging that document.
 | [CP-004](CP-004-isolated-task-sessions.md) | Scheduled tasks run in their own session (task-reliability PR 1-3 of 5 merged: storage, managed dispatch/recovery, policy-guarded execution and reports; PR 4-5 pending) | in-progress | S–M |
 | [CP-005](CP-005-tools-base-image.md) | Lightweight bases and optional tool runtimes | proposed | L |
 | [CP-006](CP-006-yielding-maintenance-and-quiet-hours.md) | Maintenance yields to the user; quiet hours | proposed | S–M |
-| [CP-007](CP-007-store-backups.md) | Matched scheduled backups and restore qualification (slices 4-6 foundation in PR 1; timer and artifact leases pending) | in-progress | M |
+| [CP-007](CP-007-store-backups.md) | Matched scheduled backups and restore qualification (slices 4-6 foundation in PR 1; timer/full capture/restore pending; leases needed for online matched mode) | in-progress | M |
 | [CP-008](CP-008-model-per-chat.md) | `/model` per chat | done | S |
 | [CP-009](CP-009-provider-continuity.md) | Continue conversations across providers | done | M |
 | [CP-010](CP-010-quota-switch-confirmation.md) | Confirm switching after quota exhaustion | done | M |
@@ -129,4 +130,4 @@ not enabling the feature merely by merging that document.
 | [CP-037](CP-037-parallel-sessions.md) | Parallel private topics and background sessions (P0 lifecycle implementation) | in-progress (P0 and P1 merged, deployed in legacy mapping) | L |
 | [CP-038](CP-038-elevated-host-session.md) | Elevated host session deployed; bounded Codex check passed, Claude browser completion open | implemented | M |
 | [CP-039](CP-039-full-backup-restore-migration.md) | Automatic full backup/restore (files, sessions, auth) and device migration (draft) | proposed | L |
-| [CP-040](CP-040-agent-attachments.md) | Agent attachments: discoverable file delivery from the agent on top of CP-003; honest refusal; document presentation ([spec](../superpowers/specs/2026-11-02-agent-attachments.md), [D058](../DECISIONS.md); real-client acceptance pending) | in-progress | M |
+| [CP-040](CP-040-agent-attachments.md) | Agent attachments: discoverable file delivery from the agent on top of CP-003; honest refusal; document presentation ([spec](../superpowers/specs/2026-11-02-agent-attachments.md), [D058](../DECISIONS.md); real-client acceptance pending) | implemented | M |

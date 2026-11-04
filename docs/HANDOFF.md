@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-04 (repository, runtime and backlog reconciled)
+**Last updated:** 2026-11-04 (code-backed backlog and agent instructions reconciled)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -30,6 +30,32 @@ implementation, completed implementation awaiting acceptance, and deferred work.
 CP-038 is implemented/deployed; Claude browser completion remains an acceptance
 gap. CP-002/CP-016 remain in progress; CP-035 is proposed. No implementation stream
 is running. Recommended first next fix is the reproduced concurrent queue timeout.
+
+## Code audit checkpoint — 2026-11-04
+
+[BACKLOG](BACKLOG.md) is the current code-backed implementation inventory, audited
+at `38e8eba`; priority stays in ROADMAP and CP lifecycle in the proposal registry.
+CP-002 foreground freeze/preparation and CP-016 quiescence entrypoints have no
+production callers; only their documented recovery/guard foundations are wired.
+CP-004 executor is wired behind its flag, but lacks a qualified task credential
+adapter. CP-007 has artifact capture and scratch verification, not a full restore
+command or all session/auth/workspace coverage. CP-033 templates/outcomes/guide
+are shipped; connector readiness is still unknown because no probe is injected.
+CP-040 is implemented/deployed, with the full A22–A25 acceptance matrix open.
+
+Fresh queue stress at this baseline failed **2 of 100 iterations** waiting for all
+12 managed outcomes. Root cause is unclassified; this is not evidence of actual
+production task loss. First next action: instrument/reproduce Dispatch/Enqueue
+scheduling and settlement, then review a source fix if warranted. No feature
+implementation, activation, deployment or provider/client acceptance happened in
+this documentation audit. Focused final-reply/quiescence/backup tests passed;
+full suites were not rerun for these documentation edits. The 08:50:42 UTC
+production snapshot above remains the
+latest operational observation, not a new check performed by this audit.
+
+The obsolete tracked editor copy `docs/HANDOFF.md-e` was removed; Git retains its
+history. The handoff procedure now follows CLAUDE's documentation-only exception
+instead of its obsolete blanket commit prohibition.
 
 ## Repository cleanup — 2026-11-03
 

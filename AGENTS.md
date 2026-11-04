@@ -8,7 +8,7 @@ because Codex reads `AGENTS.md`, not `CLAUDE.md`. Do not duplicate rules here.
 1. Read [`CLAUDE.md`](CLAUDE.md) in full: hard constraints, conventions,
    workflow rules and the "What to never do" list apply to every harness.
 2. Read [`docs/HANDOFF.md`](docs/HANDOFF.md), starting with **Resume here**.
-3. Cross-check [`ROADMAP.md`](ROADMAP.md) and [`docs/DECISIONS.md`](docs/DECISIONS.md)
+3. Cross-check [`docs/BACKLOG.md`](docs/BACKLOG.md), [`ROADMAP.md`](ROADMAP.md) and [`docs/DECISIONS.md`](docs/DECISIONS.md)
    before touching a milestone or revisiting a decision.
 
 ## Harness notes
