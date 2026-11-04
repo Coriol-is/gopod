@@ -28,7 +28,7 @@ are open. [HANDOFF](docs/HANDOFF.md#current-status--2026-11-04) records the evid
 
 | Work | Current status | Remaining step |
 |---|---|---|
-| Concurrent queue idle handoff | Confirmed shared scheduling defect; local fix and regression tests pass | Review/full checks/CI/integration pending; [evidence](docs/reviews/2026-11-04-queue-idle-handoff.md); not deployed |
+| Concurrent queue idle handoff | Fixed and merged as `01cc7e0` (PR #168); review and required CI pass | Deployment pending; [evidence](docs/reviews/2026-11-04-queue-idle-handoff.md) |
 | CP-002 final delivery | In progress; immutable ready plans and recovery deployed | Foreground cutover, code-upload fallback, preview/cancellation/reply-action parity |
 | CP-016 topic deletion | In progress; runtime/store/outbox fences deployed | Durable legacy ownership, ambiguity/managed settlement, native-login qualification, confirmed delete command |
 | CP-007 backups | In progress; backup foundation deployed | Timer/retention, full capture and restore command/drill; leases only for online matched mode |
@@ -48,11 +48,12 @@ are already wired, while connector readiness/probes remain open. No work starts 
 Reprioritized at the owner's request after the code audit (`d3be6f8`). This order
 supersedes the 2026-10-25 queue and the earlier November handoff recommendations.
 It changes priority, not CP lifecycle, architectural contracts, activation flags
-or owner-deferred scope. No implementation starts in this documentation pass.
+or owner-deferred scope. The reprioritization itself started no implementation; item 1 was subsequently
+completed in PR #168. CP-007 is now the first unfinished implementation item.
 
 | Order | Deliverable | Why now / completion gate |
 |---|---|---|
-| 1 | Classify and resolve the concurrent queue regression | Reproduced twice in 100 iterations. Begin with a bounded diagnostic slice: trace admitted/dispatched/settled IDs and determine queue vs harness/timing cause. Completion requires a causal explanation and regression coverage, not a longer timeout alone. Managed tasks are off; production task loss is not established. If diagnosis remains inconclusive, record the reproducer/blocker and continue independent recovery work rather than blocking the entire backlog. |
+| 1 — done on main | Concurrent queue regression fixed in PR #168 (`01cc7e0`) | Shared ordinary/managed idle retirement race; deterministic baseline failures, fixed stress/race, review and required PR CI pass. Deployment remains pending. |
 | 2 | CP-007 recoverability, then automation | Existing snapshots do not cover full session/auth/workspace recovery. First complete capture coverage, restore epoch handling and the restore/activation path; qualify an isolated scratch restore and Pi drill without overwriting live state. Then timer/retention under the accepted maintenance window. Do not expand this into CP-039 migration or online matched mode. |
 | 3 | CP-002 foreground delivery, with the necessary CP-003 slices | Finish an existing reliability investment: wire freeze/preparation/publication with fallback, previews, cancellation and reply-action parity. D063 and staged acceptance remain the activation gates. Protected-challenge work follows its existing contract; do not redo shipped attachment delivery. |
 | 4 | CP-016 complete topic retirement | Finish durable ownership, ambiguity reconciliation and managed settlement before command orchestration. Qualify native-login exit and the full confirmed API/outcome/retirement path under D064. The command stays unavailable until these gates pass. |

@@ -13,19 +13,27 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Active queue fix — 2026-11-04
+## Resume here — queue fix integrated, CP-007 next
 
-Working branch `fix/queue-idle-handoff`, based on `c1fc6f4`. Root cause identified:
-`beginBatch` observed no runnable work, then `worker` called `deactivate` in a
-separate lock interval. Concurrent admission could append while `active` was
-still true and get stranded after retirement. This affects the shared ordinary
-and managed scheduling path, not just the managed test harness. No actual
-production loss has been observed; persisted pending turns remain recoverable.
-A deterministic test reproduces both ordinary and managed variants on baseline
-(two failures). Fix atomically retires the worker during the idle read and avoids
-any later mutation of a successor's folder. Full build/vet/test, queue race suite and 100-repeat stress/race checks pass.
-Independent review/CI are in progress;
-no deployment or flag change has occurred.
+PR [#168](https://github.com/Coriol-is/gopod/pull/168) squash-merged as `01cc7e0`
+after independent review of `af266ad`, full build/vet/test, queue race checks,
+100-repeat deterministic/stress checks (also under race), and green required
+[PR CI attempt 2](https://github.com/Coriol-is/gopod/actions/runs/41921413585/attempts/2).
+Sonar PR gate OK. Root cause was a shared ordinary/managed lost wakeup between
+an empty pending read and worker retirement. Both now occur under one lock;
+the departing worker cannot touch a successor's state.
+
+First isolation attempt failed in unchanged runner force-drain qualification
+(`ErrExecutionUnproven`); three local Docker repeats and the exact-head CI retry
+passed. Preserve that independent observation; its root cause remains open.
+[Evidence and review](reviews/2026-11-04-queue-idle-handoff.md).
+
+**Next action:** scope CP-007 recovery coverage and restore/activation/epoch
+handling against its spec, starting with isolated restore verification; timer
+and retention follow recovery qualification. Queue implementation item is closed
+on main. Deployment remains outstanding: Pi is still recorded as `a25f22a`;
+no production state, flags, auth or Telegram data changed in this task. Main CI
+runs separately after merge; only the exact-head PR CI is claimed green here.
 
 ## Current status — 2026-11-04
 
@@ -42,8 +50,8 @@ passed. Later status-only commits do not change the deployed application.
 [Current backlog](../ROADMAP.md#current-backlog--2026-11-04) distinguishes unfinished
 implementation, completed implementation awaiting acceptance, and deferred work.
 CP-038 is implemented/deployed; Claude browser completion remains an acceptance
-gap. CP-002/CP-016 remain in progress; CP-035 is proposed. No implementation stream
-is running. Recommended first next fix is the reproduced concurrent queue timeout.
+gap. CP-002/CP-016 remain in progress; CP-035 is proposed. The queue defect was subsequently fixed and merged as described above;
+CP-007 recovery is the next implementation stream.
 
 ## Code audit checkpoint — 2026-11-04
 
@@ -82,7 +90,7 @@ Git-common cleanup archive before removal. Main local data/auth/config, backups
 and production `a25f22a` were not changed. [Audit](reviews/2026-11-03-merge-cleanup.md).
 Historical worktree paths below are evidence, not current resume locations.
 
-## Resume here — deployed final plans, quiescence and healthchecks
+## Previous release — deployed final plans, quiescence and healthchecks
 
 The owner-approved parallel wave is complete. Production is `a25f22a` since
 2026-11-03 17:13:09 UTC. Health #165 (`067c016`), final plans #166 (`de8293b`)
@@ -103,8 +111,7 @@ Main Sonar baseline is stale (`4e3031a`, 2026-10-26). No finding was suppressed.
 No reboot, new provider login, paid inference or live deletion occurred.
 
 Next work follows [the 2026-11-04 execution priority](../ROADMAP.md#execution-priority--2026-11-04):
-1. Bound and diagnose the queue regression (fresh audit: 2/100 failures); establish
-   cause and regression proof, not a timeout increase or unproven production-loss claim.
+1. **Done on main:** queue regression classified and fixed in PR #168; deployment pending.
 2. CP-007 full recoverability and isolated restore qualification, then timer/retention.
 3. CP-002/003 foreground delivery; CP-016 retirement; CP-018 providers; CP-019 group
    UX; CP-033 readiness/discovery; CP-014 media, in that order.
@@ -112,7 +119,7 @@ Acceptance is a separate lane: CP-040 A22–A25, ordinary Stop/restart, CP-020;
 serialize Telegram activity. CP-038 browser completion waits for the required
 owner login interaction. Managed-task credentials/activation and CP-037 parallel
 execution remain owner-deferred. A confirmed live defect can override feature
-priority when its evidence is recorded. Reprioritization starts no implementation.
+priority when its evidence is recorded. The first implementation item is integrated; remaining items have not started.
 
 ## Previous completed wave — parallel follow-up, 2026-11-03
 

@@ -17,13 +17,13 @@ reordered on 2026-11-04 after this audit: queue diagnosis → CP-007 recovery �
 CP-002/003 delivery → CP-016 retirement → CP-018 providers → CP-019 group UX →
 CP-033 readiness → CP-014 media. Acceptance of shipped features has a separate
 lane. Table order below is an inventory, not a competing execution queue.
+Queue item completed on main as `01cc7e0`; **CP-007 is next**.
 Owner-deferred managed-task credentials and parallel sessions remain deferred.
 
 ## Unfinished implementation
 
 | Item | Code present and actual runtime wiring | Remaining work / next action |
 |---|---|---|
-| Queue concurrency regression | Root cause confirmed: separate empty read and worker retirement strand a concurrent admission, for ordinary and managed work. Deterministic baseline failures and local fixed stress/race passes recorded in [review evidence](reviews/2026-11-04-queue-idle-handoff.md). | Fix on `fix/queue-idle-handoff`; full checks/review/CI and integration in progress. No production deployment yet. |
 | CP-002 foreground final delivery | [result_freeze.go](../internal/runner/result_freeze.go) provides `WithResultFreeze`; [final_reply.go](../internal/telegram/final_reply.go) provides `PrepareFrozenFinalReply`; neither has a non-test caller. Batch identity and immutable publication storage exist. [main.go](../cmd/gopod/main.go) calls `recoverReadyFinalReplies` before queue recovery when the dispatcher is enabled; [recovery adapter](../cmd/gopod/final_reply.go) publishes existing ready plans only. | Implement the foreground producer/context binding and publication call sites together with conditional code-upload fallback, preview ownership, late cancellation and reply-action parity. Existing recovery is not foreground cutover. D063 remains the contract. |
 | CP-003 typed IPC | [artifact_request.go](../internal/ipc/artifact_request.go) validates typed file/voice requests; [outbox.go](../cmd/gopod/outbox.go) wires durable IPC preparation/transport; immutable artifact and voice/code preparation foundations are present. | Complete the wider CP-002-linked typed-output/protected-challenge/release scope. Do not reimplement file delivery already exposed by CP-040. Full matched recovery remains a separate CP-007 gap. |
 | CP-016 topic deletion | [topic_quiescence.go](../internal/telegram/topic_quiescence.go) implements tested quiescence and refusal reopening. `main.go` calls `RestoreTopicFences` before recovery. Queue/native/transport guards and durable store/outbox fences are wired. `QuiesceTopic` has no non-test caller; no Telegram delete orchestration is exposed. | Durable ownership for legacy fallback/control messages, remote ambiguity reconciliation, managed settlement, ordinary native-login exit qualification, then confirmed API/outcome/retirement command. Deployed guards do not mean `/thread delete` is usable. D064 remains the contract. |
@@ -36,6 +36,7 @@ Owner-deferred managed-task credentials and parallel sessions remain deferred.
 
 | Item | Implementation evidence | Open verification |
 |---|---|---|
+| Queue idle handoff | Shared ordinary/managed lost wakeup fixed in PR #168 (`01cc7e0`). Independent review, full checks, 100-repeat stress/race and required PR CI pass; [evidence](reviews/2026-11-04-queue-idle-handoff.md). | Deployment pending; no production loss has been observed. First CI attempt's unchanged runner force-drain failure remains a separate observation despite successful retry. |
 | CP-040 agent attachments | [chattmpl](../internal/runner/chattmpl/chattmpl.go) seeds owner `ATTACHMENTS.md`; [attachment skill](../container/skills/attachments/SKILL.md), IPC `as` selection and [outbox transport](../internal/telegram/outbox_transport.go) expose file/photo delivery and refusals. Feature is deployed and artifacts enabled in recorded rollout, not waiting on a deleted feature branch. | Full A22–A25 matrix: fresh Claude/Codex discoverability, photo/document, refusal and flag-off cases. Recorded topic PDF and source-missing refusal checks cover only part of this matrix. |
 | CP-038 elevated | Host profile, journal, explicit login/lifecycle and completion path shipped; [deployment evidence](deployments/2026-11-03-elevated-login.md). | Claude browser completion remains open. Bounded native Codex acceptance passed. No elevated container in the latest snapshot. |
 | CP-020 isolation | Controller/policy/profile implementation shipped; see [proposal](proposals/CP-020-personal-group-isolation.md). | Remaining provider/client and cross-boundary qualifications, not a new isolation implementation project. |
@@ -64,6 +65,7 @@ owner deferrals. CP-035 hooks research is merged documentation, not activated ho
   Matching tests ran in Telegram and backup packages; cmd/gopod and proactive
   reported no matching tests. This is not a full-suite or proactive acceptance run.
 
-No application source was changed. For future status updates, distinguish
+The original audit changed no application source; the later queue fix is recorded
+above. For future status updates, distinguish
 **definition**, **production caller**, **enabled configuration**, and **live
 acceptance**; tests alone cannot prove activation.
