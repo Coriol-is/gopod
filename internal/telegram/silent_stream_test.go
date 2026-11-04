@@ -27,13 +27,16 @@ type silentFixture struct {
 
 // startSilent turns silent mode on for the fixture's chat and starts
 // streamReply on a fresh structured run.
-func startSilent(t *testing.T, fake *fakeTelegram) *silentFixture {
+func startSilent(t *testing.T, fake *fakeTelegram, setup ...func(*silentFixture)) *silentFixture {
 	t.Helper()
 	b, item := newStreamFixture(t, fake)
 	if err := b.store.SetState(context.Background(), control.SilentStateKey+item.Folder, "1"); err != nil {
 		t.Fatal(err)
 	}
 	f := &silentFixture{fake: fake, b: b, item: item, s: newStructuredStream(), done: make(chan error, 1)}
+	for _, prepare := range setup {
+		prepare(f)
+	}
 	go func() { f.done <- b.streamReply(context.Background(), item, f.s.stream()) }()
 	return f
 }
@@ -194,8 +197,9 @@ func TestStreamReply_SilentPlainRunShowsHeaderOnly(t *testing.T) {
 func TestStreamReply_SilentStopDeliversPartialText(t *testing.T) {
 	fake := &fakeTelegram{}
 	okDrafts(fake, "603")
-	f := startSilent(t, fake)
-	defer f.b.registerInflight(f.item.ID, f.item.ChatID, 0, func() {})()
+	f := startSilent(t, fake, func(f *silentFixture) {
+		t.Cleanup(f.b.registerInflight(f.item.ID, f.item.ChatID, 0, func() {}))
+	})
 
 	f.step("Bash", "ls")
 	f.step("Bash", "cat x")
@@ -244,8 +248,9 @@ func TestStreamReply_SilentEditPathLongReplySentSeparately(t *testing.T) {
 // Edit path, Stop with a long partial: same split.
 func TestStreamReply_SilentEditPathStopLongPartial(t *testing.T) {
 	fake := strictEditPathFake()
-	f := startSilent(t, fake)
-	defer f.b.registerInflight(f.item.ID, f.item.ChatID, 0, func() {})()
+	f := startSilent(t, fake, func(f *silentFixture) {
+		t.Cleanup(f.b.registerInflight(f.item.ID, f.item.ChatID, 0, func() {}))
+	})
 
 	f.step("Bash", "make")
 	f.step("Bash", "make test")

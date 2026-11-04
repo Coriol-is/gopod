@@ -795,15 +795,7 @@ func (b *Bot) sendChunks(ctx context.Context, chatID int64, thread int, replyToM
 		if err := b.topicAdmission(ctx, chatID, sourceThread); err != nil {
 			return nil, err
 		}
-		var sent *models.Message
-		err := b.topicRequest(ctx, chatID, sourceThread, func(requestCtx context.Context) error {
-			var err error
-			sent, err = b.api.SendMessage(requestCtx, params)
-			return err
-		})
-		if sent != nil {
-			b.rememberTopicMessage(ctx, chatID, sourceThread, sent.ID)
-		}
+		sent, err := b.ownedTextSend(ctx, chatID, sourceThread, params)
 		return sent, err
 	}
 	const maxLen = 4000
@@ -830,7 +822,7 @@ func (b *Bot) sendChunks(ctx context.Context, chatID int64, thread int, replyToM
 		}
 
 		sent, err := send(params)
-		if err == nil && sent != nil {
+		if sent != nil {
 			last = sent.ID
 		}
 		fatal := func(err error) bool {
@@ -1069,6 +1061,9 @@ func messageText(m *models.Message) string {
 }
 
 func isKeyboardRefusal(err error) bool {
+	if noReplayError(err) {
+		return false
+	}
 	if !errors.Is(err, bot.ErrorBadRequest) {
 		return false
 	}
@@ -1076,5 +1071,8 @@ func isKeyboardRefusal(err error) bool {
 	return strings.Contains(text, "button_data_invalid") || strings.Contains(text, "button_type_invalid") || strings.Contains(text, "button_url_invalid") || strings.Contains(text, "reply markup") || strings.Contains(text, "inline keyboard")
 }
 func isParseRefusal(err error) bool {
+	if noReplayError(err) {
+		return false
+	}
 	return errors.Is(err, bot.ErrorBadRequest) && strings.Contains(strings.ToLower(err.Error()), "can't parse entities")
 }

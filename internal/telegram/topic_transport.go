@@ -2,7 +2,6 @@ package telegram
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"strconv"
@@ -43,6 +42,10 @@ func (b *Bot) topicRequest(ctx context.Context, chat int64, thread int, request 
 		return err
 	}
 	err = request(ctx)
+	var ownershipErr *ownershipSendError
+	if errors.As(err, &ownershipErr) && !ownershipErr.attempted {
+		return err
+	}
 	if err != nil && !definiteTopicRefusal(err) {
 		b.topicMu.Lock()
 		if b.topicUncertain == nil {
@@ -79,29 +82,25 @@ func (b *Bot) rememberTopicMessage(ctx context.Context, chat int64, thread, mess
 	b.topicMessages[key] = origin
 }
 func (b *Bot) topicEditRequest(ctx context.Context, chat int64, message int, request func(context.Context) error) error {
-	b.topicMu.Lock()
-	origin, known := b.topicMessages[topicMessageKey{chat, message}]
-	b.topicMu.Unlock()
+	origin, known, ownerErr := b.messageOwner(ctx, chat, message)
+	if ownerErr != nil {
+		return ownerErr
+	}
+
 	supplied, hasSource := ctx.Value(topicOutputOriginKey{}).(chatThread)
 	if hasSource && supplied.chat == chat {
+		if !known && supplied.thread == 0 {
+			if err := b.unknownMainControlAllowed(ctx, chat); err != nil {
+				return err
+			}
+		}
 		if known && origin != supplied {
 			return fmt.Errorf("edit source conversation mismatch")
 		}
 		origin = supplied
 		known = true
 	}
-	if !known && b.store != nil {
-		control, err := b.store.GetControlMessage(ctx, chat, message)
-		if err == nil {
-			if err = b.store.ValidateScope(ctx, control.Scope); err != nil {
-				return err
-			}
-			origin = chatThread{chat, control.ThreadID}
-			known = true
-		} else if !errors.Is(err, sql.ErrNoRows) {
-			return err
-		}
-	}
+
 	if !known {
 		if chat <= 0 {
 			return request(ctx)
@@ -111,16 +110,8 @@ func (b *Bot) topicEditRequest(ctx context.Context, chat int64, message int, req
 			return err
 		}
 		defer release()
-		if b.store != nil {
-			pending, err := b.store.PendingTopicDeletions(ctx)
-			if err != nil {
-				return err
-			}
-			for _, d := range pending {
-				if d.Scope.JID == buildChatJID(chat) {
-					return fmt.Errorf("edit ownership unavailable while topic is fenced")
-				}
-			}
+		if err := b.unknownMainControlAllowed(ctx, chat); err != nil {
+			return err
 		}
 		if err := ctx.Err(); err != nil {
 			return err
