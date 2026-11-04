@@ -31,11 +31,15 @@ func (b *Bot) sendPlaceholder(ctx context.Context, chatID int64, thread int, rep
 
 // sendPlaceholderText is sendPlaceholder with a given opening text.
 func (b *Bot) sendPlaceholderText(ctx context.Context, chatID int64, thread int, replyToMsgID int, text string, markup models.ReplyMarkup) int {
+	id, _ := b.sendPlaceholderResult(ctx, chatID, thread, replyToMsgID, text, markup)
+	return id
+}
+func (b *Bot) sendPlaceholderResult(ctx context.Context, chatID int64, thread int, replyToMsgID int, text string, markup models.ReplyMarkup) (int, error) {
 	if b.topicAdmission(ctx, chatID, thread) != nil {
-		return 0
+		return 0, nil
 	}
 	if b.threadGone(chatID, thread) {
-		return 0 // the caller falls back to one final message, sent to main
+		return 0, nil // the caller falls back to one final message, sent to main
 	}
 	params := &bot.SendMessageParams{
 		ChatID:          chatID,
@@ -50,25 +54,23 @@ func (b *Bot) sendPlaceholderText(ctx context.Context, chatID int64, thread int,
 		}
 	}
 
-	var sent *models.Message
-	err := b.topicRequest(ctx, chatID, thread, func(requestCtx context.Context) error {
-		var err error
-		sent, err = b.api.SendMessage(requestCtx, params)
-		return err
-	})
-	if sent != nil {
-		b.rememberTopicMessage(ctx, chatID, thread, sent.ID)
+	sent, err := b.ownedTextSend(ctx, chatID, thread, params)
+	if noReplayError(err) {
+		if sent != nil {
+			return sent.ID, err
+		}
+		return 0, err
 	}
 	if err != nil {
 		if b.checkThreadGone(chatID, thread, err) {
-			return 0
+			return 0, nil
 		}
 		b.log.Warn("sendPlaceholder failed",
 			slog.Int64("chat_id", chatID),
 			slog.Any("err", err))
-		return 0
+		return 0, nil
 	}
-	return sent.ID
+	return sent.ID, err
 }
 
 // editMessage edits a previously sent message with plain text content
@@ -280,8 +282,20 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 	// startPlaceholder switches the turn to the edit path. Returns false
 	// when no placeholder could be sent.
 	placeholder := 0
+	var placeholderErr error
+	drainFallback := func() error {
+		if noReplayError(placeholderErr) {
+			drainStream(stream)
+			result := <-stream.Result
+			return errors.Join(placeholderErr, result.Err)
+		}
+		return b.drainAndSend(ctx, item, stream)
+	}
 	startPlaceholder := func() bool {
-		placeholder = b.sendPlaceholder(ctx, item.ChatID, item.ThreadID, item.MessageID, kb)
+		placeholder, placeholderErr = b.sendPlaceholderResult(ctx, item.ChatID, item.ThreadID, item.MessageID, "❘", kb)
+		if noReplayError(placeholderErr) {
+			return false
+		}
 		if placeholder == 0 {
 			return false
 		}
@@ -314,7 +328,7 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 		}
 	}
 	if draftID == 0 && placeholder == 0 && !startPlaceholder() {
-		return b.drainAndSend(ctx, item, stream)
+		return drainFallback()
 	}
 
 	tick := b.streamTick
@@ -386,9 +400,9 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 		}
 		// Edit path: finalize this placeholder, continue in a new one.
 		b.editMessage(ctx, item.ChatID, placeholder, accumulated.String())
-		placeholder = b.sendPlaceholder(ctx, item.ChatID, item.ThreadID, 0, kb)
-		if placeholder == 0 {
-			drainErr = b.drainAndSend(ctx, item, stream)
+		placeholder, placeholderErr = b.sendPlaceholderResult(ctx, item.ChatID, item.ThreadID, 0, "❘", kb)
+		if placeholder == 0 || noReplayError(placeholderErr) {
+			drainErr = drainFallback()
 			return false
 		}
 		b.recordPlaceholder(ctx, item, placeholder)
@@ -502,7 +516,7 @@ loop:
 				// placeholder and ends in one reply to main).
 				draftID = useDraft(0)
 				if !startPlaceholder() {
-					return b.drainAndSend(ctx, item, stream)
+					return drainFallback()
 				}
 			}
 			// Edit path: a changed view goes out on the tick; a change
@@ -771,6 +785,9 @@ func (b *Bot) sendFinal(ctx context.Context, chatID int64, thread int, replyTo i
 
 // retryAfter reports the wait a 429 asks for (at least one second).
 func retryAfter(err error) (time.Duration, bool) {
+	if noReplayError(err) {
+		return 0, false
+	}
 	var tm *bot.TooManyRequestsError
 	if !errors.As(err, &tm) {
 		return 0, false

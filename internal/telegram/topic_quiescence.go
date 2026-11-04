@@ -140,6 +140,9 @@ func (b *Bot) QuiesceTopic(ctx context.Context, expected store.TopicDeletion) er
 	if err = b.store.TopicDeletionWorkIdle(ctx, current); err != nil {
 		return err
 	}
+	if err = b.store.TopicMessageOwnershipIdle(ctx, current); err != nil {
+		return err
+	}
 	if err = b.store.TopicDeletionTransportIdle(ctx, current); err != nil {
 		return err
 	}

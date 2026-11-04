@@ -43,6 +43,9 @@ const threadGoneNote = "[The topic this conversation was in no longer exists, so
 // exists. Matched on the description, whatever the status code, since
 // the library maps only some codes to sentinel errors.
 func isThreadGone(err error) bool {
+	if noReplayError(err) {
+		return false
+	}
 	if err == nil {
 		return false
 	}

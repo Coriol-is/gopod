@@ -198,12 +198,17 @@ func (b *Bot) dispatchCallback(ctx context.Context, cq *models.CallbackQuery, an
 		Data:      data,
 		answer:    answer,
 	}
-	origin := chatThread{q.ChatID, q.ThreadID}
-	b.topicMu.Lock()
-	if owner, ok := b.topicMessages[topicMessageKey{q.ChatID, q.MessageID}]; ok {
-		origin = owner
+	origin, known, ownerErr := b.messageOwner(ctx, q.ChatID, q.MessageID)
+	if ownerErr != nil {
+		return cbToastExpired
 	}
-	b.topicMu.Unlock()
+	if !known {
+		if q.ThreadID == 0 && b.unknownMainControlAllowed(ctx, q.ChatID) != nil {
+			return cbToastExpired
+		}
+		origin = chatThread{q.ChatID, q.ThreadID}
+	}
+
 	ctx = context.WithValue(ctx, topicOutputOriginKey{}, origin)
 	if b.topicAdmission(ctx, origin.chat, origin.thread) != nil {
 		return cbToastExpired

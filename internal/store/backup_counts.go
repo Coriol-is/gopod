@@ -44,7 +44,8 @@ var rowCountSQL = map[string]string{
 	"attempt_bindings":      "SELECT count(*) FROM attempt_bindings",
 	"execution_claims":      "SELECT count(*) FROM execution_claims",
 	// memory
-	"memories": "SELECT count(*) FROM memories",
+	"memories":                   "SELECT count(*) FROM memories",
+	"telegram_message_ownership": "SELECT count(*) FROM telegram_message_ownership",
 	// delivery and outbox
 	"turn_results":           "SELECT count(*) FROM turn_results",
 	"turn_result_members":    "SELECT count(*) FROM turn_result_members",
