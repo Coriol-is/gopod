@@ -79,3 +79,10 @@ hashes match the committed implementation:
 `final_reply.go` SHA256 `db1e48f6645d8a7ff6b51ab27da8945e318d1d30965b1f0f21d557029200a3fb`;
 `final_reply_parity_test.go` SHA256 `d427bc9b7a47a64b3bd92992ea245c8e5ea268c078baa7d5c2ae6ed1b0c5fa1d`.
 Implementation commit: `904a632`; only this review evidence was appended afterward.
+
+## Integration checkpoint
+
+PR [#169](https://github.com/Coriol-is/gopod/pull/169), reviewed tip `ad8479f`,
+passed [required CI](https://github.com/Coriol-is/gopod/actions/runs/41924043060)
+and Sonar gate OK, then squash-merged as `c1966dc`. No deployment or foreground
+activation occurred. Remaining gates above are unchanged.

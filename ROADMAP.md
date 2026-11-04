@@ -82,8 +82,9 @@ CP-039 migration, new providers/runtimes and other proposed research stay deferr
 CP-011/012/032/034 remain accepted designs outside this execution sequence.
 No new dates or effort estimates are asserted before each slice is scoped.
 
-Active bounded slices: CP-002/003 delivery preparation and CP-016 durable topic
-ownership, from `71ff629`, in separate worktrees. [HANDOFF](docs/HANDOFF.md#active-implementation-wave--2026-11-04)
+CP-002/003 successful presentation parity merged in PR #169 (`c1966dc`) with
+review, full checks and green required CI/Sonar; remaining foreground gates stay
+open. CP-016 durable topic ownership is still in review in its separate worktree. [HANDOFF](docs/HANDOFF.md#active-implementation-wave--2026-11-04)
 tracks ownership. Downstream items remain queued; this does not activate CP-037.
 
 ## Parallel sessions — CP-037 (P0 and P1 merged and deployed in legacy mode, P2+ not started)
