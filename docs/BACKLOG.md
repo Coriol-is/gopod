@@ -13,11 +13,11 @@ change flags, invoke providers or perform new Telegram acceptance.
 ## Current priority
 
 Use [ROADMAP execution priority](../ROADMAP.md#execution-priority--2026-11-04),
-reordered on 2026-11-04 after this audit: queue diagnosis → CP-007 recovery →
-CP-002/003 delivery → CP-016 retirement → CP-018 providers → CP-019 group UX →
-CP-033 readiness → CP-014 media. Acceptance of shipped features has a separate
+reordered on 2026-11-04 after this audit: queue fix (complete) → CP-002/003 delivery → CP-016 retirement → CP-018 providers
+→ CP-019 group UX → CP-033 readiness → CP-014 media → CP-007 recovery (lowered
+by the owner). Acceptance of shipped features has a separate
 lane. Table order below is an inventory, not a competing execution queue.
-Queue item completed on main as `01cc7e0`; **CP-007 is next**.
+Queue item completed on main as `01cc7e0`; **CP-002/003 and CP-016 resume first**.
 Owner-deferred managed-task credentials and parallel sessions remain deferred.
 
 ## Unfinished implementation

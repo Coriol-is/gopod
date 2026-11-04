@@ -49,18 +49,20 @@ Reprioritized at the owner's request after the code audit (`d3be6f8`). This orde
 supersedes the 2026-10-25 queue and the earlier November handoff recommendations.
 It changes priority, not CP lifecycle, architectural contracts, activation flags
 or owner-deferred scope. The reprioritization itself started no implementation; item 1 was subsequently
-completed in PR #168. CP-007 is now the first unfinished implementation item.
+completed in PR #168. Owner update: CP-007 is lowered below the current product
+queue; CP-002/003 and CP-016 implementation resume first. Existing restore and
+activation gates remain requirements, not a prerequisite to unrelated code work.
 
 | Order | Deliverable | Why now / completion gate |
 |---|---|---|
 | 1 — done on main | Concurrent queue regression fixed in PR #168 (`01cc7e0`) | Shared ordinary/managed idle retirement race; deterministic baseline failures, fixed stress/race, review and required PR CI pass. Deployment remains pending. |
-| 2 | CP-007 recoverability, then automation | Existing snapshots do not cover full session/auth/workspace recovery. First complete capture coverage, restore epoch handling and the restore/activation path; qualify an isolated scratch restore and Pi drill without overwriting live state. Then timer/retention under the accepted maintenance window. Do not expand this into CP-039 migration or online matched mode. |
-| 3 | CP-002 foreground delivery, with the necessary CP-003 slices | Finish an existing reliability investment: wire freeze/preparation/publication with fallback, previews, cancellation and reply-action parity. D063 and staged acceptance remain the activation gates. Protected-challenge work follows its existing contract; do not redo shipped attachment delivery. |
-| 4 | CP-016 complete topic retirement | Finish durable ownership, ambiguity reconciliation and managed settlement before command orchestration. Qualify native-login exit and the full confirmed API/outcome/retirement path under D064. The command stays unavailable until these gates pass. |
-| 5 | CP-018 per-conversation provider/model selection | Follows CP-016 as already agreed; delivers everyday conversation control. Reconcile with CP-037 routing contracts without activating paused parallel execution. |
-| 6 | CP-019 group command/service UX | Bounded user-visible improvement after core conversation reliability; keep ordinary group output public. |
-| 7 | CP-033 connector readiness and discovery | Finish probe/setup/recheck/offer behavior around already shipped presets. Do not add more presets before readiness is trustworthy; connector consent remains with the owner. |
-| 8 | CP-014 media queues | Q1 fidelity/cards/links first, then Q2 document/image/speech, then Q3 video. Keep each queue separately reviewable. |
+| 2 | CP-002 foreground delivery, with the necessary CP-003 slices | Finish an existing reliability investment: wire freeze/preparation/publication with fallback, previews, cancellation and reply-action parity. D063 and staged acceptance remain the activation gates. Protected-challenge work follows its existing contract; do not redo shipped attachment delivery. |
+| 3 | CP-016 complete topic retirement | Finish durable ownership, ambiguity reconciliation and managed settlement before command orchestration. Qualify native-login exit and the full confirmed API/outcome/retirement path under D064. The command stays unavailable until these gates pass. |
+| 4 | CP-018 per-conversation provider/model selection | Follows CP-016 as already agreed; delivers everyday conversation control. Reconcile with CP-037 routing contracts without activating paused parallel execution. |
+| 5 | CP-019 group command/service UX | Bounded user-visible improvement after core conversation reliability; keep ordinary group output public. |
+| 6 | CP-033 connector readiness and discovery | Finish probe/setup/recheck/offer behavior around already shipped presets. Do not add more presets before readiness is trustworthy; connector consent remains with the owner. |
+| 7 | CP-014 media queues | Q1 fidelity/cards/links first, then Q2 document/image/speech, then Q3 video. Keep each queue separately reviewable. |
+| 8 — lowered by owner | CP-007 recoverability, then automation | Existing snapshots do not cover full session/auth/workspace recovery. First complete capture coverage, restore epoch handling and the restore/activation path; qualify an isolated scratch restore and Pi drill without overwriting live state. Then timer/retention under the accepted maintenance window. Do not expand this into CP-039 migration or online matched mode. |
 
 **Acceptance lane, alongside independent implementation:** CP-040 A22–A25 first,
 then remaining ordinary Stop/restart and CP-020 provider/isolation checks. Keep
@@ -145,10 +147,10 @@ has passed. The proposal registry remains the single CP status source;
 |---|---|---|---|
 | 1 | Qualify the deployed release | Tasks panel, delivery, upgraded CLIs, quota/provider continuity, Stop/recovery and media baseline — A01–A17 | Implemented/deployed baseline; live checks open |
 | 2 | Reliability and diagnostics | CP-017 Telegram diagnosis -> CP-002 bounded outbox/uncertain delivery -> CP-004 isolated task sessions -> CP-007 scheduled backups/restore -> CP-006 maintenance/quiet hours | CP-017 private-DM slice implemented; live acceptance pending; CP-002/003/004/007 partially implemented and deployed; full cutover, managed execution and restore gates remain open; CP-006 planned |
-| 3 | Conversation management | CP-016 topic deletion/retirement -> CP-018 per-conversation providers/models/quota scope | CP-016 store/outbox/runtime fences deployed; command/reconciliation and CP-018 pending |
-| 4 | Group service UX | CP-019 ephemeral command/service/error replies; T14 scoped menu/strings work coordinated with transport | Spec saved; ordinary output stays public |
-| 5 | Media, three queues | CP-014 Q1 cards/links/attachment fidelity -> Q2 document/OCR/image/speech -> Q3 video speech+frames/export; CP-003 typed IPC artifacts and CP-005 qualified tools support appropriate slices | Specs/proposals only beyond existing baseline |
-| 6 | Platform extensions | CP-011 runtime, CP-012 registry; then additional providers/sandboxes, bounded bot-to-bot experiment if useful; secret gateway/MCP/metrics stay deferred | Design/research/deferred; no new backend or peer enabled |
+| 2 | Conversation management | CP-016 topic deletion/retirement -> CP-018 per-conversation providers/models/quota scope | CP-016 store/outbox/runtime fences deployed; command/reconciliation and CP-018 pending |
+| 3 | Group service UX | CP-019 ephemeral command/service/error replies; T14 scoped menu/strings work coordinated with transport | Spec saved; ordinary output stays public |
+| 4 | Media, three queues | CP-014 Q1 cards/links/attachment fidelity -> Q2 document/OCR/image/speech -> Q3 video speech+frames/export; CP-003 typed IPC artifacts and CP-005 qualified tools support appropriate slices | Specs/proposals only beyond existing baseline |
+| 5 | Platform extensions | CP-011 runtime, CP-012 registry; then additional providers/sandboxes, bounded bot-to-bot experiment if useful; secret gateway/MCP/metrics stay deferred | Design/research/deferred; no new backend or peer enabled |
 
 Done implementation must not remain "in progress" just because a live check is
 pending. Host memory-cgroup changes/reboot (T9) were completed on 2026-11-03; parallel
@@ -165,10 +167,10 @@ rich-message formatting P1 (D045), supervised owner `/restart` (CP-031).
 |---|---|---|
 | 1 | Owner live acceptance A08–A11, A18, A20, A02, plus formatting and `/restart` edge cases | Owner in Telegram; failures become fix PRs |
 | 2 | CP-020 final gates: Codex two-turn/tool canaries and cross-boundary/client checks; tree-budget fix #88 and default admission #89 shipped; historical Claude group new/resume succeeded | Private management only; no paid fallback |
-| 3 | CP-002 PR 6-8 (foreground freeze/streaming ownership, protected challenges, staged release), CP-004 PR 4-5 (settlement/visibility, schedule policy) | One PR each; artifacts flag gated on CP-007 backup/restore qualification; capability issuer shipped in #110 |
-| 4 | Rich messages: stickers P2/P3, [thread awareness](docs/superpowers/specs/2026-10-29-agent-thread-awareness.md), [buttons/hooks](docs/superpowers/specs/2026-10-29-agent-buttons-and-hooks.md), [reaction reading](docs/superpowers/specs/2026-10-29-telegram-reaction-reading.md) | Specs saved; no implementation |
-| 5 | Task-role credential adapter (needed before `GOPOD_MANAGED_TASKS` can run anything); Pi Docker-inspect round trip | Deferred by the owner 2026-10-30 (B2 stays the recommendation) |
-| 6 | Group triggers (`owner`/`mention`/`all`), owner-in-group identity for group-scoped commands, group `/login` guidance — [spec](docs/superpowers/specs/2026-10-29-group-trigger-and-owner-in-group.md) | Implemented and deployed (#93/#95/#97); security wave hardens callbacks; live client checks remain |
+| 2 | CP-002 PR 6-8 (foreground freeze/streaming ownership, protected challenges, staged release), CP-004 PR 4-5 (settlement/visibility, schedule policy) | One PR each; artifacts flag gated on CP-007 backup/restore qualification; capability issuer shipped in #110 |
+| 3 | Rich messages: stickers P2/P3, [thread awareness](docs/superpowers/specs/2026-10-29-agent-thread-awareness.md), [buttons/hooks](docs/superpowers/specs/2026-10-29-agent-buttons-and-hooks.md), [reaction reading](docs/superpowers/specs/2026-10-29-telegram-reaction-reading.md) | Specs saved; no implementation |
+| 4 | Task-role credential adapter (needed before `GOPOD_MANAGED_TASKS` can run anything); Pi Docker-inspect round trip | Deferred by the owner 2026-10-30 (B2 stays the recommendation) |
+| 5 | Group triggers (`owner`/`mention`/`all`), owner-in-group identity for group-scoped commands, group `/login` guidance — [spec](docs/superpowers/specs/2026-10-29-group-trigger-and-owner-in-group.md) | Implemented and deployed (#93/#95/#97); security wave hardens callbacks; live client checks remain |
 | Deferred | CP-014 media, CP-018 per-thread providers, T9 cgroup reboot, observability | Owner re-prioritises |
 
 Open owner decisions: branch protection requiring `test` + `isolation-spike` (a ruleset requiring one approval exists; admin squash-merge is the working path); whether to add a CD workflow.

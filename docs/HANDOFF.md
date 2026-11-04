@@ -13,7 +13,7 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — queue fix integrated, CP-007 next
+## Resume here — backup lowered, delivery and topic lifecycle resumed
 
 PR [#168](https://github.com/Coriol-is/gopod/pull/168) squash-merged as `01cc7e0`
 after independent review of `af266ad`, full build/vet/test, queue race checks,
@@ -28,12 +28,13 @@ First isolation attempt failed in unchanged runner force-drain qualification
 passed. Preserve that independent observation; its root cause remains open.
 [Evidence and review](reviews/2026-11-04-queue-idle-handoff.md).
 
-**Next action:** scope CP-007 recovery coverage and restore/activation/epoch
-handling against its spec, starting with isolated restore verification; timer
-and retention follow recovery qualification. Queue implementation item is closed
-on main. Deployment remains outstanding: Pi is still recorded as `a25f22a`;
-no production state, flags, auth or Telegram data changed in this task. Main CI
-runs separately after merge; only the exact-head PR CI is claimed green here.
+**Owner steering:** lower CP-007 backup recovery below the current product queue.
+Resume CP-002/003 foreground delivery and CP-016 topic lifecycle foundations,
+then CP-018 → CP-019 → CP-033 → CP-014. Each implementation slice keeps its review,
+CI and activation gates; lowering backup does not waive artifact/restore gates.
+Managed-task credentials and CP-037 parallel execution remain deferred.
+Queue fix is integrated; production remains recorded as `a25f22a` with deployment
+outstanding. No production changes are part of this priority update.
 
 ## Current status — 2026-11-04
 
@@ -51,7 +52,7 @@ passed. Later status-only commits do not change the deployed application.
 implementation, completed implementation awaiting acceptance, and deferred work.
 CP-038 is implemented/deployed; Claude browser completion remains an acceptance
 gap. CP-002/CP-016 remain in progress; CP-035 is proposed. The queue defect was subsequently fixed and merged as described above;
-CP-007 recovery is the next implementation stream.
+CP-007 recovery was subsequently lowered by the owner; delivery/topic work resumes first.
 
 ## Code audit checkpoint — 2026-11-04
 
@@ -112,7 +113,7 @@ No reboot, new provider login, paid inference or live deletion occurred.
 
 Next work follows [the 2026-11-04 execution priority](../ROADMAP.md#execution-priority--2026-11-04):
 1. **Done on main:** queue regression classified and fixed in PR #168; deployment pending.
-2. CP-007 full recoverability and isolated restore qualification, then timer/retention.
+2. Owner update: CP-007 recovery is lowered after the product queue below.
 3. CP-002/003 foreground delivery; CP-016 retirement; CP-018 providers; CP-019 group
    UX; CP-033 readiness/discovery; CP-014 media, in that order.
 Acceptance is a separate lane: CP-040 A22–A25, ordinary Stop/restart, CP-020;
