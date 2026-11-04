@@ -65,7 +65,9 @@ No deployment, live Telegram acceptance, delete or login action occurred in this
 wave. Production remains recorded as `a25f22a`; queue fix #168 and both slices are
 not deployed. Main CI for delivery `c1966dc`/docs `c356ce8` passed; topic merge CI
 runs separately and is not claimed complete here. The two temporary implementation
-worktrees are clean and may be removed after verifying integration.
+worktrees and their local/remote branches were removed after verifying clean trees,
+merged PRs and exact combined source equality (`d368086` versus integrated main).
+Only canonical main and this detached session checkout remain.
 
 ## Current status — 2026-11-04
 
