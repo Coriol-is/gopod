@@ -18,15 +18,24 @@ func (a *IPCSink) ProcessTaskRequest(ctx context.Context, id ipc.TaskRequestIden
 	ctx = context.WithValue(ctx, taskLockKey{}, a.st)
 	var notifications []store.TaskRecord
 	ctx = context.WithValue(ctx, taskNotificationsKey{}, &notifications)
-	data, err := a.st.ApplyTaskRequest(ctx, id.SourceFolder, id.File, id.PayloadHash, id.Retention, func(inner context.Context) ([]byte, error) {
+	applyBytes := func(inner context.Context) ([]byte, error) {
 		result, err := apply(inner)
 		if err != nil {
 			return nil, err
 		}
 		return json.Marshal(result)
-	})
-	if errors.Is(err, store.ErrTaskRequestConflict) {
-		return ipc.TaskResult{}, fmt.Errorf("use a new unique request filename for each new operation: %w", ipc.ErrPermanent)
+	}
+	var data []byte
+	var err error
+	if id.Scoped {
+		data, err = a.st.ApplyScopedTaskRequest(ctx, id.Scope, id.SourceFolder, id.File, id.PayloadHash, id.Retention, applyBytes)
+	} else {
+		data, err = a.st.ApplyTaskRequest(ctx, id.SourceFolder, id.File, id.PayloadHash, id.Retention, applyBytes)
+	}
+	var conflict *store.TaskRequestConflict
+	if errors.As(err, &conflict) {
+		id.PayloadHash = conflict.OriginalHash
+		return ipc.TaskResult{}, &ipc.TaskRequestConflict{Identity: id}
 	}
 	if err != nil {
 		return ipc.TaskResult{}, err
@@ -44,5 +53,8 @@ func (a *IPCSink) ProcessTaskRequest(ctx context.Context, id ipc.TaskRequestIden
 func (a *IPCSink) AcknowledgeTaskRequest(ctx context.Context, id ipc.TaskRequestIdentity) error {
 	release := taskOperationLock(ctx, a.st)
 	defer release()
+	if id.Scoped {
+		return a.st.AcknowledgeScopedTaskRequest(ctx, id.Scope, id.SourceFolder, id.File, id.PayloadHash, id.Retention)
+	}
 	return a.st.AcknowledgeTaskRequest(ctx, id.SourceFolder, id.File, id.PayloadHash, id.Retention)
 }

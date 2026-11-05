@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-05 (task IPC claim contract prepared)
+**Last updated:** 2026-11-05 (D067 receipt identity decision required)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -13,27 +13,30 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — task IPC ownership decision, 2026-11-05
+## Resume here — D067 implementation held for receipt identity decision, 2026-11-05
 
-Owner requested the next IPC fix. Rechecked baseline `1972dd3` and reran the
-retained deterministic diagnostic: PASS (0.909 s) demonstrates lost receipt,
-replacement consumed and exactly one task. Temporary test copy removed unchanged.
-No production source edits or deployment in this checkpoint.
+Owner accepted D067 and implementation is on `feat/task-ipc-claims`, baseline
+`0d18156`. Host-only atomic claims, bounded snapshots, durable outcomes, Store
+scope/epoch fencing, journal replay pinning and recovery fairness are implemented.
+[Implementation/review evidence](reviews/2026-11-05-task-ipc-claims.md).
 
-[Concrete claim contract](plans/2026-11-05-task-ipc-claim-contract.md) recommends
-atomic acquisition into a host-only durable spool before processing, preserving
-same-filename replay and journal identity. It specifies namespace/epoch binding,
-immutable byte snapshots, restart/terminal recovery, limits and regression gates.
-This introduces persistent state and a same-filesystem/rollback requirement;
-CLAUDE.md requires owner acceptance for an architectural decision. The requested
-bug fix is authorized; this particular protocol has not yet been accepted.
+Independent review is **not PASS**. A retained deterministic diagnostic confirms
+old success can be republished after a crash while a changed same-name request is
+pending. The original contract's unchanged receipt consumer cannot distinguish
+these outcomes. Exactly one task remains; the unresolved issue is attribution.
 
-**First next action:** obtain acceptance of the linked claim contract, then append
-an ADR and implement/qualify it on a feature branch. Do not call the diagnostic
-PASS a fix. If a simpler protocol is selected, prove both replacement ownership
-and receipt recovery before changing operation ordering. D066 remains merged;
-CP-002 preview/reply-action/cutover follows the IPC repair. Last verified Pi
-revision remains `d58cdd2`; no new live check was performed.
+**First next action:** obtain acceptance of the [receipt identity amendment](plans/2026-11-05-task-ipc-receipt-identity.md), then append a superseding ADR and implement
+host `requestHash` plus matching bundled consumer instructions/tests. No hash
+field or consumer migration is implemented yet. Keep the branch/draft; do not
+merge or deploy even if CI passes. A private staging rename alone only closes
+process death, not the power-loss observation window in the accepted contract.
+
+Independent review corrections and focused regressions pass; full build/vet/tests
+and full IPC/Store/scheduler/cmd races pass (89.474/103.053/19.707/35.571 s).
+CI/Sonar status is recorded separately in the linked report. Overall review is
+still blocked by the attribution diagnostic, regardless of check results. No live
+Telegram/provider calls or deployment; last verified Pi remains `d58cdd2`.
+CP-002 preview/reply-action/cutover follows completion of this IPC repair.
 
 ## D066 durable Stop merged, 2026-11-05
 

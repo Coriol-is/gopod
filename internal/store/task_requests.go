@@ -28,20 +28,50 @@ func (s *Store) taskDB(ctx context.Context) taskSQL {
 
 var ErrTaskRequestConflict = errors.New("store: IPC request filename reused with a different payload")
 
+// TaskRequestConflict retains the journal identity that the caller must release
+// only after persisting the conflicting request's terminal outcome.
+type TaskRequestConflict struct{ OriginalHash string }
+
+func (e *TaskRequestConflict) Error() string        { return ErrTaskRequestConflict.Error() }
+func (e *TaskRequestConflict) Is(target error) bool { return target == ErrTaskRequestConflict }
+
 // ApplyTaskRequest commits task mutations and their host-trusted response in
 // one transaction. Agent-writable filesystem receipts are never replay authority.
 func (s *Store) ApplyTaskRequest(ctx context.Context, folder, file, hash string, retention int, apply func(context.Context) ([]byte, error)) ([]byte, error) {
+	return s.applyTaskRequest(ctx, nil, folder, file, hash, retention, apply)
+}
+
+func (s *Store) ApplyScopedTaskRequest(ctx context.Context, scope ScopeRef, folder, file, hash string, retention int, apply func(context.Context) ([]byte, error)) ([]byte, error) {
+	return s.applyTaskRequest(ctx, &scope, folder, file, hash, retention, apply)
+}
+func (s *Store) applyTaskRequest(ctx context.Context, scope *ScopeRef, folder, file, hash string, retention int, apply func(context.Context) ([]byte, error)) ([]byte, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback()
+	if scope != nil {
+		if scope.Folder != folder {
+			return nil, ErrStaleScope
+		}
+		if err = validateScopeQ(ctx, tx, *scope); err != nil {
+			return nil, err
+		}
+	}
 	var previousHash string
 	var result []byte
 	err = tx.QueryRowContext(ctx, `SELECT payload_hash,result_json FROM ipc_task_requests WHERE source_folder=? AND request_file=?`, folder, file).Scan(&previousHash, &result)
 	if err == nil {
+		// An admitted replay (including a conflict) owns this result until its
+		// terminal receipt is durable. Otherwise another ACK can prune it mid-claim.
+		if _, err = tx.ExecContext(ctx, `UPDATE ipc_task_requests SET archived=0 WHERE source_folder=? AND request_file=?`, folder, file); err != nil {
+			return nil, err
+		}
+		if err = tx.Commit(); err != nil {
+			return nil, err
+		}
 		if previousHash != hash {
-			return nil, ErrTaskRequestConflict
+			return nil, &TaskRequestConflict{OriginalHash: previousHash}
 		}
 		return result, nil
 	}
@@ -76,11 +106,26 @@ func (s *Store) ApplyTaskRequest(ctx context.Context, folder, file, hash string,
 // AcknowledgeTaskRequest is called only after the host archives the request.
 // Unarchived operation results are never evicted and never read from agent files.
 func (s *Store) AcknowledgeTaskRequest(ctx context.Context, folder, file, hash string, retention int) error {
+	return s.acknowledgeTaskRequest(ctx, nil, folder, file, hash, retention)
+}
+func (s *Store) AcknowledgeScopedTaskRequest(ctx context.Context, scope ScopeRef, folder, file, hash string, retention int) error {
+	return s.acknowledgeTaskRequest(ctx, &scope, folder, file, hash, retention)
+}
+func (s *Store) acknowledgeTaskRequest(ctx context.Context, scope *ScopeRef, folder, file, hash string, retention int) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+	if scope != nil {
+		if scope.Folder != folder {
+			return ErrStaleScope
+		}
+		if err = validateScopeQ(ctx, tx, *scope); err != nil {
+			return err
+		}
+	}
+
 	if _, err = tx.ExecContext(ctx, `UPDATE ipc_task_requests SET archived=1 WHERE source_folder=? AND request_file=? AND payload_hash=?`, folder, file, hash); err != nil {
 		return err
 	}

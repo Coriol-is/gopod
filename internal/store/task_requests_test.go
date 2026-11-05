@@ -76,3 +76,70 @@ func TestTaskRequestPendingResultsAreNotEvicted(t *testing.T) {
 		t.Fatal("pending result evicted by newer archived requests", err, calls, before)
 	}
 }
+
+func TestTaskRequestReplayAndConflictPinJournalUntilReceiptAck(t *testing.T) {
+	for _, conflicting := range []bool{false, true} {
+		t.Run(map[bool]string{false: "identical", true: "conflicting"}[conflicting], func(t *testing.T) {
+			st := openTestStore(t)
+			ctx := t.Context()
+			calls := 0
+			apply := func(context.Context) ([]byte, error) { calls++; return []byte(`{}`), nil }
+			if _, err := st.ApplyTaskRequest(ctx, "alice", "original", "hash", 2, apply); err != nil {
+				t.Fatal(err)
+			}
+			if err := st.AcknowledgeTaskRequest(ctx, "alice", "original", "hash", 2); err != nil {
+				t.Fatal(err)
+			}
+			hash := "hash"
+			if conflicting {
+				hash = "changed"
+			}
+			_, err := st.ApplyTaskRequest(ctx, "alice", "original", hash, 2, apply)
+			if conflicting {
+				var conflict *TaskRequestConflict
+				if !errors.As(err, &conflict) || conflict.OriginalHash != "hash" {
+					t.Fatal("missing original pin", err)
+				}
+			} else if err != nil {
+				t.Fatal(err)
+			}
+			// Simulate process death before writing the claim outcome, while unrelated
+			// completed requests force journal retention to prune older archived rows.
+			for _, name := range []string{"b", "c", "d", "e"} {
+				if _, err := st.ApplyTaskRequest(ctx, "alice", name, "hash", 2, func(context.Context) ([]byte, error) { return []byte(`{}`), nil }); err != nil {
+					t.Fatal(err)
+				}
+				if err := st.AcknowledgeTaskRequest(ctx, "alice", name, "hash", 2); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := st.ApplyTaskRequest(ctx, "alice", "original", "hash", 2, apply); err != nil || calls != 1 {
+				t.Fatalf("active replay evicted: calls=%d err=%v", calls, err)
+			}
+		})
+	}
+}
+
+func TestTaskRequestScopedMutationAndAckRejectStaleScope(t *testing.T) {
+	st := openTestStore(t)
+	ctx := t.Context()
+	if err := st.RegisterChat(ctx, RegisteredChat{JID: "tg:2", Folder: "alice", AddedAt: 1}); err != nil {
+		t.Fatal(err)
+	}
+	scope, err := st.SnapshotScope(ctx, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	apply := func(context.Context) ([]byte, error) { return []byte(`{}`), nil }
+	if _, err = st.ApplyScopedTaskRequest(ctx, scope, "alice", "request", "hash", 2, apply); err != nil {
+		t.Fatal(err)
+	}
+	scope.NamespaceEpoch++
+	called := false
+	if _, err = st.ApplyScopedTaskRequest(ctx, scope, "alice", "request", "hash", 2, func(context.Context) ([]byte, error) { called = true; return nil, nil }); !errors.Is(err, ErrStaleScope) || called {
+		t.Fatalf("stale scope admitted: %v", err)
+	}
+	if err = st.AcknowledgeScopedTaskRequest(ctx, scope, "alice", "request", "hash", 2); !errors.Is(err, ErrStaleScope) {
+		t.Fatal("stale ACK", err)
+	}
+}

@@ -2299,3 +2299,24 @@ The accepted [implementation contract](plans/2026-11-05-durable-stop-intent.md)
 defines binding, failure semantics, migration/backup tests and qualification.
 Foreground freeze activation and deployment remain separate gates. Managed task
 cancellation retains its own ledger.
+
+## D067 — Durable task IPC claims before processing
+
+**Status:** accepted by owner, 2026-11-05.
+
+Task IPC atomically claims an inbox pathname into a host-only persistent spool
+before reading or dispatching. A separate bounded immutable byte snapshot is
+replay authority together with the existing transactional task journal. Completion
+archives only the claim, never the current inbox pathname. Same-name replacements
+remain pending and receive their own result or truthful conflict response.
+
+Claims bind the original filename to host-resolved source, namespace/epoch and
+privilege. Restart recovers outstanding claims before same-name admission; stale
+bindings hold. Terminal outcomes, including errors, survive receipt/archive failure
+and prevent replay after journal retention. Unresolved claims are never evicted.
+Same-filesystem atomic rename is required; EXDEV/unsafe storage fails closed.
+
+The accepted [contract](plans/2026-11-05-task-ipc-claim-contract.md) defines
+qualification and boundaries. Message IPC is unchanged. Claims must be drained
+or task IPC held before downgrade; existing backups do not promise complete IPC
+restore. Deployment and full recovery qualification remain separate.

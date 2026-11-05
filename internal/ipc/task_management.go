@@ -60,6 +60,8 @@ type TaskManager interface {
 // TaskRequestIdentity is constructed from the source directory and submitted
 // bytes; these fields never come from agent JSON.
 type TaskRequestIdentity struct {
+	Scope                           store.ScopeRef
+	Scoped                          bool
 	SourceFolder, File, PayloadHash string
 	Retention                       int
 }
@@ -67,3 +69,12 @@ type TaskRequestProcessor interface {
 	ProcessTaskRequest(context.Context, TaskRequestIdentity, func(context.Context) (TaskResult, error)) (TaskResult, error)
 	AcknowledgeTaskRequest(context.Context, TaskRequestIdentity) error
 }
+
+// TaskRequestConflict carries the pinned journal row to acknowledge after a
+// durable error outcome; it remains a permanent public request error.
+type TaskRequestConflict struct{ Identity TaskRequestIdentity }
+
+func (e *TaskRequestConflict) Error() string {
+	return "use a new unique request filename for each new operation"
+}
+func (e *TaskRequestConflict) Is(target error) bool { return target == ErrPermanent }

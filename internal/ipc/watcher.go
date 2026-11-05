@@ -14,6 +14,7 @@ import (
 // once. Errors are logged and never returned.
 func (w *Watcher) tickOnce(ctx context.Context) {
 	w.beginSweep()
+	w.claimSweep += maxChannelDispatches / 2
 	w.pruneWatcherState()
 	var folders []string
 	if w.cfg.Namespaces != nil {
@@ -63,7 +64,14 @@ func (w *Watcher) handleFolder(ctx context.Context, folder string) {
 		return
 	}
 	w.processChannel(ctx, folder, "messages", w.processMessageFile)
-	w.processChannel(ctx, folder, "tasks", w.processTaskFile)
+	seen := w.recoverTaskClaims(ctx, folder)
+	admitted := 0
+	w.processChannelSelected(ctx, folder, "tasks", func(path string) bool {
+		return !seen[filepath.Base(path)] && admitted < maxChannelDispatches/2
+	}, func(ctx context.Context, folder, path string) bool {
+		admitted++
+		return w.processTaskFile(ctx, folder, path)
+	})
 	w.reconcileDurableReceipts(ctx, folder)
 	w.pruneNamespace(folder)
 }
@@ -134,6 +142,10 @@ func (w *Watcher) shouldSkipForBackoff(path string) bool {
 func (w *Watcher) processChannel(ctx context.Context, folder, channel string,
 	handler func(ctx context.Context, folder, path string) bool,
 ) {
+	w.processChannelSelected(ctx, folder, channel, nil, handler)
+}
+
+func (w *Watcher) processChannelSelected(ctx context.Context, folder, channel string, eligible func(string) bool, handler func(context.Context, string, string) bool) {
 	base, err := w.namespacePath(folder)
 	if err != nil {
 		return
@@ -192,6 +204,9 @@ func (w *Watcher) processChannel(ctx context.Context, folder, channel string,
 			break
 		}
 		path := filepath.Join(dir, name)
+		if eligible != nil && !eligible(path) {
+			continue
+		}
 		if w.shouldSkipForBackoff(path) {
 			continue
 		}
@@ -209,7 +224,9 @@ func (w *Watcher) safeDispatch(ctx context.Context, folder, path string,
 		if r := recover(); r != nil {
 			w.log.Error("ipc: dispatch panic",
 				"folder", folder, "file", filepath.Base(path), "panic", r)
-			w.moveFailed(folder, path, fmt.Errorf("panic: %v", r))
+			if filepath.Base(filepath.Dir(path)) != "tasks" {
+				w.moveFailed(folder, path, fmt.Errorf("panic: %v", r))
+			} // Task claims remain recoverable; never archive a replacement on panic.
 		}
 	}()
 	handler(ctx, folder, path)
