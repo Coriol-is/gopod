@@ -45,9 +45,10 @@ future downgrade, inspect/settle affected rows or hold dispatch; never erase the
 ledger as a workaround. Older backup allowlists may reject the additive table.
 This does not qualify a rollback or waive existing restore gates.
 
-The temporary implementation worktrees are clean except for the delivery agent's
-report checkpoint, now copied into this tracked report; cleanup follows verified
-source equality and preservation of that checkpoint.
+The delivery agent's report checkpoint was preserved in the tracked report before
+cleanup. Verified combined source `219cef3` equals integrated main; both temporary
+implementation worktrees and local/remote branches are removed. Only canonical
+main and the session checkout remain.
 
 ## Previous priority and queue checkpoint
 
