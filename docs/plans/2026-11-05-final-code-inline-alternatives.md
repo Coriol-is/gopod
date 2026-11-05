@@ -1,6 +1,6 @@
 # CP-002: immutable code-document / inline alternatives
 
-Status: accepted by owner on 2026-11-05; implementation in progress (D065).
+Status: accepted by owner on 2026-11-05 (D065), implemented in PR #173 (`0aa6628`); not deployed.
 Base: `a215a28`. Production remains `d58cdd2`.
 
 ## Concrete problem

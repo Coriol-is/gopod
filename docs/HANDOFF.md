@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-05 (D065 implementation and focused checks)
+**Last updated:** 2026-11-05 (D065 reviewed and merged)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -13,26 +13,32 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — code-inline implementation in progress, 2026-11-05
+## Resume here — code-inline alternatives integrated, 2026-11-05
 
-Owner requested the next CP-002 code-file-to-inline slice. Analysis found that
-upload refusal changes the complete rendered suffix, potentially its message
-count, keyboard, reply target and edit eligibility; the existing photo fallback
-cannot represent that change. A [concrete conditional-plan proposal](plans/2026-11-05-final-code-inline-alternatives.md)
-records storage/selection invariants, bounds, outcome policy, validation and
-rollback. Recommended: freeze all suffix variants for at most four code documents;
-use all-inline preparation beyond that or the 2 MiB variant budget. Alternative:
-linear fragments, which change successful presentation. This is an architectural
-contract extending D063, accepted by the owner as D065.
-Implementation checkpoint: immutable conditional manifests, atomic suffix selection,
-conservative refusal classification, bounded planner and regression tests are now
-present locally. Full build/vet/test and full Store/Telegram race pass. Independent source review
-of `652a8ac` found no remaining blocking defect; the additionally requested old-
-schema migration regression passes under race. [Review evidence](reviews/2026-11-05-code-inline-alternatives.md).
-PR #173 is open; final-head required CI and final review confirmation remain the
-merge gates. No deployment or live acceptance in this slice.
-Branch `feat/final-code-fallback`, base `a215a28`; next action is confirm final review and green PR CI, then squash-merge. Do not treat the
-proposal as an enabled implementation or a completed CP-002 milestone.
+PR [#173](https://github.com/Coriol-is/gopod/pull/173) squash-merged as `0aa6628`.
+D065 freezes exact text variants for up to four code documents; larger/over-budget
+plans keep code inline. Definitive eligible upload refusal selects one immutable
+suffix transactionally; ambiguous effects remain held and never authorize replay.
+Voice order, edit/chunk/reply/keyboard presentation and old ready plans are preserved.
+
+Reviewed production source `652a8ac`; final PR head `7e9ba94` adds only the requested
+populated-old-schema migration test and documentation. Independent review PASS,
+full build/vet/test, full Store/Telegram races and final-head required
+[CI 42020120816](https://github.com/Coriol-is/gopod/actions/runs/42020120816) pass.
+Sonar final-head gate OK (29 code smells, 0 bugs/vulnerabilities); no findings
+suppressed. [Evidence and remaining boundaries](reviews/2026-11-05-code-inline-alternatives.md).
+
+**Next implementation:** preview ownership, late cancellation settlement and
+reply-action integration, then the qualified foreground producer/cutover. CP-016
+unknown-outcome reconciliation and remaining retirement prerequisites remain a
+separate lane. Backup stays lowered; managed-task credentials and parallel
+execution remain deferred. CP-002/003 remain in progress.
+
+**Deployment:** this new slice is not deployed. Pi remains `d58cdd2`; foreground
+producer remains disconnected, managed tasks off, `/thread delete` unavailable.
+No live Telegram/provider call or production mutation occurred in this slice.
+Never downgrade-dispatch unresolved conditional plans; settle with compatible
+code or hold dispatch, preserving manifests and outcome evidence.
 
 ## Latest deployment — Pi, 2026-11-05
 
@@ -66,8 +72,8 @@ scope boundaries. Combined source includes both slices; final PR #172 CI is
 [41950532576](https://github.com/Coriol-is/gopod/actions/runs/41950532576).
 Exact release-main CI passed; the rollout evidence above records the deployed tip.
 
-**Next implementation:** full immutable conditional code-inline alternatives,
-preview ownership, late cancellation and reply-action integration before CP-002
+**Next implementation:** conditional code-inline alternatives subsequently merged
+in #173; preview ownership, late cancellation and reply-action integration remain before CP-002
 foreground activation. CP-016 still needs unknown-remote reconciliation,
 remaining ownership/native-login exit qualification, managed settlement and the
 confirmed deletion/retirement orchestration. Positive receipt repair closes only

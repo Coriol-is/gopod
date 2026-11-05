@@ -22,6 +22,14 @@ Group/relay/elevated runtimes are also absent. No Telegram, model, login, destru
 or reboot scenario was exercised by this status refresh. Existing acceptance IDs
 are not closed by a health check. [Release evidence](deployments/2026-11-03-final-plans-health.md).
 
+## D065 implementation boundary — 2026-11-05
+
+Conditional code-inline alternatives merged in PR #173; fake-HTTP presentation,
+Store/race and populated-schema migration checks pass. This slice is not deployed;
+exact live document-refusal tokens, native/client rendering and integrated
+foreground/preview/cancellation acceptance remain open. The last Pi deployment
+is still `d58cdd2`. [Implementation evidence](reviews/2026-11-05-code-inline-alternatives.md).
+
 ## Latest open gates
 - 2026-11-03: ordinary Codex nonce continuity, bounded Stop/process exit and
   post-Stop resume passed; tiny PDF delivered into test topic `3176309` and

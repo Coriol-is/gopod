@@ -85,3 +85,18 @@ late cancellation and reply-action integration remain open; CP-002 is not comple
 No deployment, Telegram action, provider login or paid generation occurred here.
 Production remains `d58cdd2`. A downgrade cannot dispatch unresolved conditional
 plans; settle them with compatible code or hold dispatch, never erase their ledger.
+
+## Integration result
+
+Independent final review approved unchanged production source `652a8ac` and the
+populated migration regression in `7e9ba94`. Exact final-head required CI
+[42020120816](https://github.com/Coriol-is/gopod/actions/runs/42020120816) passed both
+`test` and `isolation-spike`. PR #173 squash-merged as `0aa6628`.
+Final-head Sonar analysis (2026-11-05 11:35:00 UTC) is OK, 29 code smells and
+0 bugs/vulnerabilities; the two additional smells are in the migration test.
+No source edits followed independent review. No deployment or activation occurred.
+
+GitHub's one-external-approval ruleset required the documented project admin
+squash flow after independent review and green required CI. Merge used exact
+head matching; no rules or checks were changed. Integrated production source
+was compared byte-for-byte with the approved final PR head.

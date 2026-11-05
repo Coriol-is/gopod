@@ -29,7 +29,7 @@ preserved. Exact-main CI and Telegram `/version` passed. Pi controller only;
 | Work | Current status | Remaining step |
 |---|---|---|
 | Concurrent queue idle handoff | Fixed and merged as `01cc7e0` (PR #168); review and required CI pass | Deployed as `d58cdd2`; [evidence](docs/reviews/2026-11-04-queue-idle-handoff.md) |
-| CP-002 final delivery | In progress; immutable ready plans and recovery deployed | Foreground cutover, code-upload fallback, preview/cancellation/reply-action parity |
+| CP-002 final delivery | In progress; immutable ready plans and recovery deployed | Foreground cutover and preview/cancellation/reply-action parity; D065 code fallback merged, rollout pending |
 | CP-016 topic deletion | In progress; runtime/store/outbox fences deployed | Durable legacy ownership, ambiguity/managed settlement, native-login qualification, confirmed delete command |
 | CP-007 backups | In progress; backup foundation deployed | Timer/retention, full capture and restore command/drill; leases only for online matched mode |
 | CP-004 managed tasks | Partial implementation; activation off | Settlement/visibility and schedule policy; credential adapter remains owner-deferred |
@@ -56,7 +56,7 @@ activation gates remain requirements, not a prerequisite to unrelated code work.
 | Order | Deliverable | Why now / completion gate |
 |---|---|---|
 | 1 — done on main | Concurrent queue regression fixed in PR #168 (`01cc7e0`) | Shared ordinary/managed idle retirement race; deterministic baseline failures, fixed stress/race, review and required PR CI pass. Deployed as `d58cdd2`. |
-| 2 | CP-002 foreground delivery, with the necessary CP-003 slices | Finish an existing reliability investment: wire freeze/preparation/publication with fallback, previews, cancellation and reply-action parity. D063 and staged acceptance remain the activation gates. Protected-challenge work follows its existing contract; do not redo shipped attachment delivery. |
+| 2 | CP-002 foreground delivery, with the necessary CP-003 slices | Finish an existing reliability investment: wire freeze/preparation/publication with fallback, previews, cancellation and reply-action parity. D063/D065 and staged acceptance remain the activation gates. Protected-challenge work follows its existing contract; do not redo shipped attachment delivery. |
 | 3 | CP-016 complete topic retirement | Finish durable ownership, ambiguity reconciliation and managed settlement before command orchestration. Qualify native-login exit and the full confirmed API/outcome/retirement path under D064. The command stays unavailable until these gates pass. |
 | 4 | CP-018 per-conversation provider/model selection | Follows CP-016 as already agreed; delivers everyday conversation control. Reconcile with CP-037 routing contracts without activating paused parallel execution. |
 | 5 | CP-019 group command/service UX | Bounded user-visible improvement after core conversation reliability; keep ordinary group output public. |
@@ -86,15 +86,17 @@ CP-002/003 successful presentation parity merged in PR #169 (`c1966dc`) with
 review, full checks and green required CI/Sonar; remaining foreground gates stay
 open. CP-016 main-control ownership merged in PR #170 (`dacefc0`) after combined
 checks, independent review and required CI/Sonar. Remaining ambiguity, native and
-managed settlement gates keep the delete command unavailable. Both slices await
-deployment; neither completes its parent proposal. [HANDOFF](docs/HANDOFF.md#completed-implementation-wave--2026-11-04)
+managed settlement gates keep the delete command unavailable. Both slices were deployed as `d58cdd2`; neither completes its parent proposal. [HANDOFF](docs/HANDOFF.md#completed-implementation-wave--2026-11-04)
 records evidence and remaining gates. Downstream items remain queued; CP-037 stays paused.
 
 2026-11-05 continuation: receipt-backed DB-ACK repair merged in PR #171
 (`930586a`); durable photo-to-document attempt selection merged in PR #172
 (`a016b82`). Both passed independent review, full checks/races and required CI.
-Neither is deployed. Full code-inline fallback/foreground cutover and unknown
-remote reconciliation/delete orchestration remain open; backup priority unchanged.
+Both were deployed as `d58cdd2`. Code-inline alternatives subsequently merged in
+PR #173 (D065), with independent review, full checks/races and required CI;
+that new slice is not deployed. Foreground cutover, preview/cancellation/reply-action
+integration and unknown remote reconciliation/delete orchestration remain open;
+backup priority unchanged.
 
 ## Parallel sessions — CP-037 (P0 and P1 merged and deployed in legacy mode, P2+ not started)
 

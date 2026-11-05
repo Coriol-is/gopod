@@ -76,6 +76,15 @@ See the [rollout evidence and remaining gates](../deployments/2026-11-03-final-p
 
 ## 2026-11-05 implementation continuation
 
-PR #172 (`a016b82`) makes the existing explicit photo-refusal document alternative a separate transactional attempt. Retries preserve the branch; ambiguity never permits replay. Conditional code-inline content and the other foreground gates remain open.
+PR #172 (`a016b82`) makes the existing explicit photo-refusal document alternative a separate transactional attempt. Retries preserve the branch; ambiguity never permits replay. Conditional code-inline content subsequently merged in PR #173 (D065); preview/cancellation/reply-action and foreground cutover remain open.
 Merged after review/full checks/required CI; not deployed. See [HANDOFF](../HANDOFF.md)
 for evidence and remaining gates. Status remains in progress.
+
+## D065 implementation — 2026-11-05
+
+PR [#173](https://github.com/Coriol-is/gopod/pull/173), `0aa6628`, implements bounded
+immutable code-inline alternatives with durable branch selection and no replay
+after unknown effects. Four-document/2 MiB bounds fall back to all-inline
+preparation; old plans remain immutable. Full checks, affected races, independent
+review and required CI passed. [Evidence](../reviews/2026-11-05-code-inline-alternatives.md).
+Not deployed; producer remains disconnected. Status remains in-progress.
