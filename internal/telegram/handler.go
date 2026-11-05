@@ -492,7 +492,7 @@ func (b *Bot) runAgentSyncContext(ctx, runCtx context.Context, item queue.Item) 
 		return stopErr
 	}
 	if err != nil {
-		b.stopWaitDraftRefresh(item)
+		b.stopWaitDraftRefresh(ctx, item)
 		if ownershipErr := handoff(ctx); ownershipErr != nil {
 			if errors.Is(ownershipErr, queue.ErrStopped) {
 				stopped := b.finishBufferedStopped(ctx, item)
@@ -503,7 +503,7 @@ func (b *Bot) runAgentSyncContext(ctx, runCtx context.Context, item queue.Item) 
 			}
 			return errors.Join(err, ownershipErr)
 		}
-		if ph := b.popWaitPlaceholder(item); ph != 0 {
+		if ph := b.popWaitPlaceholder(ctx, item); ph != 0 {
 			b.editMessage(ctx, item.ChatID, ph, "Answer failed.")
 		}
 		b.replyError(ctx, item, err)
@@ -512,9 +512,9 @@ func (b *Bot) runAgentSyncContext(ctx, runCtx context.Context, item queue.Item) 
 		}
 		return nil
 	}
-	if b.waitPlaceholder(item) != 0 {
+	if b.waitPlaceholder(ctx, item) != 0 {
 		if b.getReplyMode(item.ChatID, item.IsVoice) == "voice" && stripCodeBlocks(reply) == reply {
-			b.stopWaitDraftRefresh(item)
+			b.stopWaitDraftRefresh(ctx, item)
 			if err := handoff(ctx); err != nil {
 				if errors.Is(err, queue.ErrStopped) {
 					return b.finishBufferedStopped(ctx, item)
@@ -523,7 +523,7 @@ func (b *Bot) runAgentSyncContext(ctx, runCtx context.Context, item queue.Item) 
 			}
 			// The Stop placeholder must not turn a buffered voice-only answer
 			// into voice+text. Retire the control, then keep the original delivery.
-			ph := b.popWaitPlaceholder(item)
+			ph := b.popWaitPlaceholder(ctx, item)
 			if err := b.topicEditRequest(ctx, item.ChatID, ph, func(ctx context.Context) error {
 				_, e := b.api.DeleteMessage(ctx, &bot.DeleteMessageParams{ChatID: item.ChatID, MessageID: ph})
 				return e
@@ -543,7 +543,7 @@ func (b *Bot) runAgentSyncContext(ctx, runCtx context.Context, item queue.Item) 
 		return b.streamReply(ctx, item, &runner.AgentStream{Chunks: chunks, Result: result})
 	}
 
-	b.stopWaitDraftRefresh(item)
+	b.stopWaitDraftRefresh(ctx, item)
 	if err := handoff(ctx); err != nil {
 		if errors.Is(err, queue.ErrStopped) {
 			return b.finishBufferedStopped(ctx, item)

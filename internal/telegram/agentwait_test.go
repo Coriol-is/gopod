@@ -39,7 +39,7 @@ func TestWaitNoticeDraftStopSealsOpeningPreview(t *testing.T) {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	defer b.registerInflight(item.ID, item.ChatID, 0, cancel)()
-	defer b.stopWaitDraftRefresh(item)
+	defer b.stopWaitDraftRefresh(t.Context(), item)
 
 	b.waitNotice(ctx, item)(runner.WaitMemory)
 
@@ -108,7 +108,7 @@ func TestWaitNoticeEditPathPlaceholderTakenOver(t *testing.T) {
 	if last := edits[len(edits)-1]; !strings.Contains(last.Form["text"], "<b>hi</b>") || last.Form["message_id"] != "88" {
 		t.Fatalf("final edit = %v", last.Form)
 	}
-	if b.popWaitPlaceholder(item) != 0 {
+	if b.popWaitPlaceholder(t.Context(), item) != 0 {
 		t.Fatal("wait placeholder left behind")
 	}
 }
@@ -217,13 +217,13 @@ func TestWaitDraftRefreshedUntilStopped(t *testing.T) {
 		t.Fatal("stop on a refreshed wait draft did not cancel the turn")
 	}
 
-	b.stopWaitDraftRefresh(item)
+	b.stopWaitDraftRefresh(t.Context(), item)
 	n := len(waitDrafts(fake))
 	time.Sleep(50 * time.Millisecond)
 	if got := len(waitDrafts(fake)); got != n {
 		t.Fatalf("wait draft sent %d more times after the refresher stopped", got-n)
 	}
-	b.stopWaitDraftRefresh(item) // idempotent, no refresher left
+	b.stopWaitDraftRefresh(t.Context(), item) // idempotent, no refresher left
 }
 
 func TestWaitDraftRefreshHonoursRetryAfter(t *testing.T) {
@@ -237,7 +237,7 @@ func TestWaitDraftRefreshHonoursRetryAfter(t *testing.T) {
 	}
 	b, item := newStreamFixture(t, fake)
 	b.waitDraftEvery = 10 * time.Millisecond
-	defer b.stopWaitDraftRefresh(item)
+	defer b.stopWaitDraftRefresh(t.Context(), item)
 
 	b.waitNotice(context.Background(), item)(runner.WaitSlot)
 	waitFor(t, "rate-limited refresh", func() bool { return drafts.Load() >= 2 })
@@ -258,7 +258,7 @@ func TestWaitDraftRefreshEndsWithContext(t *testing.T) {
 	b.waitNotice(ctx, item)(runner.WaitSlot)
 	waitFor(t, "a refresh", func() bool { return len(waitDrafts(fake)) >= 2 })
 	b.waitMu.Lock()
-	rf := b.waitRefresh[waitKeyOf(item)]
+	rf := b.waitRefresh[b.waitKeyOf(t.Context(), item)]
 	b.waitMu.Unlock()
 	cancel()
 	select {
@@ -266,7 +266,7 @@ func TestWaitDraftRefreshEndsWithContext(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("refresher did not exit after ctx was cancelled")
 	}
-	b.stopWaitDraftRefresh(item) // returns at once
+	b.stopWaitDraftRefresh(t.Context(), item) // returns at once
 	n := len(waitDrafts(fake))
 	time.Sleep(40 * time.Millisecond)
 	if got := len(waitDrafts(fake)); got != n {

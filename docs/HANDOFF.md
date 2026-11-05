@@ -13,6 +13,16 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
+## In flight — wait and durable control generation ownership
+
+Branch `fix/wait-control-generation`, base `9de3cac`. Wait keys now include the
+captured generation; stale cleanup must not consume a successor's placeholder or
+join its refresher. Placeholder/control persistence is serialized with registration
+replacement and rejects retired bindings. Repeated generation races and initial independent review pass. Full checks found
+and fixed unregistered-placeholder compatibility; final build/vet/tests and delta review pass; full Telegram race/CI pending.
+[Evidence](reviews/2026-11-05-wait-control-generation.md).
+No deployment or foreground activation.
+
 ## Resume here — preview controls merged, 2026-11-05
 
 PR [#178](https://github.com/Coriol-is/gopod/pull/178) merged as `da8b4fe`.

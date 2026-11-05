@@ -202,7 +202,7 @@ func TestPrivateStopBufferedVoiceOnlyDoesNotPublishAnswerText(t *testing.T) {
 	if len(sends) != 1 || !hasStop(t, sends[0], item.ID) {
 		t.Fatal("expected only the initial Stop placeholder", sends)
 	}
-	if len(fake.callsTo("deleteMessage")) != 1 || b.waitPlaceholder(item) != 0 {
+	if len(fake.callsTo("deleteMessage")) != 1 || b.waitPlaceholder(t.Context(), item) != 0 {
 		t.Fatal("voice-only completion did not retire the placeholder")
 	}
 	for _, c := range fake.callsTo("editMessageText") {
