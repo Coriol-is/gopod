@@ -61,3 +61,14 @@ reconciliation contract. Generic ambiguity is never cleared by this slice.
 Retention, other noncontrol output provenance, ordinary native-login exit proof,
 managed queue settlement and confirmed delete/outcome/local retirement remain
 open. `/thread delete` stays disabled; no live actions were performed.
+
+## Validation checkpoint
+
+Implementation commit: `cab98d7`. `go build ./...`, `go vet ./...` and full
+`go test ./...` passed (Telegram 43.841s). Full
+`go test -race ./internal/store ./internal/telegram` passed (32.631s / 63.869s).
+The final two test-only production-path overflow/unknown-network cases were then
+run separately under race and passed (6.870s); production code did not change.
+Independent review provisionally passed the same production source and repeated
+focused receipt tests under race. Exact commit confirmation/required CI remain
+root integration gates; no deployment or live acceptance is claimed.
