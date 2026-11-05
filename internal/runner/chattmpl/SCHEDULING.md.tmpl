@@ -35,24 +35,64 @@ Publish a completed file, not partially written JSON. For example:
 
 ```javascript
 // Run with: node --input-type=module
-import { writeFile, rename } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
+import { writeFile, readFile, rename } from 'node:fs/promises';
+import { randomUUID, createHash } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
+
+// Receipt consumer: preserve this matching logic when retrying.
+function matchesTaskReceipt(receipt, requestFile, requestHash) {
+  return receipt !== null && typeof receipt === 'object' &&
+    receipt.requestFile === requestFile && receipt.requestHash === requestHash &&
+    /^[0-9a-f]{64}$/.test(requestHash) &&
+    (receipt.status === 'ok' || receipt.status === 'error');
+}
+async function waitForTaskReceipt(path, requestFile, requestHash, timeoutMs = 30000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const receipt = JSON.parse(await readFile(path, 'utf8'));
+      if (matchesTaskReceipt(receipt, requestFile, requestHash)) return receipt;
+    } catch (error) {
+      if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error;
+    }
+    await delay(100);
+  }
+  throw new Error('Matching task receipt unavailable; outcome unknown. Preserve bytes and filename; do not blindly create another operation.');
+}
+
+// Submit one new operation. Keep bytes, requestFile and requestHash for retries.
 const request = { op: 'list' };
+const bytes = Buffer.from(JSON.stringify(request), 'utf8');
+const requestHash = createHash('sha256').update(bytes).digest('hex');
 const name = randomUUID();
-const final = `/workspace/ipc/tasks/${name}.json`;
+const requestFile = `${name}.json`;
+const final = `/workspace/ipc/tasks/${requestFile}`;
 const tmp = `/workspace/ipc/tasks/${name}.tmp`;
-await writeFile(tmp, JSON.stringify(request), { flag: 'wx', mode: 0o600 });
+await writeFile(tmp, bytes, { flag: 'wx', mode: 0o600 });
 await rename(tmp, final);
-console.log(`/workspace/ipc/results/${name}.result.json`);
+const receipt = await waitForTaskReceipt(
+  `/workspace/ipc/results/${name}.result.json`, requestFile, requestHash);
+console.log(JSON.stringify(receipt));
+if (receipt.status === 'error') process.exitCode = 1;
+
 ```
 
 ## Verify the result
 
-Wait for `/workspace/ipc/results/<unique-name>.result.json`. It reports
+Wait for `/workspace/ipc/results/<unique-name>.result.json` and match both
+`requestFile` and `requestHash` to your submission before accepting its status.
+`requestHash` is lowercase SHA-256 of the exact bytes you wrote, including any
+spaces or newline. Do not hash a reserialized object, the archived file or a
+replacement request. A missing/different hash is stale or unbound evidence;
+keep waiting, never claim success from it. After recovery an old receipt may
+briefly appear before the current conflict/result. The matching receipt reports
 `status:"ok"` with the task id/definition/`nextRun` (Unix milliseconds), or
 `status:"error"` with an actionable reason. Do not claim a task exists until
 its successful receipt shows a nonzero nextRun for an active schedule. The
-original request moves to `.processed` or `.failed`; the reason is in results.
+host claims the request before processing; disappearance from `tasks/` is not
+completion. Its snapshot later appears in `.processed` or `.failed`; the reason
+is in the matching result. Oversized/nonregular requests may receive an unbound
+diagnostic error; that is never evidence of successful execution.
 Request results are committed with task mutations in a host-owned SQLite
 journal. While retained, reusing a filename with identical payload replays the same result; a
 different payload under that filename is rejected. Never treat an agent-edited
@@ -60,6 +100,12 @@ result file as proof of a new operation. Unarchived results are protected; a
 full pending backlog stops new mutations until archive/result access is repaired.
 Do not reuse old acknowledged filenames after retention. Receipts/archives have bounded retention: copy important confirmations into
 this chat workspace if needed. Use a new filename for each new operation.
+
+Migration (D068): filename/status-only consumers are not qualified for replay or
+crash recovery. Update existing consumer scripts and operator-maintained copies
+of this guide to compare both fields. Workspace seeding preserves existing files,
+so upgrading the host alone does not update old guides or qualify live clients.
+A hash binds bytes; it is not authentication of agent-writable receipt files.
 
 ## Inspect and manage
 

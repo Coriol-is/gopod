@@ -146,5 +146,5 @@ review and required CI including Docker isolation. Inspect Sonar as advisory.
 
 The accepted unchanged-consumer promise cannot provide correct receipt attribution
 after ambiguous publication. See the [proposed amendment](2026-11-05-task-ipc-receipt-identity.md)
-and [implementation evidence](../reviews/2026-11-05-task-ipc-claims.md). The owner has
-not accepted that amendment. Do not merge or weaken the accepted invariants.
+and [implementation evidence](../reviews/2026-11-05-task-ipc-claims.md). The owner accepted that amendment as D068 on 2026-11-05.
+D068 supersedes the unchanged-consumer guarantee; all other D067 invariants remain.

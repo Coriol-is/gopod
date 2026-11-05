@@ -51,7 +51,7 @@ func newWorkflow(t *testing.T) *workflow {
 		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	w := ipc.New(ipc.Config{DataDir: root, OwnerFolder: "owner", Tick: 5 * time.Millisecond}, noMessages{}, scheduler.NewIPCSink(st), log, func(folder string) (string, bool) { r, err := st.GetByFolder(ctx, folder); return r.JID, err == nil })
+	w := ipc.New(ipc.Config{DataDir: root, OwnerFolder: "owner", Tick: 5 * time.Millisecond, NamespaceScope: st.SnapshotScope}, noMessages{}, scheduler.NewIPCSink(st), log, func(folder string) (string, bool) { r, err := st.GetByFolder(ctx, folder); return r.JID, err == nil })
 	done := make(chan struct{})
 	go func() { defer close(done); w.Run(ctx) }()
 	t.Cleanup(func() {

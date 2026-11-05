@@ -1,6 +1,6 @@
 # D067 amendment: bind task receipts to submitted bytes
 
-Status: proposed; owner acceptance required before implementation.
+Status: accepted by owner 2026-11-05 as D068; implementation in progress.
 Parent: [accepted claim contract](2026-11-05-task-ipc-claim-contract.md).
 
 ## Why the accepted contract needs amendment
@@ -22,7 +22,7 @@ while the OS remains alive, but power loss before directory fsync may restore
 staging after a caller has observed the receipt. It does not satisfy the current
 unrestricted crash/restart contract. Independent review agrees.
 
-## Recommended decision
+## Accepted decision
 
 Add `requestHash`, lowercase hexadecimal SHA-256 of the exact submitted bytes,
 to every receipt for a bounded, successfully snapshotted task request. It is
@@ -64,8 +64,11 @@ changes D067 and requires acceptance. The hash-aware consumer is recommended.
   Completed: a hash-aware consumer ignores recovered original success and accepts
   only the changed request's conflict; exactly one task.
 - Identical replay after each crash boundary accepts the same bound result.
-- Receipt deletion/overwrites, stale hashes, malformed bytes, whitespace/newlines
-  and changed policy must not create a false match.
+- Receipt deletion/overwrites, stale hashes, malformed bytes and whitespace/newlines
+  must not create a false byte match. Scope/policy changes hold stale claims in
+  the host; requestHash does not prove current policy/epoch. Identical replay
+  intentionally accepts the historical result of those bytes, not a fresh
+  authorization or current-state query. Use a new operation to query fresh state.
 - Exercise the actual bundled consumer example/validation logic, not only host
   JSON fields; a field addition alone does not fix the consumer contract.
 - Continue all D067 scope, retention, filesystem, restart and race tests, then
@@ -73,5 +76,5 @@ changes D067 and requires acceptance. The hash-aware consumer is recommended.
 - Deployment is separate; existing agent workspaces need updated instructions
   before claiming live receipt-consumer acceptance. No live probe has run.
 
-On approval, append a new ADR extending D067 and implement this amendment in the
-existing feature branch. Do not rewrite D067's historical accepted meaning.
+D068 records acceptance without rewriting D067's historical meaning.
+Implementation continues in the existing feature branch.

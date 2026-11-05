@@ -54,6 +54,22 @@ reply memo. Real Telegram/client behavior and native exit qualification are not
 inferred from these tests. No deployment or foreground activation in this slice.
 [Implementation evidence](reviews/2026-11-05-durable-stop.md).
 
+## D067/D068 task IPC consumer migration — 2026-11-05
+
+PR #177 has local deterministic claim/restart and executable Node consumer evidence.
+This is not live acceptance. Before qualification on Pi, preserve operator-edited
+SCHEDULING.md/scripts and migrate their task receipt handling to match original
+filename plus SHA-256 of the exact submitted bytes, including error receipts.
+Host upgrade alone does not update existing guides (Seed writes missing files only).
+Confirm identical replay and changed-byte conflict using the migrated consumer;
+never accept a stale/missing hash, and do not mutate existing user schedules for
+this test. Source/namespace isolation and existing delivery gates remain.
+
+The new host-only `DataDir/task-claims` spool is not included in a complete IPC
+restore guarantee. Drain claims before downgrade, or hold task IPC while preserving
+spool and SQLite evidence. Deployment, consumer migration and full restore remain
+open; [implementation evidence](reviews/2026-11-05-task-ipc-claims.md).
+
 ## Latest open gates
 - 2026-11-03: ordinary Codex nonce continuity, bounded Stop/process exit and
   post-Stop resume passed; tiny PDF delivered into test topic `3176309` and

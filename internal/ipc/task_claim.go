@@ -423,6 +423,11 @@ func (w *Watcher) finishTaskClaim(ctx context.Context, c *taskClaim) bool {
 
 func (w *Watcher) completeTaskClaim(ctx context.Context, c *taskClaim, op string, result *TaskResult, cause error, id *TaskRequestIdentity) bool {
 	c.record.Receipt = &taskReceipt{Status: "ok", RequestFile: c.record.File, Op: op, Result: result, Help: "Read /workspace/chat/SCHEDULING.md; use op and camelCase fields, then inspect this result before claiming success."}
+	// Hash only a complete bounded snapshot; never label a truncated prefix or
+	// unreadable inode as the submitted request. Invalid JSON still has exact bytes.
+	if c.record.Snapshotted && c.record.ReadError == "" {
+		c.record.Receipt.RequestHash = fmt.Sprintf("%x", sha256.Sum256(c.record.Snapshot))
+	}
 	if cause != nil {
 		c.record.Receipt.Status = "error"
 		c.record.Receipt.Error = w.receiptError(c.record.Folder, cause)

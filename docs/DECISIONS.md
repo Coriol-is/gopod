@@ -2320,3 +2320,27 @@ The accepted [contract](plans/2026-11-05-task-ipc-claim-contract.md) defines
 qualification and boundaries. Message IPC is unchanged. Claims must be drained
 or task IPC held before downgrade; existing backups do not promise complete IPC
 restore. Deployment and full recovery qualification remain separate.
+
+
+## D068 — Task receipt identity and matching consumers
+
+**Status:** accepted by owner, 2026-11-05. Amends D067's unchanged-consumer promise.
+
+Every bounded complete task snapshot receives a receipt `requestHash`: lowercase
+SHA-256 of exact submitted bytes, including whitespace/newlines. Host computes
+it from the immutable claim snapshot, independently of the policy-bound journal
+hash. Consumers must match original filename AND requestHash before accepting
+success or error. Old/missing hashes are stale/unbound evidence, not completion.
+Invalid but bounded JSON is still hash-bound; oversized/nonregular inputs may
+have only unbound diagnostics and can never succeed.
+
+This permits truthful recovery of an old result while a changed same-name request
+waits for its own conflict. Identical replay accepts the same original result.
+The fields are additive, but status/filename-only consumers must migrate before
+qualified replay/crash recovery. Existing workspace guides are not overwritten;
+upgrading the host is not proof that live consumers adopted matching. A hash is
+response attribution, not authentication of an agent-editable receipt.
+
+The [accepted amendment](plans/2026-11-05-task-ipc-receipt-identity.md) requires
+an executable test of the bundled consumer as well as host/restart regressions.
+No production deployment or live-client acceptance is implied.

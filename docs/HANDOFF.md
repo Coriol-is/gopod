@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-05 (D067 receipt identity decision required)
+**Last updated:** 2026-11-05 (D068 receipt identity implementation)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -13,32 +13,21 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — D067 implementation held for receipt identity decision, 2026-11-05
+## Resume here — D067/D068 receipt identity implementation, 2026-11-05
 
-Owner accepted D067 and implementation is on `feat/task-ipc-claims`, baseline
-`0d18156`. Host-only atomic claims, bounded snapshots, durable outcomes, Store
-scope/epoch fencing, journal replay pinning and recovery fairness are implemented.
-[Implementation/review evidence](reviews/2026-11-05-task-ipc-claims.md).
+Owner accepted the [receipt identity amendment](plans/2026-11-05-task-ipc-receipt-identity.md)
+as D068. Draft PR #177 / `feat/task-ipc-claims` now adds exact snapshot requestHash
+and a hash-matching executable consumer example in the seeded scheduling guide.
+D067's claim/recovery implementation remains on the same branch. Prior checkpoint
+`52e4826` required CI 42042725242 passed; this is not acceptance of new changes.
 
-Independent review is **not PASS**. A retained deterministic diagnostic confirms
-old success can be republished after a crash while a changed same-name request is
-pending. The original contract's unchanged receipt consumer cannot distinguish
-these outcomes. Exactly one task remains; the unresolved issue is attribution.
-
-**First next action:** obtain acceptance of the [receipt identity amendment](plans/2026-11-05-task-ipc-receipt-identity.md), then append a superseding ADR and implement
-host `requestHash` plus matching bundled consumer instructions/tests. No hash
-field or consumer migration is implemented yet. Keep the branch/draft; do not
-merge or deploy even if CI passes. A private staging rename alone only closes
-process death, not the power-loss observation window in the accepted contract.
-
-Independent review corrections and focused regressions pass; full build/vet/tests
-and full IPC/Store/scheduler/cmd races pass (89.474/103.053/19.707/35.571 s).
-Draft [PR #177](https://github.com/Coriol-is/gopod/pull/177) preserves source/test
-checkpoint `6d0c891`; CI 42042595921 was in progress and Sonar NOT_COMPUTED at
-handoff. Keep this feature branch/worktree; canonical main is unchanged. Overall review is
-still blocked by the attribution diagnostic, regardless of check results. No live
-Telegram/provider calls or deployment; last verified Pi remains `d58cdd2`.
-CP-002 preview/reply-action/cutover follows completion of this IPC repair.
+**First next action:** wait for final-head required CI and inspect advisory Sonar,
+then integrate PR #177. Independent source review PASS; actual seeded Node consumer
+and deterministic crash/replay tests pass. Full build/vet/all tests and affected
+races pass (IPC 70.370 s, cmd 32.825 s, templates 1.198 s; unchanged Store/scheduler
+cached). Final test-only production-scope workflow races pass 16.962 s. Existing guide seeding preserves files: live consumers need migration
+before claiming D068 acceptance. No deployment or Telegram/provider mutation;
+last verified Pi `d58cdd2`. [Evidence](reviews/2026-11-05-task-ipc-claims.md).
 
 ## D066 durable Stop merged, 2026-11-05
 
