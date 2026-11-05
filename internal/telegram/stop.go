@@ -102,12 +102,31 @@ func (b *Bot) inflightStop(turnID int64) <-chan struct{} {
 	return nil
 }
 
-// bindDraft records that turnID now streams through draftID in chatID.
-// A draftID of 0 clears it (the turn left the draft path).
-func (b *Bot) bindDraft(turnID int64, chatID int64, draftID int) {
+// generationLocked resolves a captured registration without retargeting its
+// successor. Callers without a binding retain the legacy lookup; an explicitly
+// nil or mismatched binding must never acquire a new registration.
+// The caller holds inflightMu.
+func (b *Bot) generationLocked(ctx context.Context, turnID int64) *inflightTurn {
+	if binding, ok := ctx.Value(finalGenerationKey{}).(finalGeneration); ok {
+		if binding.turnID != turnID || b.inflight[turnID] != binding.turn {
+			return nil
+		}
+		return binding.turn
+	}
+	return b.inflight[turnID]
+}
+
+// bindDraft binds only the captured, current generation. A late bind or clear
+// from a retired handler cannot replace the successor's Stop target.
+func (b *Bot) bindDraft(ctx context.Context, turnID int64, chatID int64, draftID int) {
 	b.inflightMu.Lock()
 	defer b.inflightMu.Unlock()
-	if t := b.inflight[turnID]; t != nil {
+	if t := b.generationLocked(ctx, turnID); t != nil {
+		t.phaseMu.Lock()
+		defer t.phaseMu.Unlock()
+		if t.retired || t.finalizing {
+			return
+		}
 		t.chatID, t.draftID = chatID, draftID
 	}
 }

@@ -52,24 +52,30 @@ func hasButtons(m models.ReplyMarkup) bool {
 // the Stop button when the turn is in flight (registerInflight), else
 // none. Every text edit of the placeholder carries it, so text and
 // buttons change in one call and never flicker.
-func (b *Bot) turnKeyboard(turnID int64) models.ReplyMarkup {
-	if b.inflightStop(turnID) == nil {
+func (b *Bot) turnKeyboard(ctx context.Context, turnID int64) models.ReplyMarkup {
+	b.inflightMu.Lock()
+	defer b.inflightMu.Unlock()
+	t := b.generationLocked(ctx, turnID)
+	if t == nil {
+		return nil
+	}
+	t.phaseMu.Lock()
+	defer t.phaseMu.Unlock()
+	if t.retired || t.finalizing || t.stopPending != nil || t.stopErr != nil {
+		return nil
+	}
+	select {
+	case <-t.stopped:
+		return nil
+	default:
+	}
+	data, err := encodeCB("st", strconv.FormatInt(turnID, 10), t.token)
+	if err != nil {
+		b.log.Warn("stop callback encode failed", slog.Int64("turn", turnID), slog.Any("err", err))
 		return nil
 	}
 	kb := stopKeyboard(turnID)
-	b.inflightMu.Lock()
-	t := b.inflight[turnID]
-	b.inflightMu.Unlock()
-	if t != nil {
-		data, err := encodeCB("st", strconv.FormatInt(turnID, 10), t.token)
-		if err != nil {
-			// A Stop button that cannot carry its attempt token would be a
-			// dead control; show none rather than one that silently fails.
-			b.log.Warn("stop callback encode failed", slog.Int64("turn", turnID), slog.Any("err", err))
-			return nil
-		}
-		kb.InlineKeyboard[0][0].CallbackData = data
-	}
+	kb.InlineKeyboard[0][0].CallbackData = data
 	return &kb
 }
 

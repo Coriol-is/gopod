@@ -229,7 +229,7 @@ func TestStreamReply_StopAfterAnswerTextAcknowledgesOnly(t *testing.T) {
 	s.progress <- runner.ProgressEvent{Tool: "Bash", Detail: "ls"}
 	s.chunks <- "Half an answer"
 	waitFor(t, "answer draft", draftShowing(fake, "Half an answer"))
-	b.bindDraft(item.ID, item.ChatID, 4242)
+	b.bindDraft(t.Context(), item.ID, item.ChatID, 4242)
 	b.handleGenerationStopped(context.Background(), stopUpdate(item.ChatID, 4242))
 	if err := <-errc; !errors.Is(err, queue.ErrStopped) {
 		t.Fatalf("err = %v", err)
