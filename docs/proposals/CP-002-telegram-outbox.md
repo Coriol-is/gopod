@@ -88,3 +88,13 @@ after unknown effects. Four-document/2 MiB bounds fall back to all-inline
 preparation; old plans remain immutable. Full checks, affected races, independent
 review and required CI passed. [Evidence](../reviews/2026-11-05-code-inline-alternatives.md).
 Not deployed; producer remains disconnected. Status remains in-progress.
+
+## Successful-final ownership — 2026-11-05
+
+PR #174 adds atomic Stop versus final ownership in the existing synchronous,
+streaming and fallback senders. Exact generation binding survives delegation;
+consumed results remain available to stopped settlement. Independent review,
+full checks, full Telegram races and required CI pass; merged as `40f368f`. Not deployed.
+[Evidence and scope limits](../reviews/2026-11-05-final-owner-handoff.md).
+Persistent frozen cancellation, complete preview/control ownership, reply-action
+integration and foreground producer activation remain open. Status in-progress.

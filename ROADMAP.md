@@ -29,7 +29,7 @@ preserved. Exact-main CI and Telegram `/version` passed. Pi controller only;
 | Work | Current status | Remaining step |
 |---|---|---|
 | Concurrent queue idle handoff | Fixed and merged as `01cc7e0` (PR #168); review and required CI pass | Deployed as `d58cdd2`; [evidence](docs/reviews/2026-11-04-queue-idle-handoff.md) |
-| CP-002 final delivery | In progress; immutable ready plans and recovery deployed | Foreground cutover and preview/cancellation/reply-action parity; D065 code fallback merged, rollout pending |
+| CP-002 final delivery | In progress; immutable ready plans and recovery deployed | Foreground cutover, persistent cancellation and full preview/reply-action parity; D065 merged, process-local final ownership merged in PR #174, rollout pending |
 | CP-016 topic deletion | In progress; runtime/store/outbox fences deployed | Durable legacy ownership, ambiguity/managed settlement, native-login qualification, confirmed delete command |
 | CP-007 backups | In progress; backup foundation deployed | Timer/retention, full capture and restore command/drill; leases only for online matched mode |
 | CP-004 managed tasks | Partial implementation; activation off | Settlement/visibility and schedule policy; credential adapter remains owner-deferred |
@@ -96,7 +96,10 @@ Both were deployed as `d58cdd2`. Code-inline alternatives subsequently merged in
 PR #173 (D065), with independent review, full checks/races and required CI;
 that new slice is not deployed. Foreground cutover, preview/cancellation/reply-action
 integration and unknown remote reconciliation/delete orchestration remain open;
-backup priority unchanged.
+backup priority unchanged. PR #174 adds a bounded process-local successful-final
+handoff against late Stop after joined previews; review and local full/race checks
+and required CI pass; merged as `40f368f`, not deployed. Persistent frozen cancellation, terminal-error UI and
+complete preview ownership remain separate gates.
 
 ## Parallel sessions — CP-037 (P0 and P1 merged and deployed in legacy mode, P2+ not started)
 

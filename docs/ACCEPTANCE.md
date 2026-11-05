@@ -30,6 +30,14 @@ exact live document-refusal tokens, native/client rendering and integrated
 foreground/preview/cancellation acceptance remain open. The last Pi deployment
 is still `d58cdd2`. [Implementation evidence](reviews/2026-11-05-code-inline-alternatives.md).
 
+## Successful-final handoff boundary — 2026-11-05
+
+PR #174 has automated race/fake-HTTP evidence for Stop on either side of the
+final-owner boundary, retired registration/delegation and voice-only TTS.
+This is not deployment or native/client acceptance. Persistent frozen-result
+cancellation, full preview ownership and foreground cutover remain unqualified.
+[Implementation evidence](reviews/2026-11-05-final-owner-handoff.md).
+
 ## Latest open gates
 - 2026-11-03: ordinary Codex nonce continuity, bounded Stop/process exit and
   post-Stop resume passed; tiny PDF delivered into test topic `3176309` and

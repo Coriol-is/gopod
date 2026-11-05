@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-05 (final-owner handoff in review)
+**Last updated:** 2026-11-05 (final-owner handoff merged)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -13,19 +13,32 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — final ownership handoff in progress, 2026-11-05
+## Resume here — successful-final ownership merged, 2026-11-05
 
-Branch `fix/final-reply-handoff`, base `5e1be7c`. Owner requested the next CP-002
-slice. Existing production code can accept Stop after its final stop-channel check
-while final HTTP/TTS already runs. Implementing an atomic per-generation handoff:
-Stop before the boundary wins; final ownership after joined previews rejects late
-Stop. Retired generations cannot acquire a replacement’s final ownership. Consumed stream results are
-preserved for stopped settlement instead of being read a second time.
-Focused legacy and dedicated race/regression checks pass. Review found and fixed
-registration/delegation generation-recapture windows; final review and full checks
-are running. [Evidence and scope limits](reviews/2026-11-05-final-owner-handoff.md). No deployment or foreground freeze activation. This closes a bounded
-process-local race; persistent frozen-result cancellation, reply-action integration
-and foreground producer cutover remain open.
+PR [#174](https://github.com/Coriol-is/gopod/pull/174) squash-merged as `40f368f`.
+The existing sync/stream/fallback sender now atomically hands successful results
+to the final sender after joining previews. Earlier Stop wins; late Stop cannot
+claim success or cancel native work during final HTTP/TTS. Exact registration
+binding survives delegation and prevents a retired handler owning a replacement.
+Consumed results remain available to stopped settlement without a second read.
+
+Independent review PASS on `499cbef`; full build/vet/test, full Telegram races
+(56.631 s) and exact-head required [CI 42022724716](https://github.com/Coriol-is/gopod/actions/runs/42022724716)
+pass. Sonar gate OK (6 code smells, 0 bugs/vulnerabilities; exact-head analysis
+11:54:30 UTC). Merged source matches the reviewed head.
+[Evidence and limits](reviews/2026-11-05-final-owner-handoff.md).
+
+**First next action:** qualify persistent frozen-result cancellation settlement
+and generation ownership of preview/control metadata, then reply-action parity
+and foreground producer/cutover under D063/D065. This bounded successful-final
+fix does not cover terminal-error presentation or activate durable foreground
+publication. CP-002/003 remain in progress; CP-016 remains the separate retirement
+lane. Backup stays lowered, managed-task credentials and parallel execution deferred.
+
+**Deployment:** #173 and #174 are not deployed. Last verified Pi revision remains
+`d58cdd2`; no production, Telegram or provider mutation in this slice. Session
+worktree and canonical main are retained; completed feature branch cleanup follows
+verified integration. No implementation work remains in flight for this slice.
 
 ## Code-inline alternatives integrated — 2026-11-05
 
@@ -42,7 +55,7 @@ full build/vet/test, full Store/Telegram races and final-head required
 Sonar final-head gate OK (29 code smells, 0 bugs/vulnerabilities); no findings
 suppressed. [Evidence and remaining boundaries](reviews/2026-11-05-code-inline-alternatives.md).
 
-**Next implementation:** preview ownership, late cancellation settlement and
+**Next implementation:** complete preview ownership, persistent cancellation settlement and
 reply-action integration, then the qualified foreground producer/cutover. CP-016
 unknown-outcome reconciliation and remaining retirement prerequisites remain a
 separate lane. Backup stays lowered; managed-task credentials and parallel

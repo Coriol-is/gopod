@@ -1,6 +1,6 @@
 # CP-002 final ownership handoff
 
-Base `5e1be7c`; branch `fix/final-reply-handoff`.
+Base `5e1be7c`; reviewed source `499cbef`; PR #174 merged as `40f368f`.
 
 ## Selected production gap
 
@@ -29,7 +29,10 @@ Existing stream/Stop/final/sync tests and dedicated race regressions pass.
 Independent review found two generation-recapture windows (delegation and
 registration); both are corrected by returning the exact registration pointer
 and carrying it through the context. New registrations overwrite inherited
-bindings; delegations preserve them. Final review and full checks are running. No production mutation, live Telegram test or billing.
+bindings; delegations preserve them. Independent final review PASS on source `499cbef`; independent focused races
+pass (7.875 s). Full build/vet/test and full Telegram races pass (56.631 s); exact-head required
+[CI 42022724716](https://github.com/Coriol-is/gopod/actions/runs/42022724716)
+passes (test and Docker isolation). PR [#174](https://github.com/Coriol-is/gopod/pull/174). No production mutation, live Telegram test or billing.
 Persistent frozen cancellation and reply-action/producer integration remain open.
 
 ## Scope limits
@@ -50,3 +53,16 @@ No new ADR is needed: the boundary implements the existing preview/final contrac
 - Retired generations cannot claim replacements through sync-to-stream or
   stream-to-fallback delegation; a new registration replaces inherited bindings.
 - Consumed native NoReplay evidence remains available to stopped settlement.
+
+## Advisory Sonar
+
+Exact-head analysis for `499cbef` at 2026-11-05 11:54:30 UTC: quality gate OK,
+6 code smells, 0 bugs and 0 vulnerabilities. Findings are visible and unchanged;
+two complexity findings concern the new regression tests. No suppression.
+
+## Integration
+
+Squash `40f368fe353aa3ca2d44d969ade6bfef6eef5dbd` contains the reviewed source
+unchanged (byte comparison against `499cbef`). Merge followed independent review
+and exact-head required CI using the documented administrative squash workflow.
+No deployment; Pi remains at its last verified revision `d58cdd2`.
