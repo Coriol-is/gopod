@@ -66,3 +66,21 @@ implementation; this patch neither broadens it nor claims new live evidence that
 Telegram stored nothing. Existing real-library fake-HTTP tests preserve strict
 matching and reject authentication/thread errors, generic 400s, 429s and unknown
 outcomes as branch-selection signals. Live token qualification remains separate.
+
+## Combined integration checkpoint
+
+Merged receipt reconciliation (`930586a`, PR #171) from origin/main without
+rebasing; merge commit `219cef3`. All ten delivery source/schema/test files are
+byte-identical to reviewed `7a02087`. No conflict or integration source edit was
+needed. Full build/vet/test and full affected Store/Telegram race suites passed
+on this combined source; it was pushed as the final PR head.
+
+## Integration result
+
+Independent final review approved `7a02087` and the combined `219cef3`, confirming
+all delivery source files unchanged and receipt source equal to its approved
+version. PR [#172](https://github.com/Coriol-is/gopod/pull/172) passed both required
+jobs in [CI 41950532576](https://github.com/Coriol-is/gopod/actions/runs/41950532576)
+and Sonar gate OK, then squash-merged as `a016b82`. No production deployment,
+foreground activation, billed API call or live Telegram acceptance occurred.
+Downgrade and remaining foreground gates above remain mandatory boundaries.

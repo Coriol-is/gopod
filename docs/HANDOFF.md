@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-05 (delivery outcomes and topic prerequisites resumed)
+**Last updated:** 2026-11-05 (upload fallback and receipt repair reviewed and merged)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -13,39 +13,41 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — next delivery/topic slices, 2026-11-05
+## Resume here — upload fallback and receipt repair integrated, 2026-11-05
 
-Owner requested continuation. Base `29eea1b` is clean; main CI for `dacefc0`,
-`c396579` and `29eea1b` passed. New bounded implementation streams:
+Both bounded slices are merged after independent review, full build/vet/test,
+full Store/Telegram race and exact-head required PR CI. Sonar gates are OK.
 
-- `feat/delivery-outcomes`, canonical sibling `gopod-delivery-outcomes`: durable
-  photo-refused → document fallback becomes a separate fenced durable attempt,
-  committed before the second HTTP call. Current production does both inside one
-  attempt. Same immutable bytes/routing; no fallback on ambiguous outcomes.
-  Full conditional code-inline assembly remains a later foreground gate.
-- `feat/topic-reconcile`, canonical sibling `gopod-topic-reconcile`: evidence-based
-  receipt-backed ownership repair under D064. A bounded in-process registry may
-  retry DB acknowledgement for an exact successful Telegram receipt, never resend
-  HTTP. Unknown outcomes and receipts lost on crash remain held. No invented
-  absence proof or automatic expiration of unresolved outcomes.
+| Slice | Integration | Behavior / boundary |
+|---|---|---|
+| Receipt-backed ownership repair | PR [#171](https://github.com/Coriol-is/gopod/pull/171), `930586a`; reviewed source `cab98d7`, tip `b26b4a9` | Bounded in-process positive receipts retry only DB ACK through recovery/lookup/quiescence. No HTTP resend, no clearing generic uncertainty. Unknown outcomes and receipts lost on crash remain held. |
+| Durable photo → document alternative | PR [#172](https://github.com/Coriol-is/gopod/pull/172), `a016b82`; reviewed combined head `219cef3` | Explicit allowlisted photo refusal selects a separately fenced document attempt transactionally before HTTP2. Retries remain on document; uncertain outcomes never authorize replay. Existing immutable part/plan hashes are preserved. |
 
-Implementation checkpoint: receipt repair PR [#171](https://github.com/Coriol-is/gopod/pull/171),
-source `cab98d7` / docs tip `b26b4a9`, passed independent review, full build/vet/test
-and full Store/Telegram race. Required CI and Sonar passed; merged as `930586a`.
-Registry cap 128, 30-second
-cooldown and a shared at-most-five-second/caller-shorter budget are tested.
-Upload fallback PR [#172](https://github.com/Coriol-is/gopod/pull/172), `7a02087`,
-passed final independent review, full build/vet/test and full Store/Telegram race;
-required CI is running. Its report explicitly warns that old binaries ignore selected
-branches: do not downgrade with pending alternatives without inspection/settlement.
-Receipt repair is merged, not deployed. Upload fallback is being combined with
-that new main before its final exact-head checks/CI; no deployment occurred.
+[Receipt evidence](reviews/2026-11-05-topic-reconcile.md) and
+[fallback evidence](reviews/2026-11-05-delivery-outcomes.md) contain the tests and
+scope boundaries. Combined source includes both slices; final PR #172 CI is
+[41950532576](https://github.com/Coriol-is/gopod/actions/runs/41950532576).
+Main CI after each merge is separate, not claimed completed here.
 
-Both require independent review, full checks, affected races and exact-head CI.
-Root owns global docs/integration; agents own separate source/report files and
-coordinate shared schema changes. No foreground activation, delete command,
-production deployment or live login is included. Backup remains lowered;
-managed-task credentials and CP-037 parallel execution remain deferred.
+**Next implementation:** full immutable conditional code-inline alternatives,
+preview ownership, late cancellation and reply-action integration before CP-002
+foreground activation. CP-016 still needs unknown-remote reconciliation,
+remaining ownership/native-login exit qualification, managed settlement and the
+confirmed deletion/retirement orchestration. Positive receipt repair closes only
+one local failure window, not arbitrary remote ambiguity. CP-018 remains behind
+CP-016; backup stays lowered and CP-004 credentials/CP-037 execution deferred.
+
+**Rollout boundary:** no deployment or live Telegram/login/deletion action took
+place. Production remains last observed as `a25f22a`; changes since #168 are not
+deployed. New fallback branch metadata is not downgrade-dispatch-compatible:
+old binaries ignore it and may retry a selected document as photo. Before any
+future downgrade, inspect/settle affected rows or hold dispatch; never erase the
+ledger as a workaround. Older backup allowlists may reject the additive table.
+This does not qualify a rollback or waive existing restore gates.
+
+The temporary implementation worktrees are clean except for the delivery agent's
+report checkpoint, now copied into this tracked report; cleanup follows verified
+source equality and preservation of that checkpoint.
 
 ## Previous priority and queue checkpoint
 

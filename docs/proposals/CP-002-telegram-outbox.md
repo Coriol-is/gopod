@@ -73,3 +73,9 @@ Ordinary frozen-result recovery/visible holds and NoReplay transport handling me
 
 Immutable final intents, atomic multi-preparation publication and ready-plan boot recovery deployed in `a25f22a` (#166, D063). Foreground producer, preview/cancellation and conditional code-upload fallback remain gated.
 See the [rollout evidence and remaining gates](../deployments/2026-11-03-final-plans-health.md). Status remains in-progress.
+
+## 2026-11-05 implementation continuation
+
+PR #172 (`a016b82`) makes the existing explicit photo-refusal document alternative a separate transactional attempt. Retries preserve the branch; ambiguity never permits replay. Conditional code-inline content and the other foreground gates remain open.
+Merged after review/full checks/required CI; not deployed. See [HANDOFF](../HANDOFF.md)
+for evidence and remaining gates. Status remains in progress.

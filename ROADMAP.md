@@ -90,6 +90,12 @@ managed settlement gates keep the delete command unavailable. Both slices await
 deployment; neither completes its parent proposal. [HANDOFF](docs/HANDOFF.md#completed-implementation-wave--2026-11-04)
 records evidence and remaining gates. Downstream items remain queued; CP-037 stays paused.
 
+2026-11-05 continuation: receipt-backed DB-ACK repair merged in PR #171
+(`930586a`); durable photo-to-document attempt selection merged in PR #172
+(`a016b82`). Both passed independent review, full checks/races and required CI.
+Neither is deployed. Full code-inline fallback/foreground cutover and unknown
+remote reconciliation/delete orchestration remain open; backup priority unchanged.
+
 ## Parallel sessions — CP-037 (P0 and P1 merged and deployed in legacy mode, P2+ not started)
 
 🟦 P0 lifecycle safety merged as `5c36b81` via [PR #126](https://github.com/Coriol-is/gopod/pull/126)

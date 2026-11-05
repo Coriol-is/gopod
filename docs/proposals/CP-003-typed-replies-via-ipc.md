@@ -71,3 +71,9 @@ matched artifact backup/restore gate are not done, so nothing is enabled.
 decision); `=0` disables it. The `matched_stopped` backup covers artifact blobs.
 The agent-facing contract and document presentation are tracked in
 [CP-040](CP-040-agent-attachments.md).
+
+## 2026-11-05 implementation continuation
+
+PR #172 (`a016b82`) adds durable photo-to-document alternative ownership for the same immutable artifact, without changing part/plan hashes. This does not complete foreground or typed-output scope.
+Merged after review/full checks/required CI; not deployed. See [HANDOFF](../HANDOFF.md)
+for evidence and remaining gates. Status remains in progress.

@@ -57,3 +57,9 @@ available. [Evidence](../reviews/2026-11-04-topic-resume.md) records review,
 combined tests and required CI. Historical provenance, noncontrol outputs,
 reconciliation, native-login/managed settlement and command orchestration remain
 open. This slice is merged, not deployed; CP-016 remains in progress.
+
+## 2026-11-05 implementation continuation
+
+PR #171 (`930586a`) adds bounded DB-only repair for exact positive Telegram receipts after ACK persistence failure. Unknown outcomes and receipts lost on crash remain held; delete orchestration is not enabled.
+Merged after review/full checks/required CI; not deployed. See [HANDOFF](../HANDOFF.md)
+for evidence and remaining gates. Status remains in progress.
