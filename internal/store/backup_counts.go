@@ -11,6 +11,7 @@ var rowCountSQL = map[string]string{
 	"ordinary_stop_members":     "SELECT count(*) FROM ordinary_stop_members",
 	"ordinary_stop_completions": "SELECT count(*) FROM ordinary_stop_completions",
 	"outbox_code_plans":         "SELECT count(*) FROM outbox_code_plans",
+	"outbox_keyboard_fallbacks": "SELECT count(*) FROM outbox_keyboard_fallbacks",
 	"outbox_document_fallbacks": "SELECT count(*) FROM outbox_document_fallbacks",
 	"final_reply_intents":       "SELECT count(*) FROM final_reply_intents",
 	"elevated_sessions":         "SELECT count(*) FROM elevated_sessions",

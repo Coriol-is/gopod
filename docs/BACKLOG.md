@@ -28,6 +28,14 @@ The independent acceptance lane starts with CP-040 A22–A25, then remaining
 Stop/restart and isolation checks. Coordinate one Telegram actor and avoid overlap
 with deployment/auth changes. No new work is activated by this reconciliation.
 
+## In flight — reply-action refusal parity
+
+`fix/outbox-keyboard-fallback` adds a durable bare-keyboard attempt after an
+explicit Telegram keyboard refusal. [Scope and checks](reviews/2026-11-05-outbox-keyboard-fallback.md).
+Full checks/races and independent review PASS; required CI pending.
+Full reply-action memo/callback parity and foreground
+activation remain open.
+
 ## Current deployed baseline
 
 PRs #168–#177 are deployed on Pi in `757faa2`; no worker. Exact-main CI,
