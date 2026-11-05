@@ -21,14 +21,14 @@ right now" view, see [docs/HANDOFF.md](docs/HANDOFF.md).
 The [code-backed backlog](docs/BACKLOG.md) records production call sites, gaps and
 verification at `38e8eba`; use it before selecting implementation work.
 
-Production `a25f22a` was rechecked at 08:50:42 UTC: controller healthy, no restarts
-or OOM, all eight idle counters zero. No owner/group/relay/elevated runtime is
-present in this snapshot. Main baseline `ffe6570` is pushed and CI-green; no PRs
-are open. [HANDOFF](docs/HANDOFF.md#current-status--2026-11-04) records the evidence.
+Production is `d58cdd2` (2026-11-05): controller and owner runtime healthy,
+zero controller restarts/OOM, all eight idle counters zero, durable state hashes
+preserved. Exact-main CI and Telegram `/version` passed. Pi controller only;
+[rollout evidence](docs/deployments/2026-11-05-queue-delivery-ownership.md).
 
 | Work | Current status | Remaining step |
 |---|---|---|
-| Concurrent queue idle handoff | Fixed and merged as `01cc7e0` (PR #168); review and required CI pass | Deployment pending; [evidence](docs/reviews/2026-11-04-queue-idle-handoff.md) |
+| Concurrent queue idle handoff | Fixed and merged as `01cc7e0` (PR #168); review and required CI pass | Deployed as `d58cdd2`; [evidence](docs/reviews/2026-11-04-queue-idle-handoff.md) |
 | CP-002 final delivery | In progress; immutable ready plans and recovery deployed | Foreground cutover, code-upload fallback, preview/cancellation/reply-action parity |
 | CP-016 topic deletion | In progress; runtime/store/outbox fences deployed | Durable legacy ownership, ambiguity/managed settlement, native-login qualification, confirmed delete command |
 | CP-007 backups | In progress; backup foundation deployed | Timer/retention, full capture and restore command/drill; leases only for online matched mode |
@@ -55,7 +55,7 @@ activation gates remain requirements, not a prerequisite to unrelated code work.
 
 | Order | Deliverable | Why now / completion gate |
 |---|---|---|
-| 1 — done on main | Concurrent queue regression fixed in PR #168 (`01cc7e0`) | Shared ordinary/managed idle retirement race; deterministic baseline failures, fixed stress/race, review and required PR CI pass. Deployment remains pending. |
+| 1 — done on main | Concurrent queue regression fixed in PR #168 (`01cc7e0`) | Shared ordinary/managed idle retirement race; deterministic baseline failures, fixed stress/race, review and required PR CI pass. Deployed as `d58cdd2`. |
 | 2 | CP-002 foreground delivery, with the necessary CP-003 slices | Finish an existing reliability investment: wire freeze/preparation/publication with fallback, previews, cancellation and reply-action parity. D063 and staged acceptance remain the activation gates. Protected-challenge work follows its existing contract; do not redo shipped attachment delivery. |
 | 3 | CP-016 complete topic retirement | Finish durable ownership, ambiguity reconciliation and managed settlement before command orchestration. Qualify native-login exit and the full confirmed API/outcome/retirement path under D064. The command stays unavailable until these gates pass. |
 | 4 | CP-018 per-conversation provider/model selection | Follows CP-016 as already agreed; delivers everyday conversation control. Reconcile with CP-037 routing contracts without activating paused parallel execution. |

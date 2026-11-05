@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-05 (upload fallback and receipt repair reviewed and merged)
+**Last updated:** 2026-11-05 (Pi rollout and Telegram version verified)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -13,7 +13,23 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — upload fallback and receipt repair integrated, 2026-11-05
+## Resume here — Pi deployed, 2026-11-05
+
+Production is `d58cdd2`, deployed at 01:57:55 UTC. Controller healthy, zero
+restarts/OOM; exact binary hash verified, SQLite integrity OK and full-row
+chat/session/schedule hashes unchanged. All eight idle counters zero. Owner
+runtime and six unrelated services healthy. Pi only; no worker deployment.
+Telegram `/version` response `3176957` confirms `gopod d58cdd2 (go1.26.10)`.
+Exact-main CI passed. [Rollout and backup evidence](deployments/2026-11-05-queue-delivery-ownership.md).
+
+First next action: continue the bounded CP-002/003 and CP-016 implementation
+queue below. Foreground producer stays disconnected, managed tasks off, and
+`/thread delete` unavailable. Native/client acceptance remains separate.
+Verified stopped backup `20261105T015718Z-ms-d53ad460` and prior image retained;
+reconcile ownership/fallback ledgers before downgrade, with no blind old-binary
+restart. Earlier dated snapshots below are historical.
+
+## Integrated upload fallback and receipt repair — 2026-11-05
 
 Both bounded slices are merged after independent review, full build/vet/test,
 full Store/Telegram race and exact-head required PR CI. Sonar gates are OK.
@@ -27,7 +43,7 @@ full Store/Telegram race and exact-head required PR CI. Sonar gates are OK.
 [fallback evidence](reviews/2026-11-05-delivery-outcomes.md) contain the tests and
 scope boundaries. Combined source includes both slices; final PR #172 CI is
 [41950532576](https://github.com/Coriol-is/gopod/actions/runs/41950532576).
-Main CI after each merge is separate, not claimed completed here.
+Exact release-main CI passed; the rollout evidence above records the deployed tip.
 
 **Next implementation:** full immutable conditional code-inline alternatives,
 preview ownership, late cancellation and reply-action integration before CP-002
@@ -37,9 +53,8 @@ confirmed deletion/retirement orchestration. Positive receipt repair closes only
 one local failure window, not arbitrary remote ambiguity. CP-018 remains behind
 CP-016; backup stays lowered and CP-004 credentials/CP-037 execution deferred.
 
-**Rollout boundary:** no deployment or live Telegram/login/deletion action took
-place. Production remains last observed as `a25f22a`; changes since #168 are not
-deployed. New fallback branch metadata is not downgrade-dispatch-compatible:
+**Rollout boundary:** changes #168–#172 are deployed as `d58cdd2`; Telegram
+version acceptance passed. No login/deletion acceptance was performed. New fallback branch metadata is not downgrade-dispatch-compatible:
 old binaries ignore it and may retry a selected document as photo. Before any
 future downgrade, inspect/settle affected rows or hold dispatch; never erase the
 ledger as a workaround. Older backup allowlists may reject the additive table.
@@ -71,8 +86,8 @@ Resume CP-002/003 foreground delivery and CP-016 topic lifecycle foundations,
 then CP-018 → CP-019 → CP-033 → CP-014. Each implementation slice keeps its review,
 CI and activation gates; lowering backup does not waive artifact/restore gates.
 Managed-task credentials and CP-037 parallel execution remain deferred.
-Queue fix is integrated; production remains recorded as `a25f22a` with deployment
-outstanding. No production changes are part of this priority update.
+Queue fix is integrated and subsequently deployed as `d58cdd2`. The priority
+update itself made no production changes.
 
 ## Completed implementation wave — 2026-11-04
 
@@ -100,14 +115,15 @@ behind CP-016, then CP-019 → CP-033 → CP-014; CP-007 stays lowered. Neither 
 nor CP-016 is complete merely because these slices merged.
 
 No deployment, live Telegram acceptance, delete or login action occurred in this
-wave. Production remains recorded as `a25f22a`; queue fix #168 and both slices are
-not deployed. Main CI for delivery `c1966dc`/docs `c356ce8` passed; topic merge CI
+wave itself. Queue fix #168 and both slices were subsequently deployed as `d58cdd2`. Main CI for delivery `c1966dc`/docs `c356ce8` passed; topic merge CI
 runs separately and is not claimed complete here. The two temporary implementation
 worktrees and their local/remote branches were removed after verifying clean trees,
 merged PRs and exact combined source equality (`d368086` versus integrated main).
 Only canonical main and this detached session checkout remain.
 
 ## Current status — 2026-11-04
+
+Historical snapshot; superseded by the 2026-11-05 rollout above.
 
 Read-only recheck at 08:50:42 UTC: Pi source `a25f22a`; controller running and
 healthy since 2026-11-03 17:13:09 UTC, zero restarts/OOM, all eight idle counters

@@ -6,9 +6,10 @@ since deployed `a25f22a`). This is the current implementation inventory; the
 owns priority, and [ACCEPTANCE](ACCEPTANCE.md) owns live verification. Earlier
 handoff sections and dated plans are historical, not additional active work.
 
-Production observations remain the 2026-11-04 **08:50:42 UTC** read-only snapshot
-in [HANDOFF](HANDOFF.md#current-status--2026-11-04). This code audit did not deploy,
-change flags, invoke providers or perform new Telegram acceptance.
+Production updated to `d58cdd2` on 2026-11-05; queue fix and delivery/ownership
+slices #168–#172 are deployed. Health, state preservation and Telegram version
+passed; [rollout evidence](deployments/2026-11-05-queue-delivery-ownership.md).
+Foreground activation, topic retirement and provider/client acceptance stay open.
 
 ## Current priority
 
@@ -36,7 +37,7 @@ Owner-deferred managed-task credentials and parallel sessions remain deferred.
 
 | Item | Implementation evidence | Open verification |
 |---|---|---|
-| Queue idle handoff | Shared ordinary/managed lost wakeup fixed in PR #168 (`01cc7e0`). Independent review, full checks, 100-repeat stress/race and required PR CI pass; [evidence](reviews/2026-11-04-queue-idle-handoff.md). | Deployment pending; no production loss has been observed. First CI attempt's unchanged runner force-drain failure remains a separate observation despite successful retry. |
+| Queue idle handoff | Shared ordinary/managed lost wakeup fixed in PR #168 (`01cc7e0`). Independent review, full checks, 100-repeat stress/race and required PR CI pass; [evidence](reviews/2026-11-04-queue-idle-handoff.md). | Deployed as `d58cdd2`; no production loss has been observed. First CI attempt's unchanged runner force-drain failure remains a separate observation despite successful retry. |
 | CP-040 agent attachments | [chattmpl](../internal/runner/chattmpl/chattmpl.go) seeds owner `ATTACHMENTS.md`; [attachment skill](../container/skills/attachments/SKILL.md), IPC `as` selection and [outbox transport](../internal/telegram/outbox_transport.go) expose file/photo delivery and refusals. Feature is deployed and artifacts enabled in recorded rollout, not waiting on a deleted feature branch. | Full A22–A25 matrix: fresh Claude/Codex discoverability, photo/document, refusal and flag-off cases. Recorded topic PDF and source-missing refusal checks cover only part of this matrix. |
 | CP-038 elevated | Host profile, journal, explicit login/lifecycle and completion path shipped; [deployment evidence](deployments/2026-11-03-elevated-login.md). | Claude browser completion remains open. Bounded native Codex acceptance passed. No elevated container in the latest snapshot. |
 | CP-020 isolation | Controller/policy/profile implementation shipped; see [proposal](proposals/CP-020-personal-group-isolation.md). | Remaining provider/client and cross-boundary qualifications, not a new isolation implementation project. |

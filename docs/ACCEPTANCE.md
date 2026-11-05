@@ -4,9 +4,11 @@ Implementation status was reconciled against code on 2026-11-04 in
 [BACKLOG](BACKLOG.md). CP-040 is implemented/deployed; A22–A25 remain qualification
 items. This status audit adds no live acceptance evidence and does not close them.
 
-Last reconciled: 2026-11-04. Latest deployment: `a25f22a`, verified through
-startup/image/health and [final-plan rollout](deployments/2026-11-03-final-plans-health.md).
-Telegram `/version` reply `3176409` on 2026-11-03 confirms `gopod a25f22a (go1.26.10)`.
+Last reconciled: 2026-11-05. Latest deployment: `d58cdd2`; controller health,
+exact image/binary, SQLite integrity and state preservation passed.
+[Rollout evidence](deployments/2026-11-05-queue-delivery-ownership.md).
+Telegram `/version` command `3176956` → response `3176957` in test topic `3176309`
+confirms `gopod d58cdd2 (go1.26.10)`. No native or visual acceptance gate is closed.
 Code merged/deployed is distinct from a real-client scenario being accepted.
 Items below are pending unless explicit evidence is linked. Do not infer a pass
 from unit tests, CLI --help/version, startup notices or a green CI job.
