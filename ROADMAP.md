@@ -36,8 +36,9 @@ Stable milestone IDs and their implementation record below remain a reference,
 not extra active queue entries. Partial proposals are not marked complete.
 
 CP-002 bounded draft/Stop-keyboard generation fix merged in #178 (`da8b4fe`),
-with review and required CI passed; not deployed. Wait maps/durable control
-binding, reply-action parity and qualified foreground cutover remain open.
+with review and required CI passed; wait maps/durable control binding followed
+in #179 (`bbc30b4`) with the same gates passed. Both are not deployed. Integrated
+lifecycle qualification, reply-action parity and foreground cutover remain open.
 
 ## Execution priority — 2026-11-04
 

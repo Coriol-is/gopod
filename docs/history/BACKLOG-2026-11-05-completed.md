@@ -30,7 +30,13 @@ work. The separate runner force-drain observation remains in the active backlog.
 PR #178 (`da8b4fe`) binds draft metadata and Stop keyboards to the captured
 registration. Full/race checks, independent review and required CI passed;
 [review](../reviews/2026-11-05-preview-generation-controls.md). Not deployed;
-Pi remains `757faa2`. Wait maps/durable control binding and parent CP-002 remain open.
+Pi remains `757faa2`.
+
+PR #179 (`bbc30b4`) adds generation-scoped wait maps/refresher joins and rejects
+stale durable control/placeholder writes. Full/race checks, independent review and
+required CI passed; [review](../reviews/2026-11-05-wait-control-generation.md).
+Not deployed. Integrated lifecycle qualification, reply-action parity and parent
+CP-002 remain open.
 
 ## Completed operations
 

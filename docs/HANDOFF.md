@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-05 (Pi 757faa2 deployed and backups trimmed)
+**Last updated:** 2026-11-05 (#178–#179 merged; Pi remains 757faa2)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -13,29 +13,26 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## In flight — wait and durable control generation ownership
+## Resume here — generation ownership fixes merged, 2026-11-05
 
-Branch `fix/wait-control-generation`, base `9de3cac`. Wait keys now include the
-captured generation; stale cleanup must not consume a successor's placeholder or
-join its refresher. Placeholder/control persistence is serialized with registration
-replacement and rejects retired bindings. Repeated generation races and initial independent review pass. Full checks found
-and fixed unregistered-placeholder compatibility; final build/vet/tests, full Telegram race (58.097 s) and delta review pass.
-PR #179 source `699c0aa`; required CI and advisory Sonar pending.
-[Evidence](reviews/2026-11-05-wait-control-generation.md).
-No deployment or foreground activation.
+PR [#178](https://github.com/Coriol-is/gopod/pull/178), `da8b4fe`, binds draft
+metadata and Stop keyboards to the captured registration.
+PR [#179](https://github.com/Coriol-is/gopod/pull/179), `bbc30b4`, extends this to
+wait-placeholder/refresher ownership and durable control binding. Late old HTTP
+results cannot replace successor metadata; concurrent refresher stops both join.
+Unregistered sender compatibility is preserved without successor recapture.
 
-## Resume here — preview controls merged, 2026-11-05
+Both passed full build/vet/tests, Telegram races, independent review and exact-head
+required CI. Latest Sonar gate OK (16 code smells, zero bugs/vulnerabilities;
+findings read, none suppressed). [#178 review](reviews/2026-11-05-preview-generation-controls.md) ·
+[#179 review and regression evidence](reviews/2026-11-05-wait-control-generation.md).
 
-PR [#178](https://github.com/Coriol-is/gopod/pull/178) merged as `da8b4fe`.
-Draft metadata and Stop-keyboard generation now bind to the captured registration;
-a retired handler cannot overwrite/clear its replacement's draft or acquire its
-Stop token. Full build/vet/tests, Telegram races, independent review and exact-head
-required CI PASS; advisory Sonar OK (two existing code smells, no suppression).
-[Review and evidence](reviews/2026-11-05-preview-generation-controls.md).
-
-**First next action:** generation-bound wait-placeholder/refresher ownership and
-durable control binding, then reply-action parity and qualified foreground cutover.
-No implementation in flight. #178 is not deployed; Pi remains `757faa2`.
+**First next action:** reply-action parity and integrated preview/control lifecycle
+qualification, then qualified foreground producer/cutover under D063/D065/D066.
+These bounded fixes do not establish full native/client qualification or published
+delivery cancellation settlement. No implementation in flight. #178–#179 are not
+deployed; Pi remains `757faa2`. CP-016 remains the separate retirement lane;
+backup stays lowered, managed credentials and parallel execution deferred.
 
 ## Last deployment — Pi rollout and cleanup complete, 2026-11-05
 

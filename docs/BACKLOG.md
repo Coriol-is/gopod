@@ -14,8 +14,9 @@ here; proposed, deferred and paused work is not cancelled.
 
 1. CP-002 delivery with necessary CP-003 slices: preview/control generation ownership,
    reply-action parity, then qualified foreground producer/cutover. Draft binding and
-   Stop-keyboard generation are fixed in #178 (`da8b4fe`, not deployed); wait maps
-   and durable control binding remain open.
+   Stop-keyboard generation are fixed in #178 (`da8b4fe`); wait maps and durable
+   control binding in #179 (`bbc30b4`). Both await deployment; integrated lifecycle
+   qualification and reply-action parity remain open.
 2. CP-016 full topic retirement.
 3. CP-018 per-conversation provider/model selection.
 4. CP-019 group command/service UX.
@@ -26,14 +27,6 @@ here; proposed, deferred and paused work is not cancelled.
 The independent acceptance lane starts with CP-040 A22–A25, then remaining
 Stop/restart and isolation checks. Coordinate one Telegram actor and avoid overlap
 with deployment/auth changes. No new work is activated by this reconciliation.
-
-## In flight — wait/control generation ownership
-
-`fix/wait-control-generation` binds wait caches/cleanup to captured registrations
-and fences durable placeholder/control persistence against registration replacement.
-[Scope and verification](reviews/2026-11-05-wait-control-generation.md).
-PR #179: final review/full checks/races PASS; required CI pending.
-Foreground cutover remains closed.
 
 ## Current deployed baseline
 
