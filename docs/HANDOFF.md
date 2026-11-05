@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-04 (delivery and topic slices reviewed and merged)
+**Last updated:** 2026-11-05 (delivery outcomes and topic prerequisites resumed)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -13,7 +13,26 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — backup lowered, delivery and topic lifecycle resumed
+## Resume here — next delivery/topic slices, 2026-11-05
+
+Owner requested continuation. Base `29eea1b` is clean; main CI for `dacefc0`,
+`c396579` and `29eea1b` passed. New bounded implementation streams:
+
+- `feat/delivery-outcomes`, canonical sibling `gopod-delivery-outcomes`: durable
+  refused-versus-ambiguous upload outcome prerequisites under D063. Exact slice
+  is being checked against current Store/dispatcher contracts before editing.
+- `feat/topic-reconcile`, canonical sibling `gopod-topic-reconcile`: evidence-based
+  ambiguity reconciliation or native-login exit qualification under D064; no
+  invented absence proof or automatic expiration of unresolved outcomes.
+
+Both require independent review, full checks, affected races and exact-head CI.
+Root owns global docs/integration; agents own separate source/report files and
+coordinate shared schema changes. No foreground activation, delete command,
+production deployment or live login is included. Backup remains lowered;
+managed-task credentials and CP-037 parallel execution remain deferred.
+
+## Previous priority and queue checkpoint
+
 
 PR [#168](https://github.com/Coriol-is/gopod/pull/168) squash-merged as `01cc7e0`
 after independent review of `af266ad`, full build/vet/test, queue race checks,
