@@ -13,6 +13,18 @@ Code merged/deployed is distinct from a real-client scenario being accepted.
 Items below are pending unless explicit evidence is linked. Do not infer a pass
 from unit tests, CLI --help/version, startup notices or a green CI job.
 
+## Latest rollout acceptance — 2026-11-05 15:12 UTC
+
+Pi `757faa2`, exact-main CI and isolated readiness passed; health/state preservation
+passed, Telegram `/version` command `3177168` → response `3177169` confirms
+`gopod 757faa2 (go1.27.3)`. Three scheduling guides migrated preserving originals.
+The shipped Node receipt consumer on Pi passed read-only list, identical replay
+and changed-byte conflict with filename+hash matching; 15 schedules unchanged,
+claim files empty. [Evidence](deployments/2026-11-05-stop-ipc-rollout.md).
+This closes the bounded deployed D068 host/consumer check, not arbitrary legacy
+consumer migration, power-loss, native-provider or visual-client acceptance.
+Earlier rollout and per-slice undeployed statements below are historical.
+
 ## Operational recheck — 2026-11-04
 
 At 08:50:42 UTC, read-only Pi checks confirmed `a25f22a`, matching controller

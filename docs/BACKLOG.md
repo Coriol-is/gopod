@@ -11,6 +11,16 @@ slices #168–#172 are deployed. Health, state preservation and Telegram version
 passed; [rollout evidence](deployments/2026-11-05-queue-delivery-ownership.md).
 Foreground activation, topic retirement and provider/client acceptance stay open.
 
+## Latest rollout — 2026-11-05 15:11 UTC
+
+PRs #173–#177 deployed on Pi as `757faa2`; no worker. Three D068 scheduling
+guides migrated preserving originals; deployed host and actual matching Node
+consumer passed read-only list/replay/conflict. Full-row chat/session/task hashes
+unchanged, health/version passed. [Evidence](deployments/2026-11-05-stop-ipc-rollout.md).
+These rollout facts supersede the earlier "not deployed" slice checkpoints below.
+Other native/client gates and full IPC restore remain open. Owner-authorized
+backup cleanup retained rollback anchors and removed only 18 old database-only sets.
+
 ## Code-inline implementation checkpoint — 2026-11-05
 
 The [conditional-plan proposal](plans/2026-11-05-final-code-inline-alternatives.md)

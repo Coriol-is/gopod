@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-05 (D067/D068 task IPC repair merged)
+**Last updated:** 2026-11-05 (Pi 757faa2 deployed and backups trimmed)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -13,7 +13,35 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — D067/D068 task IPC repair merged, 2026-11-05
+## Resume here — Pi rollout and cleanup complete, 2026-11-05
+
+Pi controller deployed as `757faa2` at 15:11:59 UTC; no worker deployment.
+PRs #173–#177 are now deployed. Exact-main CI passed, candidate isolated readiness
+passed, matched-stopped backup `20261105T151122Z-ms-6ff01519` verified. Controller
+and owner runtime healthy, zero controller restarts/OOM; chat/session/task hashes
+unchanged. Telegram `/version` response `3177169` confirms 757faa2 (Go 1.27.3).
+[Rollout, acceptance and cleanup evidence](deployments/2026-11-05-stop-ipc-rollout.md).
+
+Three existing scheduling guides received an explicit D068 matching section;
+originals/content preserved. Actual shipped Node consumer on Pi passed read-only
+list, identical replay and changed-byte conflict, all hash-matched; 15 tasks
+unchanged and claim files empty. This is bounded host/consumer acceptance, not
+qualification of arbitrary old consumers or native/visual/power-loss behavior.
+
+Owner-authorized cleanup removed 18 old automatic database-only sets (~119 MiB).
+All 20 matched-stopped, three database-only anchors, manual/auth baselines,
+rollback images and guide originals retained; backup directory now 275 MiB.
+Separate 556 KiB NanoClaw/OneCLI/systemd archives retained. No broad Docker prune.
+
+**First next action:** continue CP-002 preview/control generation ownership and
+reply-action parity, then qualified foreground cutover. CP-016 retirement remains
+a separate lane. Backup stays lowered; managed credentials/parallel execution
+remain deferred. Foreground producer disconnected, managed tasks off. No source
+implementation in flight. Preserve new ledgers/spool before any downgrade; complete
+IPC restore remains unqualified. Canonical and session worktrees retained.
+
+## D067/D068 task IPC repair merged, 2026-11-05
+
 
 PR [#177](https://github.com/Coriol-is/gopod/pull/177) merged as `cbdd9e3`.
 Task IPC claims the original file into a host-only spool before dispatch and

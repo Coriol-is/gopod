@@ -1,5 +1,10 @@
 # gopod — Roadmap
 
+Latest rollout: `757faa2` on Pi, 2026-11-05 15:11 UTC, includes #173–#177;
+no worker. D068 guide migration and bounded read-only matching-consumer acceptance
+passed; unrelated native/client gates remain. [Evidence](docs/deployments/2026-11-05-stop-ipc-rollout.md).
+
+
 Live milestone tracker. Update the **Status** column whenever you change reality.
 For the *why* behind each milestone, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md);
 for integrations, see [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md); for memory,
