@@ -43,7 +43,7 @@ func (b *Bot) topicRequest(ctx context.Context, chat int64, thread int, request 
 	}
 	err = request(ctx)
 	var ownershipErr *ownershipSendError
-	if errors.As(err, &ownershipErr) && !ownershipErr.attempted {
+	if errors.As(err, &ownershipErr) && (!ownershipErr.attempted || ownershipErr.receiptBacked) {
 		return err
 	}
 	if err != nil && !definiteTopicRefusal(err) {

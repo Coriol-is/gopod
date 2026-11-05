@@ -46,6 +46,7 @@ func reopenOwnership(t *testing.T, b *Bot, path string) {
 	b.topicMessages = nil
 	b.topicMessageOrder = nil
 	b.topicUncertain = nil
+	b.messageReceipts = nil // Simulate process restart, not only reconnecting Store.
 }
 func TestTopicOwnershipRestartSourceAndKnownMain(t *testing.T) {
 	n := 700

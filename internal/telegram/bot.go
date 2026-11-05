@@ -97,6 +97,8 @@ type Bot struct {
 	topicMessageOrder []topicMessageKey
 	topicUncertain    map[chatThread]bool
 	topicQuiesceMu    sync.Mutex
+	receiptMu         sync.Mutex
+	messageReceipts   map[string]messageReceipt
 	elevated          ElevatedInput
 	capabilities      *capabilityCache
 	api               *bot.Bot

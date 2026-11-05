@@ -122,6 +122,10 @@ func (b *Bot) RepairControls(ctx context.Context) error {
 	if b.store == nil || b.api == nil {
 		return nil
 	}
+	// Receipt repair is DB-only; failed receipts must not starve unrelated controls.
+	if err := b.ReconcileMessageReceipts(ctx); err != nil {
+		b.log.Warn("message receipt reconciliation", "error", err)
+	}
 	rows, err := b.store.ControlMessages(ctx)
 	if err != nil {
 		return err
