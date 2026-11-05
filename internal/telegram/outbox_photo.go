@@ -9,11 +9,9 @@ package telegram
 // document is the original-quality form and is also what an upload with no
 // presentation always gets.
 //
-// One DB attempt, at most two API calls: there is never a second request after
-// an ambiguous or unproven result. The only two-call path is a 400 whose
-// description is exactly one of photoRefusalTokens, followed by one document of
-// the same bytes. ASSUMPTION: such a 400 means Telegram stored nothing. Nothing
-// in this repository proves it; verify it in the live smoke before relying on it.
+// Each transport call makes one API call. An allowlisted explicit photo refusal
+// returns a fixed outcome; the dispatcher must commit the document alternative
+// before issuing its separate attempt. No ambiguous result permits fallback.
 
 import (
 	"bytes"
@@ -25,7 +23,6 @@ import (
 	_ "image/jpeg" // registers the decoder used by image.DecodeConfig
 	_ "image/png"  // registers the decoder used by image.DecodeConfig
 	"io"
-	"log/slog"
 	"slices"
 	"strings"
 
@@ -42,12 +39,6 @@ const (
 	maxPhotoSideSum = 10000
 	maxPhotoRatio   = 20
 )
-
-// codePhotoRefusedCanceled is a proven pre-delivery result (Telegram refused the
-// photo, nothing was stored by assumption) that ended before the document could
-// be sent. It is released for retry like any proven-unsent failure but, unlike
-// canceled_before_dispatch, is not refunded, so it consumes the retry budget.
-const codePhotoRefusedCanceled = "photo_refused_canceled"
 
 // photoRefusalTokens are the 400 descriptions (after "Bad Request: ") treated as
 // a refusal of the picture itself. ASSUMED FROM MEMORY of Telegram's behavior,
@@ -151,19 +142,7 @@ func (t *botTransport) attemptPhoto(ctx context.Context, req SendRequest, name s
 		Caption: req.Text, // plain text; an upload has no parse mode
 	})
 	if photoRefused(err) {
-		if ctx.Err() != nil {
-			// Proven refusal, but the attempt is over: do not start a second
-			// call whose timeout would be recorded as an uncertain outcome.
-			// NOT "canceled_before_dispatch": the dispatcher refunds that code,
-			// and Telegram did answer, so the attempt must stay counted or the
-			// photo would be re-sent without a budget.
-			return Outcome{Kind: OutcomeNotSent, Code: codePhotoRefusedCanceled}
-		}
-		if t.log != nil {
-			t.log.Info("photo refused by telegram; sending the same bytes as a document",
-				slog.String("part", req.PartID), slog.Int64("attempt_id", req.AttemptID))
-		}
-		return sendDoc()
+		return Outcome{Kind: OutcomeRefused, Code: "photo_refused", HTTPStatus: 400}
 	}
 	return classifySend(msg, err, 0)
 }

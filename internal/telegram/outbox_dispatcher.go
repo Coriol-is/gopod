@@ -303,6 +303,10 @@ func (d *OutboxDispatcher) execute(attemptCtx context.Context, c store.OutboxCla
 		NamespaceID: c.Conversation.Scope.NamespaceID, NamespaceEpoch: c.Conversation.Scope.NamespaceEpoch,
 	}
 	out := d.attempt(attemptCtx, req)
+	if out.Kind == OutcomeRefused && out.Code == "photo_refused" && out.HTTPStatus == 400 && req.Kind == store.PartUpload && req.ParseMode == store.UploadPresentationPhoto && !c.DocumentFallback {
+		d.documentFallback(attemptCtx, c, req, out)
+		return
+	}
 	if out.Kind == OutcomeRefused && out.Code == "parse_entities" && out.HTTPStatus == 400 && req.ParseMode == "HTML" && (req.Kind == store.PartText || req.Kind == store.PartEdit) {
 		d.plainFallback(attemptCtx, c, req, out)
 		return
@@ -499,4 +503,29 @@ func (d *OutboxDispatcher) sweepOrphans(ctx context.Context) (int, error) {
 	d.claimMu.Lock()
 	defer d.claimMu.Unlock()
 	return d.backend.SweepOrphanedSending(ctx, d.liveParts(), d.cfg.OrphanGrace)
+}
+
+// documentFallback selects the existing photo-to-document alternative before
+// any second HTTP call. The source stays immutable; only the attempt's effective
+// presentation changes. Known-unsent retries reload that durable selection.
+func (d *OutboxDispatcher) documentFallback(ctx context.Context, c store.OutboxClaim, req SendRequest, refusal Outcome) {
+	backend, ok := d.backend.(interface {
+		BeginDocumentFallback(context.Context, store.OutboxClaim) (store.OutboxClaim, error)
+	})
+	if !ok {
+		d.persist(c, refusal)
+		return
+	}
+	persistCtx, cancel := context.WithTimeout(context.Background(), d.cfg.PersistTimeout)
+	next, err := backend.BeginDocumentFallback(persistCtx, c)
+	cancel()
+	if err != nil {
+		// A committed-but-unacknowledged transition invalidates c. Its new sending
+		// attempt is swept uncertain; never retry the transition or guess unsent.
+		d.persist(c, refusal)
+		return
+	}
+	req.ParseMode = ""
+	req.AttemptID = next.AttemptID
+	d.persist(next, d.attempt(ctx, req))
 }

@@ -2,10 +2,9 @@ package telegram
 
 // Durable-outbox transport (CP-002 PR 2).
 //
-// A transport makes one attempt (one DB attempt row) for one immutable part
-// and classifies the result. That is one API call, except an upload with the
-// photo presentation, which makes at most two: a document of the same bytes
-// only after Telegram proved the photo itself was refused (outbox_photo.go). It is deliberately separate from the interactive
+// A transport makes one API call for one persisted attempt and classifies the
+// result. Explicit-refusal alternatives require a new dispatcher/store attempt
+// before another HTTP call. It is deliberately separate from the interactive
 // send helpers (sendFormattedErr, sendFinal, sendDocument): those retry, fall
 // back to plain text after a formatting error, and redirect a gone topic to the
 // main chat. None of that is allowed here, because every one of those moves
