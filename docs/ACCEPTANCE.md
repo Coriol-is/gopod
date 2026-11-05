@@ -4,14 +4,9 @@ Implementation status was reconciled against code on 2026-11-04 in
 [BACKLOG](BACKLOG.md). CP-040 is implemented/deployed; A22–A25 remain qualification
 items. This status audit adds no live acceptance evidence and does not close them.
 
-Last reconciled: 2026-11-05. Latest deployment: `d58cdd2`; controller health,
-exact image/binary, SQLite integrity and state preservation passed.
-[Rollout evidence](deployments/2026-11-05-queue-delivery-ownership.md).
-Telegram `/version` command `3176956` → response `3176957` in test topic `3176309`
-confirms `gopod d58cdd2 (go1.26.10)`. No native or visual acceptance gate is closed.
-Code merged/deployed is distinct from a real-client scenario being accepted.
-Items below are pending unless explicit evidence is linked. Do not infer a pass
-from unit tests, CLI --help/version, startup notices or a green CI job.
+Last reconciled: 2026-11-05 against deployed `757faa2`. Code merged/deployed
+is distinct from a real-client scenario being accepted. Items below remain pending
+unless explicit evidence is linked. No new live checks were run by this docs refresh.
 
 ## Latest rollout acceptance — 2026-11-05 15:12 UTC
 
@@ -29,7 +24,7 @@ Earlier rollout and per-slice undeployed statements below are historical.
 
 At 08:50:42 UTC, read-only Pi checks confirmed `a25f22a`, matching controller
 image/binary, running/healthy, zero restarts/OOM and eight zero idle counters.
-The owner runtime is absent now; its 2026-11-03 healthy result remains historical.
+At that historical checkpoint the owner runtime was absent; its 2026-11-03 healthy result remains historical.
 Group/relay/elevated runtimes are also absent. No Telegram, model, login, destructive
 or reboot scenario was exercised by this status refresh. Existing acceptance IDs
 are not closed by a health check. [Release evidence](deployments/2026-11-03-final-plans-health.md).
@@ -37,16 +32,15 @@ are not closed by a health check. [Release evidence](deployments/2026-11-03-fina
 ## D065 implementation boundary — 2026-11-05
 
 Conditional code-inline alternatives merged in PR #173; fake-HTTP presentation,
-Store/race and populated-schema migration checks pass. This slice is not deployed;
+Store/race and populated-schema migration checks pass. Deployed in `757faa2`;
 exact live document-refusal tokens, native/client rendering and integrated
-foreground/preview/cancellation acceptance remain open. The last Pi deployment
-is still `d58cdd2`. [Implementation evidence](reviews/2026-11-05-code-inline-alternatives.md).
+foreground/preview/cancellation acceptance remain open. Current Pi release is `757faa2`. [Implementation evidence](reviews/2026-11-05-code-inline-alternatives.md).
 
 ## Successful-final handoff boundary — 2026-11-05
 
 PR #174 has automated race/fake-HTTP evidence for Stop on either side of the
 final-owner boundary, retired registration/delegation and voice-only TTS.
-This is not deployment or native/client acceptance. Persistent frozen-result
+Deployed in `757faa2`; automated evidence is not native/client acceptance. Persistent frozen-result
 cancellation, full preview ownership and foreground cutover remain unqualified.
 [Implementation evidence](reviews/2026-11-05-final-owner-handoff.md).
 
@@ -63,24 +57,23 @@ not close cancellation-before-freeze or published-delivery settlement gates.
 PR #176 has automated durable Stop, late-result, failure/race and restart evidence.
 Accepted Stop now acknowledges without sending partial answer/code/voice or a final
 reply memo. Real Telegram/client behavior and native exit qualification are not
-inferred from these tests. No deployment or foreground activation in this slice.
+inferred from these tests. Deployed in `757faa2`; foreground activation remains off.
 [Implementation evidence](reviews/2026-11-05-durable-stop.md).
 
 ## D067/D068 task IPC consumer migration — 2026-11-05
 
 PR #177 merged as `cbdd9e3` with deterministic claim/restart and executable Node consumer evidence.
-This is not live acceptance. Before qualification on Pi, preserve operator-edited
-SCHEDULING.md/scripts and migrate their task receipt handling to match original
-filename plus SHA-256 of the exact submitted bytes, including error receipts.
+Bounded Pi qualification passed with the actual shipped Node consumer: read-only
+list, identical replay and changed-byte conflict. Three existing guides migrated,
+with originals preserved. Other consumers must match filename plus SHA-256 of the
+exact submitted bytes, including error receipts; never accept a stale/missing hash.
 Host upgrade alone does not update existing guides (Seed writes missing files only).
-Confirm identical replay and changed-byte conflict using the migrated consumer;
-never accept a stale/missing hash, and do not mutate existing user schedules for
-this test. Source/namespace isolation and existing delivery gates remain.
+Source/namespace isolation and existing delivery gates remain.
 
 The new host-only `DataDir/task-claims` spool is not included in a complete IPC
 restore guarantee. Drain claims before downgrade, or hold task IPC while preserving
-spool and SQLite evidence. Deployment, consumer migration and full restore remain
-open; [implementation evidence](reviews/2026-11-05-task-ipc-claims.md).
+spool and SQLite evidence. Bounded deployment/consumer migration passed; full restore and arbitrary
+external consumers remain open; [implementation evidence](reviews/2026-11-05-task-ipc-claims.md).
 
 ## Latest open gates
 - 2026-11-03: ordinary Codex nonce continuity, bounded Stop/process exit and

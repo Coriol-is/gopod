@@ -6,11 +6,15 @@ session boundary without turning into scope creep. ADRs record decisions
 already taken ([DECISIONS.md](../DECISIONS.md)); specs record approved
 designs (`docs/superpowers/specs/`); a CP records a candidate.
 
-Status reconciled 2026-11-04 against [code-backed BACKLOG](../BACKLOG.md),
+Status reconciled 2026-11-05 against [code-backed BACKLOG](../BACKLOG.md),
 [HANDOFF](../HANDOFF.md) and
 [ROADMAP](../../ROADMAP.md#current-backlog--2026-11-04). CP-002/003/004/007/016
 retain incomplete scope; CP-020/038/040 have implemented code with named acceptance
 gaps; CP-035 remains proposed. A status refresh does not activate deferred work.
+
+Completed slices and superseded choices are kept in the
+[backlog archive](../history/BACKLOG-2026-11-05-completed.md). The registry retains
+all CP identities; an archived slice does not complete its partial parent proposal.
 
 ## Lifecycle
 

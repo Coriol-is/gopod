@@ -10,6 +10,18 @@
 | Depends on | DT (durable turns, done) |
 | Spec | [Design](../superpowers/specs/2026-10-26-telegram-outbox.md) |
 
+## Current reconciliation — 2026-11-05
+
+Status remains **in-progress**. Pi `757faa2` includes #169 and #172–#176;
+immutable plans, code-inline alternatives, presentation parity and durable Stop
+foundations are deployed. General preview/control generation ownership,
+reply-action parity, qualified foreground producer/cutover and native/client
+acceptance remain open. `WithResultFreeze` and `PrepareFrozenFinalReply` have no
+production callers. See [active backlog](../BACKLOG.md) and
+[completed slices](../history/BACKLOG-2026-11-05-completed.md).
+Dated sections below preserve design/implementation history; their old lifecycle
+and undeployed statements do not override this reconciliation.
+
 ## Problem
 Final Telegram delivery lacks a durable outbox; many sends and edits are best-effort (`sendFormatted`, `editMessage*`, `react`). Bounded retries can still exhaust on 429/5xx and lose a best-effort reply; a network blip after the send but before `SetTurnReply` leaves the turn without a memo, so recovery replays it and the user gets a duplicate (parked finding from the durable-turns review). Auth URLs and device codes are sent immediately and may be stale by the time Telegram delivers them.
 

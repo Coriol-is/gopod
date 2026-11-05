@@ -23,51 +23,33 @@ right now" view, see [docs/HANDOFF.md](docs/HANDOFF.md).
 
 ## Current backlog — 2026-11-04
 
-The [code-backed backlog](docs/BACKLOG.md) records production call sites, gaps and
-verification at `38e8eba`; use it before selecting implementation work.
+Refreshed 2026-11-05 at `a4078ec`. The [active code-backed backlog](docs/BACKLOG.md)
+contains remaining implementation and acceptance scope. Pi `757faa2` includes
+#168–#177; the foreground producer is disconnected, managed tasks are off and
+CP-037 remains legacy. Health/version and bounded D068 consumer checks passed.
+[Rollout](docs/deployments/2026-11-05-stop-ipc-rollout.md).
 
-Production is `d58cdd2` (2026-11-05): controller and owner runtime healthy,
-zero controller restarts/OOM, all eight idle counters zero, durable state hashes
-preserved. Exact-main CI and Telegram `/version` passed. Pi controller only;
-[rollout evidence](docs/deployments/2026-11-05-queue-delivery-ownership.md).
-
-| Work | Current status | Remaining step |
-|---|---|---|
-| Concurrent queue idle handoff | Fixed and merged as `01cc7e0` (PR #168); review and required CI pass | Deployed as `d58cdd2`; [evidence](docs/reviews/2026-11-04-queue-idle-handoff.md) |
-| CP-002 final delivery | In progress; immutable ready plans and recovery deployed | Qualified foreground cutover and full preview/reply-action parity; D065 and D066 merged, rollout/native acceptance pending |
-| CP-016 topic deletion | In progress; runtime/store/outbox fences deployed | Durable legacy ownership, ambiguity/managed settlement, native-login qualification, confirmed delete command |
-| CP-007 backups | In progress; backup foundation deployed | Timer/retention, full capture and restore command/drill; leases only for online matched mode |
-| CP-004 managed tasks | Partial implementation; activation off | Settlement/visibility and schedule policy; credential adapter remains owner-deferred |
-| Healthchecks | Implemented/deployed; controller healthy now | Optional-runtime acceptance and separately authorized reboot qualification |
-| CP-038 elevated | Implemented/deployed; bounded native Codex acceptance passed | Claude browser-completion acceptance; no current elevated runtime |
-| CP-020 isolation | Implemented | Remaining provider/client qualification |
-| CP-018 / CP-019 / CP-014 | Accepted designs, implementation queued | Per-conversation providers after CP-016; group UX; media queues |
-| CP-035 hooks | Proposed research; documents merged | Research decision/experiments, no hooks activated |
-
-CP-003, CP-033 and CP-037 retain partial implementation scope. CP-040 is
-implemented/deployed, with A22–A25 acceptance gaps; CP-033 templates/outcome display
-are already wired, while connector readiness/probes remain open. No work starts merely because this table is refreshed.
+Completed queue/delivery/Stop/IPC slices and superseded queues have moved to the
+[completed ledger](docs/history/BACKLOG-2026-11-05-completed.md) and
+[roadmap snapshot](docs/history/ROADMAP-2026-11-05-before-housekeeping.md).
+Stable milestone IDs and their implementation record below remain a reference,
+not extra active queue entries. Partial proposals are not marked complete.
 
 ## Execution priority — 2026-11-04
 
-Reprioritized at the owner's request after the code audit (`d3be6f8`). This order
-supersedes the 2026-10-25 queue and the earlier November handoff recommendations.
-It changes priority, not CP lifecycle, architectural contracts, activation flags
-or owner-deferred scope. The reprioritization itself started no implementation; item 1 was subsequently
-completed in PR #168. Owner update: CP-007 is lowered below the current product
-queue; CP-002/003 and CP-016 implementation resume first. Existing restore and
-activation gates remain requirements, not a prerequisite to unrelated code work.
+Owner-approved order, refreshed 2026-11-05 after removing completed queue repair.
+Backup remains lowered. This replaces historical queue recommendations without
+changing activation flags, CP lifecycle or owner deferrals.
 
 | Order | Deliverable | Why now / completion gate |
 |---|---|---|
-| 1 — done on main | Concurrent queue regression fixed in PR #168 (`01cc7e0`) | Shared ordinary/managed idle retirement race; deterministic baseline failures, fixed stress/race, review and required PR CI pass. Deployed as `d58cdd2`. |
-| 2 | CP-002 foreground delivery, with the necessary CP-003 slices | Finish an existing reliability investment: wire freeze/preparation/publication with fallback, previews, cancellation and reply-action parity. D063/D065 and staged acceptance remain the activation gates. Protected-challenge work follows its existing contract; do not redo shipped attachment delivery. |
-| 3 | CP-016 complete topic retirement | Finish durable ownership, ambiguity reconciliation and managed settlement before command orchestration. Qualify native-login exit and the full confirmed API/outcome/retirement path under D064. The command stays unavailable until these gates pass. |
-| 4 | CP-018 per-conversation provider/model selection | Follows CP-016 as already agreed; delivers everyday conversation control. Reconcile with CP-037 routing contracts without activating paused parallel execution. |
-| 5 | CP-019 group command/service UX | Bounded user-visible improvement after core conversation reliability; keep ordinary group output public. |
-| 6 | CP-033 connector readiness and discovery | Finish probe/setup/recheck/offer behavior around already shipped presets. Do not add more presets before readiness is trustworthy; connector consent remains with the owner. |
-| 7 | CP-014 media queues | Q1 fidelity/cards/links first, then Q2 document/image/speech, then Q3 video. Keep each queue separately reviewable. |
-| 8 — lowered by owner | CP-007 recoverability, then automation | Existing snapshots do not cover full session/auth/workspace recovery. First complete capture coverage, restore epoch handling and the restore/activation path; qualify an isolated scratch restore and Pi drill without overwriting live state. Then timer/retention under the accepted maintenance window. Do not expand this into CP-039 migration or online matched mode. |
+| 1 | CP-002 foreground delivery, with the necessary CP-003 slices | Finish an existing reliability investment: wire freeze/preparation/publication with fallback, previews, cancellation and reply-action parity. D063/D065 and staged acceptance remain the activation gates. Protected-challenge work follows its existing contract; do not redo shipped attachment delivery. |
+| 2 | CP-016 complete topic retirement | Finish durable ownership, ambiguity reconciliation and managed settlement before command orchestration. Qualify native-login exit and the full confirmed API/outcome/retirement path under D064. The command stays unavailable until these gates pass. |
+| 3 | CP-018 per-conversation provider/model selection | Follows CP-016 as already agreed; delivers everyday conversation control. Reconcile with CP-037 routing contracts without activating paused parallel execution. |
+| 4 | CP-019 group command/service UX | Bounded user-visible improvement after core conversation reliability; keep ordinary group output public. |
+| 5 | CP-033 connector readiness and discovery | Finish probe/setup/recheck/offer behavior around already shipped presets. Do not add more presets before readiness is trustworthy; connector consent remains with the owner. |
+| 6 | CP-014 media queues | Q1 fidelity/cards/links first, then Q2 document/image/speech, then Q3 video. Keep each queue separately reviewable. |
+| 7 — lowered by owner | CP-007 recoverability, then automation | Existing snapshots do not cover full session/auth/workspace recovery. First complete capture coverage, restore epoch handling and the restore/activation path; qualify an isolated scratch restore and Pi drill without overwriting live state. Then timer/retention under the accepted maintenance window. Do not expand this into CP-039 migration or online matched mode. |
 
 **Acceptance lane, alongside independent implementation:** CP-040 A22–A25 first,
 then remaining ordinary Stop/restart and CP-020 provider/isolation checks. Keep
@@ -82,162 +64,11 @@ ahead of feature work, with the evidence and revised priority recorded.
 
 **Held outside the active sequence:** CP-004 broad managed-task activation remains
 blocked on the owner-deferred credential adapter; only settlement primitives needed
-by items 1/4 belong in those slices. CP-037 P2–P7/T5/T5b remain paused. CP-035 hooks,
+by CP-002/CP-016 belong in those slices. CP-037 P2–P7/T5/T5b remain paused. CP-035 hooks,
 CP-039 migration, new providers/runtimes and other proposed research stay deferred.
 CP-011/012/032/034 remain accepted designs outside this execution sequence.
 No new dates or effort estimates are asserted before each slice is scoped.
 
-CP-002/003 successful presentation parity merged in PR #169 (`c1966dc`) with
-review, full checks and green required CI/Sonar; remaining foreground gates stay
-open. CP-016 main-control ownership merged in PR #170 (`dacefc0`) after combined
-checks, independent review and required CI/Sonar. Remaining ambiguity, native and
-managed settlement gates keep the delete command unavailable. Both slices were deployed as `d58cdd2`; neither completes its parent proposal. [HANDOFF](docs/HANDOFF.md#completed-implementation-wave--2026-11-04)
-records evidence and remaining gates. Downstream items remain queued; CP-037 stays paused.
-
-2026-11-05 continuation: receipt-backed DB-ACK repair merged in PR #171
-(`930586a`); durable photo-to-document attempt selection merged in PR #172
-(`a016b82`). Both passed independent review, full checks/races and required CI.
-Both were deployed as `d58cdd2`. Code-inline alternatives subsequently merged in
-PR #173 (D065), with independent review, full checks/races and required CI;
-that new slice is not deployed. Foreground cutover, preview/cancellation/reply-action
-integration and unknown remote reconciliation/delete orchestration remain open;
-backup priority unchanged. PR #174 adds a bounded process-local successful-final
-handoff against late Stop after joined previews; review and local full/race checks
-and required CI pass; merged as `40f368f`, not deployed. Persistent frozen cancellation, terminal-error UI and
-complete preview ownership remain separate gates. PR #175 adds a publication
-fence against currently stopped result members and boot recovery holds; review
-and full checks/races/required CI passed; merged as `a63c324`, not deployed. Settlement of already published delivery remains a separate gate. The owner accepted [D066](docs/plans/2026-11-05-durable-stop-intent.md); PR #176 implements durable Stop and late completion evidence. Review, final checks/races and required CI passed; merged as `51fbb7a`, no deployment or foreground activation. The task IPC race is fixed in source by D067/D068, PR #177 (`cbdd9e3`), after independent review, full checks/races and required CI. [Claim/recovery and matching-consumer evidence](docs/reviews/2026-11-05-task-ipc-claims.md). Deployment and existing-consumer migration remain pending; resume preview/control generation ownership and reply-action parity before foreground cutover.
-
-## Parallel sessions — CP-037 (P0 and P1 merged and deployed in legacy mode, P2+ not started)
-
-🟦 P0 lifecycle safety merged as `5c36b81` via [PR #126](https://github.com/Coriol-is/gopod/pull/126)
-([D054](docs/DECISIONS.md), [acceptance](docs/reviews/2026-11-01-p0-acceptance.md)):
-no busy-runtime eviction, `/restart` drain, confirmed `/restart force`, startup
-quarantine with a live control plane, durable Stop-control repair, opt-in Pi 4
-profile. Deployed in `be7575f` on 2026-11-01; real Telegram acceptance open. P2–P7 remain unstarted.
-
-🟦 P1 durable session identity merged as `3409907` ([PR #133](https://github.com/Coriol-is/gopod/pull/133), [D056](docs/DECISIONS.md)) and deployed with mapping `legacy`: additive session/binding/claim tables, atomic `/sessions adopt` at next restart, default stays legacy; real native resume after adoption remains open.
-
-Owner reopened design on 2026-11-01: private chats split by thread plus background
-tasks; persistent topic folders and explicitly attached shared projects.
-[Architecture and implementation contracts](docs/superpowers/specs/2026-11-01-parallel-sessions.md).
-Lifecycle safety P0 precedes parallel execution; ordinary restart drains, explicit
-`/restart force` cancels background work. Mixed-provider routing, model changes and explicit quota fallback are consolidated
-in contract D. These remain specifications only.
-Owner authorized P0 code, parallel worktrees, acceptance and automatic merge.
-T5/T5b parallel-runtime implementation remains paused; T9 memory-cgroup reboot was separately authorized and completed on 2026-11-03; broader T5 activation remains deferred. The separately authorized reliability rollout was deployed as `a0de4dc` ([evidence](docs/deployments/2026-11-02-reliability-streams.md)).
-
-## Elevated host session — CP-038 (implemented; remaining acceptance open)
-
-✅ Implementation shipped. Design merged as `2ca967c` via [PR #128](https://github.com/Coriol-is/gopod/pull/128).
-E0 images (#150), E1 profile/guard (#151, D059) and E2 journal/reserved identity (#152, D060) are merged and deployed as `75b3be3`; E3–E5 merged in PR #154 (`294e8a7`) after independent review and green CI, and deployed on Pi. E6 host cgroups and lifecycle are qualified on Pi; Telegram lifecycle/callback acceptance passed; bounded native Codex acceptance subsequently passed; Claude completion remains open. Explicit Telegram login merged in PR #155 (`500a094`, D062), startup correction #156 (`474aac0`) and credential-preserving preflight #157 (`8412e3b`), with independent review and CI passed. Live prompt/cancel checks passed; owner restored Codex auth after the re-login incident. Completion notification fix #158 (`1a3b9e1`) is deployed; auth preservation and a bounded native Codex reply passed. Claude browser completion remains open. See [rollout evidence](docs/deployments/2026-11-03-elevated-login.md). Controller flag defaults off; owner-authorized rpi4 configuration is on. Codex ROOT is authorized; the idle session closed normally during the backlog rollout and no elevated runtime is present in the 2026-11-04 snapshot. [CP-038](docs/proposals/CP-038-elevated-host-session.md)
-is `implemented`; outstanding client/provider checks remain in the acceptance register.
-
-An explicitly started owner-private conversation with host authority on the Pi:
-`Privileged: true` plus host PID/network/IPC, the Docker socket and the host root at
-`/host`, its own container profile and policy role, bounded by explicit close rather than
-a timer. [Spec](docs/superpowers/specs/2026-11-01-elevated-host-session.md) ·
-[Plan](docs/superpowers/plans/2026-11-01-elevated-host-session.md).
-
-Slice `E-pre` is done and was independent of acceptance: button presses carried no
-`MessageID`, and could reject `/restart force|status|cancel`. The fix is included in the deployed `a0de4dc`. The hardened chat and group
-profiles are not touched by any slice.
-
-## Private-chat Stop — CP-036
-
-✅ Explicit inline Stop and `/stop` for owner-private interactive answers merged
-in [PR #124](https://github.com/Coriol-is/gopod/pull/124), `8a3ce75`, after green CI
-and source re-review (including the buffered voice-only regression fix). Ordinary
-messages remain queued. Deployed to Pi at 20:00:48 UTC with backups and state
-verification; [evidence](docs/deployments/2026-10-31-private-stop.md).
-A08/A10 real-client acceptance remains open.
-[Proposal](docs/proposals/CP-036-private-chat-stop.md) · [Spec](docs/superpowers/specs/2026-10-31-private-chat-stop.md)
-
-## Security fix wave — 2026-10-31
-
-✅ All eight groups from the [2026-10-30 review](docs/reviews/2026-10-30-security-logic-review.md)
-merged through `e586c4a` (PRs #113–120), group 1 first, with independent review and green CI.
-See [acceptance evidence and limits](docs/reviews/2026-10-31-security-wave-acceptance.md).
-Deployed to Pi as `e3b5401` on 2026-10-31 00:24 UTC; [operational checks passed](docs/deployments/2026-10-31-security-wave.md).
-Existing feature flags preserved. M9 credential derivation and real-client acceptance remain open. This does not mark the larger CP-002/003/004 streams complete.
-
-## Historical approved delivery queue — 2026-10-25
-
-Superseded for execution order by [the 2026-11-04 reprioritization](#execution-priority--2026-11-04).
-The owner approved this historical order. This is prioritization, not a claim that all
-proposed designs are implemented or that every implementation's live acceptance
-has passed. The proposal registry remains the single CP status source;
-[ACCEPTANCE.md](docs/ACCEPTANCE.md) tracks live checks separately.
-
-| Order | Workstream | Ordered work / dependencies | State |
-|---|---|---|---|
-| 1 | Qualify the deployed release | Tasks panel, delivery, upgraded CLIs, quota/provider continuity, Stop/recovery and media baseline — A01–A17 | Implemented/deployed baseline; live checks open |
-| 2 | Reliability and diagnostics | CP-017 Telegram diagnosis -> CP-002 bounded outbox/uncertain delivery -> CP-004 isolated task sessions -> CP-007 scheduled backups/restore -> CP-006 maintenance/quiet hours | CP-017 private-DM slice implemented; live acceptance pending; CP-002/003/004/007 partially implemented and deployed; full cutover, managed execution and restore gates remain open; CP-006 planned |
-| 2 | Conversation management | CP-016 topic deletion/retirement -> CP-018 per-conversation providers/models/quota scope | CP-016 store/outbox/runtime fences deployed; command/reconciliation and CP-018 pending |
-| 3 | Group service UX | CP-019 ephemeral command/service/error replies; T14 scoped menu/strings work coordinated with transport | Spec saved; ordinary output stays public |
-| 4 | Media, three queues | CP-014 Q1 cards/links/attachment fidelity -> Q2 document/OCR/image/speech -> Q3 video speech+frames/export; CP-003 typed IPC artifacts and CP-005 qualified tools support appropriate slices | Specs/proposals only beyond existing baseline |
-| 5 | Platform extensions | CP-011 runtime, CP-012 registry; then additional providers/sandboxes, bounded bot-to-bot experiment if useful; secret gateway/MCP/metrics stay deferred | Design/research/deferred; no new backend or peer enabled |
-
-Done implementation must not remain "in progress" just because a live check is
-pending. Host memory-cgroup changes/reboot (T9) were completed on 2026-11-03; parallel
-execution (T5/T5b) remains deferred and is not an implicit deployment step.
-
-## Historical iteration plan — 2026-11-02 (superseded by current backlog)
-
-Done since 2026-10-27 (all merged to `main`; production then ran `75b3be3`; outbox IPC/dispatcher and artifacts on, managed tasks off): CP-002 PR 1-5
-(store, dispatcher, durable personal text IPC, immutable artifacts, voice/code preparation),
-CP-004 PR 1-3 (storage, managed dispatch, policy-guarded execution), CP-007 backup foundation,
-rich-message formatting P1 (D045), supervised owner `/restart` (CP-031).
-
-| Step | Work | State / gate |
-|---|---|---|
-| 1 | Owner live acceptance A08–A11, A18, A20, A02, plus formatting and `/restart` edge cases | Owner in Telegram; failures become fix PRs |
-| 2 | CP-020 final gates: Codex two-turn/tool canaries and cross-boundary/client checks; tree-budget fix #88 and default admission #89 shipped; historical Claude group new/resume succeeded | Private management only; no paid fallback |
-| 2 | CP-002 PR 6-8 (foreground freeze/streaming ownership, protected challenges, staged release), CP-004 PR 4-5 (settlement/visibility, schedule policy) | One PR each; artifacts flag gated on CP-007 backup/restore qualification; capability issuer shipped in #110 |
-| 3 | Rich messages: stickers P2/P3, [thread awareness](docs/superpowers/specs/2026-10-29-agent-thread-awareness.md), [buttons/hooks](docs/superpowers/specs/2026-10-29-agent-buttons-and-hooks.md), [reaction reading](docs/superpowers/specs/2026-10-29-telegram-reaction-reading.md) | Specs saved; no implementation |
-| 4 | Task-role credential adapter (needed before `GOPOD_MANAGED_TASKS` can run anything); Pi Docker-inspect round trip | Deferred by the owner 2026-10-30 (B2 stays the recommendation) |
-| 5 | Group triggers (`owner`/`mention`/`all`), owner-in-group identity for group-scoped commands, group `/login` guidance — [spec](docs/superpowers/specs/2026-10-29-group-trigger-and-owner-in-group.md) | Implemented and deployed (#93/#95/#97); security wave hardens callbacks; live client checks remain |
-| Deferred | CP-014 media, CP-018 per-thread providers, T9 cgroup reboot, observability | Owner re-prioritises |
-
-Open owner decisions: branch protection requiring `test` + `isolation-spike` (a ruleset requiring one approval exists; admin squash-merge is the working path); whether to add a CD workflow.
-
-The owner resumed queue streams 1–3 in parallel on 2026-11-02. That
-implementation wave started CP-002 PR 6 result-freeze integration and CP-016
-deletion lifecycle groundwork, alongside release qualification. CP-018 follows
-CP-016 inside stream 3; its older deferral in the iteration table is superseded
-by this instruction. Partial foundations do not complete either proposal.
-Deployment and destructive live acceptance remain separate gates.
-
-### Reliability checkpoint — 2026-11-03
-
-CP-002 PR 6b atomic batch attempt recording merged in PR #160 (`f5ba97a`);
-foreground freeze/publication cutover remains open.
-[Slice boundary](docs/reviews/2026-11-03-batch-start-foundation.md).
-Live acceptance found a silent/model picker regression; fix PR #159 is deployed in `4350e1b`,
-with silent on/off and model/default Telegram callback retests passed. CP-016 durable outbox fences merged
-in PR #161 (`602403a`): unresolved deletion holds pending delivery, refusal
-reopens it, confirmed deletion cancels pending parts. At that checkpoint runtime/network quiescence and command/recovery/stream/
-callback integration were still open; subsequent slices are recorded below. All three PRs passed
-independent review and test/isolation/Sonar. Deployed in `4350e1b`; backups, runtime health and state preservation passed.
-
-Parallel follow-up started from `09dbaf4`: CP-002 ordinary eligibility/frozen
-recovery, CP-016 admission/quiescence and serialized Telegram acceptance in
-separate worktrees. Integration/deploy subsequently completed after review and CI.
-CP-016 ingress/native/callback/output fences merged in #163 (`b62eb22`); CP-002
-result-aware recovery/hold and NoReplay propagation merged in #164 (`e8b58b8`).
-Full foreground ownership and topic deletion remain incomplete and disabled.
-Native Codex continuity/Stop and topic PDF delivery were observed; an attachment
-refusal notice routing/wording defect is fixed in `33ba30a`. These slices are
-deployed in `e6f0fad`; verified backup, exact state preservation and startup passed.
-
-Final-plan/quiescence/health wave deployed as `a25f22a`: #165 healthchecks,
-#166 immutable final intents/atomic preparation publication/ready-plan recovery,
-#167 native/queue/transport leases and conservative fence restoration. Independent
-review, full/race tests, required exact CI, backup/state checks and scoped Telegram
-version acceptance passed. Full foreground cutover and `/thread delete` remain off.
-[Rollout and remaining gates](docs/deployments/2026-11-03-final-plans-health.md).
-Known separate follow-up: managed queue concurrent Dispatch/Enqueue stress timeout
-reproduces on pre-wave main (three failures in 100 repetitions); not masked by this release.
 
 ## Planning candidates — 2026-10-26
 
@@ -489,7 +320,7 @@ and [implementation/acceptance plan](docs/superpowers/plans/2026-10-25-personal-
 track the work. **Implementation deployed; final provider/client qualification remains open.**
 The architecture merged in #66/#67; follow-ups #88/#89 fixed Codex tree-budget admission and
 admit registered groups by default. #93/#95/#97 implement triggers, owner-in-group controls
-and private group-login guidance. The current controller is `e3b5401`; security groups 1–8 are deployed.
+and private group-login guidance. Security groups 1–8 were deployed in `e3b5401`; current controller is `757faa2`.
 Historical 2026-10-29 evidence records Claude group new/resume success after owner login;
 final Codex two-turn/tool and cross-boundary acceptance remain open. Earlier TCP/offline-tool
 checks are in the [2026-10-27 report](docs/deployments/2026-10-27-group-isolation.md),
@@ -506,7 +337,7 @@ No personal service or paid API fallback is granted to groups. Group speech and
 automatic maintenance remain unavailable; private behavior stays the baseline.
 
 Current groups are owner-controlled sandboxes; targeted checks run incrementally.
-Full cross-boundary acceptance precedes real-group admission. T9 host cgroup/reboot,
+Full cross-boundary acceptance precedes real-group admission. T9 host cgroup/reboot was completed on 2026-11-03.
 CP-006 group maintenance, arbitrary integrations and one-way private-to-group data
 grants remain separate work. See [current policy/configuration](docs/ISOLATION.md).
 
