@@ -29,6 +29,15 @@ Owner requested continuation. Base `29eea1b` is clean; main CI for `dacefc0`,
   HTTP. Unknown outcomes and receipts lost on crash remain held. No invented
   absence proof or automatic expiration of unresolved outcomes.
 
+Implementation checkpoint: receipt repair PR [#171](https://github.com/Coriol-is/gopod/pull/171),
+source `cab98d7` / docs tip `b26b4a9`, passed independent review, full build/vet/test
+and full Store/Telegram race. Required CI is pending. Registry cap 128, 30-second
+cooldown and a shared at-most-five-second/caller-shorter budget are tested.
+Upload fallback passed preliminary independent review/focused race; full checks
+are running. Its report explicitly warns that old binaries ignore selected
+branches: do not downgrade with pending alternatives without inspection/settlement.
+No new source slice has merged or deployed at this checkpoint.
+
 Both require independent review, full checks, affected races and exact-head CI.
 Root owns global docs/integration; agents own separate source/report files and
 coordinate shared schema changes. No foreground activation, delete command,
