@@ -15,7 +15,7 @@ func TestReadyFinalRecoveryPublishesOnlyReady(t *testing.T) {
 		t.Fatal(err)
 	}
 	ids := []string{}
-	for _, source := range []string{"ready", "preparing"} {
+	for _, source := range []string{"ready", "preparing", "stopped"} {
 		id, _, e := r.st.InsertTurn(ctx, store.Turn{Source: "telegram", SourceID: source, ChatFolder: "owner"})
 		if e != nil {
 			t.Fatal(e)
@@ -31,9 +31,14 @@ func TestReadyFinalRecoveryPublishesOnlyReady(t *testing.T) {
 			t.Fatal(e)
 		}
 		ids = append(ids, result.ID)
-		if source == "ready" {
+		if source != "preparing" {
 			_, e = r.st.StageFinalReply(ctx, result.ID, store.FinalReplyPlan{Request: store.PublishRequest{ResultID: result.ID, Conversation: conv, Owner: store.OwnerControllerResult, Parts: []store.DeliveryPart{{Kind: store.PartText, Payload: []byte("exact final")}}}})
 			if e != nil {
+				t.Fatal(e)
+			}
+		}
+		if source == "stopped" {
+			if e = r.st.MarkTurnFinished(ctx, id, store.TurnStopped, "stopped"); e != nil {
 				t.Fatal(e)
 			}
 		}
@@ -51,6 +56,9 @@ func TestReadyFinalRecoveryPublishesOnlyReady(t *testing.T) {
 		want := store.FinalReplyPublished
 		if i == 1 {
 			want = store.FinalReplyPreparing
+		}
+		if i == 2 {
+			want = store.FinalReplyReady
 		}
 		if intent.State != want {
 			t.Fatal(intent)
