@@ -53,7 +53,7 @@ unchanged; 20 local race repetitions pass but do not close it. The retained
 deterministic diagnostic also confirms replacement archival without receipt on
 current source; one task only, no duplicate mutation. Keep its deterministic
 production regression/fix as an open reliability item; D066 does not fix it.
-Reconfirmed at `1972dd3` (diagnostic 0.909 s). A [host-only claim contract](plans/2026-11-05-task-ipc-claim-contract.md) is prepared for the required architecture decision; no production fix is implemented yet.
+Reconfirmed at `1972dd3` (diagnostic 0.909 s). D067 was accepted and claim implementation is in progress on `feat/task-ipc-claims`. [Review](reviews/2026-11-05-task-ipc-claims.md) confirms the new receipt-attribution crash blocker; the owner accepted the [consumer identity amendment](plans/2026-11-05-task-ipc-receipt-identity.md) as D068. Host hash binding and the matching seeded consumer are implemented; final review/checks are in progress. No merge/deployment or live consumer migration yet.
 
 ## Current priority
 

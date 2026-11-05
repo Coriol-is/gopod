@@ -1,0 +1,32 @@
+package ipc
+
+import (
+ "errors"
+ "os"
+ "path/filepath"
+ "testing"
+)
+
+// Diagnostic only: PASS establishes the remaining contract blocker.
+func TestDiagnosticTaskClaimReceiptPublicationAmbiguity(t *testing.T) {
+ w,sink,base:=claimHarness(t)
+ hit:=false
+ w.taskClaimHook=func(stage string)error{
+  if stage=="receipt"{
+   hit=true
+   if claimReceipt(t,base).Status!="ok"{t.Fatal("initial receipt failed")}
+   if err:=os.Remove(filepath.Join(base,"results","replay.result.json"));err!=nil{t.Fatal(err)}
+   replaceClaimInput(t,base,[]byte(`{"op":"schedule","prompt":"changed","scheduleType":"interval","scheduleValue":"1h"}`))
+   return errors.New("process dies before Completed")
+  }
+  return nil
+ }
+ w.tickOnce(t.Context());if !hit{t.Fatal("boundary not reached")}
+ w=restarted(w);w.tickOnce(t.Context())
+ if claimReceipt(t,base).Status!="ok"{t.Fatal("old success was not reproduced")}
+ if _,err:=os.Stat(filepath.Join(base,"tasks","replay.json"));err!=nil{t.Fatal("replacement not pending",err)}
+ requireOneClaimTask(t,sink)
+ t.Log("confirmed: old success republished while changed replacement is pending; exactly one task")
+ w.tickOnce(t.Context())
+ if claimReceipt(t,base).Status!="error"{t.Fatal("subsequent conflict missing")}
+}

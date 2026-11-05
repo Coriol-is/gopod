@@ -26,19 +26,27 @@ type taskPayload struct {
 }
 
 func (w *Watcher) processTaskFile(ctx context.Context, folder, path string) (completed bool) {
-	raw, err := w.readTask(path, folder)
+	c, err := w.openTaskClaim(ctx, folder, filepath.Base(path), true)
 	if err != nil {
-		cause := fmt.Errorf("cannot read task request: publish a regular non-symlink JSON file atomically inside its IPC namespace")
-		w.writeTaskReceipt(folder, path, "", nil, cause)
-		w.moveFailed(folder, path, fmt.Errorf("task request failed; inspect source-scoped result receipt"))
-		return true
+		w.log.Warn("ipc: task claim held", "folder", folder, "err", err)
+		return false
 	}
-
+	defer c.close()
+	if c.record.Receipt != nil {
+		return w.finishTaskClaim(ctx, c)
+	}
+	if !c.retryDue(w.cfg.NowFn()) {
+		return false
+	}
+	if err := c.snapshot(); err != nil {
+		w.log.Warn("ipc: task claim snapshot held", "folder", folder, "err", err)
+		return false
+	}
+	raw := c.record.Snapshot
 	var p taskPayload
-	fail := func(cause error) bool {
-		w.writeTaskReceipt(folder, path, p.Op, nil, cause)
-		w.moveFailed(folder, path, fmt.Errorf("task request failed; inspect source-scoped result receipt"))
-		return true
+	fail := func(cause error) bool { return w.completeTaskClaim(ctx, c, p.Op, nil, cause, nil) }
+	if c.record.ReadError != "" {
+		return fail(errors.New(c.record.ReadError))
 	}
 	if len(raw) > 64<<10 {
 		return fail(fmt.Errorf("task request exceeds 64 KiB"))
@@ -124,37 +132,41 @@ func (w *Watcher) processTaskFile(ctx context.Context, folder, path string) (com
 
 	}
 	var result TaskResult
+	if err := w.validateTaskClaim(ctx, c); err != nil {
+		return false
+	}
 	var dispatchErr error
 	processor, hasProcessor := w.tasks.(TaskRequestProcessor)
 	var identity TaskRequestIdentity
 	if hasProcessor {
 		hash := sha256.Sum256(append([]byte(fmt.Sprintf("%s/%s/owner=%t\n", sourceJID, targetJID, folder == w.cfg.OwnerFolder)), raw...))
-		identity = TaskRequestIdentity{SourceFolder: folder, File: filepath.Base(path), PayloadHash: fmt.Sprintf("%x", hash[:]), Retention: w.cfg.Retention}
+		identity = TaskRequestIdentity{Scope: c.record.Scope, Scoped: c.record.Scoped, SourceFolder: folder, File: filepath.Base(path), PayloadHash: fmt.Sprintf("%x", hash[:]), Retention: w.cfg.Retention}
 		result, dispatchErr = processor.ProcessTaskRequest(ctx, identity, apply)
 	} else {
 		result, dispatchErr = apply(ctx)
 	}
 
+	if err := c.checkpoint("dispatched"); err != nil {
+		return false
+	}
 	if dispatchErr == nil {
-		if !w.writeTaskReceipt(folder, path, p.Op, &result, nil) {
-			return false
+		var ack *TaskRequestIdentity
+		if hasProcessor {
+			ack = &identity
 		}
-		if w.moveProcessed(folder, path) && hasProcessor {
-			if err := processor.AcknowledgeTaskRequest(ctx, identity); err != nil {
-				w.log.Warn("ipc: acknowledge task receipt", "folder", folder, "file", filepath.Base(path), "err", err)
-			}
-		}
-		return true
+		return w.completeTaskClaim(ctx, c, p.Op, &result, nil, ack)
 	}
 	if errors.Is(dispatchErr, ErrPermanent) {
+		var conflict *TaskRequestConflict
+		if errors.As(dispatchErr, &conflict) {
+			return w.completeTaskClaim(ctx, c, p.Op, nil, dispatchErr, &conflict.Identity)
+		}
 		return fail(dispatchErr)
 	}
-	if w.bumpRetry(path) {
+	if w.deferTaskClaim(c) {
 		return fail(fmt.Errorf("retries exhausted: %w", dispatchErr))
 	}
-	w.log.Warn("ipc: task dispatch transient error",
-		"folder", folder, "channel", "tasks", "file", filepath.Base(path),
-		"attempts", w.retries[path].attempts)
+	w.log.Warn("ipc: task dispatch transient error", "folder", folder, "file", filepath.Base(path), "attempts", c.record.Attempts)
 	return false
 }
 

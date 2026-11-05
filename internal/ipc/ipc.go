@@ -37,6 +37,10 @@ type Config struct {
 	// NamespacePath returns the host-controlled current IPC root. False means
 	// unavailable, with no legacy fallback. The callback must validate its scope.
 	NamespacePath func(string) (string, bool)
+	// NamespaceScope binds task claims to host Store epoch and registration revision.
+	// Production must provide this callback; standalone callers without Store use
+	// filesystem/JID binding only.
+	NamespaceScope func(context.Context, string) (store.ScopeRef, error)
 	// Namespaces enumerates host-owned current registrations instead of scanning
 	// legacy filesystem aliases. Failure skips the entire sweep without mutation.
 	Namespaces func(context.Context) ([]string, error)
@@ -120,6 +124,9 @@ type Watcher struct {
 	// handleFolderHook overrides handleFolder when non-nil. Tests use
 	// it to assert traversal without exercising the dispatch pipeline.
 	handleFolderHook func(ctx context.Context, folder string)
+	// taskClaimHook injects interruption at durable boundaries in tests only.
+	taskClaimHook func(string) error
+	claimSweep    uint64
 }
 
 // Run blocks until ctx is cancelled. Run does not return its own

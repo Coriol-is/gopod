@@ -82,11 +82,22 @@ finish. Existing durable-turn source identity still deduplicates re-fired slots.
 The host publishes `/workspace/ipc/results/<unique-request>.result.json`:
 
 ```json
-{"status":"ok","requestFile":"request.json","op":"schedule","result":{"taskId":"daily-review","task":{"taskId":"daily-review","chatFolder":"owner","chatJid":"tg:<actual id>","prompt":"...","scheduleType":"cron","scheduleValue":"CRON_TZ=Europe/Belgrade 0 9 * * *","nextRun":1793088000000,"nextRunAt":"<UTC RFC3339>","status":"active"}},"help":"Read /workspace/chat/SCHEDULING.md ..."}
+{"status":"ok","requestFile":"request.json","requestHash":"<lowercase SHA-256 of exact submitted bytes>","op":"schedule","result":{"taskId":"daily-review","task":{"taskId":"daily-review","chatFolder":"owner","chatJid":"tg:<actual id>","prompt":"...","scheduleType":"cron","scheduleValue":"CRON_TZ=Europe/Belgrade 0 9 * * *","nextRun":1793088000000,"nextRunAt":"<UTC RFC3339>","status":"active"}},"help":"Read /workspace/chat/SCHEDULING.md ..."}
 ```
 
+D068 requires consumers to match `requestFile` and `requestHash` before using
+status. The hash identifies exact original bytes, including whitespace/newlines;
+old or absent hashes are stale/unbound evidence. Recovery may briefly republish
+an older result while a changed same-name request waits for its own conflict.
+The seeded scheduling example performs this match. Existing workspace files are
+preserved by seeding, so operators must migrate their old guides/consumers before
+claiming replay or crash-recovery acceptance. The hash is not authentication.
+Nonregular/oversized requests can have unbound diagnostic errors, never success.
+
 Error receipts have status error and an actionable error string; no fake success
-or guessed SQL fallback. Original requests move to `.processed`/`.failed`.
+or guessed SQL fallback. D067 claims requests into a host-private spool before processing; its bounded
+snapshot later appears in `.processed`/`.failed`. Inbox disappearance is not
+completion, and finishing an old claim never removes its replacement.
 Receipts are written atomically with mode 0600 through an os.Root capability.
 Namespace-scoped read/archive/prune operations cannot follow agent-created
 symlinks outside the source IPC root or block on a special file channel.
@@ -99,13 +110,15 @@ than applying again. Reusing a filename for another payload is rejected.
 Resolve path-derived routing before the transaction; tx-aware store methods
 avoid deadlock on the store's single connection.
 
-Unarchived successful requests are never evicted. They are acknowledged only
-after the host archives the input. A bounded pending backlog stops new mutations
+Unresolved journal results, including active identical/conflicting replay, are
+pinned against retention. They are acknowledged only after the host durably
+archives the claimed snapshot, publishes its receipt and records terminal state. A bounded pending backlog stops new mutations
 rather than discarding replay authority when receipt/archive writing is broken.
 Archived response retention and file archives are bounded (default 200 per
 source). Do not intentionally resubmit old acknowledged filenames after retention;
-use a new filename to query fresh state. A crash after archive but before journal
-acknowledgement may retain a harmless pending record for operator reconciliation.
+use a new filename to query fresh state. Claims recover receipt/archive completion and ACK after restart. Terminal claims
+do not reapply the mutation even after journal pruning. The host-only claim spool
+must be preserved; existing backups do not promise complete IPC restore.
 
 ## Result delivery and execution context
 Scheduled tasks remain background work in main (thread 0), not the topic where

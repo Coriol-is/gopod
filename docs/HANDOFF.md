@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-05 (task IPC claim contract prepared)
+**Last updated:** 2026-11-05 (D068 receipt identity implementation)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -13,27 +13,21 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — task IPC ownership decision, 2026-11-05
+## Resume here — D067/D068 receipt identity implementation, 2026-11-05
 
-Owner requested the next IPC fix. Rechecked baseline `1972dd3` and reran the
-retained deterministic diagnostic: PASS (0.909 s) demonstrates lost receipt,
-replacement consumed and exactly one task. Temporary test copy removed unchanged.
-No production source edits or deployment in this checkpoint.
+Owner accepted the [receipt identity amendment](plans/2026-11-05-task-ipc-receipt-identity.md)
+as D068. Draft PR #177 / `feat/task-ipc-claims` now adds exact snapshot requestHash
+and a hash-matching executable consumer example in the seeded scheduling guide.
+D067's claim/recovery implementation remains on the same branch. Prior checkpoint
+`52e4826` required CI 42042725242 passed; this is not acceptance of new changes.
 
-[Concrete claim contract](plans/2026-11-05-task-ipc-claim-contract.md) recommends
-atomic acquisition into a host-only durable spool before processing, preserving
-same-filename replay and journal identity. It specifies namespace/epoch binding,
-immutable byte snapshots, restart/terminal recovery, limits and regression gates.
-This introduces persistent state and a same-filesystem/rollback requirement;
-CLAUDE.md requires owner acceptance for an architectural decision. The requested
-bug fix is authorized; this particular protocol has not yet been accepted.
-
-**First next action:** obtain acceptance of the linked claim contract, then append
-an ADR and implement/qualify it on a feature branch. Do not call the diagnostic
-PASS a fix. If a simpler protocol is selected, prove both replacement ownership
-and receipt recovery before changing operation ordering. D066 remains merged;
-CP-002 preview/reply-action/cutover follows the IPC repair. Last verified Pi
-revision remains `d58cdd2`; no new live check was performed.
+**First next action:** wait for final-head required CI and inspect advisory Sonar,
+then integrate PR #177. Independent source review PASS; actual seeded Node consumer
+and deterministic crash/replay tests pass. Full build/vet/all tests and affected
+races pass (IPC 70.370 s, cmd 32.825 s, templates 1.198 s; unchanged Store/scheduler
+cached). Final test-only production-scope workflow races pass 16.962 s. Existing guide seeding preserves files: live consumers need migration
+before claiming D068 acceptance. No deployment or Telegram/provider mutation;
+last verified Pi `d58cdd2`. [Evidence](reviews/2026-11-05-task-ipc-claims.md).
 
 ## D066 durable Stop merged, 2026-11-05
 

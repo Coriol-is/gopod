@@ -2299,3 +2299,48 @@ The accepted [implementation contract](plans/2026-11-05-durable-stop-intent.md)
 defines binding, failure semantics, migration/backup tests and qualification.
 Foreground freeze activation and deployment remain separate gates. Managed task
 cancellation retains its own ledger.
+
+## D067 — Durable task IPC claims before processing
+
+**Status:** accepted by owner, 2026-11-05.
+
+Task IPC atomically claims an inbox pathname into a host-only persistent spool
+before reading or dispatching. A separate bounded immutable byte snapshot is
+replay authority together with the existing transactional task journal. Completion
+archives only the claim, never the current inbox pathname. Same-name replacements
+remain pending and receive their own result or truthful conflict response.
+
+Claims bind the original filename to host-resolved source, namespace/epoch and
+privilege. Restart recovers outstanding claims before same-name admission; stale
+bindings hold. Terminal outcomes, including errors, survive receipt/archive failure
+and prevent replay after journal retention. Unresolved claims are never evicted.
+Same-filesystem atomic rename is required; EXDEV/unsafe storage fails closed.
+
+The accepted [contract](plans/2026-11-05-task-ipc-claim-contract.md) defines
+qualification and boundaries. Message IPC is unchanged. Claims must be drained
+or task IPC held before downgrade; existing backups do not promise complete IPC
+restore. Deployment and full recovery qualification remain separate.
+
+
+## D068 — Task receipt identity and matching consumers
+
+**Status:** accepted by owner, 2026-11-05. Amends D067's unchanged-consumer promise.
+
+Every bounded complete task snapshot receives a receipt `requestHash`: lowercase
+SHA-256 of exact submitted bytes, including whitespace/newlines. Host computes
+it from the immutable claim snapshot, independently of the policy-bound journal
+hash. Consumers must match original filename AND requestHash before accepting
+success or error. Old/missing hashes are stale/unbound evidence, not completion.
+Invalid but bounded JSON is still hash-bound; oversized/nonregular inputs may
+have only unbound diagnostics and can never succeed.
+
+This permits truthful recovery of an old result while a changed same-name request
+waits for its own conflict. Identical replay accepts the same original result.
+The fields are additive, but status/filename-only consumers must migrate before
+qualified replay/crash recovery. Existing workspace guides are not overwritten;
+upgrading the host is not proof that live consumers adopted matching. A hash is
+response attribution, not authentication of an agent-editable receipt.
+
+The [accepted amendment](plans/2026-11-05-task-ipc-receipt-identity.md) requires
+an executable test of the bundled consumer as well as host/restart regressions.
+No production deployment or live-client acceptance is implied.

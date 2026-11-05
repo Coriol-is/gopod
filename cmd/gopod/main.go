@@ -985,8 +985,9 @@ func run() error {
 		scheduler.SetTaskNotifier(st, tgBot.NotifyOwner)
 		ipcTasks := scheduler.NewIPCSink(st)
 		ipcWatcher := ipc.New(ipc.Config{
-			DataDir:     cfg.DataDir,
-			OwnerFolder: ownerFolder,
+			NamespaceScope: st.SnapshotScope,
+			DataDir:        cfg.DataDir,
+			OwnerFolder:    ownerFolder,
 			NamespacePath: func(folder string) (string, bool) {
 				if agentRunner == nil || agentRunner.CheckAdmission(ctx, folder) != nil {
 					return "", false

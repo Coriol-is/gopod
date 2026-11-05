@@ -1,7 +1,7 @@
 # Task IPC request ownership before receipt publication
 
-Status: proposed architectural decision, awaiting owner acceptance.
-Baseline: `1972dd3`; source remains unchanged. This is a repair of the accepted
+Status: accepted by owner 2026-11-05 as D067; implementation in progress.
+Design baseline: `1972dd3`; implementation baseline `0d18156`. This is a repair of the accepted
 same-filename replay contract, not a new user-facing task feature.
 
 ## Verified failure
@@ -17,7 +17,7 @@ a caller may legitimately replace that path. Archival then consumes the new
 request without processing it. The existing transaction prevents duplicate task
 mutation but cannot recover a receipt for bytes never processed by the watcher.
 
-## Decision requested
+## Accepted decision
 
 Adopt a host-only durable claim spool for the task channel. Atomically take a
 request pathname out of the writable inbox **before reading or dispatching it**.
@@ -29,7 +29,7 @@ The new spool is persistent operational state outside all ordinary agent mounts.
 It requires same-filesystem atomic rename, recovery and explicit backup/rollback
 handling. This is the architectural choice requiring approval under CLAUDE.md;
 ordinary source edits and regression tests do not independently require approval.
-Do not reserve an ADR number until the choice is accepted.
+D067 records the owner acceptance.
 
 | Option | Benefit | Cost / reason |
 |---|---|---|
@@ -141,3 +141,10 @@ review and required CI including Docker isolation. Inspect Sonar as advisory.
   journal atomicity/retention; change only if required by the proven claim protocol.
 - Scheduling documentation, backup/rollback notes, HANDOFF and BACKLOG: record the
   accepted ADR, implementation status, evidence and remaining deployment boundary.
+
+## Qualification blocker discovered during implementation
+
+The accepted unchanged-consumer promise cannot provide correct receipt attribution
+after ambiguous publication. See the [proposed amendment](2026-11-05-task-ipc-receipt-identity.md)
+and [implementation evidence](../reviews/2026-11-05-task-ipc-claims.md). The owner accepted that amendment as D068 on 2026-11-05.
+D068 supersedes the unchanged-consumer guarantee; all other D067 invariants remain.

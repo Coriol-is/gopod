@@ -11,6 +11,7 @@ import (
 )
 
 type taskReceipt struct {
+	RequestHash string      `json:"requestHash,omitempty"`
 	Status      string      `json:"status"`
 	RequestFile string      `json:"requestFile"`
 	Op          string      `json:"op,omitempty"`
