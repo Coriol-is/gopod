@@ -13,6 +13,17 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
+## In flight — durable keyboard-refusal fallback
+
+Branch `fix/outbox-keyboard-fallback`, base `167381a`. Ordinary final sends can
+remove refused buttons and still deliver text; outbox currently cannot. Add a
+separate durable bare-keyboard attempt after an explicit 400 keyboard refusal,
+retaining destination/content/targets and conservative ambiguous outcomes.
+Focused store/transport races PASS; full checks/review/CI pending.
+[Evidence](reviews/2026-11-05-outbox-keyboard-fallback.md).
+Full reply-action memo/callback parity and foreground
+cutover remain open; no deployment.
+
 ## Resume here — generation ownership fixes merged, 2026-11-05
 
 PR [#178](https://github.com/Coriol-is/gopod/pull/178), `da8b4fe`, binds draft

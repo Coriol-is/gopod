@@ -93,6 +93,7 @@ func (o *OutboxOwner) checkFenceQ(ctx context.Context, q taskSQL) error {
 
 // OutboxClaim is one part committed as sending, with its attempt row and fence.
 type OutboxClaim struct {
+	KeyboardFallback bool
 	PlainFallback    bool
 	DocumentFallback bool
 	DeliveryID       string
@@ -231,6 +232,17 @@ func nextCandidateQ(ctx context.Context, q taskSQL, nowMs int64) (OutboxClaim, b
 		return OutboxClaim{}, false, e
 	}
 	c.Conversation.Visibility, c.ResultID = Visibility(vis), result.String
+	var keyboardHash string
+	err = q.QueryRowContext(ctx, `SELECT source_part_hash FROM outbox_keyboard_fallbacks WHERE part_id=?`, c.PartID).Scan(&keyboardHash)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return OutboxClaim{}, false, err
+	}
+	if err == nil {
+		if (c.Part.Kind != PartText && c.Part.Kind != PartEdit) || c.Part.ReplyMarkup == "" || keyboardHash != partHash(c.Ordinal, c.Part) {
+			return OutboxClaim{}, false, ErrInvalidDelivery
+		}
+		c.KeyboardFallback = true
+	}
 	var branchHash string
 	err = q.QueryRowContext(ctx, `SELECT source_part_hash FROM outbox_document_fallbacks WHERE part_id=?`, c.PartID).Scan(&branchHash)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -630,6 +642,7 @@ type DeliveryDiagnostic struct {
 	Acknowledged        int
 	AckedPrefix         int
 	Parts               []PartDiagnostic
+	KeyboardFallbacks   int
 	PlainFallbacks      int
 	DocumentFallbacks   int
 	CodeInlineFallbacks int
@@ -643,6 +656,9 @@ func (d DeliveryDiagnostic) Summary() string {
 			s += fmt.Sprintf("; part %d %s (%s)", p.Ordinal, p.State, p.ReasonCode)
 			break
 		}
+	}
+	if d.KeyboardFallbacks > 0 {
+		s += fmt.Sprintf("; %d parts sent without buttons", d.KeyboardFallbacks)
 	}
 	if d.PlainFallbacks > 0 {
 		s += fmt.Sprintf("; %d parts sent as plain text", d.PlainFallbacks)
@@ -667,6 +683,9 @@ func (s *Store) DeliveryDiagnostic(ctx context.Context, id string) (DeliveryDiag
 		if err := s.taskDB(ctx).QueryRowContext(ctx, `SELECT count(*) FROM outbox_parts p JOIN outbox_code_plans c USING(delivery_id) WHERE p.delivery_id=? AND p.reason_code='code_inline_refused' AND c.selected_mask IS NOT NULL`, id).Scan(&out.CodeInlineFallbacks); err != nil {
 			return DeliveryDiagnostic{}, err
 		}
+	}
+	if err := s.taskDB(ctx).QueryRowContext(ctx, `SELECT count(*) FROM outbox_keyboard_fallbacks f JOIN outbox_parts p ON p.part_id=f.part_id WHERE p.delivery_id=? AND p.state='sent'`, id).Scan(&out.KeyboardFallbacks); err != nil {
+		return DeliveryDiagnostic{}, err
 	}
 	if err := s.taskDB(ctx).QueryRowContext(ctx, `SELECT count(*) FROM outbox_plain_fallbacks f JOIN outbox_parts p ON p.part_id=f.part_id WHERE p.delivery_id=? AND p.state='sent'`, id).Scan(&out.PlainFallbacks); err != nil {
 		return DeliveryDiagnostic{}, err

@@ -146,6 +146,18 @@ Sets are never pruned by the tool. Delete old ones by hand, and never the newest
 Rolling back this feature means not running `gopod backup`; existing sets stay valid files. The controller lock
 file `<data>/.controller.lock` is harmless and is released by the kernel when the process exits.
 
+### Durable keyboard fallback compatibility (2026-11-05)
+
+Builds containing `outbox_keyboard_fallbacks` retain an immutable selection of
+text/edit delivery without its refused buttons. Backup row counts include this
+ledger. Older binaries cannot honor the selection: before downgrade, drain the
+selected deliveries or keep the outbox dispatcher disabled while preserving the
+database and ledger for reconciliation with a compatible binary. Never delete
+branch/attempt rows to force a retry. A sending/uncertain alternative is not proof
+that Telegram did not receive it. Verify restore with a compatible binary; the
+additive schema does not extend the filesystem/session/auth capture guarantee.
+[Implementation and qualification](../reviews/2026-11-05-outbox-keyboard-fallback.md).
+
 ## First use
 
 The image running on the Pi before this change has no `gopod backup`. Take the pre-deploy copy for the deploy that

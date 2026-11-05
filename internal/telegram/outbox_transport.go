@@ -222,6 +222,9 @@ func parseOutboxMarkup(raw string) (models.ReplyMarkup, error) {
 	if raw == "" {
 		return nil, nil
 	}
+	if raw == bareOutboxKeyboard {
+		return noKeyboard(), nil
+	}
 	dec := json.NewDecoder(strings.NewReader(raw))
 	dec.DisallowUnknownFields()
 	var m models.InlineKeyboardMarkup
@@ -262,6 +265,9 @@ func classifySend(msg *models.Message, err error, wantID int64) Outcome {
 		}
 		if strings.Contains(strings.ToLower(err.Error()), "can't parse entities") {
 			return Outcome{Kind: OutcomeRefused, Code: "parse_entities", HTTPStatus: 400}
+		}
+		if isKeyboardRefusal(err) {
+			return Outcome{Kind: OutcomeRefused, Code: "keyboard_refused", HTTPStatus: 400}
 		}
 		return Outcome{Kind: OutcomeRefused, Code: "bad_request", HTTPStatus: 400}
 	case errors.Is(err, bot.ErrorUnauthorized):

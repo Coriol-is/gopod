@@ -302,6 +302,9 @@ func (d *OutboxDispatcher) execute(attemptCtx context.Context, c store.OutboxCla
 		TargetMessageID: c.Part.TargetMessageID, ReplyToMessageID: c.Part.ReplyToMessageID, ArtifactRef: c.Part.ArtifactRef, PartID: c.PartID, AttemptID: c.AttemptID,
 		NamespaceID: c.Conversation.Scope.NamespaceID, NamespaceEpoch: c.Conversation.Scope.NamespaceEpoch,
 	}
+	if c.KeyboardFallback {
+		req.ReplyMarkup = bareOutboxKeyboard
+	}
 	out := d.attempt(attemptCtx, req)
 	if out.Kind == OutcomeRefused && req.Kind == store.PartUpload && req.ParseMode == "" && ((out.Code == "document_refused" && out.HTTPStatus == 400) || (out.HTTPStatus == 0 && (out.Code == "artifact_content_unavailable" || out.Code == "upload_unavailable"))) {
 		if backend, ok := d.backend.(interface {
@@ -324,7 +327,11 @@ func (d *OutboxDispatcher) execute(attemptCtx context.Context, c store.OutboxCla
 		d.documentFallback(attemptCtx, c, req, out)
 		return
 	}
-	if out.Kind == OutcomeRefused && out.Code == "parse_entities" && out.HTTPStatus == 400 && req.ParseMode == "HTML" && (req.Kind == store.PartText || req.Kind == store.PartEdit) {
+	if keyboardRefusal(c, req, out) {
+		d.keyboardFallback(attemptCtx, c, req, out)
+		return
+	}
+	if plainRefusal(c, req, out) {
 		d.plainFallback(attemptCtx, c, req, out)
 		return
 	}
@@ -513,7 +520,13 @@ func (d *OutboxDispatcher) plainFallback(ctx context.Context, c store.OutboxClai
 	}
 	req.Text = htmlToPlain(req.Text)
 	req.ParseMode = ""
-	d.persist(next, d.attempt(ctx, req))
+	req.AttemptID = next.AttemptID
+	out := d.attempt(ctx, req)
+	if keyboardRefusal(next, req, out) {
+		d.keyboardFallback(ctx, next, req, out)
+		return
+	}
+	d.persist(next, out)
 }
 
 func (d *OutboxDispatcher) sweepOrphans(ctx context.Context) (int, error) {
@@ -545,4 +558,41 @@ func (d *OutboxDispatcher) documentFallback(ctx context.Context, c store.OutboxC
 	req.ParseMode = ""
 	req.AttemptID = next.AttemptID
 	d.persist(next, d.attempt(ctx, req))
+}
+
+// An explicit empty keyboard also clears an existing Stop row on edit; nil
+// would not establish that same behavior for all API paths.
+const bareOutboxKeyboard = `{"inline_keyboard":[]}`
+
+func keyboardRefusal(c store.OutboxClaim, req SendRequest, out Outcome) bool {
+	return out.Kind == OutcomeRefused && out.Code == "keyboard_refused" && out.HTTPStatus == 400 && !c.KeyboardFallback && req.ReplyMarkup != "" && (req.Kind == store.PartText || req.Kind == store.PartEdit)
+}
+func plainRefusal(c store.OutboxClaim, req SendRequest, out Outcome) bool {
+	return out.Kind == OutcomeRefused && out.Code == "parse_entities" && out.HTTPStatus == 400 && !c.PlainFallback && req.ParseMode == "HTML" && (req.Kind == store.PartText || req.Kind == store.PartEdit)
+}
+
+func (d *OutboxDispatcher) keyboardFallback(ctx context.Context, c store.OutboxClaim, req SendRequest, refusal Outcome) {
+	backend, ok := d.backend.(interface {
+		BeginKeyboardFallback(context.Context, store.OutboxClaim) (store.OutboxClaim, error)
+	})
+	if !ok {
+		d.persist(c, refusal)
+		return
+	}
+	persistCtx, cancel := context.WithTimeout(context.Background(), d.cfg.PersistTimeout)
+	next, err := backend.BeginKeyboardFallback(persistCtx, c)
+	cancel()
+	if err != nil {
+		// Unknown commit must never issue HTTP or retry a possibly committed branch.
+		d.persist(c, refusal)
+		return
+	}
+	req.ReplyMarkup = bareOutboxKeyboard
+	req.AttemptID = next.AttemptID
+	out := d.attempt(ctx, req)
+	if plainRefusal(next, req, out) {
+		d.plainFallback(ctx, next, req, out)
+		return
+	}
+	d.persist(next, out)
 }
