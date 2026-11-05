@@ -26,12 +26,14 @@ import (
 
 // inflightTurn is one streaming turn that can be stopped.
 type inflightTurn struct {
-	scope    store.ScopeRef
-	token    string
-	messages map[int]bool
-	cancel   context.CancelFunc
-	stopped  chan struct{} // closed on the first stop
-	once     sync.Once
+	scope      store.ScopeRef
+	token      string
+	messages   map[int]bool
+	cancel     context.CancelFunc
+	stopped    chan struct{} // closed on the first stop
+	phaseMu    sync.Mutex
+	finalizing bool
+	retired    bool
 
 	// home is the chat the turn answers in; only a button in that chat
 	// may stop it (stopTurn).
@@ -49,19 +51,28 @@ type inflightTurn struct {
 // turnID (memory-only queue) is not registered, and its drafts and
 // placeholders carry no stop button.
 func (b *Bot) registerInflight(turnID int64, chatID int64, threadID int, cancel context.CancelFunc) (unregister func()) {
+	_, unregister = b.registerInflightTurn(turnID, chatID, threadID, cancel)
+	return unregister
+}
+
+func (b *Bot) registerInflightTurn(turnID int64, chatID int64, threadID int, cancel context.CancelFunc) (*inflightTurn, func()) {
 	if turnID == 0 {
-		return func() {}
+		return nil, func() {}
 	}
 	t := &inflightTurn{token: uuid.NewString(), messages: make(map[int]bool), cancel: cancel, stopped: make(chan struct{}), home: chatID, thread: threadID}
 	b.inflightMu.Lock()
 	if b.inflight == nil {
 		b.inflight = make(map[int64]*inflightTurn)
 	}
+	if prior := b.inflight[turnID]; prior != nil {
+		prior.retire()
+	}
 	b.inflight[turnID] = t
 	b.inflightMu.Unlock()
-	return func() {
+	return t, func() {
 		b.inflightMu.Lock()
 		defer b.inflightMu.Unlock()
+		t.retire()
 		if b.inflight[turnID] == t {
 			delete(b.inflight, turnID)
 		}
@@ -125,13 +136,21 @@ func (b *Bot) handleGenerationStopped(ctx context.Context, upd *models.Update) {
 // stop stops the turn once: it closes stopped and cancels the run.
 // Reports whether this call stopped it (false: already stopped).
 func (t *inflightTurn) stop() bool {
-	stopped := false
-	t.once.Do(func() {
-		close(t.stopped)
-		t.cancel()
-		stopped = true
-	})
-	return stopped
+	t.phaseMu.Lock()
+	if t.finalizing || t.retired {
+		t.phaseMu.Unlock()
+		return false
+	}
+	select {
+	case <-t.stopped:
+		t.phaseMu.Unlock()
+		return false
+	default:
+	}
+	close(t.stopped)
+	t.phaseMu.Unlock()
+	t.cancel()
+	return true
 }
 
 // stopTurn stops in-flight turn turnID when it answers in chatID, as the

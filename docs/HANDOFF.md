@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-05 (D065 reviewed and merged)
+**Last updated:** 2026-11-05 (final-owner handoff in review)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -13,7 +13,21 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — code-inline alternatives integrated, 2026-11-05
+## Resume here — final ownership handoff in progress, 2026-11-05
+
+Branch `fix/final-reply-handoff`, base `5e1be7c`. Owner requested the next CP-002
+slice. Existing production code can accept Stop after its final stop-channel check
+while final HTTP/TTS already runs. Implementing an atomic per-generation handoff:
+Stop before the boundary wins; final ownership after joined previews rejects late
+Stop. Retired generations cannot acquire a replacement’s final ownership. Consumed stream results are
+preserved for stopped settlement instead of being read a second time.
+Focused legacy and dedicated race/regression checks pass. Review found and fixed
+registration/delegation generation-recapture windows; final review and full checks
+are running. [Evidence and scope limits](reviews/2026-11-05-final-owner-handoff.md). No deployment or foreground freeze activation. This closes a bounded
+process-local race; persistent frozen-result cancellation, reply-action integration
+and foreground producer cutover remain open.
+
+## Code-inline alternatives integrated — 2026-11-05
 
 PR [#173](https://github.com/Coriol-is/gopod/pull/173) squash-merged as `0aa6628`.
 D065 freezes exact text variants for up to four code documents; larger/over-budget

@@ -442,7 +442,8 @@ func (b *Bot) runAgentSync(ctx context.Context, item queue.Item) error {
 	ctx = withTopicOutputOrigin(ctx, item.ChatID, item.ThreadID)
 	runCtx, cancelRun := context.WithCancel(ctx)
 	defer cancelRun()
-	defer b.registerInflight(item.ID, item.ChatID, item.ThreadID, cancelRun)()
+	ctx, unregister := b.registerFinalGeneration(ctx, item, cancelRun)
+	defer unregister()
 	defer b.markThreadBusy(item)()
 	b.stopQueueWaits(item.ChatID, item.ThreadID)
 	b.preparePrivateStop(ctx, item)
@@ -452,6 +453,10 @@ func (b *Bot) runAgentSync(ctx context.Context, item queue.Item) error {
 // runAgentSyncContext keeps agent cancellation separate from Telegram feedback.
 // The streaming setup fallback passes its already registered child context here.
 func (b *Bot) runAgentSyncContext(ctx, runCtx context.Context, item queue.Item) error {
+	ctx, handoff, _ := b.finalHandoff(ctx, item.ID)
+	if finalGenerationRetired(ctx) {
+		return finalOwnershipLost{}
+	}
 	tier := runner.TierRegistered
 	if item.IsOwner {
 		tier = runner.TierOwner
@@ -490,6 +495,13 @@ func (b *Bot) runAgentSyncContext(ctx, runCtx context.Context, item queue.Item) 
 	}
 	if b.waitPlaceholder(item) != 0 {
 		if b.getReplyMode(item.ChatID, item.IsVoice) == "voice" && stripCodeBlocks(reply) == reply {
+			b.stopWaitDraftRefresh(item)
+			if err := handoff(ctx); err != nil {
+				if errors.Is(err, queue.ErrStopped) {
+					return b.finishBufferedStopped(ctx, item)
+				}
+				return err
+			}
 			// The Stop placeholder must not turn a buffered voice-only answer
 			// into voice+text. Retire the control, then keep the original delivery.
 			ph := b.popWaitPlaceholder(item)
@@ -512,6 +524,13 @@ func (b *Bot) runAgentSyncContext(ctx, runCtx context.Context, item queue.Item) 
 		return b.streamReply(ctx, item, &runner.AgentStream{Chunks: chunks, Result: result})
 	}
 
+	b.stopWaitDraftRefresh(item)
+	if err := handoff(ctx); err != nil {
+		if errors.Is(err, queue.ErrStopped) {
+			return b.finishBufferedStopped(ctx, item)
+		}
+		return err
+	}
 	status.Set(stDone)
 
 	if reply == "" {

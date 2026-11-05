@@ -218,7 +218,8 @@ func (b *Bot) runAgentStreaming(ctx context.Context, item queue.Item) error {
 	}
 	runCtx, cancelRun := context.WithCancel(ctx)
 	defer cancelRun()
-	defer b.registerInflight(item.ID, item.ChatID, item.ThreadID, cancelRun)()
+	ctx, unregister := b.registerFinalGeneration(ctx, item, cancelRun)
+	defer unregister()
 	// No queue-position draft may land in this thread from now on.
 	defer b.markThreadBusy(item)()
 	b.stopQueueWaits(item.ChatID, item.ThreadID)
@@ -262,9 +263,13 @@ func (b *Bot) runAgentStreaming(ctx context.Context, item queue.Item) error {
 // queue.ErrStopped. Otherwise streamReply returns nil.
 func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.AgentStream) error {
 	ctx = withTopicOutputOrigin(ctx, item.ChatID, item.ThreadID)
+	ctx, handoff, stop := b.finalHandoff(ctx, item.ID)
+	if finalGenerationRetired(ctx) {
+		return b.discardCancelledStream(item, stream)(finalOwnershipLost{})
+	}
 	const editLimit = 4000 // safe limit under Telegram's 4096
 
-	stop := b.inflightStop(item.ID) // nil: not stoppable, never fires
+	// stop belongs to the same captured generation as final ownership.
 	status := b.turnStatus(item)
 	// Silent mode (D055): answer text never reaches the draft or the
 	// placeholder; the view stays on progress until the final message.
@@ -413,9 +418,14 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 
 	// stopped ends a stopped turn: the draft path sends the text so far
 	// as a new message; the edit path makes the placeholder the reply.
+	var terminal *runner.RunResult
 	stopped := func() error {
+		stopStream := stream
+		if terminal != nil {
+			stopStream = settledResultStream(*terminal)
+		}
 		if placeholder == 0 {
-			return b.finishStopped(ctx, item, stream, full.String())
+			return b.finishStopped(ctx, item, stopStream, full.String())
 		}
 		ov, tail := overflow, accumulated.String()
 		if silent {
@@ -424,7 +434,7 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 			// placeholder keeps the progress summary (no cursor).
 			ov, tail = full.Len() > editLimit, view()
 		}
-		return b.finishStoppedEdit(ctx, item, stream, placeholder, full.String(), ov, tail)
+		return b.finishStoppedEdit(ctx, item, stopStream, placeholder, full.String(), ov, tail)
 	}
 
 	progress := stream.Progress // nil for plain runs: never selected
@@ -561,6 +571,7 @@ loop:
 	}
 	select {
 	case res = <-stream.Result:
+		terminal = &res
 	case <-stop:
 		return stopped()
 	}
@@ -585,6 +596,15 @@ loop:
 		return nil
 	}
 
+	// No preview refresh may cross the final-owner boundary.
+	ticker.Stop()
+	b.stopWaitDraftRefresh(item)
+	if err := handoff(ctx); err != nil {
+		if errors.Is(err, queue.ErrStopped) {
+			return stopped()
+		}
+		return err
+	}
 	finalText := res.FullText
 	if finalText == "" {
 		finalText = "(empty reply)"
@@ -885,6 +905,10 @@ func (b *Bot) handleStreamError(ctx context.Context, item queue.Item, err error)
 // into a buffer and send the result as a single formatted message.
 // Used when the placeholder can't be sent.
 func (b *Bot) drainAndSend(ctx context.Context, item queue.Item, stream *runner.AgentStream) error {
+	ctx, handoff, _ := b.finalHandoff(ctx, item.ID)
+	if finalGenerationRetired(ctx) {
+		return b.discardCancelledStream(item, stream)(finalOwnershipLost{})
+	}
 	drainStream(stream)
 	res := <-stream.Result
 	if res.Err != nil {
@@ -893,6 +917,13 @@ func (b *Bot) drainAndSend(ctx context.Context, item queue.Item, stream *runner.
 			return res.Err
 		}
 		return nil
+	}
+	b.stopWaitDraftRefresh(item)
+	if err := handoff(ctx); err != nil {
+		if errors.Is(err, queue.ErrStopped) {
+			return b.finishStopped(ctx, item, settledResultStream(res), stoppedEmpty)
+		}
+		return err
 	}
 	text := res.FullText
 	if text == "" {
