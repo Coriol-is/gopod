@@ -40,6 +40,11 @@ with review and required CI passed; wait maps/durable control binding followed
 in #179 (`bbc30b4`) with the same gates passed. Both are not deployed. Integrated
 lifecycle qualification, reply-action parity and foreground cutover remain open.
 
+CP-002 keyboard-refusal fallback merged in #180 (`6722e6a`), with full checks,
+races, independent review and required CI passed; not deployed. Advisory Sonar
+ERROR on duplication is recorded in the [review](docs/reviews/2026-11-05-outbox-keyboard-fallback.md).
+Reply-action state/callback parity and foreground qualification remain open.
+
 ## Execution priority — 2026-11-04
 
 Owner-approved order, refreshed 2026-11-05 after removing completed queue repair.

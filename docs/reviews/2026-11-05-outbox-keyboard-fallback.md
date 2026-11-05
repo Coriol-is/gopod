@@ -1,6 +1,6 @@
 # CP-002 durable keyboard-refusal fallback
 
-Base `167381a`; reviewed source `5f92f9a`; branch `fix/outbox-keyboard-fallback`.
+Base `167381a`; reviewed source `5f92f9a`; PR #180 merged as `6722e6a`.
 
 ## Selected parity gap
 
@@ -43,7 +43,17 @@ No fallback is authorized by timeout, generic refusal, 5xx or a missing HTTP 400
 - Independent source review PASS; focused races PASS (Store 7.957 s, Telegram
   8.121 s), including real transport.
 - Full build/vet/all tests PASS; full races PASS (Store 71.324 s, Telegram
-  97.270 s). Required CI and advisory Sonar pending.
+  97.270 s).
+- Required exact-head [CI 42090851015](https://github.com/Coriol-is/gopod/actions/runs/42090851015)
+  PASS on `6dde8c9`: test and Docker isolation, no rerun.
+- Advisory Sonar exact-head `6dde8c9`, 2026-11-05 19:07:34 UTC: **ERROR** due
+  to new-code duplication 22.4% (threshold 3%); 18 code smells, zero bugs and
+  vulnerabilities. Duplication is with existing document fallback and tests;
+  complexity/context findings were also read. Persistence deliberately uses a
+  bounded context independent of canceled HTTP. Nothing suppressed or marked
+  accepted. Merge follows the documented Sonar soft-gate policy.
+- Squash `6722e6a` source/tests match the reviewed PR head. Independent review
+  and required CI passed before merge.
 
 ## Scope and rollout boundaries
 

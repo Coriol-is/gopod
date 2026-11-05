@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-05 (#178–#179 merged; Pi remains 757faa2)
+**Last updated:** 2026-11-05 (#178–#180 merged; Pi remains 757faa2)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -13,19 +13,26 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## In flight — durable keyboard-refusal fallback
+## Resume here — keyboard fallback merged, 2026-11-05
 
-Branch `fix/outbox-keyboard-fallback`, base `167381a`. Ordinary final sends can
-remove refused buttons and still deliver text; outbox currently cannot. Add a
-separate durable bare-keyboard attempt after an explicit 400 keyboard refusal,
-retaining destination/content/targets and conservative ambiguous outcomes.
-Full build/vet/tests, full Store/Telegram races and independent review PASS
-on source `5f92f9a`; required CI and advisory Sonar pending.
-[Evidence](reviews/2026-11-05-outbox-keyboard-fallback.md).
-Full reply-action memo/callback parity and foreground
-cutover remain open; no deployment.
+PR [#180](https://github.com/Coriol-is/gopod/pull/180), `6722e6a`, implements
+outbox fallback after explicit keyboard refusal. The bare-keyboard attempt is
+committed before HTTP; text/route/targets remain immutable. HTML/plain fallback
+composes both ways; ambiguous outcomes are not retried. Full checks, Store/
+Telegram races, independent review and required exact-head CI PASS.
 
-## Resume here — generation ownership fixes merged, 2026-11-05
+Advisory Sonar on `6dde8c9`: **ERROR**, new-code duplication 22.4% versus 3%;
+18 code smells, zero bugs/vulnerabilities. Findings read, none suppressed;
+merge used the documented soft-gate policy. [Evidence](reviews/2026-11-05-outbox-keyboard-fallback.md).
+
+**First next action:** reply-action memo/callback parity after durable ACK
+(More/Back/As file and newest-row handling), then integrated preview/Stop/publication
+qualification and foreground cutover. No implementation in flight. #178–#180 are
+not deployed; Pi remains `757faa2`. Before downgrading a future deployment of #180,
+drain bare-keyboard selections or hold the dispatcher and preserve its ledger;
+see [runbook](deployments/BACKUP-RESTORE.md#durable-keyboard-fallback-compatibility-2026-11-05).
+
+## Previous completed slice — generation ownership fixes, 2026-11-05
 
 PR [#178](https://github.com/Coriol-is/gopod/pull/178), `da8b4fe`, binds draft
 metadata and Stop keyboards to the captured registration.
@@ -39,7 +46,7 @@ required CI. Latest Sonar gate OK (16 code smells, zero bugs/vulnerabilities;
 findings read, none suppressed). [#178 review](reviews/2026-11-05-preview-generation-controls.md) ·
 [#179 review and regression evidence](reviews/2026-11-05-wait-control-generation.md).
 
-**First next action:** reply-action parity and integrated preview/control lifecycle
+**Remaining gates:** reply-action parity and integrated preview/control lifecycle
 qualification, then qualified foreground producer/cutover under D063/D065/D066.
 These bounded fixes do not establish full native/client qualification or published
 delivery cancellation settlement. No implementation in flight. #178–#179 are not

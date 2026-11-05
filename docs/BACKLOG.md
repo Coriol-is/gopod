@@ -16,7 +16,9 @@ here; proposed, deferred and paused work is not cancelled.
    reply-action parity, then qualified foreground producer/cutover. Draft binding and
    Stop-keyboard generation are fixed in #178 (`da8b4fe`); wait maps and durable
    control binding in #179 (`bbc30b4`). Both await deployment; integrated lifecycle
-   qualification and reply-action parity remain open.
+   qualification and reply-action memo/callback parity remain open. #180
+   (`6722e6a`, not deployed) adds durable keyboard-refusal fallback; full checks,
+   review and required CI pass. Advisory Sonar ERROR (duplication), not suppressed.
 2. CP-016 full topic retirement.
 3. CP-018 per-conversation provider/model selection.
 4. CP-019 group command/service UX.
@@ -27,14 +29,6 @@ here; proposed, deferred and paused work is not cancelled.
 The independent acceptance lane starts with CP-040 A22–A25, then remaining
 Stop/restart and isolation checks. Coordinate one Telegram actor and avoid overlap
 with deployment/auth changes. No new work is activated by this reconciliation.
-
-## In flight — reply-action refusal parity
-
-`fix/outbox-keyboard-fallback` adds a durable bare-keyboard attempt after an
-explicit Telegram keyboard refusal. [Scope and checks](reviews/2026-11-05-outbox-keyboard-fallback.md).
-Full checks/races and independent review PASS; required CI pending.
-Full reply-action memo/callback parity and foreground
-activation remain open.
 
 ## Current deployed baseline
 

@@ -38,6 +38,12 @@ required CI passed; [review](../reviews/2026-11-05-wait-control-generation.md).
 Not deployed. Integrated lifecycle qualification, reply-action parity and parent
 CP-002 remain open.
 
+PR #180 (`6722e6a`) adds a durable bare-keyboard attempt after explicit refusal,
+including HTML/plain composition and restart-safe selection. Full checks/races,
+independent review and required CI passed; advisory Sonar ERROR on duplication
+(22.4%, no bugs/vulnerabilities), no suppression. [Review](../reviews/2026-11-05-outbox-keyboard-fallback.md).
+Not deployed; full reply-action state/callback parity remains open.
+
 ## Completed operations
 
 - Pi controller-only release `757faa2`: exact-main CI, isolated readiness,
