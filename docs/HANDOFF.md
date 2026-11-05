@@ -17,8 +17,8 @@ owner. No acceptance result or deployment status changes with this instruction.
 
 Branch `fix/preview-generation-controls`, based on `3a889c2`. The next bounded
 CP-002 fix binds draft metadata and Stop-keyboard creation to the captured
-registration instead of recapturing a replacement by turn ID. Regression checks,
-independent review and required CI are pending. Wait-placeholder/refresher ownership,
+registration instead of recapturing a replacement by turn ID. PR #178 source `74cef1d`: full build/vet/tests, Telegram races and independent
+review PASS; required CI and advisory Sonar pending. Wait-placeholder/refresher ownership,
 durable control binding, reply-action parity and foreground cutover remain separate.
 No production change or deployment.
 

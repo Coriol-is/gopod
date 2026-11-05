@@ -29,7 +29,8 @@ with deployment/auth changes. No new work is activated by this reconciliation.
 
 Draft metadata and Stop-keyboard generation binding are being fixed on
 `fix/preview-generation-controls`; [scope and verification](reviews/2026-11-05-preview-generation-controls.md).
-Review/CI are pending. This is not full preview ownership or foreground cutover.
+PR #178: local full/race checks and independent review pass; CI pending.
+This is not full preview ownership or foreground cutover.
 
 ## Current deployed baseline
 

@@ -1,6 +1,6 @@
 # CP-002 generation-bound draft and Stop controls
 
-Base `3a889c2`; branch `fix/preview-generation-controls`.
+Base `3a889c2`; reviewed source `74cef1d`; PR #178.
 
 ## Selected gap
 
@@ -27,8 +27,10 @@ No protocol/schema/activation changes or new architectural decision.
   change the replacement; old draft Stop cannot cancel it; the replacement's
   draft Stop remains functional. Explicit nil/mismatched bindings cannot acquire
   controls. Concurrent replacement and final-owner refusal are covered.
-- Full build/vet/tests, full Telegram races, independent review and required CI:
-  pending at this checkpoint.
+- Full build/vet/all tests: PASS; full Telegram race suite: PASS (63.360 s).
+- Independent bounded source review: PASS; independent focused races PASS
+  (12.358 s). No blocking findings; wait-map/control-binding exclusions retained.
+- Required PR CI and advisory Sonar pending at this checkpoint.
 
 ## Remaining boundaries
 
