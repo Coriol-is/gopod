@@ -62,7 +62,7 @@ func TestOrdinaryStopSurvivesStatusRewriteAndLateFreeze(t *testing.T) {
 	}
 }
 func TestOrdinaryStopValidationIsAtomic(t *testing.T) {
-	for _, variant := range []string{"attempt", "scope", "duplicate", "task", "partial"} {
+	for _, variant := range []string{"attempt", "scope", "stale_scope", "duplicate", "task", "partial"} {
 		t.Run(variant, func(t *testing.T) {
 			f, b := stopFixture(t)
 			switch variant {
@@ -70,6 +70,8 @@ func TestOrdinaryStopValidationIsAtomic(t *testing.T) {
 				b.Members[1].Attempt++
 			case "scope":
 				b.Conversation.ThreadID = 4
+			case "stale_scope":
+				b.Conversation.Scope.NamespaceEpoch++
 			case "duplicate":
 				b.Members[1] = b.Members[0]
 			case "task":
@@ -140,5 +142,24 @@ func TestOrdinaryStopOldSchemaUpgrade(t *testing.T) {
 	}
 	if n := countRows(t, st, `SELECT count(*) FROM turns`); n != 2 {
 		t.Fatal(n)
+	}
+}
+
+func TestOrdinaryStopPublicationFirstRejectsIntent(t *testing.T) {
+	f, b := stopFixture(t)
+	r := f.freeze(ExecInteractive, "answer", b.Members...)
+	original, err := f.st.PublishDelivery(t.Context(), PublishRequest{ResultID: r.ID, Conversation: f.conv, Owner: OwnerControllerResult, Parts: []DeliveryPart{{Kind: PartText, Payload: []byte("answer")}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.st.RecordOrdinaryStop(t.Context(), b); !errors.Is(err, ErrStopPublished) {
+		t.Fatal(err)
+	}
+	if n := countRows(t, f.st, `SELECT count(*) FROM ordinary_stop_intents`); n != 0 {
+		t.Fatal(n)
+	}
+	actual, err := readDelivery(t.Context(), f.st.taskDB(t.Context()), original.ID)
+	if err != nil || actual.State != original.State || actual.PlanHash != original.PlanHash {
+		t.Fatal(actual, err)
 	}
 }
