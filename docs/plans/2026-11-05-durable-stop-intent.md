@@ -1,8 +1,8 @@
 # CP-002 durable Stop intent and late-result settlement
 
-Status: accepted by owner 2026-11-05; D066. Implementation in progress.
+Status: accepted by owner 2026-11-05; D066 implemented in PR #176 (`51fbb7a`).
 Baseline: `85640de`, with #174 process-local handoff and #175 stopped-publication fence.
-Acceptance does not imply implementation, activation or deployment.
+Implementation does not imply foreground activation, native/client acceptance or deployment.
 
 ## Accepted decision
 
@@ -13,8 +13,8 @@ frozen result and delivery outcome separate from cancellation intent.
 
 This extends D063's activation gates with concrete persistent Stop semantics.
 It changes the meaning of successful Stop and adds durable evidence that survives
-queue status rewrites; it is not just a new mutable `turns.status` value. On approval,
-append the next available ADR without editing D063/D065, then implement and qualify.
+queue status rewrites; it is not just a new mutable `turns.status` value. D066 records this decision without editing D063/D065.
+[Implementation and qualification evidence](../reviews/2026-11-05-durable-stop.md).
 
 ## Current evidence
 

@@ -46,6 +46,14 @@ outbox ownership. No live/native cancellation acceptance is inferred. This does
 not close cancellation-before-freeze or published-delivery settlement gates.
 [Implementation evidence](reviews/2026-11-05-stopped-result-publication.md).
 
+## D066 implementation boundary — 2026-11-05
+
+PR #176 has automated durable Stop, late-result, failure/race and restart evidence.
+Accepted Stop now acknowledges without sending partial answer/code/voice or a final
+reply memo. Real Telegram/client behavior and native exit qualification are not
+inferred from these tests. No deployment or foreground activation in this slice.
+[Implementation evidence](reviews/2026-11-05-durable-stop.md).
+
 ## Latest open gates
 - 2026-11-03: ordinary Codex nonce continuity, bounded Stop/process exit and
   post-Stop resume passed; tiny PDF delivered into test topic `3176309` and

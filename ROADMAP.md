@@ -29,7 +29,7 @@ preserved. Exact-main CI and Telegram `/version` passed. Pi controller only;
 | Work | Current status | Remaining step |
 |---|---|---|
 | Concurrent queue idle handoff | Fixed and merged as `01cc7e0` (PR #168); review and required CI pass | Deployed as `d58cdd2`; [evidence](docs/reviews/2026-11-04-queue-idle-handoff.md) |
-| CP-002 final delivery | In progress; immutable ready plans and recovery deployed | Foreground cutover, persistent cancellation and full preview/reply-action parity; D065 merged, process-local final ownership merged in PR #174, rollout pending |
+| CP-002 final delivery | In progress; immutable ready plans and recovery deployed | Qualified foreground cutover and full preview/reply-action parity; D065 and D066 merged, rollout/native acceptance pending |
 | CP-016 topic deletion | In progress; runtime/store/outbox fences deployed | Durable legacy ownership, ambiguity/managed settlement, native-login qualification, confirmed delete command |
 | CP-007 backups | In progress; backup foundation deployed | Timer/retention, full capture and restore command/drill; leases only for online matched mode |
 | CP-004 managed tasks | Partial implementation; activation off | Settlement/visibility and schedule policy; credential adapter remains owner-deferred |
@@ -101,8 +101,7 @@ handoff against late Stop after joined previews; review and local full/race chec
 and required CI pass; merged as `40f368f`, not deployed. Persistent frozen cancellation, terminal-error UI and
 complete preview ownership remain separate gates. PR #175 adds a publication
 fence against currently stopped result members and boot recovery holds; review
-and full checks/races/required CI passed; merged as `a63c324`, not deployed. Durable cancellation intent before native completion
-and settlement of already published delivery remain open. The [durable Stop contract](docs/plans/2026-11-05-durable-stop-intent.md) is proposed for owner decision; no ledger implementation is claimed.
+and full checks/races/required CI passed; merged as `a63c324`, not deployed. Settlement of already published delivery remains a separate gate. The owner accepted [D066](docs/plans/2026-11-05-durable-stop-intent.md); PR #176 implements durable Stop and late completion evidence. Review, final checks/races and required CI passed; merged as `51fbb7a`, no deployment or foreground activation. The known task IPC receipt/archive race recurred in CI and remains an open reliability fix before further cutover work.
 
 ## Parallel sessions — CP-037 (P0 and P1 merged and deployed in legacy mode, P2+ not started)
 

@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-05 (durable Stop contract prepared)
+**Last updated:** 2026-11-05 (D066 durable Stop merged)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -13,17 +13,45 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — D066 implementation in progress, 2026-11-05
+## Resume here — D066 durable Stop merged, 2026-11-05
 
-Owner accepted the [durable Stop contract](plans/2026-11-05-durable-stop-intent.md).
-D066 records the decision. Branch `feat/durable-stop-intent`, base `c9a362f`.
-Implement immutable complete-batch intent before cancel/acceptance, reciprocal
-publication/start/recovery fences, typed Stop outcomes and late completion evidence.
-Stop UI becomes acknowledgement-only. No deployment or foreground activation.
-Schema/host implementation is present. Initial review found terminal-error and
-deferred-cancel races, now corrected with regressions; expanded races/full checks passed. Final review passed before a small native
-fallback-admission correction; delta review and final checks are running. [Evidence](reviews/2026-11-05-durable-stop.md).
-CI/merge remain pending. Completion snapshots are return evidence, not native exit.
+PR [#176](https://github.com/Coriol-is/gopod/pull/176) squash-merged as `51fbb7a`.
+Ordinary Stop records immutable full-batch attempt/conversation intent before
+native cancellation or acceptance. Reciprocal Store publication checks and native
+admission/recovery fences survive turn-status rewrites. Pending Stop joins issued
+previews and fences terminal success/errors; failed/unknown commit holds output
+without early native cancellation. Independent shutdown remains supported.
+
+Accepted Stop sends only fixed acknowledgement/control retirement, no new answer,
+code/voice upload or final-answer memo. Separate immutable completion snapshots
+retain late returned text and fixed error classes; they are not native exit proof.
+Backup counts/migration cover three additive tables. Foreground producer remains
+disconnected. [D066 contract](plans/2026-11-05-durable-stop-intent.md) and
+[implementation evidence](reviews/2026-11-05-durable-stop.md).
+
+Independent review PASS on source `37d4d07`, test-only final head `e7d2347` also
+reviewed. Final build/vet/all tests pass; full Store/Telegram/control/cmd races
+pass, final Telegram repeat 58.008 s. Required exact-head
+[CI 42035806824](https://github.com/Coriol-is/gopod/actions/runs/42035806824)
+is green after one failed-job rerun. Attempt 1 hit the unchanged known IPC race
+below; no timeout/fixture was altered. Final-head Sonar gate OK at 13:27:39 UTC:
+24 code smells, 0 bugs/vulnerabilities. Merged source matches reviewed head.
+
+**First next action:** address the independently confirmed
+[task IPC receipt/archive race](reviews/2026-11-02-task-ipc-replay-race.md) with its
+retained deterministic regression and a qualified protocol fix. It recurred in
+CI; local 20-repeat race passes do not disprove it. Current-source diagnostic
+confirms lost replay receipt without duplicate task mutation. D066 does not fix it.
+Then finish general preview/control generation ownership and reply-action parity
+before qualified foreground cutover. Native/client acceptance remains separate;
+CP-002/003 remain in progress. CP-016 stays the separate retirement lane; backup
+stays lowered and managed credentials/parallel execution remain deferred.
+
+**Deployment:** #173–#176 are not deployed; last verified Pi revision `d58cdd2`.
+No live Telegram/provider/production mutation. Older binaries cannot honor the
+new cancellation ledger: do not dispatch unresolved intent-bound work after
+rollback. No implementation work remains in flight for this slice. Keep canonical
+main and session worktree; remove completed branch after verified integration.
 
 ## Stopped-result publication fence merged, 2026-11-05
 

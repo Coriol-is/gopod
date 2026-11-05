@@ -108,10 +108,13 @@ checks/races and required CI pass; merged as `a63c324`. [Evidence](../reviews/20
 No schema or activation change. Immutable cancellation intent before native
 completion and published-delivery settlement remain open. Not deployed.
 
-## Durable Stop decision pending — 2026-11-05
+## D066 implementation — 2026-11-05
 
-The [proposed implementation contract](../plans/2026-11-05-durable-stop-intent.md)
-separates immutable cancellation intent, native outcome and delivery ownership.
-It is awaiting owner architecture decision; no ledger/schema or activation is
-implemented. On acceptance, record the ADR and follow the plan's regression gates.
-CP-002 remains in-progress.
+Owner accepted the [durable Stop contract](../plans/2026-11-05-durable-stop-intent.md).
+PR #176 implements immutable complete-batch intent before native cancellation,
+reciprocal publication fences, typed Stop outcomes, preview sealing and late
+completion evidence. Accepted Stop sends acknowledgement/control retirement only.
+Merged as `51fbb7a`; independent review, final checks/races and required CI pass. [Evidence](../reviews/2026-11-05-durable-stop.md).
+No deployment or foreground activation. Native exit/remote delivery remain
+separate evidence; full preview metadata/reply-action parity and producer cutover
+are still open. CP-002 remains in-progress.
