@@ -35,6 +35,13 @@ review, full checks/races and required CI. [Evidence](reviews/2026-11-05-stopped
 This does not persist cancellation intent before native completion or settle
 published delivery, and does not enable the foreground producer. Not deployed.
 
+## Durable Stop contract checkpoint — 2026-11-05
+
+[Proposed contract](plans/2026-11-05-durable-stop-intent.md) is ready for owner
+architecture decision: immutable batch/attempt cancellation intent, typed Stop
+outcomes and late-result settlement. No implementation or activation. Current
+status-only publication fence remains as implemented in #175.
+
 ## Current priority
 
 Use [ROADMAP execution priority](../ROADMAP.md#execution-priority--2026-11-04),

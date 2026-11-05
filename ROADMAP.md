@@ -102,7 +102,7 @@ and required CI pass; merged as `40f368f`, not deployed. Persistent frozen cance
 complete preview ownership remain separate gates. PR #175 adds a publication
 fence against currently stopped result members and boot recovery holds; review
 and full checks/races/required CI passed; merged as `a63c324`, not deployed. Durable cancellation intent before native completion
-and settlement of already published delivery remain open.
+and settlement of already published delivery remain open. The [durable Stop contract](docs/plans/2026-11-05-durable-stop-intent.md) is proposed for owner decision; no ledger implementation is claimed.
 
 ## Parallel sessions — CP-037 (P0 and P1 merged and deployed in legacy mode, P2+ not started)
 
