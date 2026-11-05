@@ -72,3 +72,11 @@ run separately under race and passed (6.870s); production code did not change.
 Independent review provisionally passed the same production source and repeated
 focused receipt tests under race. Exact commit confirmation/required CI remain
 root integration gates; no deployment or live acceptance is claimed.
+
+## Integration checkpoint
+
+PR [#171](https://github.com/Coriol-is/gopod/pull/171), tip `b26b4a9` (source
+`cab98d7`), passed independent review, full build/vet/test and full Store/Telegram
+race. Both required jobs in [CI 41950007596](https://github.com/Coriol-is/gopod/actions/runs/41950007596)
+and Sonar gate passed before squash merge `930586a`. No deployment or live
+Telegram/login/deletion action occurred; unknown-outcome gates remain open.
