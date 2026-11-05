@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-05 (D068 receipt identity implementation)
+**Last updated:** 2026-11-05 (D067/D068 task IPC repair merged)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -13,21 +13,35 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — D067/D068 receipt identity implementation, 2026-11-05
+## Resume here — D067/D068 task IPC repair merged, 2026-11-05
 
-Owner accepted the [receipt identity amendment](plans/2026-11-05-task-ipc-receipt-identity.md)
-as D068. Draft PR #177 / `feat/task-ipc-claims` now adds exact snapshot requestHash
-and a hash-matching executable consumer example in the seeded scheduling guide.
-D067's claim/recovery implementation remains on the same branch. Prior checkpoint
-`52e4826` required CI 42042725242 passed; this is not acceptance of new changes.
+PR [#177](https://github.com/Coriol-is/gopod/pull/177) merged as `cbdd9e3`.
+Task IPC claims the original file into a host-only spool before dispatch and
+archives its immutable snapshot; a same-name replacement remains pending.
+Recovery binds Store scope/epoch, preserves journal results and terminal outcomes,
+and processes claims fairly. D068 adds exact-byte requestHash and a tested seeded
+consumer that matches filename+hash before accepting status. Hash proves historical
+bytes, not current authorization or freshness. [Evidence](reviews/2026-11-05-task-ipc-claims.md).
 
-**First next action:** wait for final-head required CI and inspect advisory Sonar,
-then integrate PR #177. Independent source review PASS; actual seeded Node consumer
-and deterministic crash/replay tests pass. Full build/vet/all tests and affected
-races pass (IPC 70.370 s, cmd 32.825 s, templates 1.198 s; unchanged Store/scheduler
-cached). Final test-only production-scope workflow races pass 16.962 s. Existing guide seeding preserves files: live consumers need migration
-before claiming D068 acceptance. No deployment or Telegram/provider mutation;
-last verified Pi `d58cdd2`. [Evidence](reviews/2026-11-05-task-ipc-claims.md).
+Independent review PASS on final source `fdc5ac7`, including final test-only scope
+fixture. Full build/vet/all tests and affected races pass. Exact-head required
+[CI 42048402467](https://github.com/Coriol-is/gopod/actions/runs/42048402467) passes
+both jobs without rerun. Sonar exact-head gate OK at 14:47:25 UTC: 8 code smells,
+0 bugs/vulnerabilities; findings read, none suppressed. Merged source/tests match.
+
+**First next action:** resume CP-002 general preview/control generation ownership
+and reply-action parity, then qualified foreground producer/cutover. The task IPC
+code repair is complete under D067/D068; do not reopen it as the old archive race.
+CP-016 remains the separate retirement lane; backup stays lowered, managed-task
+credentials and parallel execution remain deferred.
+
+**Deployment / migration:** #173–#177 are not deployed; last verified Pi `d58cdd2`.
+Existing SCHEDULING.md/scripts must adopt filename+hash matching before live
+receipt acceptance; Seed preserves existing files. Status-only legacy consumers
+remain unqualified. The claim spool is not covered by complete IPC restore: drain
+before downgrade or hold task IPC while preserving spool/SQLite. No live Telegram,
+provider or user-schedule mutation. No implementation remains in flight. Keep
+canonical and session worktrees; remove completed branches after integration.
 
 ## D066 durable Stop merged, 2026-11-05
 

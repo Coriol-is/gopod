@@ -1,6 +1,6 @@
 # D067 amendment: bind task receipts to submitted bytes
 
-Status: accepted by owner 2026-11-05 as D068; implementation in progress.
+Status: accepted by owner 2026-11-05 as D068; implemented in PR #177 (`cbdd9e3`); not deployed.
 Parent: [accepted claim contract](2026-11-05-task-ipc-claim-contract.md).
 
 ## Why the accepted contract needs amendment

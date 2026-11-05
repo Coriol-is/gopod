@@ -1,7 +1,10 @@
 # Task IPC replay receipt/archive race
 
-2026-11-02. Open, pre-existing receipt-liveness defect. Investigated at `81f5f08`;
-no production or test-fixture behavior changed in this checkpoint.
+Historical finding from 2026-11-02, investigated at `81f5f08`.
+Source repair merged 2026-11-05 in PR #177 (`cbdd9e3`) under D067/D068;
+[qualification and consumer migration boundary](2026-11-05-task-ipc-claims.md).
+Not deployed. The investigation and old-source diagnostic below remain historical
+evidence, not a claim that the current hash-aware implementation has this defect.
 
 ## Finding
 
@@ -42,7 +45,7 @@ replaces the input with identical bytes, releases archival, and checks:
 
 The diagnostic passed at `81f5f08`, reporting
 `confirmed: replacement archived, receipt absent, exactly one task`.
-Its PASS asserts the defect, not correctness. To repeat, copy the retained file
+Its PASS asserts the defect, not correctness. To repeat on the original `81f5f08` baseline, copy the retained file
 to `internal/ipc/zz_task_replay_repro_test.go`, run
 `go test ./internal/ipc -run '^TestDiagnosticReplayReplacementArchivedWithoutReceipt$' -count=1 -v`,
 then remove only that temporary copy. The diagnostic uses temporary SQLite/files
@@ -65,7 +68,7 @@ introduce the ordering or fixture. Deploying that wave is not acceptance or a
 fix of this defect. Keep it explicitly open rather than broadening deployment
 with an unqualified IPC redesign or rerunning a failed job until green.
 
-## Fix constraints
+## Original fix constraints (satisfied by D067/D068 qualification)
 
 A future fix needs a deterministic regression that rejects this interleaving
 and preserves crash/restart recovery, source-scoped authorization, bounded

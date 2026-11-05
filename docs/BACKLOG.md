@@ -45,15 +45,15 @@ independent review, final full checks/races and required CI (one IPC-failure rer
 [Evidence](reviews/2026-11-05-durable-stop.md). No deployment or foreground activation.
 Late return evidence does not establish native exit or resolve uncertain delivery.
 
-## Nearby verification issue — 2026-11-05
+## Task IPC repair merged — 2026-11-05
 
-The existing [task IPC receipt/archive race](reviews/2026-11-02-task-ipc-replay-race.md)
-recurred in PR #176 CI attempt 1 (`same-delete` receipt timeout). IPC source is
-unchanged; 20 local race repetitions pass but do not close it. The retained
-deterministic diagnostic also confirms replacement archival without receipt on
-current source; one task only, no duplicate mutation. Keep its deterministic
-production regression/fix as an open reliability item; D066 does not fix it.
-Reconfirmed at `1972dd3` (diagnostic 0.909 s). D067 was accepted and claim implementation is in progress on `feat/task-ipc-claims`. [Review](reviews/2026-11-05-task-ipc-claims.md) confirms the new receipt-attribution crash blocker; the owner accepted the [consumer identity amendment](plans/2026-11-05-task-ipc-receipt-identity.md) as D068. Host hash binding and the matching seeded consumer are implemented; final review/checks are in progress. No merge/deployment or live consumer migration yet.
+The [task IPC receipt/archive race](reviews/2026-11-02-task-ipc-replay-race.md) is
+fixed in source by PR #177 (`cbdd9e3`), under D067/D068. Host-only durable claims
+prevent replacement archival, journal pins preserve replay authority, and hash-aware
+consumers reject old success for changed bytes. Independent review, full checks/
+races and required CI pass. [Evidence](reviews/2026-11-05-task-ipc-claims.md).
+No deployment: Pi remains `d58cdd2`. Existing consumer guides/scripts need migration;
+status-only clients are not qualified. Complete IPC backup/restore remains separate.
 
 ## Current priority
 

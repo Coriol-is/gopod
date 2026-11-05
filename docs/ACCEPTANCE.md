@@ -56,7 +56,7 @@ inferred from these tests. No deployment or foreground activation in this slice.
 
 ## D067/D068 task IPC consumer migration — 2026-11-05
 
-PR #177 has local deterministic claim/restart and executable Node consumer evidence.
+PR #177 merged as `cbdd9e3` with deterministic claim/restart and executable Node consumer evidence.
 This is not live acceptance. Before qualification on Pi, preserve operator-edited
 SCHEDULING.md/scripts and migrate their task receipt handling to match original
 filename plus SHA-256 of the exact submitted bytes, including error receipts.

@@ -1,6 +1,6 @@
 # Task IPC request ownership before receipt publication
 
-Status: accepted by owner 2026-11-05 as D067; implementation in progress.
+Status: accepted by owner 2026-11-05 as D067; implemented in PR #177 (`cbdd9e3`); not deployed.
 Design baseline: `1972dd3`; implementation baseline `0d18156`. This is a repair of the accepted
 same-filename replay contract, not a new user-facing task feature.
 
