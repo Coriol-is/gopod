@@ -33,7 +33,9 @@ process death, not the power-loss observation window in the accepted contract.
 
 Independent review corrections and focused regressions pass; full build/vet/tests
 and full IPC/Store/scheduler/cmd races pass (89.474/103.053/19.707/35.571 s).
-CI/Sonar status is recorded separately in the linked report. Overall review is
+Draft [PR #177](https://github.com/Coriol-is/gopod/pull/177) preserves source/test
+checkpoint `6d0c891`; CI 42042595921 was in progress and Sonar NOT_COMPUTED at
+handoff. Keep this feature branch/worktree; canonical main is unchanged. Overall review is
 still blocked by the attribution diagnostic, regardless of check results. No live
 Telegram/provider calls or deployment; last verified Pi remains `d58cdd2`.
 CP-002 preview/reply-action/cutover follows completion of this IPC repair.

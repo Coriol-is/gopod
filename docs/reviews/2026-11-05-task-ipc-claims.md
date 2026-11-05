@@ -73,3 +73,13 @@ The legacy caller treats status + filename as authority. It can observe the old
 success before the later correct conflict. Neither passing regression suites nor
 required CI can waive this independent review blocker. RequestHash plus matching
 consumer behavior is proposed but not implemented or accepted yet.
+
+## Published checkpoint
+
+Draft PR [#177](https://github.com/Coriol-is/gopod/pull/177), production/test
+checkpoint `6d0c891dfa6ecaaca46cdbc292fe3fcfe84758d5`. Required
+[CI 42042595921](https://github.com/Coriol-is/gopod/actions/runs/42042595921)
+was in progress at handoff, not claimed green. Sonar CLI for PR #177 returned
+`NOT_COMPUTED`; no fresh analysis or findings inventory was available yet.
+No suppressions, merge or deployment. Retain the feature branch/worktree for
+accepted amendment implementation; do not clean up unresolved work.
