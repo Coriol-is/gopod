@@ -19,11 +19,15 @@ Owner requested continuation. Base `29eea1b` is clean; main CI for `dacefc0`,
 `c396579` and `29eea1b` passed. New bounded implementation streams:
 
 - `feat/delivery-outcomes`, canonical sibling `gopod-delivery-outcomes`: durable
-  refused-versus-ambiguous upload outcome prerequisites under D063. Exact slice
-  is being checked against current Store/dispatcher contracts before editing.
+  photo-refused → document fallback becomes a separate fenced durable attempt,
+  committed before the second HTTP call. Current production does both inside one
+  attempt. Same immutable bytes/routing; no fallback on ambiguous outcomes.
+  Full conditional code-inline assembly remains a later foreground gate.
 - `feat/topic-reconcile`, canonical sibling `gopod-topic-reconcile`: evidence-based
-  ambiguity reconciliation or native-login exit qualification under D064; no
-  invented absence proof or automatic expiration of unresolved outcomes.
+  receipt-backed ownership repair under D064. A bounded in-process registry may
+  retry DB acknowledgement for an exact successful Telegram receipt, never resend
+  HTTP. Unknown outcomes and receipts lost on crash remain held. No invented
+  absence proof or automatic expiration of unresolved outcomes.
 
 Both require independent review, full checks, affected races and exact-head CI.
 Root owns global docs/integration; agents own separate source/report files and
