@@ -131,6 +131,9 @@ func (b *Bot) QuiesceTopic(ctx context.Context, expected store.TopicDeletion) er
 	if err = b.topicTransport.Wait(ctx, strconv.FormatInt(key.chat, 10), -1); err != nil {
 		return err
 	}
+	if err = b.reconcileMessageReceipts(ctx, func(r messageReceipt) bool { return r.owner.ChatID == key.chat && r.owner.SourceThread == key.thread }); err != nil {
+		return err
+	}
 	b.topicMu.Lock()
 	uncertain := b.topicUncertain[key] || b.topicUncertain[chatThread{key.chat, -1}]
 	b.topicMu.Unlock()

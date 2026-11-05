@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-04 (delivery and topic slices reviewed and merged)
+**Last updated:** 2026-11-05 (delivery outcomes and topic prerequisites resumed)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -13,7 +13,39 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — backup lowered, delivery and topic lifecycle resumed
+## Resume here — next delivery/topic slices, 2026-11-05
+
+Owner requested continuation. Base `29eea1b` is clean; main CI for `dacefc0`,
+`c396579` and `29eea1b` passed. New bounded implementation streams:
+
+- `feat/delivery-outcomes`, canonical sibling `gopod-delivery-outcomes`: durable
+  photo-refused → document fallback becomes a separate fenced durable attempt,
+  committed before the second HTTP call. Current production does both inside one
+  attempt. Same immutable bytes/routing; no fallback on ambiguous outcomes.
+  Full conditional code-inline assembly remains a later foreground gate.
+- `feat/topic-reconcile`, canonical sibling `gopod-topic-reconcile`: evidence-based
+  receipt-backed ownership repair under D064. A bounded in-process registry may
+  retry DB acknowledgement for an exact successful Telegram receipt, never resend
+  HTTP. Unknown outcomes and receipts lost on crash remain held. No invented
+  absence proof or automatic expiration of unresolved outcomes.
+
+Implementation checkpoint: receipt repair PR [#171](https://github.com/Coriol-is/gopod/pull/171),
+source `cab98d7` / docs tip `b26b4a9`, passed independent review, full build/vet/test
+and full Store/Telegram race. Required CI is pending. Registry cap 128, 30-second
+cooldown and a shared at-most-five-second/caller-shorter budget are tested.
+Upload fallback passed preliminary independent review/focused race; full checks
+are running. Its report explicitly warns that old binaries ignore selected
+branches: do not downgrade with pending alternatives without inspection/settlement.
+No new source slice has merged or deployed at this checkpoint.
+
+Both require independent review, full checks, affected races and exact-head CI.
+Root owns global docs/integration; agents own separate source/report files and
+coordinate shared schema changes. No foreground activation, delete command,
+production deployment or live login is included. Backup remains lowered;
+managed-task credentials and CP-037 parallel execution remain deferred.
+
+## Previous priority and queue checkpoint
+
 
 PR [#168](https://github.com/Coriol-is/gopod/pull/168) squash-merged as `01cc7e0`
 after independent review of `af266ad`, full build/vet/test, queue race checks,
