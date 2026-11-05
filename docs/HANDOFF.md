@@ -13,16 +13,20 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## In flight — generation-bound preview controls
+## Resume here — preview controls merged, 2026-11-05
 
-Branch `fix/preview-generation-controls`, based on `3a889c2`. The next bounded
-CP-002 fix binds draft metadata and Stop-keyboard creation to the captured
-registration instead of recapturing a replacement by turn ID. PR #178 source `74cef1d`: full build/vet/tests, Telegram races and independent
-review PASS; required CI and advisory Sonar pending. Wait-placeholder/refresher ownership,
-durable control binding, reply-action parity and foreground cutover remain separate.
-No production change or deployment.
+PR [#178](https://github.com/Coriol-is/gopod/pull/178) merged as `da8b4fe`.
+Draft metadata and Stop-keyboard generation now bind to the captured registration;
+a retired handler cannot overwrite/clear its replacement's draft or acquire its
+Stop token. Full build/vet/tests, Telegram races, independent review and exact-head
+required CI PASS; advisory Sonar OK (two existing code smells, no suppression).
+[Review and evidence](reviews/2026-11-05-preview-generation-controls.md).
 
-## Resume here — Pi rollout and cleanup complete, 2026-11-05
+**First next action:** generation-bound wait-placeholder/refresher ownership and
+durable control binding, then reply-action parity and qualified foreground cutover.
+No implementation in flight. #178 is not deployed; Pi remains `757faa2`.
+
+## Last deployment — Pi rollout and cleanup complete, 2026-11-05
 
 Pi controller deployed as `757faa2` at 15:11:59 UTC; no worker deployment.
 PRs #173–#177 are now deployed. Exact-main CI passed, candidate isolated readiness
@@ -42,7 +46,7 @@ All 20 matched-stopped, three database-only anchors, manual/auth baselines,
 rollback images and guide originals retained; backup directory now 275 MiB.
 Separate 556 KiB NanoClaw/OneCLI/systemd archives retained. No broad Docker prune.
 
-**First next action:** continue CP-002 preview/control generation ownership and
+**Remaining sequence:** CP-002 preview/control generation ownership and
 reply-action parity, then qualified foreground cutover. CP-016 retirement remains
 a separate lane. Backup stays lowered; managed credentials/parallel execution
 remain deferred. Foreground producer disconnected, managed tasks off. No source

@@ -35,6 +35,10 @@ Completed queue/delivery/Stop/IPC slices and superseded queues have moved to the
 Stable milestone IDs and their implementation record below remain a reference,
 not extra active queue entries. Partial proposals are not marked complete.
 
+CP-002 bounded draft/Stop-keyboard generation fix merged in #178 (`da8b4fe`),
+with review and required CI passed; not deployed. Wait maps/durable control
+binding, reply-action parity and qualified foreground cutover remain open.
+
 ## Execution priority — 2026-11-04
 
 Owner-approved order, refreshed 2026-11-05 after removing completed queue repair.

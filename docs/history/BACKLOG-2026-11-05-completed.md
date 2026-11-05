@@ -25,6 +25,13 @@ in [757faa2](../deployments/2026-11-05-stop-ipc-rollout.md). The old queue basel
 failure and task receipt/archive race are historical repaired defects, not active
 work. The separate runner force-drain observation remains in the active backlog.
 
+## Subsequent completed slice — pending rollout
+
+PR #178 (`da8b4fe`) binds draft metadata and Stop keyboards to the captured
+registration. Full/race checks, independent review and required CI passed;
+[review](../reviews/2026-11-05-preview-generation-controls.md). Not deployed;
+Pi remains `757faa2`. Wait maps/durable control binding and parent CP-002 remain open.
+
 ## Completed operations
 
 - Pi controller-only release `757faa2`: exact-main CI, isolated readiness,

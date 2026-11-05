@@ -1,6 +1,6 @@
 # CP-002 generation-bound draft and Stop controls
 
-Base `3a889c2`; reviewed source `74cef1d`; PR #178.
+Base `3a889c2`; reviewed source `74cef1d`; PR #178 merged as `da8b4fe`.
 
 ## Selected gap
 
@@ -30,7 +30,13 @@ No protocol/schema/activation changes or new architectural decision.
 - Full build/vet/all tests: PASS; full Telegram race suite: PASS (63.360 s).
 - Independent bounded source review: PASS; independent focused races PASS
   (12.358 s). No blocking findings; wait-map/control-binding exclusions retained.
-- Required PR CI and advisory Sonar pending at this checkpoint.
+- Required exact-head [CI 42070485100](https://github.com/Coriol-is/gopod/actions/runs/42070485100):
+  test and Docker isolation PASS on `3428996`, no rerun.
+- Advisory Sonar on `3428996`, 2026-11-05 17:01:36 UTC: gate OK, zero bugs/
+  vulnerabilities, two code smells. Existing empty no-op unregister (`go:S1186`)
+  and wait-refresher complexity (`go:S3776`) were read; none suppressed.
+- Squash `da8b4fe` has identical application source/tests to reviewed PR head.
+  Merge followed independent review and green required CI.
 
 ## Remaining boundaries
 

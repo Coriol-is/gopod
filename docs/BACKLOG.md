@@ -13,7 +13,9 @@ here; proposed, deferred and paused work is not cancelled.
 ## Current priority
 
 1. CP-002 delivery with necessary CP-003 slices: preview/control generation ownership,
-   reply-action parity, then qualified foreground producer/cutover.
+   reply-action parity, then qualified foreground producer/cutover. Draft binding and
+   Stop-keyboard generation are fixed in #178 (`da8b4fe`, not deployed); wait maps
+   and durable control binding remain open.
 2. CP-016 full topic retirement.
 3. CP-018 per-conversation provider/model selection.
 4. CP-019 group command/service UX.
@@ -24,13 +26,6 @@ here; proposed, deferred and paused work is not cancelled.
 The independent acceptance lane starts with CP-040 A22–A25, then remaining
 Stop/restart and isolation checks. Coordinate one Telegram actor and avoid overlap
 with deployment/auth changes. No new work is activated by this reconciliation.
-
-## In-flight slice — preview controls
-
-Draft metadata and Stop-keyboard generation binding are being fixed on
-`fix/preview-generation-controls`; [scope and verification](reviews/2026-11-05-preview-generation-controls.md).
-PR #178: local full/race checks and independent review pass; CI pending.
-This is not full preview ownership or foreground cutover.
 
 ## Current deployed baseline
 
