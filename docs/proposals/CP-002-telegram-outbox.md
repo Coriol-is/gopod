@@ -98,3 +98,12 @@ full checks, full Telegram races and required CI pass; merged as `40f368f`. Not 
 [Evidence and scope limits](../reviews/2026-11-05-final-owner-handoff.md).
 Persistent frozen cancellation, complete preview/control ownership, reply-action
 integration and foreground producer activation remain open. Status in-progress.
+
+## Stopped-result publication fence — 2026-11-05
+
+PR #175 refuses new interactive-result publication when any member is currently
+persisted as stopped, inside the publication transaction. Boot retains the plan
+as a hold; existing publications remain outbox-owned. Independent review, full
+checks/races and required CI pass; merged as `a63c324`. [Evidence](../reviews/2026-11-05-stopped-result-publication.md).
+No schema or activation change. Immutable cancellation intent before native
+completion and published-delivery settlement remain open. Not deployed.

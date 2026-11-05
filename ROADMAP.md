@@ -99,7 +99,10 @@ integration and unknown remote reconciliation/delete orchestration remain open;
 backup priority unchanged. PR #174 adds a bounded process-local successful-final
 handoff against late Stop after joined previews; review and local full/race checks
 and required CI pass; merged as `40f368f`, not deployed. Persistent frozen cancellation, terminal-error UI and
-complete preview ownership remain separate gates.
+complete preview ownership remain separate gates. PR #175 adds a publication
+fence against currently stopped result members and boot recovery holds; review
+and full checks/races/required CI passed; merged as `a63c324`, not deployed. Durable cancellation intent before native completion
+and settlement of already published delivery remain open.
 
 ## Parallel sessions — CP-037 (P0 and P1 merged and deployed in legacy mode, P2+ not started)
 

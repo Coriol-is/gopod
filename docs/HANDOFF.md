@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-05 (final-owner handoff merged)
+**Last updated:** 2026-11-05 (stopped-result publication fence merged)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -13,16 +13,33 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — stopped-result publication fence in progress, 2026-11-05
+## Resume here — stopped-result publication fence merged, 2026-11-05
 
-Branch `fix/stopped-result-publication`, base `fea0d6a`. Recovery currently can
-publish a ready final plan whose turn is durably stopped. Add a transactional
-publication fence for unpublished interactive results with any stopped member;
-keep immutable evidence and classify the refusal as a visible recovery hold.
-Existing publication is still outbox-owned. Focused tests pass; independent review
-and full checks are running. [Evidence](reviews/2026-11-05-stopped-result-publication.md). No deployment.
-This does not implement durable Stop intent before native completion, or cancel
-already published parts. Foreground producer remains disconnected.
+PR [#175](https://github.com/Coriol-is/gopod/pull/175) merged as `a63c324`.
+New interactive-result publication now checks all member turns transactionally:
+any current durable `stopped` status holds the whole result. Boot reports the hold
+and continues other plans; immutable results/plans and reservations remain intact.
+Existing publications retain outbox ownership. No schema change.
+
+Independent review PASS on `e741cc4`; full build/vet/test and full Store/cmd races
+pass (26.995 s / 16.459 s). Exact-head required
+[CI 42024900290](https://github.com/Coriol-is/gopod/actions/runs/42024900290)
+passes (test and Docker isolation). Sonar exact-head gate OK, 4 code smells,
+0 bugs/vulnerabilities, analysis 12:10:33 UTC. Merged source matches reviewed head.
+[Evidence and limits](reviews/2026-11-05-stopped-result-publication.md).
+
+**First next action:** implement durable cancellation intent before native
+completion and explicit late-result settlement, preserving native NoReplay
+and outbox sending/uncertain evidence. This fence only checks current turn status;
+it is not an immutable cancellation ledger. Then complete preview/control generation
+ownership, reply-action parity and the qualified foreground producer/cutover.
+CP-002/003 stay in progress; CP-016 remains the separate retirement lane. Backup
+stays lowered; managed-task credentials and parallel execution remain deferred.
+
+**Deployment:** #173–#175 are not deployed. Last verified Pi revision `d58cdd2`.
+No Telegram/provider/production mutation in this slice; producer stays disconnected.
+No implementation remains in flight for this slice. Completed feature branch is
+removed after verified integration; canonical main and session worktree retained.
 
 ## Successful-final ownership merged, 2026-11-05
 

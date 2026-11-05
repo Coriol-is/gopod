@@ -38,6 +38,14 @@ This is not deployment or native/client acceptance. Persistent frozen-result
 cancellation, full preview ownership and foreground cutover remain unqualified.
 [Implementation evidence](reviews/2026-11-05-final-owner-handoff.md).
 
+## Stopped-result publication boundary — 2026-11-05
+
+PR #175 has Store/boot-recovery evidence that currently persisted Stop holds an
+unpublished result across DB reopen; it preserves immutable plans and existing
+outbox ownership. No live/native cancellation acceptance is inferred. This does
+not close cancellation-before-freeze or published-delivery settlement gates.
+[Implementation evidence](reviews/2026-11-05-stopped-result-publication.md).
+
 ## Latest open gates
 - 2026-11-03: ordinary Codex nonce continuity, bounded Stop/process exit and
   post-Stop resume passed; tiny PDF delivered into test topic `3176309` and
