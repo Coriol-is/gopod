@@ -134,15 +134,15 @@ func TestPhotoLimitsAcceptTheBoundaries(t *testing.T) {
 	}
 }
 
-func TestPhotoExplicitlyRejectedByTelegramFallsBackToTheSameBytesAsADocument(t *testing.T) {
+func TestPhotoExplicitRefusalReturnsBranchDecisionWithoutSecondCall(t *testing.T) {
 	data := realPNG(t, 50, 50)
 	for _, desc := range photoRefusalTokens {
 		api := &fakeAPI{msg: &models.Message{ID: 9}, photoErr: fmt.Errorf("%w, Bad Request: %s", bot.ErrorBadRequest, desc) /* library shape, see the real-library tests */}
 		out := photoTransport(api, data).Attempt(t.Context(), photoReq())
-		if out.Kind != OutcomeAck || out.RemoteMessageID != 9 {
+		if out.Kind != OutcomeRefused || out.Code != "photo_refused" || out.HTTPStatus != 400 {
 			t.Fatalf("%s: %+v", desc, out)
 		}
-		if api.photos != 1 || api.docs != 1 || !bytes.Equal(api.docBytes, data) {
+		if api.photos != 1 || api.docs != 0 {
 			t.Fatalf("%s: photos=%d docs=%d same bytes=%v", desc, api.photos, api.docs, bytes.Equal(api.docBytes, data))
 		}
 	}
@@ -175,10 +175,10 @@ func TestPhotoFailureOtherThanAPhotoRefusalNeverSendsADocument(t *testing.T) {
 	}
 }
 
-func TestPhotoFallbackDocumentFailureIsClassifiedAndNotRepeated(t *testing.T) {
+func TestPhotoRefusalDoesNotAttemptDocumentInsideTransport(t *testing.T) {
 	api := &fakeAPI{err: context.DeadlineExceeded, photoErr: fmt.Errorf("%w, Bad Request: PHOTO_INVALID_DIMENSIONS", bot.ErrorBadRequest)}
 	out := photoTransport(api, realPNG(t, 50, 50)).Attempt(t.Context(), photoReq())
-	if out.Kind != OutcomeAmbiguous || api.photos != 1 || api.docs != 1 {
+	if out.Kind != OutcomeRefused || out.Code != "photo_refused" || api.photos != 1 || api.docs != 0 {
 		t.Fatalf("%+v photos=%d docs=%d", out, api.photos, api.docs)
 	}
 }
@@ -295,7 +295,7 @@ func TestPhotoFallbackTriggerIsExactOnTheLibrarysRealError(t *testing.T) {
 		api := newLibAPI(t, 400, apiFail(400, c.desc, ""), 200, okMessage)
 		out := photoTransport(api, data).Attempt(t.Context(), photoReq())
 		if c.wantDoc {
-			if out.Kind != OutcomeAck || api.count("sendPhoto") != 1 || api.count("sendDocument") != 1 {
+			if out.Kind != OutcomeRefused || out.Code != "photo_refused" || out.HTTPStatus != 400 || api.count("sendPhoto") != 1 || api.count("sendDocument") != 0 {
 				t.Fatalf("%s: %+v photo=%d doc=%d", c.name, out, api.count("sendPhoto"), api.count("sendDocument"))
 			}
 			continue
@@ -360,7 +360,7 @@ func TestPhotoRefusalWithAnEndedContextSendsNoDocument(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	api := &cancelOnPhoto{fakeAPI: fakeAPI{msg: &models.Message{ID: 1}, photoErr: fmt.Errorf("%w, Bad Request: PHOTO_INVALID_DIMENSIONS", bot.ErrorBadRequest)}, cancel: cancel}
 	out := photoTransport(api, realPNG(t, 50, 50)).Attempt(ctx, photoReq())
-	if out.Kind != OutcomeNotSent || out.Code != codePhotoRefusedCanceled || api.docs != 0 {
+	if out.Kind != OutcomeRefused || out.Code != "photo_refused" || api.docs != 0 {
 		t.Fatalf("%+v docs=%d", out, api.docs)
 	}
 }
@@ -504,24 +504,8 @@ func TestPhotoSnapshotReadFailureAndOversizeAreRefusedBeforeAnyCall(t *testing.T
 	}
 }
 
-// A photo refusal that outlived its attempt context must stay counted by the
-// dispatcher: the part is retried only within the budget and then fails.
-func TestPhotoRefusedCanceledConsumesTheRetryBudget(t *testing.T) {
-	f := newOutboxFixture(t)
-	tr := &fakeTransport{script: func(int, SendRequest) Outcome {
-		return Outcome{Kind: OutcomeNotSent, Code: codePhotoRefusedCanceled}
-	}}
-	f.start(f.owner, tr, fastCfg())
-	d := f.publish(f.conv, "a")
-	diag := f.waitState(d.ID, store.DeliveryFailed)
-	if diag.Parts[0].Attempts != store.MaxPartAttempts || diag.Parts[0].ReasonCode != "retry_budget_exhausted" {
-		t.Fatalf("diag %+v", diag)
-	}
-	quiet(t, tr, store.MaxPartAttempts)
-}
-
-// The refunded code, for contrast, is not counted (documents the difference).
-func TestCanceledBeforeDispatchIsRefundedButPhotoRefusedCanceledIsNot(t *testing.T) {
+// A canceled-before-dispatch attempt does not consume the retry budget.
+func TestCanceledBeforeDispatchIsRefunded(t *testing.T) {
 	f := newOutboxFixture(t)
 	n := 0
 	tr := &fakeTransport{script: func(c int, _ SendRequest) Outcome {

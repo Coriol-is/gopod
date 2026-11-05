@@ -93,17 +93,18 @@ func (o *OutboxOwner) checkFenceQ(ctx context.Context, q taskSQL) error {
 
 // OutboxClaim is one part committed as sending, with its attempt row and fence.
 type OutboxClaim struct {
-	PlainFallback bool
-	DeliveryID    string
-	PartID        string
-	ResultID      string
-	Conversation  ConversationScope
-	Ordinal       int
-	Part          DeliveryPart
-	Attempt       int // number of this attempt, starting at 1
-	AttemptID     int64
-	Fence         string
-	ExpiresAt     int64
+	PlainFallback    bool
+	DocumentFallback bool
+	DeliveryID       string
+	PartID           string
+	ResultID         string
+	Conversation     ConversationScope
+	Ordinal          int
+	Part             DeliveryPart
+	Attempt          int // number of this attempt, starting at 1
+	AttemptID        int64
+	Fence            string
+	ExpiresAt        int64
 }
 
 // maxStaleSkips bounds how many stale-scope groups one claim call cancels.
@@ -222,6 +223,18 @@ func nextCandidateQ(ctx context.Context, q taskSQL, nowMs int64) (OutboxClaim, b
 	}
 	c.Part.Kind, c.Part.Payload = PartKind(kind), payload
 	c.Conversation.Visibility, c.ResultID = Visibility(vis), result.String
+	var branchHash string
+	err = q.QueryRowContext(ctx, `SELECT source_part_hash FROM outbox_document_fallbacks WHERE part_id=?`, c.PartID).Scan(&branchHash)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return OutboxClaim{}, false, err
+	}
+	if err == nil {
+		if c.Part.Kind != PartUpload || c.Part.ParseMode != UploadPresentationPhoto || branchHash != partHash(c.Ordinal, c.Part) {
+			return OutboxClaim{}, false, ErrInvalidDelivery
+		}
+		c.DocumentFallback = true
+		c.Part.ParseMode = ""
+	}
 	return c, true, nil
 }
 
@@ -601,10 +614,11 @@ type DeliveryDiagnostic struct {
 	Total      int
 	// Acknowledged counts sent parts; AckedPrefix is the contiguous sent run
 	// from ordinal 0 that must never be resent.
-	Acknowledged   int
-	AckedPrefix    int
-	Parts          []PartDiagnostic
-	PlainFallbacks int
+	Acknowledged      int
+	AckedPrefix       int
+	Parts             []PartDiagnostic
+	PlainFallbacks    int
+	DocumentFallbacks int
 }
 
 // Summary renders a one-line status without payloads, paths or raw errors.
@@ -619,6 +633,9 @@ func (d DeliveryDiagnostic) Summary() string {
 	if d.PlainFallbacks > 0 {
 		s += fmt.Sprintf("; %d parts sent as plain text", d.PlainFallbacks)
 	}
+	if d.DocumentFallbacks > 0 {
+		s += fmt.Sprintf("; %d photos sent as documents", d.DocumentFallbacks)
+	}
 	return s
 }
 
@@ -630,6 +647,9 @@ func (s *Store) DeliveryDiagnostic(ctx context.Context, id string) (DeliveryDiag
 	}
 	out := DeliveryDiagnostic{DeliveryID: d.ID, State: d.State, Unresolved: d.Unresolved, Total: len(d.Parts)}
 	if err := s.taskDB(ctx).QueryRowContext(ctx, `SELECT count(*) FROM outbox_plain_fallbacks f JOIN outbox_parts p ON p.part_id=f.part_id WHERE p.delivery_id=? AND p.state='sent'`, id).Scan(&out.PlainFallbacks); err != nil {
+		return DeliveryDiagnostic{}, err
+	}
+	if err := s.taskDB(ctx).QueryRowContext(ctx, `SELECT count(*) FROM outbox_document_fallbacks f JOIN outbox_parts p ON p.part_id=f.part_id WHERE p.delivery_id=? AND p.state='sent'`, id).Scan(&out.DocumentFallbacks); err != nil {
 		return DeliveryDiagnostic{}, err
 	}
 	prefix := true

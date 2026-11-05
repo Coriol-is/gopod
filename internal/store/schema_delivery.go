@@ -127,7 +127,7 @@ var deliverySchemaStatements = []string{
 }
 
 func (s *Store) applyDeliverySchema(ctx context.Context) error {
-	for i, stmt := range append(deliverySchemaStatements, plainFallbackSchema) {
+	for i, stmt := range append(deliverySchemaStatements, plainFallbackSchema, documentFallbackSchema, `CREATE TRIGGER IF NOT EXISTS outbox_document_fallback_immutable BEFORE UPDATE ON outbox_document_fallbacks BEGIN SELECT RAISE(ABORT,'document branch is immutable'); END`) {
 		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
 			return fmt.Errorf("delivery statement %d: %w\n--- sql ---\n%s", i, err, stmt)
 		}
