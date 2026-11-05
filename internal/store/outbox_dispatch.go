@@ -144,6 +144,9 @@ func (o *OutboxOwner) claimOnce(ctx context.Context, now time.Time) (out OutboxC
 		if err := cancelDeletedTopicPendingQ(ctx, q, nowMs); err != nil {
 			return err
 		}
+		if err := advanceCodePlansQ(ctx, q, nowMs); err != nil {
+			return codePlanError(err)
+		}
 		if err := expireDueQ(ctx, q, nowMs); err != nil {
 			return err
 		}
@@ -203,6 +206,8 @@ func nextCandidateQ(ctx context.Context, q taskSQL, nowMs int64) (OutboxClaim, b
  g.result_id,g.expires_at,g.namespace_id,g.namespace_epoch,g.registration_revision,g.chat_jid,g.chat_folder,g.thread_id,g.visibility
  FROM outbox_parts p JOIN delivery_groups g ON g.delivery_id=p.delivery_id
  WHERE p.state=? AND p.next_attempt_at<=?
+ AND NOT EXISTS (SELECT 1 FROM outbox_code_plans cp WHERE cp.delivery_id=p.delivery_id AND cp.selected_mask IS NULL AND p.ordinal>=cp.prefix_count)
+ AND NOT EXISTS (SELECT 1 FROM outbox_code_plans cp JOIN delivery_groups h ON h.delivery_id=cp.delivery_id WHERE cp.selected_mask IS NULL AND cp.terminal_reason='' AND h.expires_at>? AND h.namespace_id=g.namespace_id AND h.namespace_epoch=g.namespace_epoch AND h.thread_id=g.thread_id AND h.visibility=g.visibility AND h.conversation_seq<g.conversation_seq)
  AND NOT EXISTS (
   SELECT 1 FROM topic_deletions d WHERE d.namespace_id=g.namespace_id
   AND d.namespace_epoch=g.namespace_epoch AND d.thread_id=g.thread_id
@@ -212,7 +217,7 @@ func nextCandidateQ(ctx context.Context, q taskSQL, nowMs int64) (OutboxClaim, b
   WHERE h.namespace_id=g.namespace_id AND h.namespace_epoch=g.namespace_epoch AND h.thread_id=g.thread_id AND h.visibility=g.visibility
   AND q.state IN ('pending','sending','uncertain') AND h.expires_at>?
   AND (h.conversation_seq<g.conversation_seq OR (h.conversation_seq=g.conversation_seq AND q.ordinal<p.ordinal)))
- ORDER BY p.next_attempt_at,g.created_at,p.ordinal LIMIT 1`, PartPending, nowMs, nowMs).
+ ORDER BY p.next_attempt_at,g.created_at,p.ordinal LIMIT 1`, PartPending, nowMs, nowMs, nowMs).
 		Scan(&c.PartID, &c.DeliveryID, &c.Ordinal, &kind, &payload, &c.Part.ArtifactRef, &c.Part.ParseMode, &c.Part.ReplyMarkup, &c.Part.TargetMessageID, &c.Part.ReplyToMessageID, &c.Attempt,
 			&result, &c.ExpiresAt, &sc.NamespaceID, &sc.NamespaceEpoch, &sc.RegistrationRevision, &sc.JID, &sc.Folder, &c.Conversation.ThreadID, &vis)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -222,6 +227,9 @@ func nextCandidateQ(ctx context.Context, q taskSQL, nowMs int64) (OutboxClaim, b
 		return OutboxClaim{}, false, err
 	}
 	c.Part.Kind, c.Part.Payload = PartKind(kind), payload
+	if _, _, _, e := readCodePlanQ(ctx, q, c.DeliveryID); e != nil && !errors.Is(e, sql.ErrNoRows) {
+		return OutboxClaim{}, false, e
+	}
 	c.Conversation.Visibility, c.ResultID = Visibility(vis), result.String
 	var branchHash string
 	err = q.QueryRowContext(ctx, `SELECT source_part_hash FROM outbox_document_fallbacks WHERE part_id=?`, c.PartID).Scan(&branchHash)
@@ -275,6 +283,11 @@ func expireDueQ(ctx context.Context, q taskSQL, nowMs int64) error {
 // resolvePendingQ moves every still-pending part of a delivery to a terminal
 // state and refreshes the aggregate.
 func resolvePendingQ(ctx context.Context, q taskSQL, deliveryID, state, reason string, nowMs int64) error {
+	if reason != "prior_part_failed" {
+		if _, err := q.ExecContext(ctx, `UPDATE outbox_code_plans SET terminal_reason=? WHERE delivery_id=? AND terminal_reason=''`, reason, deliveryID); err != nil {
+			return err
+		}
+	}
 	if _, err := q.ExecContext(ctx, `UPDATE outbox_parts SET state=?,reason_code=?,updated_at=? WHERE delivery_id=? AND state=?`, state, reason, nowMs, deliveryID, PartPending); err != nil {
 		return err
 	}
@@ -614,11 +627,12 @@ type DeliveryDiagnostic struct {
 	Total      int
 	// Acknowledged counts sent parts; AckedPrefix is the contiguous sent run
 	// from ordinal 0 that must never be resent.
-	Acknowledged      int
-	AckedPrefix       int
-	Parts             []PartDiagnostic
-	PlainFallbacks    int
-	DocumentFallbacks int
+	Acknowledged        int
+	AckedPrefix         int
+	Parts               []PartDiagnostic
+	PlainFallbacks      int
+	DocumentFallbacks   int
+	CodeInlineFallbacks int
 }
 
 // Summary renders a one-line status without payloads, paths or raw errors.
@@ -636,6 +650,9 @@ func (d DeliveryDiagnostic) Summary() string {
 	if d.DocumentFallbacks > 0 {
 		s += fmt.Sprintf("; %d photos sent as documents", d.DocumentFallbacks)
 	}
+	if d.CodeInlineFallbacks > 0 {
+		s += fmt.Sprintf("; %d code documents recovered inline", d.CodeInlineFallbacks)
+	}
 	return s
 }
 
@@ -646,6 +663,11 @@ func (s *Store) DeliveryDiagnostic(ctx context.Context, id string) (DeliveryDiag
 		return DeliveryDiagnostic{}, err
 	}
 	out := DeliveryDiagnostic{DeliveryID: d.ID, State: d.State, Unresolved: d.Unresolved, Total: len(d.Parts)}
+	if d.State == DeliverySent {
+		if err := s.taskDB(ctx).QueryRowContext(ctx, `SELECT count(*) FROM outbox_parts p JOIN outbox_code_plans c USING(delivery_id) WHERE p.delivery_id=? AND p.reason_code='code_inline_refused' AND c.selected_mask IS NOT NULL`, id).Scan(&out.CodeInlineFallbacks); err != nil {
+			return DeliveryDiagnostic{}, err
+		}
+	}
 	if err := s.taskDB(ctx).QueryRowContext(ctx, `SELECT count(*) FROM outbox_plain_fallbacks f JOIN outbox_parts p ON p.part_id=f.part_id WHERE p.delivery_id=? AND p.state='sent'`, id).Scan(&out.PlainFallbacks); err != nil {
 		return DeliveryDiagnostic{}, err
 	}

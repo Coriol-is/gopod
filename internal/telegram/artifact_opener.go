@@ -28,6 +28,10 @@ const quarantineTimeout = 10 * time.Second
 // ErrArtifactUnavailable is returned for any artifact that cannot be uploaded.
 var ErrArtifactUnavailable = errors.New("telegram: artifact unavailable")
 
+// ErrArtifactContentUnavailable proves local missing/corrupt snapshot bytes,
+// unlike inventory, authorization, scope, cancellation or transient I/O errors.
+var ErrArtifactContentUnavailable = fmt.Errorf("%w: content unavailable", ErrArtifactUnavailable)
+
 // ArtifactInventory is the part of the store the opener needs.
 type ArtifactInventory interface {
 	GetArtifact(ctx context.Context, id string) (store.Artifact, error)
@@ -63,6 +67,9 @@ func (o *SnapshotOpener) OpenArtifact(ctx context.Context, ref, namespaceID stri
 		return "", nil, fmt.Errorf("%w: scope", ErrArtifactUnavailable)
 	}
 	if art.State != store.ArtifactReady {
+		if art.State == store.ArtifactQuarantined {
+			return "", nil, ErrArtifactContentUnavailable
+		}
 		return "", nil, fmt.Errorf("%w: state %s", ErrArtifactUnavailable, art.State)
 	}
 	data, err := o.Blobs.ReadVerified(art.BlobKey, art.Size, art.SHA256, o.MaxBytes)
@@ -84,6 +91,9 @@ func (o *SnapshotOpener) OpenArtifact(ctx context.Context, ref, namespaceID stri
 			if o.Log != nil {
 				o.Log.Error("artifact quarantined before upload", "artifact", id, "reason", reason)
 			}
+		}
+		if reason != "" {
+			return "", nil, ErrArtifactContentUnavailable
 		}
 		return "", nil, fmt.Errorf("%w: blob", ErrArtifactUnavailable)
 	}

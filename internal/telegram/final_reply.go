@@ -47,9 +47,17 @@ func (b *Bot) PrepareFrozenFinalReply(ctx context.Context, resultID string, pres
 	if _, err := parseOutboxMarkup(presentation.ReplyMarkup); err != nil {
 		return store.Delivery{}, err
 	}
-	input := finalReplyInput{Version: 1, Presentation: presentation}
+	input := finalReplyInput{Version: 2, Presentation: presentation}
 	if presentation.Mode != "text" && b.prepared.Speech != nil && b.prepared.Speech.Backend != nil {
 		input.VoiceBackend = b.prepared.Speech.Backend.Name()
+	}
+	// Preserve the identity of already-recorded v1 inputs/plans. Their bytes
+	// must never be upgraded during a retry or recovery.
+	if prior, e := b.store.GetFinalReply(ctx, resultID); e == nil {
+		var old finalReplyInput
+		if json.Unmarshal(prior.Input, &old) == nil && old.Version == 1 {
+			input.Version = 1
+		}
 	}
 	raw, err := json.Marshal(input)
 	if err != nil {
@@ -73,16 +81,23 @@ func (b *Bot) PrepareFrozenFinalReply(ctx context.Context, resultID string, pres
 	if text == "" {
 		text = "(empty reply)"
 	}
-	plan := store.FinalReplyPlan{Request: store.PublishRequest{ResultID: resultID, Conversation: result.Conversation, Owner: store.OwnerControllerResult}}
+	plan := store.FinalReplyPlan{Request: store.PublishRequest{ResultID: resultID, Conversation: result.Conversation, Owner: store.OwnerControllerResult, ExpiresAt: intent.CreatedAt + store.DefaultDeliveryExpiry.Milliseconds()}}
 	wantText := presentation.Streaming || presentation.Mode != "voice" || stripCodeBlocks(text) != text
 	wantVoice := presentation.Mode == "voice" || presentation.Mode == "voice+text"
 
 	// Code preparation is deterministic from the immutable source, never from a
 	// mutable model workspace. A failed snapshot keeps that exact block inline.
+	var codePreparations []string
 	if wantText {
 		split := splitLongCode(text)
 		extracted := make([]bool, len(split.docs))
+		if len(split.docs) > store.MaxCodeDocuments {
+			plan.Notes = append(plan.Notes, "code_alternatives_budget_inline")
+		}
 		for i, doc := range split.docs {
+			if len(split.docs) > store.MaxCodeDocuments {
+				break
+			}
 			prep, ref, err := b.prepareFinalCode(ctx, result, doc, i)
 			if err != nil {
 				if ctx.Err() != nil {
@@ -92,28 +107,13 @@ func (b *Bot) PrepareFrozenFinalReply(ctx context.Context, resultID string, pres
 				continue
 			}
 			extracted[i] = true
+			codePreparations = append(codePreparations, prep)
 			plan.Preparations = append(plan.Preparations, prep)
 			plan.Request.Parts = append(plan.Request.Parts, store.DeliveryPart{Kind: store.PartUpload, Payload: []byte(doc.caption()), ArtifactRef: ref})
 		}
-		rendered := finalReplyHTML(split.text(extracted))
-		chunks := chunkHTML(rendered, 4000)
-		for i, chunk := range chunks {
-			part := store.DeliveryPart{Kind: store.PartText, Payload: []byte(chunk), ParseMode: "HTML"}
-			// Match sendChunks: only the first text chunk threads to the input.
-			// Documents have their own captions and never take that reply target.
-			if i == 0 {
-				part.ReplyToMessageID = presentation.ReplyToMessageID
-			}
-			if presentation.EditMessageID != 0 && len(chunks) == 1 {
-				part.Kind = store.PartEdit
-				part.TargetMessageID = presentation.EditMessageID
-				part.ReplyToMessageID = 0
-			}
-			if i == len(chunks)-1 {
-				part.ReplyMarkup = presentation.ReplyMarkup
-			}
-			plan.Request.Parts = append(plan.Request.Parts, part)
-		}
+		plan.Request.CodeAlternatives = freezeCodeAlternatives(split, extracted, presentation)
+		plan.Request.Parts = append(plan.Request.Parts, frozenTextParts(split.text(extracted), presentation)...)
+
 	}
 	if len(plan.Request.Parts) > store.MaxDeliveryParts || (wantVoice && len(plan.Request.Parts) == store.MaxDeliveryParts) {
 		return store.Delivery{}, store.ErrInvalidDelivery
@@ -142,11 +142,18 @@ func (b *Bot) PrepareFrozenFinalReply(ctx context.Context, resultID string, pres
 						// deliverSyncReply sends voice before documents and text.
 						// Preparation still completes before any dispatch or publish.
 						plan.Request.Parts = append([]store.DeliveryPart{voice}, plan.Request.Parts...)
+						if a := plan.Request.CodeAlternatives; a != nil {
+							a.Prefix++
+							for i := range a.Documents {
+								a.Documents[i]++
+							}
+						}
 					}
 				}
 			}
 		}
 	}
+	boundFinalCodePlan(&plan, text, presentation, codePreparations)
 	if len(plan.Request.Parts) == 0 {
 		return store.Delivery{}, ErrFinalReplyNoOutput
 	}

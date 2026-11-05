@@ -7,6 +7,7 @@ package store
 // test TestRowCountSQLCoversEverySchemaTable fails when a table is added to the
 // schema without being added here.
 var rowCountSQL = map[string]string{
+	"outbox_code_plans":         "SELECT count(*) FROM outbox_code_plans",
 	"outbox_document_fallbacks": "SELECT count(*) FROM outbox_document_fallbacks",
 	"final_reply_intents":       "SELECT count(*) FROM final_reply_intents",
 	"elevated_sessions":         "SELECT count(*) FROM elevated_sessions",
