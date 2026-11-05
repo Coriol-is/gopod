@@ -454,8 +454,11 @@ func (b *Bot) runAgentSync(ctx context.Context, item queue.Item) error {
 // The streaming setup fallback passes its already registered child context here.
 func (b *Bot) runAgentSyncContext(ctx, runCtx context.Context, item queue.Item) error {
 	ctx, handoff, _ := b.finalHandoff(ctx, item.ID)
-	if finalGenerationRetired(ctx) {
-		return finalOwnershipLost{}
+	if err := generationRunError(ctx); err != nil {
+		if errors.Is(err, queue.ErrStopped) {
+			return b.finishBufferedStopped(ctx, item)
+		}
+		return err
 	}
 	tier := runner.TierRegistered
 	if item.IsOwner {
@@ -479,18 +482,34 @@ func (b *Bot) runAgentSyncContext(ctx, runCtx context.Context, item queue.Item) 
 		}
 	}
 	reply, err := run(runCtx, item.Folder, item.ThreadID, tier, prompt)
-	if noReplayError(err) {
-		b.replyError(ctx, item, err)
-		return err
+	if saveErr := b.observeStopCompletion(ctx, runner.RunResult{FullText: reply, Err: err}); saveErr != nil {
+		return errors.Join(err, saveErr)
 	}
 	if handled, stopErr := b.streamNotStarted(ctx, runCtx, item); handled {
+		if noReplayError(err) {
+			return errors.Join(err, stopErr)
+		}
 		return stopErr
 	}
 	if err != nil {
+		b.stopWaitDraftRefresh(item)
+		if ownershipErr := handoff(ctx); ownershipErr != nil {
+			if errors.Is(ownershipErr, queue.ErrStopped) {
+				stopped := b.finishBufferedStopped(ctx, item)
+				if noReplayError(err) {
+					return errors.Join(err, stopped)
+				}
+				return stopped
+			}
+			return errors.Join(err, ownershipErr)
+		}
 		if ph := b.popWaitPlaceholder(item); ph != 0 {
 			b.editMessage(ctx, item.ChatID, ph, "Answer failed.")
 		}
 		b.replyError(ctx, item, err)
+		if noReplayError(err) {
+			return err
+		}
 		return nil
 	}
 	if b.waitPlaceholder(item) != 0 {
@@ -614,6 +633,11 @@ func (b *Bot) NewAgentHandler() queue.Handler {
 		if item.Source == "task" {
 			return b.runTaskSilently(ctx, item)
 		}
+		bound, err := b.bindOrdinaryBatch(ctx, items)
+		if err != nil {
+			return &stopPersistenceError{err}
+		}
+		ctx = bound
 		var runErr error
 		if b.streamEnabled {
 			runErr = b.runAgentStreaming(ctx, item)

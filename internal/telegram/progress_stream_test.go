@@ -217,7 +217,7 @@ func TestStreamReply_StopDuringProgress(t *testing.T) {
 }
 
 // Stop after answer text started: that text is the reply.
-func TestStreamReply_StopAfterAnswerTextDeliversIt(t *testing.T) {
+func TestStreamReply_StopAfterAnswerTextAcknowledgesOnly(t *testing.T) {
 	fake := &fakeTelegram{}
 	okDrafts(fake, "779")
 	b, item := newStreamFixture(t, fake)
@@ -235,7 +235,7 @@ func TestStreamReply_StopAfterAnswerTextDeliversIt(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 	go s.finish("x")
-	if got := fake.callsTo("sendMessage")[0].Form["text"]; !strings.Contains(got, "Half an answer") || strings.Contains(got, "⚙️") {
+	if got := fake.callsTo("sendMessage")[0].Form["text"]; got != stoppedEmpty {
 		t.Errorf("stopped reply = %q", got)
 	}
 }

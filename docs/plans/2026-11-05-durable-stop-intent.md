@@ -1,10 +1,10 @@
 # CP-002 durable Stop intent and late-result settlement
 
-Status: proposed implementation contract; owner decision required.
+Status: accepted by owner 2026-11-05; D066. Implementation in progress.
 Baseline: `85640de`, with #174 process-local handoff and #175 stopped-publication fence.
-No implementation, activation, deployment or new accepted ADR in this change.
+Acceptance does not imply implementation, activation or deployment.
 
-## Decision requested
+## Accepted decision
 
 Use a separate immutable cancellation-intent ledger, keyed by exact turn attempt
 and bound to the complete admitted batch and conversation scope. Record it before

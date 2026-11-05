@@ -17,7 +17,7 @@ type finalGeneration struct {
 // A replacement before this function returns cannot change that identity. A new
 // registration always replaces an inherited binding, even for the same turn ID.
 func (b *Bot) registerFinalGeneration(ctx context.Context, item queue.Item, cancel context.CancelFunc) (context.Context, func()) {
-	turn, unregister := b.registerInflightTurn(item.ID, item.ChatID, item.ThreadID, cancel)
+	turn, unregister := b.registerInflightTurn(item.ID, item.ChatID, item.ThreadID, cancel, func(t *inflightTurn) { b.configureDurableStop(ctx, t) })
 	return context.WithValue(ctx, finalGenerationKey{}, finalGeneration{item.ID, turn}), unregister
 }
 
@@ -69,8 +69,19 @@ func (finalOwnershipLost) Error() string  { return "telegram: final reply genera
 func (finalOwnershipLost) NoReplay() bool { return true }
 
 func (t *inflightTurn) beginFinal() error {
-	t.phaseMu.Lock()
+	for {
+		t.phaseMu.Lock()
+		pending := t.stopPending
+		if pending == nil {
+			break
+		}
+		t.phaseMu.Unlock()
+		<-pending
+	}
 	defer t.phaseMu.Unlock()
+	if t.stopErr != nil {
+		return t.stopErr
+	}
 	if t.retired {
 		return finalOwnershipLost{}
 	}

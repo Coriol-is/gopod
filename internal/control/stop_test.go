@@ -1,6 +1,7 @@
 package control
 
 import (
+	"context"
 	"errors"
 	"testing"
 )
@@ -9,10 +10,13 @@ func TestStopCommandPermissionAndScope(t *testing.T) {
 	r := New(nil)
 	var chats []int64
 	var threads []int
-	RegisterStopCommand(r, func(chat int64, thread int) bool {
+	RegisterStopCommand(r, func(_ context.Context, chat int64, thread int) StopOutcome {
 		chats = append(chats, chat)
 		threads = append(threads, thread)
-		return len(chats) == 1
+		if len(chats) == 1 {
+			return StopAccepted
+		}
+		return StopAlreadyRequested
 	})
 	cmd := Command{Name: "stop", Caller: Caller{Source: SourceTelegram, ChatKind: "private", ChatID: 123, ThreadID: 7, MessageID: 42}}
 	if _, err := r.Dispatch(t.Context(), cmd); !errors.Is(err, ErrNotAuthorized) {

@@ -57,7 +57,7 @@ func (b *Bot) waitNotice(ctx context.Context, item queue.Item) runner.WaitNotice
 	return func(reason runner.WaitReason) {
 		text := waitText(reason)
 		if ph := b.waitPlaceholder(item); ph != 0 {
-			b.editMessageKB(ctx, item.ChatID, ph, text, b.turnKeyboard(item.ID))
+			withGenerationPreview(ctx, func() error { return b.editMessageKB(ctx, item.ChatID, ph, text, b.turnKeyboard(item.ID)) })
 			return
 		}
 		if b.draftsSupported(item.ChatID) {
@@ -66,6 +66,9 @@ func (b *Bot) waitNotice(ctx context.Context, item queue.Item) runner.WaitNotice
 			b.bindDraft(item.ID, item.ChatID, id)
 			opts := draftOpts{CanStop: stoppable, KeepOnStop: stoppable}
 			err := b.sendDraftOpts(ctx, item.ChatID, item.ThreadID, id, text, opts)
+			if errors.Is(err, errPreviewSealed) {
+				return
+			}
 			if err == nil {
 				b.startWaitDraftRefresh(ctx, item, id, text, opts, time.Time{})
 				return
@@ -142,7 +145,7 @@ func (b *Bot) popWaitPlaceholder(item queue.Item) int {
 func (b *Bot) takeWaitPlaceholder(ctx context.Context, item queue.Item) int {
 	ph := b.popWaitPlaceholder(item)
 	if ph != 0 {
-		b.editMessageKB(ctx, item.ChatID, ph, "", b.turnKeyboard(item.ID))
+		withGenerationPreview(ctx, func() error { return b.editMessageKB(ctx, item.ChatID, ph, "", b.turnKeyboard(item.ID)) })
 	}
 	return ph
 }
@@ -158,19 +161,20 @@ func (b *Bot) streamNotStarted(ctx, runCtx context.Context, item queue.Item) (bo
 	if runCtx.Err() == nil {
 		return false, nil
 	}
+	if hold := stopFailure(ctx); hold != nil {
+		return true, hold
+	}
 	ph := b.popWaitPlaceholder(item)
 	if ctx.Err() != nil {
 		return true, nil
 	}
 	b.log.Info("turn stopped without streamed output",
 		slog.Int64("turn", item.ID), slog.String("folder", item.Folder))
-	sent := ph
 	if ph != 0 {
 		b.editMessage(ctx, item.ChatID, ph, stoppedEmpty)
 	} else {
-		sent = b.sendFormatted(ctx, item.ChatID, item.ThreadID, item.MessageID, stoppedEmpty)
+		b.sendFormatted(ctx, item.ChatID, item.ThreadID, item.MessageID, stoppedEmpty)
 	}
-	b.recordReply(ctx, item, sent, stoppedEmpty)
 	b.turnStatus(item).Set(stStopped)
 	return true, queue.ErrStopped
 }

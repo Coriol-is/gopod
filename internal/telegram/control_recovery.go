@@ -112,7 +112,7 @@ func (b *Bot) controlTurnStatus(ctx context.Context, id, chat int64, thread, msg
 	if b.executionUncertain(ctx, binding.Scope.Folder) {
 		t.Error = "execution_unknown"
 	}
-	return recoveredStatus(t)
+	return b.recoveredStopStatus(ctx, t)
 }
 
 // RepairControls repairs inactive control messages, including terminal turns whose
@@ -207,10 +207,10 @@ func (b *Bot) repairControl(ctx context.Context, c store.ControlMessage) error {
 			}
 			text = string(out) + "…"
 		}
-		text = strings.TrimSpace(text + "\n\n" + recoveredStatus(t))
+		text = strings.TrimSpace(text + "\n\n" + b.recoveredStopStatus(ctx, t))
 	}
 	if text == "" {
-		text = recoveredStatus(t)
+		text = b.recoveredStopStatus(ctx, t)
 	}
 	parse := models.ParseMode("")
 	if c.Terminal && c.HTML {
@@ -298,4 +298,17 @@ func (b *Bot) controlEditAllowed(ctx context.Context, chat int64, msg int, kb mo
 		return false
 	}
 	return !(c.Terminal && stopMarkup(kb))
+}
+
+func (b *Bot) recoveredStopStatus(ctx context.Context, turn store.Turn) string {
+	if b.store != nil {
+		stopped, err := b.store.HasOrdinaryStop(ctx, turn.ID)
+		if err != nil {
+			return "Execution status is unavailable; reconciliation is required."
+		}
+		if stopped {
+			return "Stop requested. Native exit and any late result require reconciliation."
+		}
+	}
+	return recoveredStatus(turn)
 }

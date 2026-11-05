@@ -55,6 +55,13 @@ func (s *Store) StartTurnBatch(ctx context.Context, batch []TurnStart) ([]int, e
 			if folder != it.Folder || thread != it.ThreadID || source != it.Source || previous != it.Attempts || managed != 0 {
 				return ErrTurnBatchConflict
 			}
+			stopped, err := ordinaryStopForTurnQ(ctx, q, it.ID)
+			if err != nil {
+				return err
+			}
+			if stopped {
+				return &TurnBatchIneligibleError{TurnID: it.ID}
+			}
 			neverStartedInterrupted := status == TurnInterrupted && previous == 0
 			if (status != TurnPending && status != TurnRunning && !neverStartedInterrupted) || reply != 0 || frozen != 0 {
 				return &TurnBatchIneligibleError{TurnID: it.ID}

@@ -2275,3 +2275,27 @@ No rendering, model/TTS call or mutable file lookup occurs during recovery.
 Streaming/buffered voice order and presentation targets remain frozen.
 The accepted [contract](plans/2026-11-05-final-code-inline-alternatives.md) records
 validation, retention, rollback and foreground activation boundaries.
+
+
+## D066 — Durable ordinary Stop intent and late-result evidence
+
+**Status:** accepted by owner, 2026-11-05.
+
+Ordinary Stop records immutable complete batch/attempt and conversation identity
+before cancellation or acceptance. Cancellation intent is separate from native
+completion and delivery outcome. New publication and intent creation mutually
+exclude each other transactionally; already published effects remain outbox-owned.
+Exact duplicate requests are idempotent; partial membership/conflicting identity
+holds. Status rewrites cannot erase intent or authorize native replay.
+
+After accepted Stop, only fixed acknowledgement/control retirement is allowed;
+no new accumulated answer, code/voice upload or final-answer memo. Late result and
+NoReplay evidence are retained without automatic publication or execution replay.
+A result/handler return is not native exit proof. Failed/ambiguous Stop persistence
+never claims acceptance; live unknown evidence holds normal final output. After
+crash, authoritative absence of intent follows normal recovery, not invented Stop.
+
+The accepted [implementation contract](plans/2026-11-05-durable-stop-intent.md)
+defines binding, failure semantics, migration/backup tests and qualification.
+Foreground freeze activation and deployment remain separate gates. Managed task
+cancellation retains its own ledger.

@@ -5,9 +5,9 @@ package telegram
 // carrying (chat, message_thread_id, draft_id). Draft ids are a
 // process-local counter (newDraftID), so the in-flight registry below
 // records which turn owns which (chat, draft) and maps the update back
-// to its turn. The turn's agent context is cancelled, streamReply sends
-// the partial text as the real reply, and the queue marks the turn
-// stopped (terminal, never replayed).
+// to its turn. D066 persists the complete ordinary batch before native cancel.
+// The sender acknowledges Stop without sending new answer text or a reply memo;
+// late completion remains separate evidence, never native exit proof.
 //
 // The edit path (groups, chats that refuse drafts, the gate wait
 // placeholder) has no native Stop: its placeholder carries an inline
@@ -16,6 +16,8 @@ package telegram
 
 import (
 	"context"
+	"github.com/Coriol-is/gopod/internal/control"
+	"github.com/Coriol-is/gopod/internal/runner"
 	"github.com/Coriol-is/gopod/internal/store"
 	"github.com/google/uuid"
 	"log/slog"
@@ -26,14 +28,21 @@ import (
 
 // inflightTurn is one streaming turn that can be stopped.
 type inflightTurn struct {
-	scope      store.ScopeRef
-	token      string
-	messages   map[int]bool
-	cancel     context.CancelFunc
-	stopped    chan struct{} // closed on the first stop
-	phaseMu    sync.Mutex
-	finalizing bool
-	retired    bool
+	scope             store.ScopeRef
+	token             string
+	messages          map[int]bool
+	cancel            context.CancelFunc
+	stopped           chan struct{} // closed on the first stop
+	phaseMu           sync.Mutex
+	previewMu         sync.RWMutex
+	finalizing        bool
+	retired           bool
+	stopPending       chan struct{}
+	stopErr           error
+	intentID          string
+	persistStop       func(context.Context) (string, error)
+	persistCompletion func(context.Context, string, runner.RunResult) error
+	completion        *runner.RunResult
 
 	// home is the chat the turn answers in; only a button in that chat
 	// may stop it (stopTurn).
@@ -55,11 +64,14 @@ func (b *Bot) registerInflight(turnID int64, chatID int64, threadID int, cancel 
 	return unregister
 }
 
-func (b *Bot) registerInflightTurn(turnID int64, chatID int64, threadID int, cancel context.CancelFunc) (*inflightTurn, func()) {
+func (b *Bot) registerInflightTurn(turnID int64, chatID int64, threadID int, cancel context.CancelFunc, configure ...func(*inflightTurn)) (*inflightTurn, func()) {
 	if turnID == 0 {
 		return nil, func() {}
 	}
 	t := &inflightTurn{token: uuid.NewString(), messages: make(map[int]bool), cancel: cancel, stopped: make(chan struct{}), home: chatID, thread: threadID}
+	for _, setup := range configure {
+		setup(t)
+	}
 	b.inflightMu.Lock()
 	if b.inflight == nil {
 		b.inflight = make(map[int64]*inflightTurn)
@@ -125,32 +137,21 @@ func (b *Bot) handleGenerationStopped(ctx context.Context, upd *models.Update) {
 			slog.Int("draft_id", ev.DraftID))
 		return
 	}
-	if match.stop() {
+	if outcome := match.requestStop(ctx); outcome == control.StopAccepted {
 		b.log.InfoContext(ctx, "turn stopped by user",
 			slog.Int64("turn", turnID),
 			slog.Int64("chat_id", ev.Chat.ID),
 			slog.Int("draft_id", ev.DraftID))
+	} else if outcome == control.StopFailed {
+		b.log.ErrorContext(ctx, "Stop persistence unconfirmed", slog.Int64("turn", turnID))
+		b.sendFormatted(ctx, ev.Chat.ID, match.thread, 0, "Stop unconfirmed; answer held for reconciliation.")
 	}
 }
 
 // stop stops the turn once: it closes stopped and cancels the run.
 // Reports whether this call stopped it (false: already stopped).
 func (t *inflightTurn) stop() bool {
-	t.phaseMu.Lock()
-	if t.finalizing || t.retired {
-		t.phaseMu.Unlock()
-		return false
-	}
-	select {
-	case <-t.stopped:
-		t.phaseMu.Unlock()
-		return false
-	default:
-	}
-	close(t.stopped)
-	t.phaseMu.Unlock()
-	t.cancel()
-	return true
+	return t.requestStop(context.Background()) == control.StopAccepted
 }
 
 // stopTurn stops in-flight turn turnID when it answers in chatID, as the
@@ -175,6 +176,9 @@ func (b *Bot) stopTurn(turnID int64, chatID int64) bool {
 // in-flight turn: a late stop must never be retargeted to its successor.
 // Authorization belongs to the Router; this lookup scopes effects to chat/topic.
 func (b *Bot) StopCurrentTurn(chatID int64, threadID int) bool {
+	return b.RequestStopCurrentTurn(context.Background(), chatID, threadID) == control.StopAccepted
+}
+func (b *Bot) RequestStopCurrentTurn(ctx context.Context, chatID int64, threadID int) control.StopOutcome {
 	b.inflightMu.Lock()
 	var match *inflightTurn
 	var turnID int64
@@ -185,9 +189,13 @@ func (b *Bot) StopCurrentTurn(chatID int64, threadID int) bool {
 		}
 	}
 	b.inflightMu.Unlock()
-	if match == nil || !match.stop() {
-		return false
+	if match == nil {
+		return control.StopFinished
+	}
+	outcome := match.requestStop(ctx)
+	if outcome != control.StopAccepted {
+		return outcome
 	}
 	b.log.Info("turn stopped by user (command)", slog.Int64("turn", turnID), slog.Int64("chat_id", chatID), slog.Int("thread", threadID))
-	return true
+	return control.StopAccepted
 }

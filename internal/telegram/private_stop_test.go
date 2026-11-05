@@ -92,10 +92,16 @@ func TestPrivateStopPlaceholderSurvivesWaitAndStreaming(t *testing.T) {
 			case <-time.After(3 * time.Second):
 				t.Fatal("turn did not end")
 			}
-			if len(fake.callsTo("sendMessageDraft")) != 0 || len(fake.callsTo("sendMessage")) != 1 {
-				t.Fatal("private response did not reuse its placeholder")
+			want := 1
+			method := "editMessageText"
+			if stop {
+				want = 2
+				method = "editMessageReplyMarkup"
 			}
-			if hasStop(t, lastCall(t, fake, "editMessageText"), item.ID) {
+			if len(fake.callsTo("sendMessageDraft")) != 0 || len(fake.callsTo("sendMessage")) != want {
+				t.Fatal("wrong terminal presentation")
+			}
+			if hasStop(t, lastCall(t, fake, method), item.ID) {
 				t.Fatal("terminal reply kept Stop")
 			}
 		})
@@ -113,7 +119,7 @@ func TestPrivateStopCommandCancelsBufferedAnswer(t *testing.T) {
 	b, item := newStreamFixture(t, fake)
 	item.ThreadID = 7
 	b.router = control.New(nil)
-	control.RegisterStopCommand(b.router, b.StopCurrentTurn)
+	control.RegisterStopCommand(b.router, b.RequestStopCurrentTurn)
 	entered := make(chan struct{})
 	b.syncRun = func(ctx context.Context, _ string, _ int, _ runner.Tier, _ string) (string, error) {
 		close(entered)
@@ -174,7 +180,7 @@ func TestStopMenuPrivateOnly(t *testing.T) {
 	b, _ := newStreamFixture(t, fake)
 	b.router = control.New(nil)
 	control.RegisterBuiltins(b.router)
-	control.RegisterStopCommand(b.router, b.StopCurrentTurn)
+	control.RegisterStopCommand(b.router, b.RequestStopCurrentTurn)
 	b.publishCommands(t.Context())
 	calls := fake.callsTo("setMyCommands")
 	if len(calls) != 2 || strings.Contains(calls[0].Form["commands"], `"stop"`) || !strings.Contains(calls[1].Form["commands"], `"stop"`) {
