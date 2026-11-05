@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-05 (conditional code-inline contract proposed)
+**Last updated:** 2026-11-05 (D065 implementation and focused checks)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -13,7 +13,7 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — code-inline contract awaiting decision, 2026-11-05
+## Resume here — code-inline implementation in progress, 2026-11-05
 
 Owner requested the next CP-002 code-file-to-inline slice. Analysis found that
 upload refusal changes the complete rendered suffix, potentially its message
@@ -23,10 +23,13 @@ records storage/selection invariants, bounds, outcome policy, validation and
 rollback. Recommended: freeze all suffix variants for at most four code documents;
 use all-inline preparation beyond that or the 2 MiB variant budget. Alternative:
 linear fragments, which change successful presentation. This is an architectural
-contract extending D063 and needs the owner decision under CLAUDE workflow rules.
-No source changes, new deployment or live acceptance in this slice yet.
-Branch `feat/final-code-fallback`, base `a215a28`; next action is settle that
-contract, append the accepted ADR, then implement and validate. Do not treat the
+contract extending D063, accepted by the owner as D065.
+Implementation checkpoint: immutable conditional manifests, atomic suffix selection,
+conservative refusal classification, bounded planner and regression tests are now
+present locally. Focused planner/Store tests pass; full checks and final independent
+review remain pending. No deployment or live acceptance in this slice.
+Branch `feat/final-code-fallback`, base `a215a28`; next action is implement the accepted
+contract, then validate and independently review. Do not treat the
 proposal as an enabled implementation or a completed CP-002 milestone.
 
 ## Latest deployment — Pi, 2026-11-05

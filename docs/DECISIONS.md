@@ -2260,3 +2260,18 @@ startup never retries deletion or erases context. This slice does not expose
 fallback-to-main controls, remote ambiguity reconciliation, managed queue
 settlement, and the confirmed command's complete API/outcome/retirement sequence.
 See `docs/reviews/2026-11-03-topic-quiescence.md` for evidence and boundaries.
+
+## D065 — Bounded immutable code-inline alternatives
+
+**Status:** accepted by owner, 2026-11-05. Extends D063.
+
+Freeze the document prefix and every exact rendered text suffix before dispatch,
+with at most four extracted code documents and a 2 MiB conditional-manifest
+budget. Larger cases prepare all code inline without truncation; ordinary part
+limits still apply. Definitive eligible upload refusal selects inline code;
+unknown effects never permit replay. Selection is durable, scoped and fenced,
+and cannot mutate an already selected branch or an existing immutable part.
+No rendering, model/TTS call or mutable file lookup occurs during recovery.
+Streaming/buffered voice order and presentation targets remain frozen.
+The accepted [contract](plans/2026-11-05-final-code-inline-alternatives.md) records
+validation, retention, rollback and foreground activation boundaries.

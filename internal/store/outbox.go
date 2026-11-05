@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/Coriol-is/gopod/internal/telegramhtml"
@@ -91,15 +92,16 @@ type RequestIdentity struct {
 
 // PublishRequest is the authorized, frozen plan of one delivery.
 type PublishRequest struct {
-	Conversation ConversationScope
-	ResultID     string // empty for IPC messages; requires OwnerControllerResult
-	Owner        DeliveryOwner
-	ActorRef     string
-	TaskRef      string
-	RunRef       string
-	Parts        []DeliveryPart
-	ExpiresAt    int64            // unix ms; zero means DefaultDeliveryExpiry from now
-	Request      *RequestIdentity // optional
+	Conversation     ConversationScope
+	ResultID         string // empty for IPC messages; requires OwnerControllerResult
+	Owner            DeliveryOwner
+	ActorRef         string
+	TaskRef          string
+	RunRef           string
+	Parts            []DeliveryPart
+	CodeAlternatives *CodeAlternatives `json:",omitempty"`
+	ExpiresAt        int64             // unix ms; zero means DefaultDeliveryExpiry from now
+	Request          *RequestIdentity  // optional
 
 	// voicePresentation is set only by PublishVoiceDeliveryWithArtifacts, so
 	// the voice upload marker cannot come from a generic or untrusted route.
@@ -141,6 +143,9 @@ type Delivery struct {
 }
 
 func validatePublish(req PublishRequest, now int64) error {
+	if err := validateCodePlan(req); err != nil {
+		return err
+	}
 	if !req.Conversation.validShape() {
 		return fmt.Errorf("%w: conversation scope", ErrInvalidDelivery)
 	}
@@ -198,6 +203,10 @@ func planHash(req PublishRequest) string {
 		str(req.ResultID).str(req.ActorRef).str(req.TaskRef).str(req.RunRef).int(int64(len(req.Parts)))
 	for i, p := range req.Parts {
 		h.str(partHash(i, p))
+	}
+	if req.CodeAlternatives != nil {
+		raw, _ := json.Marshal(req.CodeAlternatives)
+		h.str("code_alternatives_v1").bytes(raw)
 	}
 	return h.sum()
 }
@@ -328,24 +337,30 @@ func publishDeliveryQ(ctx context.Context, q taskSQL, limits OutboxLimits, req P
  VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)`,
 		id, nullableString(req.ResultID), sc.NamespaceID, sc.NamespaceEpoch, sc.RegistrationRevision, sc.JID, sc.Folder,
 		conv.ThreadID, string(conv.Visibility), req.ActorRef, req.TaskRef, req.RunRef, string(req.Owner), seq,
-		req.ExpiresAt, hash, len(req.Parts), DeliveryPending, now, now); err != nil {
+		req.ExpiresAt, hash, codeCapacity(req), DeliveryPending, now, now); err != nil {
 		return Delivery{}, fmt.Errorf("store: insert delivery: %w", err)
 	}
 	for i, p := range req.Parts {
-		partID, e := newUUID()
-		if e != nil {
-			return Delivery{}, e
+		ordinal := i
+		if a := req.CodeAlternatives; a != nil {
+			end := a.Prefix + len(a.Variants[len(a.Variants)-1])
+			if i >= a.Prefix && i < end {
+				continue
+			}
+			if i >= end {
+				ordinal = codeCapacity(req) - 1
+			}
 		}
-		var payload any
-		if len(p.Payload) > 0 {
-			payload = p.Payload
-		}
-		if _, err = q.ExecContext(ctx, `INSERT INTO outbox_parts(part_id,delivery_id,ordinal,kind,payload,part_hash,artifact_ref,parse_mode,reply_markup,target_message_id,reply_to_message_id,state,next_attempt_at,updated_at)
- VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			partID, id, i, string(p.Kind), payload, partHash(i, p), p.ArtifactRef, p.ParseMode, p.ReplyMarkup, p.TargetMessageID, p.ReplyToMessageID, PartPending, now, now); err != nil {
-			return Delivery{}, fmt.Errorf("store: insert part %d: %w", i, err)
+		if err = insertOutboxPartQ(ctx, q, id, ordinal, p, now); err != nil {
+			return Delivery{}, err
 		}
 	}
+	if req.CodeAlternatives != nil {
+		if err = publishCodePlanQ(ctx, q, id, req); err != nil {
+			return Delivery{}, err
+		}
+	}
+
 	if r := req.Request; r != nil {
 		if _, err = q.ExecContext(ctx, `INSERT INTO ipc_message_requests(namespace_id,namespace_epoch,request_key,payload_hash,delivery_id,outcome,created_at) VALUES(?,?,?,?,?,'accepted',?)`,
 			sc.NamespaceID, sc.NamespaceEpoch, r.Key, r.PayloadHash, id, now); err != nil {
@@ -466,6 +481,9 @@ func (s *Store) CancelDelivery(ctx context.Context, id, reason string) (Delivery
 	var out Delivery
 	_, err := s.withTx(ctx, func(q taskSQL) error {
 		now := time.Now().UnixMilli()
+		if _, err := q.ExecContext(ctx, `UPDATE outbox_code_plans SET terminal_reason=? WHERE delivery_id=? AND terminal_reason=''`, reason, id); err != nil {
+			return err
+		}
 		if _, err := q.ExecContext(ctx, `UPDATE outbox_parts SET state=?,reason_code=?,updated_at=? WHERE delivery_id=? AND state=?`, PartCancelled, reason, now, id, PartPending); err != nil {
 			return err
 		}
@@ -509,6 +527,10 @@ func recomputeGroupState(ctx context.Context, q taskSQL, id string, now int64) e
 	}
 	if total == 0 {
 		return ErrDeliveryNotFound
+	}
+	counts, total, err = codeAggregateQ(ctx, q, id, counts, total)
+	if err != nil {
+		return err
 	}
 	state, unresolved := aggregateState(counts, total)
 	res, err := q.ExecContext(ctx, `UPDATE delivery_groups SET state=?,unresolved=?,updated_at=? WHERE delivery_id=?`, state, boolToInt(unresolved), now, id)

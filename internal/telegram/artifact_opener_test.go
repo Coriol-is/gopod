@@ -1,6 +1,8 @@
 package telegram
 
 import (
+	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"os"
@@ -142,7 +144,7 @@ func TestSnapshotOpenerHashMismatchQuarantinesWithoutUpload(t *testing.T) {
 	}
 	api := &fakeAPI{msg: &models.Message{ID: 5}}
 	out := (&botTransport{api: api, artifacts: f.opener()}).Attempt(t.Context(), f.uploadReq())
-	if out.Kind != OutcomeRefused || out.Code != "artifact_unavailable" {
+	if out.Kind != OutcomeRefused || out.Code != "artifact_content_unavailable" {
 		t.Fatalf("outcome %+v", out)
 	}
 	if api.docs != 0 {
@@ -261,5 +263,24 @@ func TestSnapshotOpenerRefusesAnotherNamespaceOrEpoch(t *testing.T) {
 	req.NamespaceID = "22222222-2222-4222-8222-222222222222"
 	if out := (&botTransport{api: api, artifacts: f.opener()}).Attempt(t.Context(), req); out.Kind != OutcomeRefused || api.docs != 0 {
 		t.Fatalf("outcome %+v docs=%d", out, api.docs)
+	}
+}
+
+func TestSnapshotOpenerCancellationAndScopeAreNotContentRefusals(t *testing.T) {
+	f := newOpenerFixture(t, "original")
+	req := f.uploadReq()
+	req.NamespaceID = "wrong"
+	api := &fakeAPI{msg: &models.Message{ID: 5}}
+	if out := (&botTransport{api: api, artifacts: f.opener()}).Attempt(t.Context(), req); out.Code != "artifact_unavailable" {
+		t.Fatal(out)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, _, err := f.opener().OpenArtifact(ctx, f.uploadReq().ArtifactRef, f.art.NamespaceID, f.art.NamespaceEpoch)
+	if errors.Is(err, ErrArtifactContentUnavailable) {
+		t.Fatal("cancellation treated as lost bytes")
+	}
+	if api.docs != 0 {
+		t.Fatal("unexpected upload")
 	}
 }

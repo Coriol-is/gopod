@@ -303,6 +303,23 @@ func (d *OutboxDispatcher) execute(attemptCtx context.Context, c store.OutboxCla
 		NamespaceID: c.Conversation.Scope.NamespaceID, NamespaceEpoch: c.Conversation.Scope.NamespaceEpoch,
 	}
 	out := d.attempt(attemptCtx, req)
+	if out.Kind == OutcomeRefused && req.Kind == store.PartUpload && req.ParseMode == "" && ((out.Code == "document_refused" && out.HTTPStatus == 400) || (out.HTTPStatus == 0 && (out.Code == "artifact_content_unavailable" || out.Code == "upload_unavailable"))) {
+		if backend, ok := d.backend.(interface {
+			RefuseCodeDocument(context.Context, store.OutboxClaim, string) (bool, error)
+		}); ok {
+			persistCtx, cancel := context.WithTimeout(context.Background(), d.cfg.PersistTimeout)
+			handled, e := backend.RefuseCodeDocument(persistCtx, c, out.diagnostic())
+			cancel()
+			if e != nil {
+				d.log.Error("code refusal not persisted; recovery retains evidence", slog.Any("err", e))
+				return
+			}
+			if handled {
+				return
+			}
+		}
+	}
+
 	if out.Kind == OutcomeRefused && out.Code == "photo_refused" && out.HTTPStatus == 400 && req.Kind == store.PartUpload && req.ParseMode == store.UploadPresentationPhoto && !c.DocumentFallback {
 		d.documentFallback(attemptCtx, c, req, out)
 		return

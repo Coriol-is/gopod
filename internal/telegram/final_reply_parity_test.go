@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/Coriol-is/gopod/internal/store"
 )
@@ -72,6 +73,7 @@ func TestFrozenFinalReplyMatchesDirectPresentation(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			d = acknowledgeFinalPlan(t, frozen, d)
 			got := plannedPresentation(t, frozen, d)
 			want := directPresentation(t, fake)
 			if !reflect.DeepEqual(got, want) {
@@ -205,4 +207,30 @@ func TestFrozenFinalReplyPreservesExistingReadyPresentation(t *testing.T) {
 	if rec.calls() != 0 {
 		t.Fatal("ready recovery called speech")
 	}
+}
+
+func acknowledgeFinalPlan(t *testing.T, b *Bot, d store.Delivery) store.Delivery {
+	t.Helper()
+	o, err := b.store.AcquireOutboxOwner(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer o.Release()
+	for i := 0; i < store.MaxDeliveryParts+1; i++ {
+		c, ok, e := o.ClaimNext(t.Context(), time.Now())
+		if e != nil {
+			t.Fatal(e)
+		}
+		if !ok {
+			break
+		}
+		if e = o.AckPart(t.Context(), c, int64(100+i)); e != nil {
+			t.Fatal(e)
+		}
+	}
+	d, err = b.store.GetDelivery(t.Context(), d.ID)
+	if err != nil || d.State != store.DeliverySent {
+		t.Fatal(d, err)
+	}
+	return d
 }

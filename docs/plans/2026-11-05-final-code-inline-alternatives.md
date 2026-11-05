@@ -1,6 +1,6 @@
 # CP-002: immutable code-document / inline alternatives
 
-Status: proposed implementation contract; owner decision pending.
+Status: accepted by owner on 2026-11-05; implementation in progress (D065).
 Base: `a215a28`. Production remains `d58cdd2`.
 
 ## Concrete problem

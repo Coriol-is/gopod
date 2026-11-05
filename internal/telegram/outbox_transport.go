@@ -187,6 +187,9 @@ func (t *botTransport) Attempt(ctx context.Context, req SendRequest) Outcome {
 			defer c.Close()
 		}
 		if err != nil {
+			if errors.Is(err, ErrArtifactContentUnavailable) {
+				return refused("artifact_content_unavailable")
+			}
 			return refused("artifact_unavailable")
 		}
 		if req.ParseMode == store.UploadPresentationPhoto {
@@ -206,6 +209,9 @@ func (t *botTransport) Attempt(ctx context.Context, req SendRequest) Outcome {
 			Document: &models.InputFileUpload{Filename: name, Data: data},
 			Caption:  req.Text, // plain text; an upload has no parse mode
 		})
+		if documentRefused(err) {
+			return Outcome{Kind: OutcomeRefused, Code: "document_refused", HTTPStatus: 400}
+		}
 		return classifySend(msg, err, 0)
 	}
 	return refused("unsupported_kind")
@@ -308,4 +314,14 @@ func (o Outcome) diagnostic() string {
 		s += fmt.Sprintf(" retry_after=%d", int64(o.RetryAfter/time.Second))
 	}
 	return s
+}
+
+// Exact library error shape only. This policy is qualified by fake-HTTP tests;
+// it does not claim live Telegram token qualification.
+func documentRefused(err error) bool {
+	if err == nil || !errors.Is(err, bot.ErrorBadRequest) {
+		return false
+	}
+	desc, ok := strings.CutPrefix(err.Error(), bot.ErrorBadRequest.Error()+", Bad Request: ")
+	return ok && (desc == "file must be non-empty" || desc == "file is too big")
 }

@@ -88,6 +88,7 @@ func TestFrozenFinalReplyCodeAndEdit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	d = acknowledgeFinalPlan(t, b, d)
 	docs, edits := 0, 0
 	for _, p := range d.Parts {
 		if p.Part.Kind == store.PartUpload {

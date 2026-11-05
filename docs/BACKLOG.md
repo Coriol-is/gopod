@@ -14,9 +14,9 @@ Foreground activation, topic retirement and provider/client acceptance stay open
 ## Code-inline implementation checkpoint — 2026-11-05
 
 The [conditional-plan proposal](plans/2026-11-05-final-code-inline-alternatives.md)
-is ready for an architectural decision. It proposes bounded pre-rendered suffix
-variants with all-inline preparation above the budget; no conditional source
-implementation or foreground activation is claimed. Production remains `d58cdd2`.
+was accepted as D065. Bounded pre-rendered suffix variants and all-inline budget
+fallback are implemented locally; full checks, final review and integration are
+pending. Foreground activation remains gated. Production remains `d58cdd2`.
 
 ## Current priority
 

@@ -55,6 +55,12 @@ func (s *Store) CompactTerminalDeliveries(ctx context.Context, now time.Time, re
 			return err
 		}
 		for _, id := range ids {
+			if _, err = q.ExecContext(ctx, `UPDATE final_reply_intents SET plan_json=NULL WHERE delivery_id=? AND state='published' AND EXISTS(SELECT 1 FROM outbox_code_plans WHERE delivery_id=?)`, id, id); err != nil {
+				return err
+			}
+			if _, err = q.ExecContext(ctx, `UPDATE outbox_code_plans SET manifest=NULL WHERE delivery_id=?`, id); err != nil {
+				return err
+			}
 			if _, err = q.ExecContext(ctx, `DELETE FROM outbox_attempts WHERE part_id IN (SELECT part_id FROM outbox_parts WHERE delivery_id=?)`, id); err != nil {
 				return err
 			}
