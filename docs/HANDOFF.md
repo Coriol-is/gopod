@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-05 (D066 durable Stop merged)
+**Last updated:** 2026-11-05 (task IPC claim contract prepared)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -13,7 +13,29 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — D066 durable Stop merged, 2026-11-05
+## Resume here — task IPC ownership decision, 2026-11-05
+
+Owner requested the next IPC fix. Rechecked baseline `1972dd3` and reran the
+retained deterministic diagnostic: PASS (0.909 s) demonstrates lost receipt,
+replacement consumed and exactly one task. Temporary test copy removed unchanged.
+No production source edits or deployment in this checkpoint.
+
+[Concrete claim contract](plans/2026-11-05-task-ipc-claim-contract.md) recommends
+atomic acquisition into a host-only durable spool before processing, preserving
+same-filename replay and journal identity. It specifies namespace/epoch binding,
+immutable byte snapshots, restart/terminal recovery, limits and regression gates.
+This introduces persistent state and a same-filesystem/rollback requirement;
+CLAUDE.md requires owner acceptance for an architectural decision. The requested
+bug fix is authorized; this particular protocol has not yet been accepted.
+
+**First next action:** obtain acceptance of the linked claim contract, then append
+an ADR and implement/qualify it on a feature branch. Do not call the diagnostic
+PASS a fix. If a simpler protocol is selected, prove both replacement ownership
+and receipt recovery before changing operation ordering. D066 remains merged;
+CP-002 preview/reply-action/cutover follows the IPC repair. Last verified Pi
+revision remains `d58cdd2`; no new live check was performed.
+
+## D066 durable Stop merged, 2026-11-05
 
 PR [#176](https://github.com/Coriol-is/gopod/pull/176) squash-merged as `51fbb7a`.
 Ordinary Stop records immutable full-batch attempt/conversation intent before

@@ -101,7 +101,7 @@ handoff against late Stop after joined previews; review and local full/race chec
 and required CI pass; merged as `40f368f`, not deployed. Persistent frozen cancellation, terminal-error UI and
 complete preview ownership remain separate gates. PR #175 adds a publication
 fence against currently stopped result members and boot recovery holds; review
-and full checks/races/required CI passed; merged as `a63c324`, not deployed. Settlement of already published delivery remains a separate gate. The owner accepted [D066](docs/plans/2026-11-05-durable-stop-intent.md); PR #176 implements durable Stop and late completion evidence. Review, final checks/races and required CI passed; merged as `51fbb7a`, no deployment or foreground activation. The known task IPC receipt/archive race recurred in CI and remains an open reliability fix before further cutover work.
+and full checks/races/required CI passed; merged as `a63c324`, not deployed. Settlement of already published delivery remains a separate gate. The owner accepted [D066](docs/plans/2026-11-05-durable-stop-intent.md); PR #176 implements durable Stop and late completion evidence. Review, final checks/races and required CI passed; merged as `51fbb7a`, no deployment or foreground activation. The known task IPC receipt/archive race recurred in CI and remains an open reliability fix before further cutover work. The [claim/recovery contract](docs/plans/2026-11-05-task-ipc-claim-contract.md) is prepared for owner acceptance; implementation has not started.
 
 ## Parallel sessions — CP-037 (P0 and P1 merged and deployed in legacy mode, P2+ not started)
 
