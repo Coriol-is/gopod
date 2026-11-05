@@ -300,10 +300,10 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 	stopOpts := draftOpts{CanStop: stop != nil, KeepOnStop: stop != nil}
 	// kb is the edit path's Stop button (nil when not stoppable): on
 	// the placeholder and on every mid-stream edit of it.
-	kb := b.turnKeyboard(item.ID)
+	kb := b.turnKeyboard(ctx, item.ID)
 	// useDraft makes id the turn's current draft, the one a stop names.
 	useDraft := func(id int) int {
-		b.bindDraft(item.ID, item.ChatID, id)
+		b.bindDraft(ctx, item.ID, item.ChatID, id)
 		return id
 	}
 

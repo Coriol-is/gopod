@@ -209,7 +209,7 @@ func TestStreamReply_SilentStopAcknowledgesWithoutPartialText(t *testing.T) {
 	if anyCallHas(fake, "sendMessageDraft", "Half") {
 		t.Error("silent draft showed answer text")
 	}
-	f.b.bindDraft(f.item.ID, f.item.ChatID, 4343)
+	f.b.bindDraft(t.Context(), f.item.ID, f.item.ChatID, 4343)
 	f.b.handleGenerationStopped(context.Background(), stopUpdate(f.item.ChatID, 4343))
 	if err := <-f.done; !errors.Is(err, queue.ErrStopped) {
 		t.Fatalf("err = %v", err)

@@ -57,13 +57,13 @@ func (b *Bot) waitNotice(ctx context.Context, item queue.Item) runner.WaitNotice
 	return func(reason runner.WaitReason) {
 		text := waitText(reason)
 		if ph := b.waitPlaceholder(item); ph != 0 {
-			withGenerationPreview(ctx, func() error { return b.editMessageKB(ctx, item.ChatID, ph, text, b.turnKeyboard(item.ID)) })
+			withGenerationPreview(ctx, func() error { return b.editMessageKB(ctx, item.ChatID, ph, text, b.turnKeyboard(ctx, item.ID)) })
 			return
 		}
 		if b.draftsSupported(item.ChatID) {
-			stoppable := b.inflightStop(item.ID) != nil
+			stoppable := b.turnKeyboard(ctx, item.ID) != nil
 			id := b.newDraftID()
-			b.bindDraft(item.ID, item.ChatID, id)
+			b.bindDraft(ctx, item.ID, item.ChatID, id)
 			opts := draftOpts{CanStop: stoppable, KeepOnStop: stoppable}
 			err := b.sendDraftOpts(ctx, item.ChatID, item.ThreadID, id, text, opts)
 			if errors.Is(err, errPreviewSealed) {
@@ -84,10 +84,10 @@ func (b *Bot) waitNotice(ctx context.Context, item queue.Item) runner.WaitNotice
 				b.startWaitDraftRefresh(ctx, item, id, text, opts, hold)
 				return
 			}
-			b.bindDraft(item.ID, item.ChatID, 0)
+			b.bindDraft(ctx, item.ID, item.ChatID, 0)
 		}
 		// Edit path: the placeholder carries the Stop button already.
-		ph := b.sendPlaceholderText(ctx, item.ChatID, item.ThreadID, item.MessageID, text, b.turnKeyboard(item.ID))
+		ph := b.sendPlaceholderText(ctx, item.ChatID, item.ThreadID, item.MessageID, text, b.turnKeyboard(ctx, item.ID))
 		if ph == 0 {
 			return
 		}
@@ -104,12 +104,12 @@ func (b *Bot) waitNotice(ctx context.Context, item queue.Item) runner.WaitNotice
 // preparePrivateStop gives the owner the same persistent Stop control as the
 // group edit path, before container setup or agent admission can block.
 func (b *Bot) preparePrivateStop(ctx context.Context, item queue.Item) {
-	if item.ChatID <= 0 || item.ChatID != b.ownerChatID || b.inflightStop(item.ID) == nil {
+	if item.ChatID <= 0 || item.ChatID != b.ownerChatID || b.turnKeyboard(ctx, item.ID) == nil {
 		return
 	}
 	ph := b.reusePlaceholder(ctx, item)
 	if ph == 0 {
-		ph = b.sendPlaceholderText(ctx, item.ChatID, item.ThreadID, item.MessageID, "Thinking…", b.turnKeyboard(item.ID))
+		ph = b.sendPlaceholderText(ctx, item.ChatID, item.ThreadID, item.MessageID, "Thinking…", b.turnKeyboard(ctx, item.ID))
 	}
 	if ph == 0 {
 		return // /stop still works when Telegram refuses the placeholder
@@ -145,7 +145,7 @@ func (b *Bot) popWaitPlaceholder(item queue.Item) int {
 func (b *Bot) takeWaitPlaceholder(ctx context.Context, item queue.Item) int {
 	ph := b.popWaitPlaceholder(item)
 	if ph != 0 {
-		withGenerationPreview(ctx, func() error { return b.editMessageKB(ctx, item.ChatID, ph, "", b.turnKeyboard(item.ID)) })
+		withGenerationPreview(ctx, func() error { return b.editMessageKB(ctx, item.ChatID, ph, "", b.turnKeyboard(ctx, item.ID)) })
 	}
 	return ph
 }

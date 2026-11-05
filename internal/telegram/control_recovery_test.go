@@ -18,7 +18,7 @@ func recoveryFixture(t *testing.T) (*Bot, *fakeTelegram, int64) {
 	}
 	unregister := b.registerInflight(it.ID, it.ChatID, 0, func() {})
 	b.recordPlaceholder(t.Context(), it, 77)
-	if err := b.editMessageKB(t.Context(), it.ChatID, 77, "Partial answer", b.turnKeyboard(it.ID)); err != nil {
+	if err := b.editMessageKB(t.Context(), it.ChatID, 77, "Partial answer", b.turnKeyboard(t.Context(), it.ID)); err != nil {
 		t.Fatal(err)
 	}
 	unregister()
@@ -138,7 +138,7 @@ func TestControlRecoveryFailureRemainsPending(t *testing.T) {
 func TestTerminalControlRejectsLateProgress(t *testing.T) {
 	b, fake, id := recoveryFixture(t)
 	unregister := b.registerInflight(id, streamChat, 0, func() {})
-	kb := b.turnKeyboard(id)
+	kb := b.turnKeyboard(t.Context(), id)
 	if err := b.editMessage(t.Context(), streamChat, 77, "Final answer"); err != nil {
 		t.Fatal(err)
 	}

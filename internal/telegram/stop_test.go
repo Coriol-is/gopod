@@ -33,8 +33,8 @@ func TestStopCancelsOnlyMatchingTurn(t *testing.T) {
 
 	defer b.registerInflight(1, streamChat, 0, cancelA)()
 	defer b.registerInflight(2, streamChat, 0, cancelB)()
-	b.bindDraft(1, streamChat, 7)
-	b.bindDraft(2, streamChat, 8)
+	b.bindDraft(t.Context(), 1, streamChat, 7)
+	b.bindDraft(t.Context(), 2, streamChat, 8)
 
 	// Same draft id in another chat matches nothing.
 	b.handleGenerationStopped(context.Background(), stopUpdate(streamChat+1, 7))
@@ -57,7 +57,7 @@ func TestStopAfterFinishIsNoop(t *testing.T) {
 	defer cancel()
 
 	unregister := b.registerInflight(1, streamChat, 0, cancel)
-	b.bindDraft(1, streamChat, 7)
+	b.bindDraft(t.Context(), 1, streamChat, 7)
 	unregister()
 
 	b.handleGenerationStopped(context.Background(), stopUpdate(streamChat, 7))
@@ -68,7 +68,7 @@ func TestStopAfterFinishIsNoop(t *testing.T) {
 		t.Error("finished turn still registered")
 	}
 	// Unknown turn, nil payload: no panic.
-	b.bindDraft(99, streamChat, 9)
+	b.bindDraft(t.Context(), 99, streamChat, 9)
 	b.handleGenerationStopped(context.Background(), &models.Update{})
 	b.handleGenerationStopped(context.Background(), nil)
 }
@@ -77,7 +77,7 @@ func TestStopTwiceIsNoop(t *testing.T) {
 	b := newFakeBot(t, &fakeTelegram{})
 	var cancels int32
 	defer b.registerInflight(1, streamChat, 0, func() { atomic.AddInt32(&cancels, 1) })()
-	b.bindDraft(1, streamChat, 7)
+	b.bindDraft(t.Context(), 1, streamChat, 7)
 
 	b.handleGenerationStopped(context.Background(), stopUpdate(streamChat, 7))
 	b.handleGenerationStopped(context.Background(), stopUpdate(streamChat, 7))
@@ -96,7 +96,7 @@ func TestDefaultHandlerRoutesStopUpdate(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	defer b.registerInflight(1, streamChat, 0, cancel)()
-	b.bindDraft(1, streamChat, 7)
+	b.bindDraft(t.Context(), 1, streamChat, 7)
 
 	b.defaultHandler(context.Background(), nil, stopUpdate(streamChat, 7))
 	if ctx.Err() == nil {
@@ -190,7 +190,7 @@ func TestStreamReply_StopRacingStreamEndEndsStopped(t *testing.T) {
 		}
 		b, item := newStreamFixture(t, fake)
 		unregister := b.registerInflight(item.ID, item.ChatID, 0, func() {})
-		b.bindDraft(item.ID, item.ChatID, 999)
+		b.bindDraft(t.Context(), item.ID, item.ChatID, 999)
 		b.handleGenerationStopped(context.Background(), stopUpdate(item.ChatID, 999))
 
 		chunks := make(chan string)
