@@ -104,9 +104,9 @@ func TestDefaultHandlerRoutesStopUpdate(t *testing.T) {
 	}
 }
 
-// TestStreamReply_StopDeliversPartial: Stop on a streaming draft ends
+// TestStreamReply_StopAcknowledgesWithoutPartial: Stop on a streaming draft ends
 // the turn with the text so far as the real reply, recorded on the row.
-func TestStreamReply_StopDeliversPartial(t *testing.T) {
+func TestStreamReply_StopAcknowledgesWithoutPartial(t *testing.T) {
 	fake := &fakeTelegram{}
 	fake.respond = func(method string, _ map[string]string) (int, string) {
 		if method == "sendMessage" {
@@ -160,15 +160,15 @@ func TestStreamReply_StopDeliversPartial(t *testing.T) {
 	if len(sends) != 1 {
 		t.Fatalf("sendMessage calls = %d, want 1", len(sends))
 	}
-	if got := sends[0].Form["text"]; !strings.Contains(got, "half an answer") || strings.Contains(got, "and more") {
-		t.Errorf("final text = %q, want the partial text only", got)
+	if got := sends[0].Form["text"]; got != stoppedEmpty {
+		t.Errorf("final text = %q, want Stop acknowledgement", got)
 	}
 	row, err := b.store.GetTurn(context.Background(), item.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if row.ReplyMsgID != 777 {
-		t.Errorf("reply_msg_id = %d, want 777", row.ReplyMsgID)
+	if row.ReplyMsgID != 0 {
+		t.Errorf("reply_msg_id = %d, want 0", row.ReplyMsgID)
 	}
 	if b.inflightStop(item.ID) == nil {
 		t.Error("streamReply must not unregister; runAgentStreaming owns the registration")
@@ -211,8 +211,8 @@ func TestStreamReply_StopRacingStreamEndEndsStopped(t *testing.T) {
 		if got := sends[0].Form["text"]; strings.Contains(got, "whole answer") {
 			t.Fatalf("iteration %d: final text = %q, want the stopped reply, not the full one", i, got)
 		}
-		if got := countBotMessages(t, b, item); got != 1 {
-			t.Fatalf("iteration %d: recorded replies = %d, want 1", i, got)
+		if got := countBotMessages(t, b, item); got != 0 {
+			t.Fatalf("iteration %d: recorded replies = %d, want 0", i, got)
 		}
 	}
 }
@@ -262,8 +262,8 @@ func TestStreamReply_StopWhileWaitingForResult(t *testing.T) {
 	if len(sends) != 1 || strings.Contains(sends[0].Form["text"], "the rest") {
 		t.Fatalf("sends = %+v, want one message with the partial text", sends)
 	}
-	if got := countBotMessages(t, b, item); got != 1 {
-		t.Errorf("recorded replies = %d, want 1", got)
+	if got := countBotMessages(t, b, item); got != 0 {
+		t.Errorf("recorded replies = %d, want 0", got)
 	}
 }
 

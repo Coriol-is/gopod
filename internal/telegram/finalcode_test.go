@@ -193,14 +193,16 @@ func TestFinishStopped_UnclosedGiantFence(t *testing.T) {
 	if err != queue.ErrStopped {
 		t.Fatalf("err = %v, want ErrStopped", err)
 	}
-	if n := len(fake.callsTo("sendDocument")); n != 1 {
-		t.Errorf("sendDocument calls = %d, want 1", n)
+	if n := len(fake.callsTo("sendDocument")); n != 0 {
+		t.Errorf("sendDocument calls = %d, want 0", n)
 	}
 	msgs := fake.callsTo("sendMessage")
-	if len(msgs) != 1 || msgs[0].Form["text"] != "Writing it now:\n📎 snippet.go (81 lines)" {
+	if len(msgs) != 1 || msgs[0].Form["text"] != stoppedEmpty {
 		t.Errorf("stopped reply = %v", msgs)
 	}
-	checkOneReply(t, b, item)
+	if got := countBotMessages(t, b, item); got != 0 {
+		t.Fatal("Stop stored as final answer", got)
+	}
 }
 
 func TestStripCodeBlocks(t *testing.T) {

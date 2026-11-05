@@ -60,6 +60,15 @@ EXISTS(SELECT 1 FROM task_attempts a WHERE a.turn_id=turns.id) FROM turns WHERE 
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
+		stopped, err := ordinaryStopForTurnQ(ctx, q, id)
+		if err != nil {
+			return err
+		}
+		if stopped {
+			plan.Action = OrdinarySettled
+			_, err = q.ExecContext(ctx, `UPDATE turns SET status='failed',error='execution_unknown: durable Stop requested; result and native exit require reconciliation',finished_at=? WHERE id=?`, time.Now().UnixMilli(), id)
+			return err
+		}
 		finish, reason := "", ""
 		if plan.ResultID != "" {
 			result, err := readTurnResult(ctx, q, plan.ResultID)

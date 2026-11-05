@@ -32,7 +32,7 @@ func TestWaitTexts(t *testing.T) {
 
 // Draft path: the wait shows as a stoppable draft bound to the turn, and
 // the opening draft of streamReply (a new draft id) replaces it.
-func TestWaitNoticeDraftIsStoppableAndReplaced(t *testing.T) {
+func TestWaitNoticeDraftStopSealsOpeningPreview(t *testing.T) {
 	fake := &fakeTelegram{respond: okResponder}
 	b, item := newStreamFixture(t, fake)
 	ctx := context.Background()
@@ -61,16 +61,15 @@ func TestWaitNoticeDraftIsStoppableAndReplaced(t *testing.T) {
 		t.Fatal("stop on the wait draft did not cancel the turn")
 	}
 
-	// Once the agent runs, streamReply's opening draft replaces it.
+	// A late stream return cannot open another preview after accepted Stop.
 	chunks := make(chan string)
 	result := make(chan runner.RunResult, 1)
 	close(chunks)
 	result <- runner.RunResult{FullText: "done"}
 	b.streamReply(ctx, item, &runner.AgentStream{Chunks: chunks, Result: result})
 	drafts = fake.callsTo("sendMessageDraft")
-	if len(drafts) < 2 || drafts[1].Form["draft_id"] == drafts[0].Form["draft_id"] ||
-		strings.Contains(drafts[1].Form["text"], "⏳") {
-		t.Fatalf("opening draft did not replace the wait draft: %+v", drafts)
+	if len(drafts) != 1 {
+		t.Fatalf("new draft after accepted Stop: %+v", drafts)
 	}
 }
 
@@ -144,8 +143,8 @@ func TestStreamNotStartedStoppedWhileWaiting(t *testing.T) {
 				t.Fatalf("got (%v, %v), want (true, ErrStopped)", handled, err)
 			}
 			turn, _ := b.store.GetTurn(ctx, item.ID)
-			if turn.ReplyMsgID != 88 {
-				t.Fatalf("stopped reply not recorded: %d", turn.ReplyMsgID)
+			if turn.ReplyMsgID != 0 {
+				t.Fatalf("Stop acknowledgement recorded as final: %d", turn.ReplyMsgID)
 			}
 			sends := fake.callsTo("sendMessage")
 			edits := fake.callsTo("editMessageText")

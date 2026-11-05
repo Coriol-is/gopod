@@ -750,7 +750,7 @@ func run() error {
 		}
 		restart.notify = tgBot.SendRestartNotice
 		control.RegisterRestartLifecycle(router, restart.command)
-		control.RegisterStopCommand(router, tgBot.StopCurrentTurn)
+		control.RegisterStopCommand(router, tgBot.RequestStopCurrentTurn)
 		if bindElevatedLogin != nil {
 			bindElevatedLogin(tgBot.LoginElevated)
 		}

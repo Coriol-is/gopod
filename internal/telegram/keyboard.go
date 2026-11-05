@@ -5,6 +5,7 @@ package telegram
 
 import (
 	"context"
+	"github.com/Coriol-is/gopod/internal/control"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -118,8 +119,15 @@ func (b *Bot) stopCallback(ctx context.Context, q cbQuery) (string, error) {
 	if valid && b.store != nil {
 		valid = b.store.ValidateScope(ctx, scope) == nil
 	}
-	if valid && t.stop() {
-		return stopToastStopping, nil
+	if valid {
+		switch t.requestStop(ctx) {
+		case control.StopAccepted:
+			return stopToastStopping, nil
+		case control.StopAlreadyRequested:
+			return "Stop already requested.", nil
+		case control.StopFailed:
+			return "Stop unconfirmed; answer held for reconciliation.", nil
+		}
 	}
 	status := b.controlTurnStatus(ctx, id, q.ChatID, q.ThreadID, q.MessageID)
 	q.answerNow(status)

@@ -213,7 +213,10 @@ func TestStopCallbackAfterFinishToastsFinished(t *testing.T) {
 	if got := answeredOnce(t, fake, "q1"); got != stopToastStopping {
 		t.Fatalf("first press toast = %q", got)
 	}
-	for _, id := range []string{"q2", "q3"} {
+	if got := answeredOnce(t, fake, "q2"); got != "Stop already requested." {
+		t.Fatal(got)
+	}
+	for _, id := range []string{"q3"} {
 		if got := answeredOnce(t, fake, id); got != cbToastExpired {
 			t.Fatalf("%s toast = %q, want %q", id, got, stopToastFinished)
 		}
@@ -256,18 +259,21 @@ func TestStopCallbackEndsEditPathTurnStopped(t *testing.T) {
 	}
 	go s.finish("late")
 
-	if n := len(fake.callsTo("sendMessage")); n != 1 {
-		t.Fatalf("sendMessage calls = %d, want 1 (the placeholder only)", n)
+	if n := len(fake.callsTo("sendMessage")); n != 2 {
+		t.Fatalf("want placeholder and Stop acknowledgement, got %d", n)
 	}
-	edits := fake.callsTo("editMessageText")
-	final := edits[len(edits)-1]
-	if !strings.Contains(final.Form["text"], "Half an answer") || strings.Contains(final.Form["text"], "❘") || !cleared(t, final) {
-		t.Fatalf("final edit = %v", final.Form)
+	sends := fake.callsTo("sendMessage")
+	if sends[1].Form["text"] != stoppedEmpty {
+		t.Fatal(sends[1].Form)
 	}
-	turn, _ := b.store.GetTurn(context.Background(), item.ID)
-	if turn.ReplyMsgID != 77 {
-		t.Fatalf("reply id = %d, want the placeholder 77", turn.ReplyMsgID)
+	if len(fake.callsTo("editMessageReplyMarkup")) == 0 {
+		t.Fatal("Stop control not retired")
 	}
+	turn, _ := b.store.GetTurn(t.Context(), item.ID)
+	if turn.ReplyMsgID != 0 {
+		t.Fatal("Stop acknowledgement memoized as final answer")
+	}
+
 }
 
 func TestWaitPlaceholderCarriesStopButton(t *testing.T) {

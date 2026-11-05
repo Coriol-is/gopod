@@ -141,7 +141,7 @@ func TestLateStopRejectedDuringFinalHTTP(t *testing.T) {
 func TestSettledResultPreservesNoReplayAfterLateStop(t *testing.T) {
 	b, item := newStreamFixture(t, &fakeTelegram{})
 	stream := settledResultStream(runner.RunResult{Err: &runner.ResultFreezeError{Err: errors.New("commit unknown")}})
-	if err := b.discardCancelledStream(item, stream)(queue.ErrStopped); !noReplayError(err) {
+	if err := b.discardCancelledStream(t.Context(), item, stream)(queue.ErrStopped); !noReplayError(err) {
 		t.Fatal(err)
 	}
 }

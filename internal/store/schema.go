@@ -276,6 +276,9 @@ func (s *Store) applySchema(ctx context.Context) error {
 	if err := s.applyFinalReplySchema(ctx); err != nil {
 		return err
 	}
+	if err := s.applyOrdinaryStopSchema(ctx); err != nil {
+		return err
+	}
 	return s.applyProactiveSchema(ctx)
 }
 

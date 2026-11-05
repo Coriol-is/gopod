@@ -35,6 +35,15 @@ func (b *Bot) sendPlaceholderText(ctx context.Context, chatID int64, thread int,
 	return id
 }
 func (b *Bot) sendPlaceholderResult(ctx context.Context, chatID int64, thread int, replyToMsgID int, text string, markup models.ReplyMarkup) (int, error) {
+	var id int
+	err := withGenerationPreview(ctx, func() error {
+		var err error
+		id, err = b.sendPlaceholderUnfenced(ctx, chatID, thread, replyToMsgID, text, markup)
+		return err
+	})
+	return id, err
+}
+func (b *Bot) sendPlaceholderUnfenced(ctx context.Context, chatID int64, thread int, replyToMsgID int, text string, markup models.ReplyMarkup) (int, error) {
 	if b.topicAdmission(ctx, chatID, thread) != nil {
 		return 0, nil
 	}
@@ -225,11 +234,25 @@ func (b *Bot) runAgentStreaming(ctx context.Context, item queue.Item) error {
 	b.stopQueueWaits(item.ChatID, item.ThreadID)
 	b.preparePrivateStop(ctx, item)
 
+	if err := generationRunError(ctx); err != nil {
+		if errors.Is(err, queue.ErrStopped) {
+			return b.finishBufferedStopped(ctx, item)
+		}
+		return err
+	}
 	waitCtx := runner.WithWaitNotice(runCtx, b.waitNotice(ctx, item))
 	stream, err := b.runner.RunStream(waitCtx, item.Folder, item.ThreadID, tier, b.allowlist, prompt)
 	// The wait is over: no wait draft refresh may land after this point.
 	b.stopWaitDraftRefresh(item)
 	if err != nil {
+		if noReplayError(err) {
+			return errors.Join(err, b.observeStopCompletion(ctx, runner.RunResult{Err: err}))
+		}
+		if runCtx.Err() != nil {
+			if saveErr := b.observeStopCompletion(ctx, runner.RunResult{Err: err}); saveErr != nil {
+				return errors.Join(err, saveErr)
+			}
+		}
 		// Stopped (or shut down) before the agent started: no fallback.
 		if handled, err := b.streamNotStarted(ctx, runCtx, item); handled {
 			return err
@@ -265,7 +288,7 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 	ctx = withTopicOutputOrigin(ctx, item.ChatID, item.ThreadID)
 	ctx, handoff, stop := b.finalHandoff(ctx, item.ID)
 	if finalGenerationRetired(ctx) {
-		return b.discardCancelledStream(item, stream)(finalOwnershipLost{})
+		return b.discardCancelledStream(ctx, item, stream)(finalOwnershipLost{})
 	}
 	const editLimit = 4000 // safe limit under Telegram's 4096
 
@@ -292,7 +315,7 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 		if noReplayError(placeholderErr) {
 			drainStream(stream)
 			result := <-stream.Result
-			return errors.Join(placeholderErr, result.Err)
+			return errors.Join(placeholderErr, result.Err, b.observeStopCompletion(ctx, result))
 		}
 		return b.drainAndSend(ctx, item, stream)
 	}
@@ -404,7 +427,7 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 			return true
 		}
 		// Edit path: finalize this placeholder, continue in a new one.
-		b.editMessage(ctx, item.ChatID, placeholder, accumulated.String())
+		withGenerationPreview(ctx, func() error { return b.editMessage(ctx, item.ChatID, placeholder, accumulated.String()) })
 		placeholder, placeholderErr = b.sendPlaceholderResult(ctx, item.ChatID, item.ThreadID, 0, "❘", kb)
 		if placeholder == 0 || noReplayError(placeholderErr) {
 			drainErr = drainFallback()
@@ -423,6 +446,9 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 		stopStream := stream
 		if terminal != nil {
 			stopStream = settledResultStream(*terminal)
+		}
+		if hold := stopFailure(ctx); hold != nil {
+			return b.drainHeldStream(ctx, item, stopStream, hold)
 		}
 		if placeholder == 0 {
 			return b.finishStopped(ctx, item, stopStream, full.String())
@@ -543,7 +569,7 @@ loop:
 				dirty = false
 				continue
 			}
-			err := b.editMessageKB(ctx, item.ChatID, placeholder, text, kb)
+			err := withGenerationPreview(ctx, func() error { return b.editMessageKB(ctx, item.ChatID, placeholder, text, kb) })
 			if wait, ok := retryAfter(err); ok {
 				editHold = time.Now().Add(wait)
 				continue // dirty stays: retried after the wait
@@ -555,14 +581,14 @@ loop:
 			return stopped()
 
 		case <-ctx.Done():
-			return b.discardCancelledStream(item, stream)(nil)
+			return b.discardCancelledStream(ctx, item, stream)(nil)
 		}
 	}
 
 	// A stop can race the end of the stream: select picks at random
 	// when Chunks is closed and stop is ready, and a stop can land while
 	// waiting for Result. Either way the stop already cancelled the run,
-	// so the turn ends stopped with the text the user saw, never done.
+	// so the turn returns a Stop acknowledgement, never a normal final answer.
 	var res runner.RunResult
 	select {
 	case <-stop:
@@ -572,19 +598,22 @@ loop:
 	select {
 	case res = <-stream.Result:
 		terminal = &res
+		if err := b.observeStopCompletion(ctx, res); err != nil {
+			return errors.Join(res.Err, err)
+		}
 	case <-stop:
 		return stopped()
 	}
-	if noReplayError(res.Err) {
-		b.handleStreamError(ctx, item, res.Err)
-		return res.Err
+	// Terminal errors and success share the same owner boundary: neither may
+	// retire a generation while Stop persistence is pending.
+	ticker.Stop()
+	b.stopWaitDraftRefresh(item)
+	if err := handoff(ctx); err != nil {
+		if errors.Is(err, queue.ErrStopped) {
+			return stopped()
+		}
+		return errors.Join(res.Err, err)
 	}
-	select {
-	case <-stop:
-		return stopped()
-	default:
-	}
-
 	if res.Err != nil {
 		if placeholder != 0 {
 			b.editMessage(ctx, item.ChatID, placeholder, "")
@@ -594,16 +623,6 @@ loop:
 			return res.Err
 		}
 		return nil
-	}
-
-	// No preview refresh may cross the final-owner boundary.
-	ticker.Stop()
-	b.stopWaitDraftRefresh(item)
-	if err := handoff(ctx); err != nil {
-		if errors.Is(err, queue.ErrStopped) {
-			return stopped()
-		}
-		return err
 	}
 	finalText := res.FullText
 	if finalText == "" {
@@ -834,63 +853,31 @@ func (b *Bot) wait(ctx context.Context, d time.Duration) error {
 // agent produced any text.
 const stoppedEmpty = "(stopped)"
 
-// finishStopped ends a turn the user stopped. Stop is offered only on
-// drafts, which Telegram removes once the bot sends a message
-// (keep_on_stop keeps one only briefly), so the partial text is sent
-// as a real message and memoized as the turn's reply. The agent's
-// remaining output is drained in the background and discarded, so the
-// runner's goroutine never blocks on a reader that has gone.
-func (b *Bot) finishStopped(ctx context.Context, item queue.Item, stream *runner.AgentStream, partial string) (err error) {
-	settle := b.discardCancelledStream(item, stream)
+// finishStopped records only a fixed acknowledgement. Returned native text is
+// retained as completion evidence, never sent or memoized as a final answer.
+func (b *Bot) finishStopped(ctx context.Context, item queue.Item, stream *runner.AgentStream, _ string) (err error) {
+	settle := b.discardCancelledStream(ctx, item, stream)
 	defer func() { err = settle(err) }()
-
-	text := strings.TrimSpace(partial)
-	if text == "" {
-		text = stoppedEmpty
+	if hold := stopFailure(ctx); hold != nil {
+		return hold
 	}
-	sent, _ := b.sendFinal(ctx, item.ChatID, item.ThreadID, item.MessageID, text, nil)
-	b.recordReply(ctx, item, sent, text)
-	b.noteBareReply(ctx, item, sent) // a stopped reply has no row
+	sent := b.sendFormatted(ctx, item.ChatID, item.ThreadID, item.MessageID, stoppedEmpty)
+	b.noteBareReply(ctx, item, sent)
 	b.turnStatus(item).Set(stStopped)
 	return queue.ErrStopped
 }
 
-// finishStoppedEdit ends a turn stopped on the edit path. When the reply
-// fit one placeholder, that placeholder becomes the reply: final text
-// (the text so far), keyboard removed, recorded as the turn's reply.
-// After an overflow it is frozen like a finished overflow turn's last
-// placeholder and the whole stopped text goes out as a new message.
-// Like finishStopped it drains the agent's remaining output in the
-// background and returns queue.ErrStopped.
-func (b *Bot) finishStoppedEdit(ctx context.Context, item queue.Item, stream *runner.AgentStream, placeholder int, partial string, overflow bool, tail string) (err error) {
-	settle := b.discardCancelledStream(item, stream)
+// Retire existing preview controls without promoting partial model text into a
+// final delivery or creating code/voice uploads. Already visible text stays visible.
+func (b *Bot) finishStoppedEdit(ctx context.Context, item queue.Item, stream *runner.AgentStream, placeholder int, _ string, _ bool, _ string) (err error) {
+	settle := b.discardCancelledStream(ctx, item, stream)
 	defer func() { err = settle(err) }()
-
-	text := strings.TrimSpace(partial)
-	if text == "" {
-		text = stoppedEmpty
+	if hold := stopFailure(ctx); hold != nil {
+		return hold
 	}
-	if !overflow {
-		shown := b.attachLongCode(ctx, item.ChatID, item.ThreadID, text)
-		err := b.editMessageHTML(ctx, item.ChatID, placeholder, finalReplyHTML(shown))
-		if b.finalEditLost(item, err) {
-			if err := b.replyInMain(ctx, item, shown); err != nil {
-				return err
-			}
-		} else {
-			b.recordReply(ctx, item, placeholder, text)
-			b.noteBareReply(ctx, item, placeholder)
-		}
-	} else {
-		if tail != "" {
-			b.editMessage(ctx, item.ChatID, placeholder, tail)
-		} else {
-			b.clearKeyboard(ctx, item.ChatID, placeholder)
-		}
-		sent, _ := b.sendFinal(ctx, item.ChatID, item.ThreadID, item.MessageID, text, nil)
-		b.recordReply(ctx, item, sent, text)
-		b.noteBareReply(ctx, item, sent)
-	}
+	b.clearKeyboard(ctx, item.ChatID, placeholder)
+	sent := b.sendFormatted(ctx, item.ChatID, item.ThreadID, item.MessageID, stoppedEmpty)
+	b.noteBareReply(ctx, item, sent)
 	b.turnStatus(item).Set(stStopped)
 	return queue.ErrStopped
 }
@@ -907,23 +894,26 @@ func (b *Bot) handleStreamError(ctx context.Context, item queue.Item, err error)
 func (b *Bot) drainAndSend(ctx context.Context, item queue.Item, stream *runner.AgentStream) error {
 	ctx, handoff, _ := b.finalHandoff(ctx, item.ID)
 	if finalGenerationRetired(ctx) {
-		return b.discardCancelledStream(item, stream)(finalOwnershipLost{})
+		return b.discardCancelledStream(ctx, item, stream)(finalOwnershipLost{})
 	}
 	drainStream(stream)
 	res := <-stream.Result
-	if res.Err != nil {
-		b.handleStreamError(ctx, item, res.Err)
-		if noReplayError(res.Err) {
-			return res.Err
-		}
-		return nil
+	if err := b.observeStopCompletion(ctx, res); err != nil {
+		return errors.Join(res.Err, err)
 	}
 	b.stopWaitDraftRefresh(item)
 	if err := handoff(ctx); err != nil {
 		if errors.Is(err, queue.ErrStopped) {
 			return b.finishStopped(ctx, item, settledResultStream(res), stoppedEmpty)
 		}
-		return err
+		return errors.Join(res.Err, err)
+	}
+	if res.Err != nil {
+		b.handleStreamError(ctx, item, res.Err)
+		if noReplayError(res.Err) {
+			return res.Err
+		}
+		return nil
 	}
 	text := res.FullText
 	if text == "" {

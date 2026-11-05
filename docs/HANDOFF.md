@@ -13,18 +13,17 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — durable Stop contract awaiting decision, 2026-11-05
+## Resume here — D066 implementation in progress, 2026-11-05
 
-The next implementation needs a persistent cancellation contract beyond #175.
-[Concrete proposed plan](plans/2026-11-05-durable-stop-intent.md) specifies immutable
-batch/attempt intent before native cancellation, typed Stop outcomes, ambiguous
-commit holds and late-result settlement. Proposed UX: accepted Stop sends only
-acknowledgement/control retirement, no new partial/final answer or code upload.
-A crash with no committed intent follows ordinary recovery; no acceptance is claimed. This changes successful-Stop semantics
-and adds ledger authority; CLAUDE.md requires owner decision on architecture.
-No source/schema/accepted ADR changes were made. First next action: obtain the
-owner's decision on this contract, then append the next ADR and execute its gates.
-Implementation and deployment remain pending; CP-002/003 stay in progress.
+Owner accepted the [durable Stop contract](plans/2026-11-05-durable-stop-intent.md).
+D066 records the decision. Branch `feat/durable-stop-intent`, base `c9a362f`.
+Implement immutable complete-batch intent before cancel/acceptance, reciprocal
+publication/start/recovery fences, typed Stop outcomes and late completion evidence.
+Stop UI becomes acknowledgement-only. No deployment or foreground activation.
+Schema/host implementation is present. Initial review found terminal-error and
+deferred-cancel races, now corrected with regressions; expanded races/full checks passed. Final review passed before a small native
+fallback-admission correction; delta review and final checks are running. [Evidence](reviews/2026-11-05-durable-stop.md).
+CI/merge remain pending. Completion snapshots are return evidence, not native exit.
 
 ## Stopped-result publication fence merged, 2026-11-05
 

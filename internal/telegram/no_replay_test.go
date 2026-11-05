@@ -10,6 +10,7 @@ import (
 
 	"github.com/Coriol-is/gopod/internal/queue"
 	"github.com/Coriol-is/gopod/internal/runner"
+	"github.com/Coriol-is/gopod/internal/store"
 )
 
 func TestSyncHandlerPreservesNoReplayAcrossShutdown(t *testing.T) {
@@ -17,6 +18,13 @@ func TestSyncHandlerPreservesNoReplayAcrossShutdown(t *testing.T) {
 		t.Run(fmt.Sprint(cancelled), func(t *testing.T) {
 			fake := &fakeTelegram{respond: okResponder}
 			b, item := newStreamFixture(t, fake)
+			if err := b.store.RegisterChat(t.Context(), store.RegisteredChat{JID: buildChatJID(item.ChatID), Folder: item.Folder, IsOwner: true, AddedAt: 1}); err != nil {
+				t.Fatal(err)
+			}
+			if err := b.store.MarkTurnRunning(t.Context(), item.ID); err != nil {
+				t.Fatal(err)
+			}
+			item.Attempts = 1
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			failure := &runner.ResultFreezeError{Err: errors.New("synthetic persistence failure")}
@@ -114,7 +122,7 @@ func TestCancellationProbeIsBoundedAndPreservesReadyNoReplay(t *testing.T) {
 	chunks := make(chan string)
 	result := make(chan runner.RunResult, 1)
 	result <- runner.RunResult{Err: failure}
-	settle := b.discardCancelledStream(item, &runner.AgentStream{Chunks: chunks, Result: result})
+	settle := b.discardCancelledStream(t.Context(), item, &runner.AgentStream{Chunks: chunks, Result: result})
 	if err := settle(context.Canceled); !errors.Is(err, failure) {
 		t.Fatal(err)
 	}
@@ -122,7 +130,7 @@ func TestCancellationProbeIsBoundedAndPreservesReadyNoReplay(t *testing.T) {
 
 	lateChunks := make(chan string)
 	lateResult := make(chan runner.RunResult)
-	settle = b.discardCancelledStream(item, &runner.AgentStream{Chunks: lateChunks, Result: lateResult})
+	settle = b.discardCancelledStream(t.Context(), item, &runner.AgentStream{Chunks: lateChunks, Result: lateResult})
 	if err := settle(context.Canceled); !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
 	}

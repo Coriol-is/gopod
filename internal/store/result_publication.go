@@ -21,7 +21,7 @@ func checkResultPublicationQ(ctx context.Context, q taskSQL, result TurnResult) 
 		return nil
 	}
 	var stopped int
-	if err := q.QueryRowContext(ctx, `SELECT count(*) FROM turn_result_members m JOIN turns t ON t.id=m.turn_id WHERE m.result_id=? AND t.status=?`, result.ID, TurnStopped).Scan(&stopped); err != nil {
+	if err := q.QueryRowContext(ctx, `SELECT count(*) FROM turn_result_members m JOIN turns t ON t.id=m.turn_id WHERE m.result_id=? AND (t.status=? OR EXISTS(SELECT 1 FROM ordinary_stop_members s WHERE s.turn_id=m.turn_id))`, result.ID, TurnStopped).Scan(&stopped); err != nil {
 		return err
 	}
 	if stopped > 0 {

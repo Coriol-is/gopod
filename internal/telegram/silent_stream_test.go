@@ -194,7 +194,7 @@ func TestStreamReply_SilentPlainRunShowsHeaderOnly(t *testing.T) {
 }
 
 // Stop after text arrived delivers that text (D021).
-func TestStreamReply_SilentStopDeliversPartialText(t *testing.T) {
+func TestStreamReply_SilentStopAcknowledgesWithoutPartialText(t *testing.T) {
 	fake := &fakeTelegram{}
 	okDrafts(fake, "603")
 	f := startSilent(t, fake, func(f *silentFixture) {
@@ -215,7 +215,7 @@ func TestStreamReply_SilentStopDeliversPartialText(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 	go f.s.finish("x")
-	if got := fake.callsTo("sendMessage")[0].Form["text"]; !strings.Contains(got, "Half an answer") || strings.Contains(got, "⚙️") {
+	if got := fake.callsTo("sendMessage")[0].Form["text"]; got != stoppedEmpty {
 		t.Errorf("stopped reply = %q", got)
 	}
 }
@@ -267,7 +267,7 @@ func TestStreamReply_SilentEditPathStopLongPartial(t *testing.T) {
 		t.Fatalf("err = %v, want ErrStopped", err)
 	}
 	go f.s.finish("x")
-	if got := repliesAfterPlaceholder(fake); !strings.Contains(got, "PARTIAL END") {
-		t.Errorf("stopped reply sends = %q, want the partial text", got)
+	if got := repliesAfterPlaceholder(fake); got != stoppedEmpty {
+		t.Errorf("stopped reply sends = %q, want Stop acknowledgement", got)
 	}
 }
