@@ -15,9 +15,11 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
+// Caller holds generationMu through placeholder memoization. A stale captured
+// registration must not persist a binding or mutate its successor.
 func (b *Bot) bindControlMessage(ctx context.Context, it queue.Item, msg int) {
 	b.inflightMu.Lock()
-	t := b.inflight[it.ID]
+	t := b.generationLocked(ctx, it.ID)
 	if t != nil {
 		t.messages[msg] = true
 	}

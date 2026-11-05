@@ -164,7 +164,7 @@ func TestFinalHandoffDelegationNeverCapturesReplacement(t *testing.T) {
 			defer oldDone()
 			done := make(chan error, 1)
 			if mode == "sync_to_stream" {
-				b.waitPlaceholders = map[waitKey]int{waitKeyOf(item): 123}
+				b.waitPlaceholders = map[waitKey]int{b.waitKeyOf(t.Context(), item): 123}
 				b.syncRun = func(context.Context, string, int, runner.Tier, string) (string, error) {
 					close(entered)
 					<-release
@@ -215,7 +215,7 @@ func TestStopWinsAfterResultBeforePreviewJoin(t *testing.T) {
 	b, item := newStreamFixture(t, fake)
 	defer b.registerInflight(item.ID, item.ChatID, 0, func() {})()
 	quit, joined := make(chan struct{}), make(chan struct{})
-	b.waitRefresh = map[waitKey]waitRefresher{waitKeyOf(item): {quit: quit, done: joined}}
+	b.waitRefresh = map[waitKey]waitRefresher{b.waitKeyOf(t.Context(), item): {quit: quit, done: joined}}
 	chunks := make(chan string, 1)
 	chunks <- "visible partial"
 	close(chunks)
@@ -254,9 +254,9 @@ func TestLateStopRejectedBeforeVoiceOnlySynthesis(t *testing.T) {
 	SetReplyMode(streamChat, "voice")
 	t.Cleanup(func() { SetReplyMode(streamChat, "") })
 	b, item := newStreamFixture(t, voiceFake(false))
-	b.waitPlaceholders = map[waitKey]int{waitKeyOf(item): 123}
 	var canceled atomic.Int32
 	defer b.registerInflight(item.ID, item.ChatID, 0, func() { canceled.Add(1) })()
+	b.waitPlaceholders = map[waitKey]int{b.waitKeyOf(t.Context(), item): 123}
 	b.syncRun = func(context.Context, string, int, runner.Tier, string) (string, error) { return "answer", nil }
 	entered, release := make(chan struct{}), make(chan struct{})
 	b.tts = func(context.Context, string, string) ([]byte, error) {

@@ -181,7 +181,7 @@ func TestTerminalErrorJoinsPendingStop(t *testing.T) {
 			entered, release := make(chan struct{}), make(chan struct{})
 			turn.persistStop = func(context.Context) (string, error) { close(entered); <-release; return "intent", nil }
 			quit, joined := make(chan struct{}), make(chan struct{})
-			b.waitRefresh = map[waitKey]waitRefresher{waitKeyOf(item): {quit: quit, done: joined}}
+			b.waitRefresh = map[waitKey]waitRefresher{b.waitKeyOf(t.Context(), item): {quit: quit, done: joined}}
 			terminal := errors.New("native failed")
 			done := make(chan error, 1)
 			if mode == "sync" {
@@ -304,7 +304,7 @@ func TestWaitPreviewHelpersCannotReopenAcceptedStop(t *testing.T) {
 	if finalGenerationTurn(ctx).requestStop(ctx) != control.StopAccepted {
 		t.Fatal("stop failed")
 	}
-	b.waitPlaceholders = map[waitKey]int{waitKeyOf(item): 123}
+	b.waitPlaceholders = map[waitKey]int{b.waitKeyOf(t.Context(), item): 123}
 	b.waitNotice(ctx, item)(runner.WaitSlot)
 	b.takeWaitPlaceholder(ctx, item)
 	b.preparePrivateStop(ctx, item)

@@ -243,7 +243,7 @@ func (b *Bot) runAgentStreaming(ctx context.Context, item queue.Item) error {
 	waitCtx := runner.WithWaitNotice(runCtx, b.waitNotice(ctx, item))
 	stream, err := b.runner.RunStream(waitCtx, item.Folder, item.ThreadID, tier, b.allowlist, prompt)
 	// The wait is over: no wait draft refresh may land after this point.
-	b.stopWaitDraftRefresh(item)
+	b.stopWaitDraftRefresh(ctx, item)
 	if err != nil {
 		if noReplayError(err) {
 			return errors.Join(err, b.observeStopCompletion(ctx, runner.RunResult{Err: err}))
@@ -607,7 +607,7 @@ loop:
 	// Terminal errors and success share the same owner boundary: neither may
 	// retire a generation while Stop persistence is pending.
 	ticker.Stop()
-	b.stopWaitDraftRefresh(item)
+	b.stopWaitDraftRefresh(ctx, item)
 	if err := handoff(ctx); err != nil {
 		if errors.Is(err, queue.ErrStopped) {
 			return stopped()
@@ -901,7 +901,7 @@ func (b *Bot) drainAndSend(ctx context.Context, item queue.Item, stream *runner.
 	if err := b.observeStopCompletion(ctx, res); err != nil {
 		return errors.Join(res.Err, err)
 	}
-	b.stopWaitDraftRefresh(item)
+	b.stopWaitDraftRefresh(ctx, item)
 	if err := handoff(ctx); err != nil {
 		if errors.Is(err, queue.ErrStopped) {
 			return b.finishStopped(ctx, item, settledResultStream(res), stoppedEmpty)

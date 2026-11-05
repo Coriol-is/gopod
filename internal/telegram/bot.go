@@ -142,9 +142,10 @@ type Bot struct {
 	goneThreads map[chatThread]bool
 
 	// inflight maps turn id to its stoppable streaming state (stop.go).
-	controlMu  sync.Mutex // serializes control-message writers and recovery
-	inflightMu sync.Mutex
-	inflight   map[int64]*inflightTurn
+	generationMu sync.Mutex // serializes registration with durable placeholder binding; no HTTP
+	controlMu    sync.Mutex // serializes control-message writers and recovery
+	inflightMu   sync.Mutex
+	inflight     map[int64]*inflightTurn
 
 	// waitPlaceholders holds placeholders sent early by a turn's agent
 	// gate wait notice, for streamReply to take over (agentwait.go).

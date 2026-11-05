@@ -41,14 +41,26 @@ func waitText(r runner.WaitReason) string {
 
 // waitKey names one turn's early placeholder.
 type waitKey struct {
-	turn   int64
-	chat   int64
-	msg    int
-	thread int
+	turn       int64
+	chat       int64
+	msg        int
+	thread     int
+	generation *inflightTurn
 }
 
-func waitKeyOf(item queue.Item) waitKey {
-	return waitKey{item.ID, item.ChatID, item.MessageID, item.ThreadID}
+// A captured generation stays part of the key after retirement, so old cleanup
+// can remove only its own placeholder/refresher. Unbound legacy callers snapshot
+// the registry; production callers carry the registration context.
+func (b *Bot) waitKeyOf(ctx context.Context, item queue.Item) waitKey {
+	var t *inflightTurn
+	if binding, ok := ctx.Value(finalGenerationKey{}).(finalGeneration); ok {
+		t = binding.turn
+	} else {
+		b.inflightMu.Lock()
+		t = b.inflight[item.ID]
+		b.inflightMu.Unlock()
+	}
+	return waitKey{turn: item.ID, chat: item.ChatID, msg: item.MessageID, thread: item.ThreadID, generation: t}
 }
 
 // waitNotice returns the runner.WaitNotice of one streamed turn. ctx is
@@ -56,7 +68,7 @@ func waitKeyOf(item queue.Item) waitKey {
 func (b *Bot) waitNotice(ctx context.Context, item queue.Item) runner.WaitNotice {
 	return func(reason runner.WaitReason) {
 		text := waitText(reason)
-		if ph := b.waitPlaceholder(item); ph != 0 {
+		if ph := b.waitPlaceholder(ctx, item); ph != 0 {
 			withGenerationPreview(ctx, func() error { return b.editMessageKB(ctx, item.ChatID, ph, text, b.turnKeyboard(ctx, item.ID)) })
 			return
 		}
@@ -96,7 +108,7 @@ func (b *Bot) waitNotice(ctx context.Context, item queue.Item) runner.WaitNotice
 		if b.waitPlaceholders == nil {
 			b.waitPlaceholders = make(map[waitKey]int)
 		}
-		b.waitPlaceholders[waitKeyOf(item)] = ph
+		b.waitPlaceholders[b.waitKeyOf(ctx, item)] = ph
 		b.waitMu.Unlock()
 	}
 }
@@ -119,22 +131,22 @@ func (b *Bot) preparePrivateStop(ctx context.Context, item queue.Item) {
 	if b.waitPlaceholders == nil {
 		b.waitPlaceholders = make(map[waitKey]int)
 	}
-	b.waitPlaceholders[waitKeyOf(item)] = ph
+	b.waitPlaceholders[b.waitKeyOf(ctx, item)] = ph
 	b.waitMu.Unlock()
 }
 
-func (b *Bot) waitPlaceholder(item queue.Item) int {
+func (b *Bot) waitPlaceholder(ctx context.Context, item queue.Item) int {
 	b.waitMu.Lock()
 	defer b.waitMu.Unlock()
-	return b.waitPlaceholders[waitKeyOf(item)]
+	return b.waitPlaceholders[b.waitKeyOf(ctx, item)]
 }
 
 // popWaitPlaceholder returns (and forgets) the placeholder the turn's
 // wait notice sent, or 0.
-func (b *Bot) popWaitPlaceholder(item queue.Item) int {
+func (b *Bot) popWaitPlaceholder(ctx context.Context, item queue.Item) int {
 	b.waitMu.Lock()
 	defer b.waitMu.Unlock()
-	k := waitKeyOf(item)
+	k := b.waitKeyOf(ctx, item)
 	ph := b.waitPlaceholders[k]
 	delete(b.waitPlaceholders, k)
 	return ph
@@ -143,7 +155,7 @@ func (b *Bot) popWaitPlaceholder(item queue.Item) int {
 // takeWaitPlaceholder hands the turn's early placeholder to streamReply,
 // back to the cursor now that the agent runs. 0 when there is none.
 func (b *Bot) takeWaitPlaceholder(ctx context.Context, item queue.Item) int {
-	ph := b.popWaitPlaceholder(item)
+	ph := b.popWaitPlaceholder(ctx, item)
 	if ph != 0 {
 		withGenerationPreview(ctx, func() error { return b.editMessageKB(ctx, item.ChatID, ph, "", b.turnKeyboard(ctx, item.ID)) })
 	}
@@ -164,7 +176,7 @@ func (b *Bot) streamNotStarted(ctx, runCtx context.Context, item queue.Item) (bo
 	if hold := stopFailure(ctx); hold != nil {
 		return true, hold
 	}
-	ph := b.popWaitPlaceholder(item)
+	ph := b.popWaitPlaceholder(ctx, item)
 	if ctx.Err() != nil {
 		return true, nil
 	}
@@ -189,8 +201,19 @@ func (b *Bot) startWaitDraftRefresh(ctx context.Context, item queue.Item, draftI
 	if every <= 0 {
 		every = draftRefresh
 	}
+	key := b.waitKeyOf(ctx, item)
 	quit := make(chan struct{})
 	done := make(chan struct{})
+	b.waitMu.Lock()
+	if b.waitRefresh == nil {
+		b.waitRefresh = make(map[waitKey]waitRefresher)
+	}
+	if _, exists := b.waitRefresh[key]; exists {
+		b.waitMu.Unlock()
+		return
+	}
+	b.waitRefresh[key] = waitRefresher{quit: quit, done: done}
+	b.waitMu.Unlock()
 	go func() {
 		defer close(done)
 		ticker := time.NewTicker(every)
@@ -213,19 +236,14 @@ func (b *Bot) startWaitDraftRefresh(ctx context.Context, item queue.Item, draftI
 			if wait, ok := retryAfter(err); ok {
 				hold = time.Now().Add(wait)
 			}
-			if !b.draftsSupported(item.ChatID) || errors.Is(err, errThreadGone) {
+			if errors.Is(err, errPreviewSealed) || !b.draftsSupported(item.ChatID) || errors.Is(err, errThreadGone) {
 				return
 			}
 			b.log.Debug("wait draft refresh failed",
 				slog.Int64("chat_id", item.ChatID), slog.Any("err", err))
 		}
 	}()
-	b.waitMu.Lock()
-	if b.waitRefresh == nil {
-		b.waitRefresh = make(map[waitKey]waitRefresher)
-	}
-	b.waitRefresh[waitKeyOf(item)] = waitRefresher{quit: quit, done: done}
-	b.waitMu.Unlock()
+
 }
 
 // waitRefresher is a running wait draft refresher: close quit to stop
@@ -238,14 +256,25 @@ type waitRefresher struct {
 // stopWaitDraftRefresh stops the turn's wait draft refresher, if any,
 // and returns once it has exited, so no refresh can land after the
 // stream's first draft.
-func (b *Bot) stopWaitDraftRefresh(item queue.Item) {
+func (b *Bot) stopWaitDraftRefresh(ctx context.Context, item queue.Item) {
+	k := b.waitKeyOf(ctx, item)
 	b.waitMu.Lock()
-	k := waitKeyOf(item)
 	rf, ok := b.waitRefresh[k]
-	delete(b.waitRefresh, k)
-	b.waitMu.Unlock()
 	if ok {
-		close(rf.quit)
-		<-rf.done
+		select {
+		case <-rf.quit:
+		default:
+			close(rf.quit)
+		}
 	}
+	b.waitMu.Unlock()
+	if !ok {
+		return
+	}
+	<-rf.done
+	b.waitMu.Lock()
+	if current, exists := b.waitRefresh[k]; exists && current.done == rf.done {
+		delete(b.waitRefresh, k)
+	}
+	b.waitMu.Unlock()
 }

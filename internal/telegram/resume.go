@@ -48,6 +48,16 @@ func (b *Bot) recordPlaceholder(ctx context.Context, item queue.Item, msgID int)
 	if item.ID == 0 || msgID == 0 || b.store == nil {
 		return
 	}
+	b.generationMu.Lock()
+	defer b.generationMu.Unlock()
+	b.inflightMu.Lock()
+	binding, bound := ctx.Value(finalGenerationKey{}).(finalGeneration)
+	current := b.generationLocked(ctx, item.ID)
+	valid := !bound || (binding.turnID == item.ID && (current != nil || (binding.turn == nil && b.inflight[item.ID] == nil)))
+	b.inflightMu.Unlock()
+	if !valid {
+		return
+	}
 	b.bindControlMessage(ctx, item, msgID)
 	if err := b.store.SetTurnPlaceholder(ctx, item.ID, msgID); err != nil {
 		b.log.Warn("record placeholder", slog.Int64("turn", item.ID), slog.Any("err", err))

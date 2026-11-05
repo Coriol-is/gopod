@@ -72,6 +72,8 @@ func (b *Bot) registerInflightTurn(turnID int64, chatID int64, threadID int, can
 	for _, setup := range configure {
 		setup(t)
 	}
+	b.generationMu.Lock()
+	defer b.generationMu.Unlock()
 	b.inflightMu.Lock()
 	if b.inflight == nil {
 		b.inflight = make(map[int64]*inflightTurn)
@@ -82,6 +84,8 @@ func (b *Bot) registerInflightTurn(turnID int64, chatID int64, threadID int, can
 	b.inflight[turnID] = t
 	b.inflightMu.Unlock()
 	return t, func() {
+		b.generationMu.Lock()
+		defer b.generationMu.Unlock()
 		b.inflightMu.Lock()
 		defer b.inflightMu.Unlock()
 		t.retire()
