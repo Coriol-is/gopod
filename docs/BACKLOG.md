@@ -11,6 +11,13 @@ slices #168–#172 are deployed. Health, state preservation and Telegram version
 passed; [rollout evidence](deployments/2026-11-05-queue-delivery-ownership.md).
 Foreground activation, topic retirement and provider/client acceptance stay open.
 
+## Code-inline implementation checkpoint — 2026-11-05
+
+The [conditional-plan proposal](plans/2026-11-05-final-code-inline-alternatives.md)
+is ready for an architectural decision. It proposes bounded pre-rendered suffix
+variants with all-inline preparation above the budget; no conditional source
+implementation or foreground activation is claimed. Production remains `d58cdd2`.
+
 ## Current priority
 
 Use [ROADMAP execution priority](../ROADMAP.md#execution-priority--2026-11-04),

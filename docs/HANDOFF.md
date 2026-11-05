@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-05 (Pi rollout and Telegram version verified)
+**Last updated:** 2026-11-05 (conditional code-inline contract proposed)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -13,7 +13,23 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — Pi deployed, 2026-11-05
+## Resume here — code-inline contract awaiting decision, 2026-11-05
+
+Owner requested the next CP-002 code-file-to-inline slice. Analysis found that
+upload refusal changes the complete rendered suffix, potentially its message
+count, keyboard, reply target and edit eligibility; the existing photo fallback
+cannot represent that change. A [concrete conditional-plan proposal](plans/2026-11-05-final-code-inline-alternatives.md)
+records storage/selection invariants, bounds, outcome policy, validation and
+rollback. Recommended: freeze all suffix variants for at most four code documents;
+use all-inline preparation beyond that or the 2 MiB variant budget. Alternative:
+linear fragments, which change successful presentation. This is an architectural
+contract extending D063 and needs the owner decision under CLAUDE workflow rules.
+No source changes, new deployment or live acceptance in this slice yet.
+Branch `feat/final-code-fallback`, base `a215a28`; next action is settle that
+contract, append the accepted ADR, then implement and validate. Do not treat the
+proposal as an enabled implementation or a completed CP-002 milestone.
+
+## Latest deployment — Pi, 2026-11-05
 
 Production is `d58cdd2`, deployed at 01:57:55 UTC. Controller healthy, zero
 restarts/OOM; exact binary hash verified, SQLite integrity OK and full-row
