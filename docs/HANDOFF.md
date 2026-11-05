@@ -26,10 +26,12 @@ linear fragments, which change successful presentation. This is an architectural
 contract extending D063, accepted by the owner as D065.
 Implementation checkpoint: immutable conditional manifests, atomic suffix selection,
 conservative refusal classification, bounded planner and regression tests are now
-present locally. Focused planner/Store tests pass; full checks and final independent
-review remain pending. No deployment or live acceptance in this slice.
-Branch `feat/final-code-fallback`, base `a215a28`; next action is implement the accepted
-contract, then validate and independently review. Do not treat the
+present locally. Full build/vet/test and full Store/Telegram race pass. Independent source review
+of `652a8ac` found no remaining blocking defect; the additionally requested old-
+schema migration regression passes under race. [Review evidence](reviews/2026-11-05-code-inline-alternatives.md).
+PR #173 is open; final-head required CI and final review confirmation remain the
+merge gates. No deployment or live acceptance in this slice.
+Branch `feat/final-code-fallback`, base `a215a28`; next action is confirm final review and green PR CI, then squash-merge. Do not treat the
 proposal as an enabled implementation or a completed CP-002 milestone.
 
 ## Latest deployment — Pi, 2026-11-05

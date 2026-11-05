@@ -61,7 +61,22 @@ retention, and 101 topics behind a fenced prefix population.
 The first full run passed build/vet and all packages except the new 101-topic test:
 its fixture hit the production 40-files/hour admission limit. The fixture now
 explicitly raises its own limit; production admission policy is unchanged.
-Full rerun, race, final review and exact-head required CI are pending.
+Full build/vet/test rerun passed. Full Store/Telegram race suites passed
+(26.942s / 57.721s). Independent source review of `652a8ac` found no remaining
+blocking defect and repeated focused races (9.816s / 10.581s). Its requested
+populated-old-schema regression now covers both ready and published linear intents,
+restores the old trigger before reopen and verifies unchanged bytes/hashes,
+publication identity and immutability; focused race passed (6.399s). Production
+source did not change after the reviewed commit. Exact final-head CI remains the
+merge gate in [PR #173](https://github.com/Coriol-is/gopod/pull/173).
+
+Sonar analysis of exact source `652a8ac` at 2026-11-05 11:31:53 UTC: gate OK,
+0 bugs, 0 vulnerabilities, 27 code smells. Full open-issue page (27/27) was read
+through the CLI API, without switching the active organization. Findings remain
+visible: mostly cognitive complexity, plus parameter count/interface naming and
+background-context guidance. Detached bounded persistence contexts deliberately
+outlive an already-issued HTTP attempt so cancellation cannot discard its outcome;
+no findings were accepted/suppressed to obtain a passing gate.
 
 ## Boundaries
 

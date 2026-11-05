@@ -15,8 +15,8 @@ Foreground activation, topic retirement and provider/client acceptance stay open
 
 The [conditional-plan proposal](plans/2026-11-05-final-code-inline-alternatives.md)
 was accepted as D065. Bounded pre-rendered suffix variants and all-inline budget
-fallback are implemented locally; full checks, final review and integration are
-pending. Foreground activation remains gated. Production remains `d58cdd2`.
+fallback are implemented in PR #173. Full build/vet/test and affected races pass;
+source review found no remaining blocker. Final CI and integration are pending. Foreground activation remains gated. Production remains `d58cdd2`.
 
 ## Current priority
 

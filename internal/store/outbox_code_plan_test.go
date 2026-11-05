@@ -387,3 +387,66 @@ func TestCodePlanCorruptManifestFailsClosed(t *testing.T) {
 		t.Fatal(ok, err)
 	}
 }
+
+func TestCodePlanMigrationPreservesPopulatedLinearIntents(t *testing.T) {
+	for _, state := range []string{"ready", "published"} {
+		t.Run(state, func(t *testing.T) {
+			f, r, p := finalFixture(t)
+			if _, err := f.st.StageFinalReply(t.Context(), r.ID, p); err != nil {
+				t.Fatal(err)
+			}
+			var before Delivery
+			if state == "published" {
+				var err error
+				before, err = f.st.PublishReadyFinalReply(t.Context(), r.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			var raw []byte
+			var hash, inputHash string
+			if err := f.st.db.QueryRow(`SELECT plan_json,plan_hash,input_hash FROM final_reply_intents WHERE result_id=?`, r.ID).Scan(&raw, &hash, &inputHash); err != nil {
+				t.Fatal(err)
+			}
+			// Reconstruct the populated pre-D065 schema, including its original trigger.
+			for _, stmt := range []string{`DROP TABLE outbox_code_plans`, `DROP TRIGGER final_reply_plan_immutable`, `CREATE TRIGGER final_reply_plan_immutable BEFORE UPDATE OF plan_json,plan_hash ON final_reply_intents WHEN OLD.state <> 'preparing' BEGIN SELECT RAISE(ABORT,'final reply plan is immutable'); END`} {
+				if _, err := f.st.db.Exec(stmt); err != nil {
+					t.Fatal(err)
+				}
+			}
+			path := f.st.path
+			if err := f.st.Close(); err != nil {
+				t.Fatal(err)
+			}
+			st, err := Open(t.Context(), path, silentLogger())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer st.Close()
+			var afterRaw []byte
+			var afterHash, afterInput string
+			if err = st.db.QueryRow(`SELECT plan_json,plan_hash,input_hash FROM final_reply_intents WHERE result_id=?`, r.ID).Scan(&afterRaw, &afterHash, &afterInput); err != nil {
+				t.Fatal(err)
+			}
+			if string(raw) != string(afterRaw) || hash != afterHash || inputHash != afterInput {
+				t.Fatal("migration rewrote immutable intent")
+			}
+			if _, err = st.db.Exec(`UPDATE final_reply_intents SET plan_json='{}' WHERE result_id=?`, r.ID); err == nil {
+				t.Fatal("migration weakened immutable plan")
+			}
+			got, err := st.PublishReadyFinalReply(t.Context(), r.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if state == "published" && (before.ID != got.ID || before.PlanHash != got.PlanHash) {
+				t.Fatal("publication replayed or hash changed")
+			}
+			if got.PlanHash != planHash(p.Request) || len(got.Parts) != 1 || partHash(0, got.Parts[0].Part) != partHash(0, p.Request.Parts[0]) {
+				t.Fatal("old linear output changed")
+			}
+			if n := countRows(t, st, `SELECT count(*) FROM outbox_code_plans`); n != 0 {
+				t.Fatal("linear intent reinterpreted")
+			}
+		})
+	}
+}
