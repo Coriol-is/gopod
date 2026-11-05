@@ -287,6 +287,9 @@ func publishDeliveryQ(ctx context.Context, q taskSQL, limits OutboxLimits, req P
 		if !errors.Is(err, sql.ErrNoRows) {
 			return Delivery{}, err
 		}
+		if err := checkResultPublicationQ(ctx, q, res); err != nil {
+			return Delivery{}, err
+		}
 	}
 
 	if r := req.Request; r != nil {

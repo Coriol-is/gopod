@@ -13,7 +13,18 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — successful-final ownership merged, 2026-11-05
+## Resume here — stopped-result publication fence in progress, 2026-11-05
+
+Branch `fix/stopped-result-publication`, base `fea0d6a`. Recovery currently can
+publish a ready final plan whose turn is durably stopped. Add a transactional
+publication fence for unpublished interactive results with any stopped member;
+keep immutable evidence and classify the refusal as a visible recovery hold.
+Existing publication is still outbox-owned. Focused tests pass; independent review
+and full checks are running. [Evidence](reviews/2026-11-05-stopped-result-publication.md). No deployment.
+This does not implement durable Stop intent before native completion, or cancel
+already published parts. Foreground producer remains disconnected.
+
+## Successful-final ownership merged, 2026-11-05
 
 PR [#174](https://github.com/Coriol-is/gopod/pull/174) squash-merged as `40f368f`.
 The existing sync/stream/fallback sender now atomically hands successful results
