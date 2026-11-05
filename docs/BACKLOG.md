@@ -32,7 +32,8 @@ with deployment/auth changes. No new work is activated by this reconciliation.
 `fix/wait-control-generation` binds wait caches/cleanup to captured registrations
 and fences durable placeholder/control persistence against registration replacement.
 [Scope and verification](reviews/2026-11-05-wait-control-generation.md).
-Final review/full checks/CI pending; foreground cutover remains closed.
+PR #179: final review/full checks/races PASS; required CI pending.
+Foreground cutover remains closed.
 
 ## Current deployed baseline
 

@@ -19,7 +19,8 @@ Branch `fix/wait-control-generation`, base `9de3cac`. Wait keys now include the
 captured generation; stale cleanup must not consume a successor's placeholder or
 join its refresher. Placeholder/control persistence is serialized with registration
 replacement and rejects retired bindings. Repeated generation races and initial independent review pass. Full checks found
-and fixed unregistered-placeholder compatibility; final build/vet/tests and delta review pass; full Telegram race/CI pending.
+and fixed unregistered-placeholder compatibility; final build/vet/tests, full Telegram race (58.097 s) and delta review pass.
+PR #179 source `699c0aa`; required CI and advisory Sonar pending.
 [Evidence](reviews/2026-11-05-wait-control-generation.md).
 No deployment or foreground activation.
 

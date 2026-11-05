@@ -1,6 +1,6 @@
 # CP-002 wait-state and durable control generation ownership
 
-Base `9de3cac`; branch `fix/wait-control-generation`.
+Base `9de3cac`; reviewed source `699c0aa`; PR #179.
 
 ## Gap and implementation
 
@@ -39,7 +39,8 @@ handling is unchanged. No schema, protocol or activation change.
 - Independent review PASS; initial focused races 8.842 s and late HTTP test
   6.636 s; final compatibility delta review/races PASS (6.344 s).
 - Final build/vet/all tests PASS (Telegram package 43.371 s).
-- Full Telegram race and required CI pending at this checkpoint.
+- Final full Telegram race PASS (58.097 s). Required CI and advisory Sonar
+  pending at this checkpoint.
 
 ## Boundaries
 
