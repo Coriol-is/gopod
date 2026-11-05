@@ -14,8 +14,9 @@ import (
 // ownershipSendError cannot be classified as parse/keyboard/thread refusal.
 // It prevents retries of this operation; independent later output remains allowed.
 type ownershipSendError struct {
-	cause     error
-	attempted bool
+	cause         error
+	attempted     bool
+	receiptBacked bool
 }
 
 func (e *ownershipSendError) Error() string {
@@ -70,7 +71,8 @@ func (b *Bot) ownedTextSend(ctx context.Context, chat int64, source int, p *bot.
 			return &ownershipSendError{attempted: true, cause: store.ErrMessageOwnership}
 		}
 		if e = b.store.AcknowledgeTelegramMessageOwner(settle, owner, sent.ID); e != nil {
-			return &ownershipSendError{attempted: true, cause: e}
+			retained := b.retainMessageReceipt(owner, sent.ID)
+			return &ownershipSendError{attempted: true, receiptBacked: retained, cause: e}
 		}
 		return nil
 	})
@@ -84,6 +86,9 @@ func (b *Bot) ownedTextSend(ctx context.Context, chat int64, source int, p *bot.
 // context can supply authority. An old registration cannot reuse an old control.
 func (b *Bot) messageOwner(ctx context.Context, chat int64, message int) (chatThread, bool, error) {
 	if b.store != nil && chat > 0 {
+		if err := b.reconcileMessageReceipts(ctx, func(r messageReceipt) bool { return r.owner.ChatID == chat && r.message == message }); err != nil {
+			return chatThread{}, false, err
+		}
 		owner, err := b.store.TelegramMessageOwner(ctx, chat, message)
 		if err == nil {
 			return chatThread{chat, owner.SourceThread}, true, nil

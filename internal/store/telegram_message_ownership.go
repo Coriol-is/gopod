@@ -78,26 +78,43 @@ func (s *Store) AcknowledgeTelegramMessageOwner(ctx context.Context, o TelegramM
 	if o.AttemptID == "" || message <= 0 {
 		return ErrMessageOwnership
 	}
+	_, err := s.withTx(ctx, func(q taskSQL) error { return acknowledgeTelegramMessageOwnerQ(ctx, q, o, message) })
+	return err
+}
+
+// ReconcileTelegramMessageOwner accepts only a host-retained positive receipt
+// for the exact original attempt and still-current registration. It performs no
+// remote request and cannot resolve an unknown outcome or a different epoch.
+func (s *Store) ReconcileTelegramMessageOwner(ctx context.Context, o TelegramMessageOwner, message int) error {
+	if o.AttemptID == "" || message <= 0 {
+		return ErrMessageOwnership
+	}
 	_, err := s.withTx(ctx, func(q taskSQL) error {
-		var raw string
-		var chat int64
-		var src, dst int
-		var existing sql.NullInt64
-		if e := q.QueryRowContext(ctx, `SELECT scope_json,chat_id,source_thread,target_thread,message_id FROM telegram_message_ownership WHERE attempt_id=?`, o.AttemptID).Scan(&raw, &chat, &src, &dst, &existing); e != nil {
-			return e
+		if err := validateScopeQ(ctx, q, o.Scope); err != nil {
+			return err
 		}
-		var scope ScopeRef
-		if e := json.Unmarshal([]byte(raw), &scope); e != nil {
-			return e
-		}
-		if scope != o.Scope || chat != o.ChatID || src != o.SourceThread || dst != o.TargetThread || (existing.Valid && existing.Int64 != int64(message)) {
-			return ErrMessageOwnership
-		}
-		// Repeated acknowledgement is idempotent; another attempt can never replace it.
-		_, e := q.ExecContext(ctx, `UPDATE telegram_message_ownership SET message_id=? WHERE attempt_id=?`, message, o.AttemptID)
-		return e
+		return acknowledgeTelegramMessageOwnerQ(ctx, q, o, message)
 	})
 	return err
+}
+func acknowledgeTelegramMessageOwnerQ(ctx context.Context, q taskSQL, o TelegramMessageOwner, message int) error {
+	var raw string
+	var chat int64
+	var src, dst int
+	var existing sql.NullInt64
+	if e := q.QueryRowContext(ctx, `SELECT scope_json,chat_id,source_thread,target_thread,message_id FROM telegram_message_ownership WHERE attempt_id=?`, o.AttemptID).Scan(&raw, &chat, &src, &dst, &existing); e != nil {
+		return e
+	}
+	var scope ScopeRef
+	if e := json.Unmarshal([]byte(raw), &scope); e != nil {
+		return e
+	}
+	if scope != o.Scope || chat != o.ChatID || src != o.SourceThread || dst != o.TargetThread || (existing.Valid && existing.Int64 != int64(message)) {
+		return ErrMessageOwnership
+	}
+	// Repeated acknowledgement is idempotent; another attempt can never replace it.
+	_, e := q.ExecContext(ctx, `UPDATE telegram_message_ownership SET message_id=? WHERE attempt_id=?`, message, o.AttemptID)
+	return e
 }
 
 // RefuseTelegramMessageOwner is only for definite Bot API refusal or proof of
