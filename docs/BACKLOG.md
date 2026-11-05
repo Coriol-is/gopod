@@ -32,7 +32,8 @@ with deployment/auth changes. No new work is activated by this reconciliation.
 
 `fix/outbox-keyboard-fallback` adds a durable bare-keyboard attempt after an
 explicit Telegram keyboard refusal. [Scope and checks](reviews/2026-11-05-outbox-keyboard-fallback.md).
-Full checks/review/CI pending; full reply-action memo/callback parity and foreground
+Full checks/races and independent review PASS; required CI pending.
+Full reply-action memo/callback parity and foreground
 activation remain open.
 
 ## Current deployed baseline

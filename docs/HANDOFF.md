@@ -19,7 +19,8 @@ Branch `fix/outbox-keyboard-fallback`, base `167381a`. Ordinary final sends can
 remove refused buttons and still deliver text; outbox currently cannot. Add a
 separate durable bare-keyboard attempt after an explicit 400 keyboard refusal,
 retaining destination/content/targets and conservative ambiguous outcomes.
-Focused store/transport races PASS; full checks/review/CI pending.
+Full build/vet/tests, full Store/Telegram races and independent review PASS
+on source `5f92f9a`; required CI and advisory Sonar pending.
 [Evidence](reviews/2026-11-05-outbox-keyboard-fallback.md).
 Full reply-action memo/callback parity and foreground
 cutover remain open; no deployment.

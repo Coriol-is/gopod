@@ -1,6 +1,6 @@
 # CP-002 durable keyboard-refusal fallback
 
-Base `167381a`; branch `fix/outbox-keyboard-fallback`.
+Base `167381a`; reviewed source `5f92f9a`; branch `fix/outbox-keyboard-fallback`.
 
 ## Selected parity gap
 
@@ -41,7 +41,9 @@ No fallback is authorized by timeout, generic refusal, 5xx or a missing HTTP 400
 - Unknown transition commit, accepted-but-unrecorded outcome and cancellation after
   selection retain conservative behavior; no blind second send/replay.
 - Independent source review PASS; focused races PASS (Store 7.957 s, Telegram
-  8.121 s), including real transport. Full build/vet/tests and full races pending.
+  8.121 s), including real transport.
+- Full build/vet/all tests PASS; full races PASS (Store 71.324 s, Telegram
+  97.270 s). Required CI and advisory Sonar pending.
 
 ## Scope and rollout boundaries
 
