@@ -13,7 +13,20 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — deployed and reconciled, 2026-11-06
+## Resume here — next parallel reliability batch, 2026-11-06
+
+Owner resumed implementation with the standing full release cycle. Base `8b53386`:
+- CP-002: `fix/control-final-arbitration`, worktree `../gopod-control-arbitration`,
+  agent freeze_next; scope control-repair versus final-edit arbitration and bounded
+  More/Back lifecycle checkpoints. Exact plan/review follows source inspection.
+- CP-016: `feat/topic-ownership-next`, worktree `../gopod-topic-ownership`, agent
+  topic_next; next bounded ownership prerequisite after noncontrol main notices.
+- Independent reviewer review_pickers; root integrates global docs, required CI,
+  merge, Pi controller rollout/acceptance and bounded housekeeping. No worker.
+
+Foreground activation and topic deletion remain gated. Current Pi `80f4b11`.
+
+## Previous completed cycle — 2026-11-06
 
 Permanent development cycle is recorded in [CLAUDE.md](../CLAUDE.md#workflow-rules):
 review/CI/merge → Pi controller deploy/acceptance → backlog/docs/handoff → housekeeping.
@@ -21,7 +34,7 @@ Deployment `80f4b11` passed exact-main CI `42198643997`, isolated readiness, ver
 matched-stopped backup, health/state preservation and Telegram version acceptance.
 Controller only; no worker. [Release and cleanup evidence](deployments/2026-11-06-reliability-cycle-rollout.md).
 Two integrated clean worktrees and six local/remote branches removed. Protected
-backups/auth/rollback and unrelated services preserved. No source work in flight.
+backups/auth/rollback and unrelated services preserved. New work is listed above.
 
 ## Completed parallel slices — 2026-11-06
 

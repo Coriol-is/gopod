@@ -28,11 +28,17 @@ The independent acceptance lane starts with CP-040 A22–A25, then remaining
 Stop/restart and isolation checks. Coordinate one Telegram actor and avoid overlap
 with deployment/auth changes. No new work is activated by this reconciliation.
 
+## Active batch — 2026-11-06
+
+Control-repair/final-edit arbitration (CP-002) and the next ownership prerequisite
+(CP-016) are delegated from `8b53386` in separate worktrees. Scope reports and review
+will refine completed versus remaining gates. Standing cycle includes review/CI,
+merge, Pi controller deploy, docs reconciliation and bounded housekeeping.
+
 ## Latest completed parallel work — 2026-11-06
 
 #182 (`0ac9b3f`) and #183 (`261805e`) passed full checks, races, independent review
-and required CI. Sonar OK for both; six/two smells retained. No implementation in
-flight. See the [completed ledger](history/BACKLOG-2026-11-05-completed.md) and
+and required CI. Sonar OK for both; six/two smells retained. Next batch is active as listed above. See the [completed ledger](history/BACKLOG-2026-11-05-completed.md) and
 [handoff](HANDOFF.md) for evidence; deployment is complete; feature activation gates remain separate.
 
 ## Current deployed baseline
