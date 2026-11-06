@@ -25,7 +25,8 @@ owner. No acceptance result or deployment status changes with this instruction.
 
 Full build/vet/tests, affected races, independent exact-head review and required
 PR CI PASS. Sonar OK for both (nine/five smells retained). Deploy target `0cd8078`,
-exact-main CI `42210762626` pending; Pi remains `80f4b11` until verified rollout.
+exact-main CI `42210762626` PASS; isolated candidate readiness PASS. Idle-only
+matched-stopped backup and rollout started; `80f4b11` remains last verified release.
 No worker or foreground/topic-delete activation. Root owns rollout/docs/housekeeping.
 
 **Next implementation:** persist/settle unknown remote legacy repair outcomes before
