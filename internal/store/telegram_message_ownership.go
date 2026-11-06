@@ -150,7 +150,7 @@ func (s *Store) TopicMessageOwnershipIdle(ctx context.Context, d TopicDeletion) 
 		}
 		var blocked bool
 		// Raw source/recipient match remains conservative even across registration drift.
-		e := q.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM telegram_message_ownership WHERE chat_id=CAST(SUBSTR(?,4) AS INTEGER) AND source_thread=? AND message_id IS NULL)`, d.Scope.JID, d.ThreadID).Scan(&blocked)
+		e := q.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM telegram_message_ownership WHERE chat_id=CAST(SUBSTR(?,4) AS INTEGER) AND source_thread=? AND message_id IS NULL) OR EXISTS(SELECT 1 FROM telegram_control_repair_attempts WHERE chat_id=CAST(SUBSTR(?,4) AS INTEGER) AND source_thread=? AND state='pending')`, d.Scope.JID, d.ThreadID, d.Scope.JID, d.ThreadID).Scan(&blocked)
 		if e != nil {
 			return e
 		}

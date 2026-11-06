@@ -385,7 +385,7 @@ func (d *OutboxDispatcher) persist(c store.OutboxClaim, out Outcome) {
 		out = Outcome{Kind: OutcomeAmbiguous, Code: "malformed_reply"}
 	}
 	// The plain fallback is one-shot even after a known-unsent refusal.
-	if c.PlainFallback && (out.Kind == OutcomeRateLimited || out.Kind == OutcomeNotSent) {
+	if c.PlainFallback && out.Code != "repair_pending" && out.Code != "edit_guard_held" && (out.Kind == OutcomeRateLimited || out.Kind == OutcomeNotSent) {
 		out.Kind = OutcomeRefused
 	}
 	diag := out.diagnostic()
@@ -406,7 +406,7 @@ func (d *OutboxDispatcher) persist(c store.OutboxClaim, out Outcome) {
 			return e
 		})
 	case OutcomeNotSent:
-		refund := out.Code == "canceled_before_dispatch"
+		refund := out.Code == "canceled_before_dispatch" || (out.Code == "repair_pending" || out.Code == "edit_guard_held")
 		next := d.cfg.Now().Add(d.retryDelay(c.Attempt, 0))
 		err = d.write(func(ctx context.Context) error {
 			_, e := d.backend.ReleaseUnsent(ctx, c, next, out.Code, diag, refund)

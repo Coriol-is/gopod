@@ -339,3 +339,32 @@ func TestKeyboardFallbackAcceptedButUnrecordedNeverReplays(t *testing.T) {
 		t.Fatal("replayed accepted result", ok, err, tr.callCount())
 	}
 }
+
+func TestPlainFallbackEditGuardFailurePreservesPendingBudget(t *testing.T) {
+	for _, cause := range []error{errors.New("database unavailable"), context.Canceled} {
+		t.Run(cause.Error(), func(t *testing.T) {
+			f := newOutboxFixture(t)
+			delivery := publishKeyboard(t, f, store.PartEdit)
+			c, ok, err := f.owner.ClaimNext(t.Context(), time.Now())
+			if err != nil || !ok {
+				t.Fatal(ok, err)
+			}
+			c, err = f.owner.BeginPlainFallback(t.Context(), c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			api := &fakeAPI{}
+			tr := &botTransport{api: api, editGuard: func(context.Context, int64, int) (func(), error) { return nil, cause }}
+			out := tr.Attempt(t.Context(), SendRequest{Kind: store.PartEdit, ChatID: 1, TargetMessageID: 99})
+			if out.Kind != OutcomeNotSent || out.Code != "edit_guard_held" || api.edits != 0 {
+				t.Fatal(out, api.edits)
+			}
+			disp := stepDispatcher(t, f.owner, tr)
+			disp.persist(c, out)
+			got, err := f.st.GetDelivery(t.Context(), delivery.ID)
+			if err != nil || got.Parts[0].State != store.PartPending || got.Parts[0].Attempts != c.Attempt-1 {
+				t.Fatal(got, err)
+			}
+		})
+	}
+}

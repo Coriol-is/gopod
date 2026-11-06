@@ -172,7 +172,10 @@ func (t *botTransport) Attempt(ctx context.Context, req SendRequest) Outcome {
 		if t.editGuard != nil {
 			release, err := t.editGuard(ctx, req.ChatID, int(req.TargetMessageID))
 			if err != nil {
-				return Outcome{Kind: OutcomeNotSent, Code: "canceled_before_dispatch"}
+				if errors.Is(err, store.ErrControlRepairPending) {
+					return Outcome{Kind: OutcomeNotSent, Code: "repair_pending"}
+				}
+				return Outcome{Kind: OutcomeNotSent, Code: "edit_guard_held"}
 			}
 			defer release()
 		}
