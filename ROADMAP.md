@@ -1,8 +1,8 @@
 # gopod — Roadmap
 
-Latest rollout: `6820422` on Pi, 2026-11-06 14:27 UTC, includes #191/D070;
+Latest rollout: `0200892` on Pi, 2026-11-06 15:07 UTC, includes #193/D071;
 no worker. D068 guide migration and bounded read-only matching-consumer acceptance
-passed; unrelated native/client gates remain. [Evidence](docs/deployments/2026-11-06-direct-edit-rollout.md).
+passed; unrelated native/client gates remain. [Evidence](docs/deployments/2026-11-06-durable-delete-rollout.md).
 
 
 Live milestone tracker. Update the **Status** column whenever you change reality.
@@ -10,6 +10,10 @@ For the *why* behind each milestone, see [docs/ARCHITECTURE.md](docs/ARCHITECTUR
 for integrations, see [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md); for memory,
 see [docs/MEMORY.md](docs/MEMORY.md). For the rolling "what's actually happening
 right now" view, see [docs/HANDOFF.md](docs/HANDOFF.md).
+
+D071 (#193) adds durable private placeholder deletion outcomes/tombstones; unknown
+results cannot reach fallback/TTS. Sonar excludes all tests by owner request;
+production-only main analysis remains over the50k plan limit. Go CI unchanged.
 
 ## Status legend
 
@@ -23,11 +27,11 @@ right now" view, see [docs/HANDOFF.md](docs/HANDOFF.md).
 
 ## Current backlog — 2026-11-04
 
-Refreshed 2026-11-06 at `6820422`. The [active code-backed backlog](docs/BACKLOG.md)
-contains remaining implementation and acceptance scope. Pi `6820422` includes
-#168–#180/#182/#183/#186/#187/#189/#191; the foreground producer is disconnected, managed tasks are off and
+Refreshed 2026-11-06 at `0200892`. The [active code-backed backlog](docs/BACKLOG.md)
+contains remaining implementation and acceptance scope. Pi `0200892` includes
+#168–#180/#182/#183/#186/#187/#189/#191/#193; the foreground producer is disconnected, managed tasks are off and
 CP-037 remains legacy. Health/version and bounded D068 consumer checks passed.
-[Rollout](docs/deployments/2026-11-06-direct-edit-rollout.md).
+[Rollout](docs/deployments/2026-11-06-durable-delete-rollout.md).
 
 Completed queue/delivery/Stop/IPC slices and superseded queues have moved to the
 [completed ledger](docs/history/BACKLOG-2026-11-05-completed.md) and
@@ -353,7 +357,7 @@ and [implementation/acceptance plan](docs/superpowers/plans/2026-10-25-personal-
 track the work. **Implementation deployed; final provider/client qualification remains open.**
 The architecture merged in #66/#67; follow-ups #88/#89 fixed Codex tree-budget admission and
 admit registered groups by default. #93/#95/#97 implement triggers, owner-in-group controls
-and private group-login guidance. Security groups 1–8 were deployed in `e3b5401`; current controller is `6820422`.
+and private group-login guidance. Security groups 1–8 were deployed in `e3b5401`; current controller is `0200892`.
 Historical 2026-10-29 evidence records Claude group new/resume success after owner login;
 final Codex two-turn/tool and cross-boundary acceptance remain open. Earlier TCP/offline-tool
 checks are in the [2026-10-27 report](docs/deployments/2026-10-27-group-isolation.md),

@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-06 (durable placeholder deletion in progress)
+**Last updated:** 2026-11-06 (D071 deployed; Sonar tests excluded)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -13,58 +13,34 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — D071 merged; deployment gates, 2026-11-06
+## Resume here — D071 deployed, 2026-11-06
 
-Owner resumed the next bounded CP-002 slice after D070. The sole production
-`DeleteMessage` call removes the sync voice-answer wait placeholder; currently it
-has no durable attempt, and an unknown deletion can reach Finished editing/TTS.
-Implementation is in `feat/durable-delete-outcomes`, sibling worktree
-`gopod-delete-outcomes`, based on `e8c9757`. The scope is durable provenance and
-commit-before-HTTP deletion evidence, mutual target barriers, exact settlement,
-restart/backup/quiescence coverage and outer NoReplay propagation. No group,
-foreground, worker or topic deletion activation. Independent review and all release
-gates follow implementation; runtime remains `6820422`.
+#193 (`0200892`, D071) closes the registered-private sync voice-placeholder
+DeleteMessage gap: commit-before-HTTP attempts, exact outcomes, durable pending/
+ACK tombstones, mutual edit/repair/outbox barriers and no Finished/TTS after unknown.
+ACK removes only the captured control; no text delivery is inferred. One failed
+receipt settlement cannot starve unrelated control recovery.
+[Review](reviews/2026-11-06-durable-delete-outcomes.md).
 
-Implementation checkpoint: separate `telegram_delete_attempts` ledger is wired
-through the message gate/topic lease. True ACK retires only its captured control;
-a durable tombstone blocks later writes without claiming text delivery. Pending
-attempts enter backup/idle/quiescence. Initial existing repair/edit tests pass;
-dedicated fault/restart/voice regressions are in progress. Registration-removal regression checks the shared raw-target gate before the
-compatibility path. Independent review found and corrected a global recovery
-stall on deletion receipt settlement failure: unrelated controls continue while
-only the affected target stays held. Fairness coverage places an eligible control
-after more than 100 held targets. Initial full build/vet/tests PASS (Telegram80.892s, Store56.220s), affected
-Store/Telegram/backup/control races PASS. Final test-only fairness and fallback
-budget refinements are being revalidated, with independent focused race review.
-A negative overlay restoring the raw delete path fails the false/nil regression
-by invoking paid generation, confirming the new assertion catches the defect.
-Pi baseline was rechecked: `6820422`, healthy/no restarts/OOM, ten idle counts zero.
+Full build/vet/tests, affected races and independent exact-head review PASS.
+Required PR CI42238584841 on5ff03d3 and exact-main CI42239307009 PASS.
+Pi controller0200892 passed isolated readiness, pre/post-migration backup checks,
+health/version and unchanged state hashes. Eleven idle counters zero; deletion
+ledger exists with zero rows. No live deletion fault injection/voice acceptance.
+[Release and housekeeping](deployments/2026-11-06-durable-delete-rollout.md).
+No implementation in flight; feature worktree/branch and candidate objects removed.
+Docs PR192 cleanup follows merge. Protected backups/auth/rollback remain.
 
-Source PR #193 is open on `29f7a7659b025263074cd0bc0aab5ff8f826f000`.
-Independent exact-head review PASS, focused race Store8.331s/Telegram8.073s PASS.
-Final full build/vet/tests and four-package races PASS on the committed head.
-Required CI `42238010448` is running. Exact-head Sonar at 14:53:54 UTC is ERROR:
-new duplication8.8% vs3%, predominantly regression tests;33 code smells,
-zero bugs/vulnerabilities, all read and retained. Advisory soft-gate policy applies.
-Owner requested all tests excluded from Sonar. Source PR head is now `5ff03d3`
-(configuration-only delta; Go source unchanged): automatic `.sonarcloud.properties`
-added, CLI config aligned and project exclusions mirrored/read back. Prior file
-was ignored by automatic analysis. New exact-head analysis at14:57:45UTC is OK:16 PR file components, zero test
-components,22 OPEN code smells/no bugs or vulnerabilities;11 excluded-test issues
-automatically CLOSED/FIXED. No manual suppression. Full main scope readback follows
-merge. Historical Sonar ERROR above remains evidence, not the new head result.
-Refreshed config-only independent review PASS on full head
-`5ff03d313c22eb7611f23ebc2dfa143f1585148c`; required CI42238584841 running.
-#193 merged as `0200892127074d6b48ef5bb9ae62baaf23a2b81d` after required
-PR CI42238584841 PASS. Exact-main CI42239307009 running; ARM64 candidate built.
-Pi still `6820422`; deployment has not occurred. Main Sonar taskAaGxYlh3DnatzzXUJ49A failed15:03:06UTC on the50k plan limit:
-57,111 production-scope lines. Scanner context confirms source/test exclusions;
-published main baseline stays2026-10-26. PR exclusion/quality evidence is current.
-Do not hide production code or change subscription to work around this limit.
-Next action: exact-main CI, isolated readiness, idle/verified matched backup,
-Pi-only deployment/acceptance, docs PR #192 and bounded housekeeping.
-The previous D070 docs PR #190 merged as `e8c9757`; its branch is removed and both
-retained worktrees were clean at cycle start.
+Owner's production-only Sonar rule is in CLAUDE: automatic and CLI configs now
+exclude tests entirely. Exact-head PR analysis OK,zero test components,22 open
+smells/no bugs/vulnerabilities. Main scanner confirms exclusions, but57,111 lines
+exceed50k plan limit; published main baseline remains2026-10-26. No hidden production
+code, subscription changes or manual finding suppression. Go CI/race unchanged.
+
+**Next:** group/unregistered compatibility, other non-edit effects, historical
+missing provenance and explicit unknown reconciliation. Eager old-row cleanup,
+mixed-path ordering and integrated foreground qualification remain open. No full
+CP-002/CP-016 completion or foreground/worker activation.
 
 ## Previous completed D070 — deployed, 2026-11-06
 
@@ -85,7 +61,7 @@ state hashes, health and Telegram version. Ten idle counters zero, including
 D070 implementation is complete; its integrated feature worktree and branch removed.
 Protected backups/auth/rollback retained; D070 docs branch was removed after #190 merge.
 
-**Next:** groups/unregistered edits, DeleteMessage and other non-edit effects,
+**Remaining after D071:** groups/unregistered edits and other non-edit effects,
 historical missing provenance and explicit unknown reconciliation. Eager old-row
 cleanup, mixed-path ordering and integrated foreground qualification remain open.
 D070 covers direct edits in registered private scope, not full CP-002/CP-016.
@@ -225,18 +201,18 @@ or full restore qualification was added by the latest rollout or this docs audit
 
 ## Release and recovery pointers
 
-- Source deployed: `682042284175b7a9559acb3b5ed32a126ace64d4`;
-  exact-main [CI 42233254945](https://github.com/Coriol-is/gopod/actions/runs/42233254945) passed.
-- Documentation reconciled against source/runtime `6820422`.
+- Source deployed: `0200892127074d6b48ef5bb9ae62baaf23a2b81d`;
+  exact-main [CI 42239307009](https://github.com/Coriol-is/gopod/actions/runs/42239307009) passed.
+- Documentation reconciled against source/runtime `0200892`.
 - Pi: `ssh spaceinvaderz@192.168.1.128`; checkout `~/gopod`, data `/opt/gopod/data`,
   mounted workspace repository `/opt/gopod/repo`.
-- Rollback image: `gopod-rollback:pre-6820422`; preserve it and all named backups.
-- Matched-stopped backup: `20261106T142641Z-ms-fdaef581`; new-schema database
-  backup: `20261106T142752Z-db-949e93c5`.
+- Rollback image: `gopod-rollback:pre-0200892`; preserve it and all named backups.
+- Matched-stopped backup: `20261106T150647Z-ms-e23748f5`; new-schema database
+  backup: `20261106T150818Z-db-12e18380`.
 - Guide originals: `~/gopod-backups/consumer-migration-757faa2`;
   cleanup inventory: `~/gopod-backups/cleanup-20261105-757faa2.json`.
-- Release evidence: `/tmp/gopod-release-6820422` on Pi; durable summary is in the
-  [deployment report](deployments/2026-11-06-direct-edit-rollout.md).
+- Release evidence: `/tmp/gopod-release-0200892` on Pi; durable summary is in the
+  [deployment report](deployments/2026-11-06-durable-delete-rollout.md).
 - Preserve task claim spool and SQLite ledgers before any downgrade; complete
   IPC restore remains unqualified. Status-only legacy consumers remain unqualified.
 - If SSH Git authentication fails, use per-command HTTPS with `gh auth git-credential`;
