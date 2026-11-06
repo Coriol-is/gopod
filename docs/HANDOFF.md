@@ -31,7 +31,9 @@ Corrections implemented; Store D070 suite PASS (restart/rebind/admission race/
 outbox exclusion/migration). First Telegram run found and corrected unregistered
 compatibility resolution. Second review requires zero-HTTP historical-owner refusal
 not to latch chat-wide uncertainty, plus a true >editLimit silent-overflow regression.
-Dedicated regressions/full rerun and final review remain in progress; do not duplicate already journaled outbox dispatch or infer
+Corrections and focused D070/fresh MoreBack/Stop/model callbacks PASS, including
+zero-HTTP/no-chat-latch, 5000-byte silent overflow and enabled-fake-TTS voice tests.
+Full build/vet/tests, affected races and final independent review are running; do not duplicate already journaled outbox dispatch or infer
 historical non-delivery. Agent freeze_next owns `feat/durable-edit-outcomes` in
 `../gopod-edit-outcomes`; review_pickers independently reviews. Root owns global
 state and the standing review/CI/merge/Pi controller deploy/housekeeping cycle.
