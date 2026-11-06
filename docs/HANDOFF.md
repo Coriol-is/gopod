@@ -31,7 +31,10 @@ Owner resumed implementation with the standing full release cycle. Base `8b53386
   validation rejects foreign routes while siblings/main remain available.
 - CP-002 review blocker: held repair rows can monopolize the LIMIT100 query
   without retry advancement and starve unrelated controls. Exact-revision bounded
-  scheduling plus a >100-row regression is required before approval.
+  scheduling plus a >100-row regression is required before approval. Obsolete Stop
+  must not requeue ACKed terminal controls after More/Back. Unknown remote repair
+  effects after timeout remain an explicit foreground gate: a local lock cannot
+  prove Telegram completed or discarded a request.
 - Independent reviewer review_pickers; root integrates global docs, required CI,
   merge, Pi controller rollout/acceptance and bounded housekeeping. No worker.
 
