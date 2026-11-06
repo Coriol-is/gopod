@@ -155,3 +155,15 @@ Full checks, races, review and required CI PASS; status remains in-progress.
 Deployment closure 2026-11-06: #186/#187 shipped in `0cd8078`, with exact-main CI,
 verified backup, health/state and Telegram version PASS.
 [Rollout and cleanup](../deployments/2026-11-06-control-topic-rollout.md). Parent activation gates remain.
+
+## Durable repair barrier — 2026-11-06
+
+#189 (`a85b328`, D069) adds persistent repair attempts and exact-evidence settlement,
+blocking conflicting edits and conserving outbox budgets across unknown outcomes.
+[Review](../reviews/2026-11-06-durable-repair-outcomes.md). Full checks/races, review
+and required CI PASS. Historical/non-repair requests, unsupported unknown resolution,
+eager cleanup, mixed-path ordering and foreground qualification remain open.
+
+Deployment closure2026-11-06: #189 shipped in `a85b328`; exact-main CI, verified
+pre/post-migration backups, health/state and Telegram version PASS.
+[Rollout and housekeeping](../deployments/2026-11-06-durable-repair-rollout.md). Parent gates remain open.

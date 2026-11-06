@@ -59,3 +59,20 @@ claimable, and a sibling receipt incorrectly blocks quiescence. Production sourc
 was not modified during these negative controls. Full final-head results are
 recorded by the root handoff/docs integration after CI; no live acceptance is
 claimed by these mocked transport tests.
+
+## Final validation and integration — 2026-11-06
+
+PR #189 merged as `a85b328`; reviewed head `e329bf24fd34cf599ed820ee84f5c85c4f2b7890`.
+Full build/vet/tests PASS (Store60.885s, Telegram84.695s); full affected races PASS
+(Store85.065s, Telegram110.169s, backup43.518s, control42.870s), diffcheck PASS.
+Independent exact-head review PASS, focused races Store7.023s/Telegram7.232s and
+final Store rerun6.684s. Required
+[CI 42216574391](https://github.com/Coriol-is/gopod/actions/runs/42216574391) PASS.
+Sonar analysis12:17:55 UTC matches reviewed head: OK,30 code smells, zero bugs or
+vulnerabilities. Complexity/context/lifecycle/naming/literal comments read; none
+suppressed. First remote push transiently failed; read-back confirmed absence and
+ordinary retry succeeded without force. No source edits after review.
+
+Deployment closure2026-11-06: #189 shipped in `a85b328`; exact-main CI, verified
+pre/post-migration backups, health/state and Telegram version PASS.
+[Rollout and housekeeping](../deployments/2026-11-06-durable-repair-rollout.md). Parent gates remain open.

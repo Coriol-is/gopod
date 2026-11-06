@@ -117,3 +117,16 @@ with five/nine smells. Rollout is tracked in current handoff; parent CPs remain 
 Deployment closure 2026-11-06: #186/#187 shipped in `0cd8078`, with exact-main CI,
 verified backup, health/state and Telegram version PASS.
 [Rollout and cleanup](../deployments/2026-11-06-control-topic-rollout.md). Parent activation gates remain.
+
+## Durable repair evidence — 2026-11-06
+
+#189 (`a85b328`, D069) records repair attempts before HTTP; pending evidence blocks
+conflicting writes through restart/control rebind and prevents outbox attempt burn.
+Exact success/refusal receipts repair DB only; unknown never auto-clears. Schema,
+backup idle/counts and downgrade notes included. Full checks/races, independent
+review and required CI PASS; [review](../reviews/2026-11-06-durable-repair-outcomes.md).
+Rollout tracked in handoff. Historical/non-repair uncertainty and parent gates remain.
+
+Deployment closure2026-11-06: #189 shipped in `a85b328`; exact-main CI, verified
+pre/post-migration backups, health/state and Telegram version PASS.
+[Rollout and housekeeping](../deployments/2026-11-06-durable-repair-rollout.md). Parent gates remain open.
