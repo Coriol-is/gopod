@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-06 (D070 direct edits deployed and reconciled)
+**Last updated:** 2026-11-06 (durable placeholder deletion in progress)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -13,7 +13,24 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — D070 deployed, 2026-11-06
+## Resume here — registered-private placeholder deletion, 2026-11-06
+
+Owner resumed the next bounded CP-002 slice after D070. The sole production
+`DeleteMessage` call removes the sync voice-answer wait placeholder; currently it
+has no durable attempt, and an unknown deletion can reach Finished editing/TTS.
+Implementation is in `feat/durable-delete-outcomes`, sibling worktree
+`gopod-delete-outcomes`, based on `e8c9757`. The scope is durable provenance and
+commit-before-HTTP deletion evidence, mutual target barriers, exact settlement,
+restart/backup/quiescence coverage and outer NoReplay propagation. No group,
+foreground, worker or topic deletion activation. Independent review and all release
+gates follow implementation; runtime remains `6820422`.
+
+Next action: finish and review the bounded implementation, full checks/races,
+required PR CI, merge, Pi-only deployment/acceptance, then docs and housekeeping.
+The previous D070 docs PR #190 merged as `e8c9757`; its branch is removed and both
+retained worktrees were clean at cycle start.
+
+## Previous completed D070 — deployed, 2026-11-06
 
 #191 (`6820422`, D070) journals registered-private direct text/HTML/keyboard edits
 with durable creation/control/ACKed-outbox provenance. Pending direct/repair/outbox
@@ -29,8 +46,8 @@ Sonar OK,26 smells read/retained. Pi controller `6820422` passed exact-main CI
 state hashes, health and Telegram version. Ten idle counters zero, including
 `direct_edits_pending`; ledger exists. No worker or foreground activation.
 [Release and housekeeping](deployments/2026-11-06-direct-edit-rollout.md).
-No implementation in flight; integrated feature worktree and branch removed.
-Protected backups/auth/rollback retained; current docs branch cleanup after merge.
+D070 implementation is complete; its integrated feature worktree and branch removed.
+Protected backups/auth/rollback retained; D070 docs branch was removed after #190 merge.
 
 **Next:** groups/unregistered edits, DeleteMessage and other non-edit effects,
 historical missing provenance and explicit unknown reconciliation. Eager old-row

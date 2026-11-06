@@ -29,6 +29,13 @@ The independent acceptance lane starts with CP-040 A22–A25, then remaining
 Stop/restart and isolation checks. Coordinate one Telegram actor and avoid overlap
 with deployment/auth changes. No new work is activated by this reconciliation.
 
+## In progress — placeholder deletion, 2026-11-06
+
+The sole sync voice-answer `DeleteMessage` is being given durable provenance,
+attempt/receipt handling and conflict barriers. Unknown deletion must stop the
+Finished-edit/TTS fallback. Source base `e8c9757`; not merged or deployed. Group/
+unregistered compatibility, other non-edit effects and parent activation stay open.
+
 ## Latest direct edit slice — 2026-11-06
 
 #191 (`6820422`, D070) covers the five registered-private direct text/HTML/keyboard
