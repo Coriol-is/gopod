@@ -97,8 +97,11 @@ func (b *Bot) editMessage(ctx context.Context, chatID int64, msgID int, text str
 // turnKeyboard on every edit, so the text and the Stop button change in
 // one call.
 func (b *Bot) editMessageKB(ctx context.Context, chatID int64, msgID int, text string, markup models.ReplyMarkup) error {
-	b.controlMu.Lock()
-	defer b.controlMu.Unlock()
+	release, err := b.lockMessageEdit(ctx, chatID, msgID)
+	if err != nil {
+		return err
+	}
+	defer release()
 	return b.editMessageKBLocked(ctx, chatID, msgID, text, markup)
 }
 func (b *Bot) editMessageKBLocked(ctx context.Context, chatID int64, msgID int, text string, markup models.ReplyMarkup) error {
@@ -149,8 +152,11 @@ func (b *Bot) editMessageHTML(ctx context.Context, chatID int64, msgID int, html
 // edit is tried once more without them: a refused keyboard never costs
 // the reply.
 func (b *Bot) editMessageHTMLKB(ctx context.Context, chatID int64, msgID int, html string, markup models.ReplyMarkup) error {
-	b.controlMu.Lock()
-	defer b.controlMu.Unlock()
+	release, err := b.lockMessageEdit(ctx, chatID, msgID)
+	if err != nil {
+		return err
+	}
+	defer release()
 	return b.editMessageHTMLKBLocked(ctx, chatID, msgID, html, markup)
 }
 func (b *Bot) editMessageHTMLKBLocked(ctx context.Context, chatID int64, msgID int, html string, markup models.ReplyMarkup) error {

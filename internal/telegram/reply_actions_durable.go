@@ -2,7 +2,9 @@ package telegram
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/Coriol-is/gopod/internal/store"
@@ -78,7 +80,57 @@ func (b *Bot) durableReplyRequest(ctx context.Context, q cbQuery, turn store.Tur
 	})
 }
 func (b *Bot) durableReplyKeyboard(ctx context.Context, q cbQuery, turn store.Turn, view replyActionView, kb *models.InlineKeyboardMarkup) error {
+	release, err := b.lockMessageEdit(ctx, q.ChatID, q.MessageID)
+	if err != nil {
+		return err
+	}
+	defer release()
+
 	return b.durableReplyRequest(ctx, q, turn, view, func(callCtx context.Context) error {
+		c, err := b.store.GetControlMessage(callCtx, q.ChatID, q.MessageID)
+		if err == nil {
+			_, err = b.store.ControlFinalOwnership(callCtx, c)
+		}
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return &ownershipSendError{cause: err}
+		}
+		_, err = b.api.EditMessageReplyMarkup(callCtx, &bot.EditMessageReplyMarkupParams{ChatID: q.ChatID, MessageID: q.MessageID, ReplyMarkup: kb})
+		return err
+	})
+}
+
+// A legacy action must not erase a pending control repair's intent. A bound
+// placeholder becomes an action surface only after its terminal text ACK. There
+// is no keyboard retry journal: a failed action stays visible as failure, while
+// the acknowledged terminal checkpoint prevents repair from clearing a good row.
+func (b *Bot) legacyReplyKeyboard(ctx context.Context, q cbQuery, kb *models.InlineKeyboardMarkup) error {
+	release, err := b.lockMessageEdit(ctx, q.ChatID, q.MessageID)
+	if err != nil {
+		return err
+	}
+	defer release()
+	if b.store != nil {
+		c, err := b.store.GetControlMessage(ctx, q.ChatID, q.MessageID)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		if err == nil {
+			if !c.Terminal || c.Acknowledged < c.Revision || c.ThreadID != q.ThreadID {
+				return store.ErrInvalidDelivery
+			}
+			if err = b.store.ValidateScope(ctx, c.Scope); err != nil {
+				return err
+			}
+			held, err := b.store.ControlFinalOwnership(ctx, c)
+			if err != nil {
+				return err
+			}
+			if held {
+				return store.ErrInvalidDelivery
+			}
+		}
+	}
+	return b.topicEditRequest(ctx, q.ChatID, q.MessageID, func(callCtx context.Context) error {
 		_, err := b.api.EditMessageReplyMarkup(callCtx, &bot.EditMessageReplyMarkupParams{ChatID: q.ChatID, MessageID: q.MessageID, ReplyMarkup: kb})
 		return err
 	})
