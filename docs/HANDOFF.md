@@ -46,7 +46,12 @@ Final full build/vet/tests and four-package races PASS on the committed head.
 Required CI `42238010448` is running. Exact-head Sonar at 14:53:54 UTC is ERROR:
 new duplication8.8% vs3%, predominantly regression tests;33 code smells,
 zero bugs/vulnerabilities, all read and retained. Advisory soft-gate policy applies.
-Next action: final local revalidation and required PR CI, merge, Pi-only
+Owner requested all tests excluded from Sonar. Source PR head is now `5ff03d3`
+(configuration-only delta; Go source unchanged): automatic `.sonarcloud.properties`
+added, CLI config aligned and project exclusions mirrored/read back. Prior file
+was ignored by automatic analysis. New analysis must show no test components;
+historical Sonar ERROR above remains evidence, not the new head result.
+Next action: refreshed exact-head review/required PR CI and Sonar scope readback, merge, Pi-only
 deployment/acceptance, then docs PR #192 and housekeeping.
 The previous D070 docs PR #190 merged as `e8c9757`; its branch is removed and both
 retained worktrees were clean at cycle start.
