@@ -173,13 +173,19 @@ the user before any spec or code exists for it.
   Wait for the `ci` workflow (`test` and `isolation-spike`) rather than requiring
   every external check returned by `gh pr checks` to succeed. This exception
   applies only to Sonar; it does not waive independent review or other checks.
-- **Sonar production scope (owner-approved 2026-11-06).** Test files and fixtures
+- **Sonar production scope (owner-approved 2026-11-06).** Test files, fixtures, `scripts/**`, shell/hooks and all Python files
   are excluded from Sonar analysis entirely, not only from duplication metrics.
   Keep `.sonarcloud.properties` (automatic analysis) and `sonar-project.properties`
   (CLI/CI scanner) aligned: production source exclusions plus exclusion of all
   test scope. Verify actual analyzed file components after configuration changes.
   This does not change Go tests, race tests or mandatory CI. Existing historical
   findings remain evidence; do not individually suppress them to change the gate.
+- **Deadcode pre-commit (owner-requested 2026-11-06).** Install the repository
+  hook with `git config --local core.hooksPath .githooks`. Go-affecting commits
+  analyze the staged snapshot with pinned deadcode for Linux/ARM64 including test
+  roots. New unreachable functions and stale baseline entries fail. The explicit
+  16-symbol baseline is an audit queue, not deletion approval; never auto-expand
+  it to pass a commit. See [development checks](docs/DEVELOPMENT-CHECKS.md).
 - **Documentation-only validation.** Use a feature branch and docs PR. Check `git diff --check`, changed local links and consistency with current project state; no additional local full test run is needed for prose alone. Required PR checks remain green before merge. Source, dependency, workflow and executable configuration changes retain full validation. This replaces the earlier direct-push exception.
 - **Don't add features the user didn't ask for.** This project's discipline is
   *smaller than NanoClaw*. Resist scope creep aggressively.

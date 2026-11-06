@@ -13,6 +13,24 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
+## Current follow-up — deadcode hook and Sonar scope, 2026-11-06
+
+Owner requested deadcode in pre-commit and exclusion of scripts/all Python from
+Sonar. Work is on `ci/deadcode-precommit`, worktree `gopod-deadcode-hook`, base3ea9328.
+Staged-snapshot Linux/ARM64 analysis uses pinned v0.49.0 with tests;16-symbol
+baseline prevents new unreachable functions without deleting planned disconnected
+features. Five disposable-Git integration tests, actual staged hook and baseline analysis
+PASS. Independent source/config review PASS on298d1e3; full build/vet/tests PASS
+(Telegram73.339s). PR194 Sonar15:29:58UTC OK; zero changed file/issue components,
+Python/scripts excluded, project settings read back. Final prose/required CI follow. Sonar configs include `scripts/**,**/*.py,**/*.sh,.githooks/**`. No application Go code was renamed.
+Owner explicitly requests merge/push only, no deployment. Finish final review/CI,
+squash merge, enable the local hook and clean the integrated task worktree.
+Pi runtime remains0200892; no restart or deployment is part of this follow-up.
+[Development checks and audit](DEVELOPMENT-CHECKS.md).
+Separate unresolved CI observation: unchanged managed Stop/backoff test saw
+`turn = running` in run42243855328;30 local repeats passed. Do not treat subsequent
+CI success as root-cause resolution; no runtime change/deploy in this batch.
+
 ## Resume here — D071 deployed, 2026-11-06
 
 #193 (`0200892`, D071) closes the registered-private sync voice-placeholder
