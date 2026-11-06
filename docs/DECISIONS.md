@@ -2378,7 +2378,6 @@ requests emitted before this journal. Pending evidence must be preserved through
 backup and downgrade; an older binary cannot enforce it. No paused feature or
 confirmed topic-deletion orchestration is activated by this contract.
 
-
 ## D070 — Durable direct edit attempts and provenance
 
 **Status:** implementation contract for the owner-resumed CP-002 non-repair edit

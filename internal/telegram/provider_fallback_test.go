@@ -41,13 +41,14 @@ func TestQuotaOfferWaitsForConfirmationAndRetriesOnceSameThread(t *testing.T) {
 	if *switched != 0 || len(mt.inserted()) != 0 {
 		t.Fatal("switched before confirmation")
 	}
+	// seqFake returns message 500 for the actual host-created quota offer.
 	// The confirmation store spends the pair atomically under a double tap.
 	var wg sync.WaitGroup
 	for _, id := range []string{"yes-one", "yes-two"} {
 		wg.Add(1)
 		go func(id string) {
 			defer wg.Done()
-			b.callbackHandler(context.Background(), b.api, cbUpdate(id, streamChat, 7, 600, buttons[0].CallbackData))
+			b.callbackHandler(context.Background(), b.api, cbUpdate(id, streamChat, 7, 500, buttons[0].CallbackData))
 		}(id)
 	}
 	wg.Wait()

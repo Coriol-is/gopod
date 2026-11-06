@@ -42,6 +42,12 @@ func (s *Store) BeginControlRepair(ctx context.Context, c ControlMessage, hash s
 		if _, e := hex.DecodeString(hash); e != nil || len(hash) != 64 {
 			return ErrControlRepairPending
 		}
+		if e := editPendingQ(ctx, q, c.ChatID, c.MessageID); e != nil {
+			return e
+		}
+		if e := activeOutboxEditQ(ctx, q, c.ChatID, c.MessageID); e != nil {
+			return e
+		}
 		if e := validateScopeQ(ctx, q, c.Scope); e != nil {
 			return e
 		}
@@ -144,6 +150,13 @@ func (s *Store) ControlRepairBarrier(ctx context.Context, chat int64, msg int) e
 	}
 	if held {
 		return ErrControlRepairPending
+	}
+	err = s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM telegram_edit_attempts WHERE chat_id=? AND message_id=? AND state='pending')`, chat, msg).Scan(&held)
+	if err != nil {
+		return err
+	}
+	if held {
+		return ErrTelegramEditHeld
 	}
 	return nil
 }

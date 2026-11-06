@@ -14,9 +14,12 @@ import (
 	"github.com/Coriol-is/gopod/internal/runner"
 )
 
-func okResponder(method string, _ map[string]string) (int, string) {
-	if method == "sendMessage" || method == "editMessageText" {
+func okResponder(method string, form map[string]string) (int, string) {
+	if method == "sendMessage" {
 		return sentMessage("88")
+	}
+	if method == "editMessageText" || method == "editMessageReplyMarkup" {
+		return sentMessage(form["message_id"])
 	}
 	return http.StatusOK, `{"ok":true,"result":true}`
 }
