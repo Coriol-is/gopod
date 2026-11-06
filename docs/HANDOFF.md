@@ -13,7 +13,16 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — parallel slices merged, 2026-11-06
+## Release checkpoint — 2026-11-06
+
+Owner requested the permanent implementation/review/CI/merge/deploy/backlog/
+housekeeping cycle; recorded in CLAUDE.md. Deploying exact `80f4b11` to Pi
+controller only, no worker. Exact-main CI `42198643997` PASS. Live idle counters
+zero and controller healthy; candidate build/backup/acceptance still pending.
+Prior source `757faa2` remains deployed until verified switch. Preserve protected
+backups and credentials; cleanup only integrated clean task branches/worktrees.
+
+## Completed parallel slices — 2026-11-06
 
 - CP-002/003: #183 (`261805e`) adds restart-safe More/Back/As file from fully
   acknowledged immutable results. Exact scope/topic/message/markup checks reject
