@@ -62,3 +62,44 @@ Production source has not changed after the receipt-sweep correction. Final full
 revalidation of these test-only refinements and exact-head independent review are
 pending at this checkpoint; parent owns CI/PR/integration. No runtime activation or
 live service calls occurred.
+
+## Final validation and integration
+
+Go build/vet/tests PASS on29f7a76 (Store20.466s, Telegram52.052s then cached).
+Affected race PASS (Store32.586s, Telegram69.885s then cached;
+backup32.968s/control32.034s cached). Independent focused race Store8.331s/
+Telegram8.073s and exact-head review PASS. Negative raw-delete overlay fails the
+false/nil enabled-voice regression with unwanted paid generation.
+
+Owner-requested Sonar configuration-only delta5ff03d3 received independent review
+PASS; Go source/tests/workflows unchanged. Required PR CI42238584841 PASS;
+#193 merged0200892. Exact-main CI/deployment follow in current handoff.
+
+Historical Sonar29f7a76 at14:53:54UTC: ERROR duplication8.8% vs3%,33 smells,
+zero bugs/vulnerabilities. Owner explicitly excluded all tests from Sonar;
+automatic analysis had ignored sonar-project.properties. Added automatic config,
+aligned CLI config and mirrored project exclusions. Exact5ff03d3 analysis at
+14:57:45UTC: OK,16 PR file components/no tests,22 OPEN smells/no bugs or
+vulnerabilities;11 excluded-test findings automatically CLOSED/FIXED. No manual
+issue suppression. Go tests/race and required CI remain unchanged. Full main
+component verification follows merge; do not confuse the old main baseline with
+the current PR analysis.
+
+Main automatic analysis task `AaGxYlh3DnatzzXUJ49A` on0200892 failed at15:03:06UTC:
+57,111 lines exceed the50,000 plan allowance (Go54,651; Python2,351; remaining109).
+Scanner context explicitly confirms source test/fixture exclusions and all-test
+exclusion. Therefore test exclusion is effective, but the published main component
+snapshot remains stale2026-10-26 and cannot establish current scope or quality.
+No additional production exclusions or plan changes were made. Sonar remains advisory.
+
+## D071 deployment closure — 2026-11-06
+
+#193 shipped as `0200892` on Pi controller only. Durable registered-private
+placeholder deletion and tombstones, NoReplay before Finished/TTS, backup/idle/
+quiescence and isolated recovery are qualified by full checks/races/review/CI.
+Exact-main CI42239307009, verified pre/post-migration backups, unchanged state
+hashes, health and Telegram version PASS. No live deletion fault injection or
+full foreground qualification. [Release and cleanup](../deployments/2026-11-06-durable-delete-rollout.md).
+Group/unregistered, other non-edit effects, history/reconciliation and parent
+activation remain open. Owner Sonar test exclusion shipped; main production-scope
+analysis still exceeds plan limit. Protected backups/auth/rollback retained.

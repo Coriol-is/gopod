@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-06 (D070 direct edits deployed and reconciled)
+**Last updated:** 2026-11-06 (D071 deployed; Sonar tests excluded)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -13,7 +13,36 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — D070 deployed, 2026-11-06
+## Resume here — D071 deployed, 2026-11-06
+
+#193 (`0200892`, D071) closes the registered-private sync voice-placeholder
+DeleteMessage gap: commit-before-HTTP attempts, exact outcomes, durable pending/
+ACK tombstones, mutual edit/repair/outbox barriers and no Finished/TTS after unknown.
+ACK removes only the captured control; no text delivery is inferred. One failed
+receipt settlement cannot starve unrelated control recovery.
+[Review](reviews/2026-11-06-durable-delete-outcomes.md).
+
+Full build/vet/tests, affected races and independent exact-head review PASS.
+Required PR CI42238584841 on5ff03d3 and exact-main CI42239307009 PASS.
+Pi controller0200892 passed isolated readiness, pre/post-migration backup checks,
+health/version and unchanged state hashes. Eleven idle counters zero; deletion
+ledger exists with zero rows. No live deletion fault injection/voice acceptance.
+[Release and housekeeping](deployments/2026-11-06-durable-delete-rollout.md).
+No implementation in flight; feature worktree/branch and candidate objects removed.
+Docs PR192 cleanup follows merge. Protected backups/auth/rollback remain.
+
+Owner's production-only Sonar rule is in CLAUDE: automatic and CLI configs now
+exclude tests entirely. Exact-head PR analysis OK,zero test components,22 open
+smells/no bugs/vulnerabilities. Main scanner confirms exclusions, but57,111 lines
+exceed50k plan limit; published main baseline remains2026-10-26. No hidden production
+code, subscription changes or manual finding suppression. Go CI/race unchanged.
+
+**Next:** group/unregistered compatibility, other non-edit effects, historical
+missing provenance and explicit unknown reconciliation. Eager old-row cleanup,
+mixed-path ordering and integrated foreground qualification remain open. No full
+CP-002/CP-016 completion or foreground/worker activation.
+
+## Previous completed D070 — deployed, 2026-11-06
 
 #191 (`6820422`, D070) journals registered-private direct text/HTML/keyboard edits
 with durable creation/control/ACKed-outbox provenance. Pending direct/repair/outbox
@@ -29,10 +58,10 @@ Sonar OK,26 smells read/retained. Pi controller `6820422` passed exact-main CI
 state hashes, health and Telegram version. Ten idle counters zero, including
 `direct_edits_pending`; ledger exists. No worker or foreground activation.
 [Release and housekeeping](deployments/2026-11-06-direct-edit-rollout.md).
-No implementation in flight; integrated feature worktree and branch removed.
-Protected backups/auth/rollback retained; current docs branch cleanup after merge.
+D070 implementation is complete; its integrated feature worktree and branch removed.
+Protected backups/auth/rollback retained; D070 docs branch was removed after #190 merge.
 
-**Next:** groups/unregistered edits, DeleteMessage and other non-edit effects,
+**Remaining after D071:** groups/unregistered edits and other non-edit effects,
 historical missing provenance and explicit unknown reconciliation. Eager old-row
 cleanup, mixed-path ordering and integrated foreground qualification remain open.
 D070 covers direct edits in registered private scope, not full CP-002/CP-016.
@@ -172,18 +201,18 @@ or full restore qualification was added by the latest rollout or this docs audit
 
 ## Release and recovery pointers
 
-- Source deployed: `682042284175b7a9559acb3b5ed32a126ace64d4`;
-  exact-main [CI 42233254945](https://github.com/Coriol-is/gopod/actions/runs/42233254945) passed.
-- Documentation reconciled against source/runtime `6820422`.
+- Source deployed: `0200892127074d6b48ef5bb9ae62baaf23a2b81d`;
+  exact-main [CI 42239307009](https://github.com/Coriol-is/gopod/actions/runs/42239307009) passed.
+- Documentation reconciled against source/runtime `0200892`.
 - Pi: `ssh spaceinvaderz@192.168.1.128`; checkout `~/gopod`, data `/opt/gopod/data`,
   mounted workspace repository `/opt/gopod/repo`.
-- Rollback image: `gopod-rollback:pre-6820422`; preserve it and all named backups.
-- Matched-stopped backup: `20261106T142641Z-ms-fdaef581`; new-schema database
-  backup: `20261106T142752Z-db-949e93c5`.
+- Rollback image: `gopod-rollback:pre-0200892`; preserve it and all named backups.
+- Matched-stopped backup: `20261106T150647Z-ms-e23748f5`; new-schema database
+  backup: `20261106T150818Z-db-12e18380`.
 - Guide originals: `~/gopod-backups/consumer-migration-757faa2`;
   cleanup inventory: `~/gopod-backups/cleanup-20261105-757faa2.json`.
-- Release evidence: `/tmp/gopod-release-6820422` on Pi; durable summary is in the
-  [deployment report](deployments/2026-11-06-direct-edit-rollout.md).
+- Release evidence: `/tmp/gopod-release-0200892` on Pi; durable summary is in the
+  [deployment report](deployments/2026-11-06-durable-delete-rollout.md).
 - Preserve task claim spool and SQLite ledgers before any downgrade; complete
   IPC restore remains unqualified. Status-only legacy consumers remain unqualified.
 - If SSH Git authentication fails, use per-command HTTPS with `gh auth git-credential`;
