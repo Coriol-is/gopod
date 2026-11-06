@@ -19,7 +19,10 @@ Owner resumed CP-002 from `8dcc4f9`: audit remaining non-repair EditMessage path
 and implement D070 direct-edit provenance/attempt barriers for five registered-private
 text/HTML/keyboard wrappers. Durable owner/control/ACKed-outbox evidence required;
 historical unknown targets hold truthfully. Groups/unregistered remain compatibility
-gaps. Independent design review in progress; do not duplicate already journaled outbox dispatch or infer
+gaps. Independent design review PASS. Initial implementation connects direct
+provenance transaction, five wrappers, shared raw-target barriers, outbox preclaim,
+repair selection, quiescence and backup idle. Streaming NoReplay prevents fallback/
+replacement sends. Focused tests and independent source review in progress; do not duplicate already journaled outbox dispatch or infer
 historical non-delivery. Agent freeze_next owns `feat/durable-edit-outcomes` in
 `../gopod-edit-outcomes`; review_pickers independently reviews. Root owns global
 state and the standing review/CI/merge/Pi controller deploy/housekeeping cycle.
