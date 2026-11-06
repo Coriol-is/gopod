@@ -20,7 +20,10 @@ and retain unknown effects across restart, preventing conflicting final/control
 writes until supported settlement. Additive per-attempt ledger under [D069](DECISIONS.md#d069--durable-legacy-control-repair-attempts):
 commit before HTTP; exact success/refusal-only settlement; unknown survives restart
 and holds physical message edits/quiescence/idle. No TTL, activation or forced
-reconciliation. Design review in progress. Agent freeze_next owns `feat/durable-repair-outcomes` in
+reconciliation. Independent design review PASS. Initial implementation connects
+repair admission, raw-message edit barrier, preclaim outbox hold (no attempt burn),
+source-topic quiescence and backup idle/counts. Unknown/restart/ACK-failure tests
+and full source review are in progress. Agent freeze_next owns `feat/durable-repair-outcomes` in
 `../gopod-repair-outcomes`; independent reviewer review_pickers. Root owns global
 docs and the standing review/CI/merge/Pi-deploy/housekeeping cycle. Current deployed
 Pi remains `0cd8078`, no worker. Schema/backup compatibility is part of this slice; old binaries cannot enforce pending repair evidence.
