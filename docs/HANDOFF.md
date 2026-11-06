@@ -13,25 +13,24 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — durable repair outcomes in progress, 2026-11-06
+## Resume here — durable repair journal merged, rollout pending, 2026-11-06
 
-Owner resumed the next CP-002 barrier from `a0a3f1e`: persist repair HTTP attempts
-and retain unknown effects across restart, preventing conflicting final/control
-writes until supported settlement. Additive per-attempt ledger under [D069](DECISIONS.md#d069--durable-legacy-control-repair-attempts):
-commit before HTTP; exact success/refusal-only settlement; unknown survives restart
-and holds physical message edits/quiescence/idle. No TTL, activation or forced
-reconciliation. Independent design review PASS. Initial implementation connects
-repair admission, raw-message edit barrier, preclaim outbox hold (no attempt burn),
-source-topic quiescence and backup idle/counts. Unknown/restart/ACK-failure tests
-and full source review are in progress. Both review corrections are implemented:
-topic-scoped receipt reconciliation and known-unsent fallback guard failures.
-Focused regression suite PASS, including delayed remote effect/restart hold,
-sibling progress, exact DB-only settlement and migration/hash preservation.
-PR #189 head `e329bf2`: full build/vet/tests and Store/Telegram/backup/control
-races PASS. Independent exact-head approval and CI `42216574391` remain gates. Agent freeze_next owns `feat/durable-repair-outcomes` in
-`../gopod-repair-outcomes`; independent reviewer review_pickers. Root owns global
-docs and the standing review/CI/merge/Pi-deploy/housekeeping cycle. Current deployed
-Pi remains `0cd8078`, no worker. Schema/backup compatibility is part of this slice; old binaries cannot enforce pending repair evidence.
+PR #189 (`a85b328`, D069) journals each control repair before HTTP, preserves
+unknown outcomes across restart/rebinding/retention, and holds conflicting message
+edits, outbox claims, relevant topic quiescence and backup idle. Exact positive or
+definite-unsent receipts settle SQLite only; no automatic replay/force-clear.
+[Source review and validation](reviews/2026-11-06-durable-repair-outcomes.md).
+
+Full build/vet/tests, Store/Telegram/backup/control races, independent exact-head
+review and required PR CI `42216574391` PASS on `e329bf2`. Sonar OK,30 smells read,
+none suppressed. Deploy target `a85b328`; exact-main CI and candidate rollout
+pending. Last verified Pi remains `0cd8078`; controller only, no worker.
+D069 ledger and `control_repairs_pending` must be preserved on backup/downgrade.
+
+**Remaining:** historical pre-journal repair evidence and explicit resolution of
+unknowns without positive evidence, wider non-repair edit attempts, eager old-row
+cleanup, mixed-path ordering and integrated foreground qualification. CP-016
+retains nontext/history/managed/native/retirement gaps. No foreground activation.
 
 ## Previous completed control/topic batch — 2026-11-06
 
@@ -48,11 +47,11 @@ PR CI PASS. Sonar OK for both (nine/five smells retained). Pi controller `0cd807
 passed exact-main CI `42210762626`, isolated readiness, matched-stopped backup
 verification, health/state preservation and Telegram version acceptance. No worker.
 [Release, acceptance and housekeeping](deployments/2026-11-06-control-topic-rollout.md).
-The next implementation is in progress as listed above. Two clean integrated agent worktrees and their
+The next bounded implementation above is merged; rollout remains in progress. Two clean integrated agent worktrees and their
 local/remote branches removed; protected backups/auth/rollback retained.
 
-**Next implementation:** persist/settle unknown remote legacy repair outcomes before
-foreground activation; local ordering cannot prove remote completion. Eager row
+**Next implementation:** preserve unresolved historical/non-repair gaps before
+foreground activation; the D069 barrier above is implemented. Eager row
 cleanup, mixed-path latest ordering and integrated preview/Stop/publication remain.
 CP-016 still needs nontext/edit attempts, historical ownership/retention, unknown
 reconciliation, managed/native settlement and confirmed retirement orchestration.

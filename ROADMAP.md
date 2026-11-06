@@ -23,7 +23,7 @@ right now" view, see [docs/HANDOFF.md](docs/HANDOFF.md).
 
 ## Current backlog — 2026-11-04
 
-Refreshed 2026-11-06 at `0cd8078`. The [active code-backed backlog](docs/BACKLOG.md)
+Refreshed 2026-11-06 at `a85b328`. The [active code-backed backlog](docs/BACKLOG.md)
 contains remaining implementation and acceptance scope. Pi `0cd8078` includes
 #168–#180/#182/#183/#186/#187; the foreground producer is disconnected, managed tasks are off and
 CP-037 remains legacy. Health/version and bounded D068 consumer checks passed.
@@ -57,6 +57,11 @@ ownership, unknown outcomes, managed/native settlement and deletion remain open.
 adds local control/final edit arbitration and fixes repair scheduling/requeue.
 Full checks, races, independent review and required CI PASS. Deployed in `0cd8078`;
 parent activation gates remain, including unknown remote repair settlement.
+
+#189 (`a85b328`, D069) adds durable repair attempts and conservative restart barriers,
+exact DB-only settlement, outbox preclaim holds and backup/idle evidence. Full
+checks/races, independent review and required CI PASS; rollout pending. Historical
+and non-repair uncertainty plus wider foreground qualification remain open.
 
 ## Execution priority — 2026-11-04
 
