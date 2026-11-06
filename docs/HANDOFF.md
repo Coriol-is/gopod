@@ -29,7 +29,9 @@ Silent overflow/voice/terminal-error outer helpers must preserve NoReplay instea
 continuing final/TTS, and control admission refusal must not return fake success.
 Corrections implemented; Store D070 suite PASS (restart/rebind/admission race/
 outbox exclusion/migration). First Telegram run found and corrected unregistered
-compatibility resolution; dedicated outer-path regressions and full rerun in progress; do not duplicate already journaled outbox dispatch or infer
+compatibility resolution. Second review requires zero-HTTP historical-owner refusal
+not to latch chat-wide uncertainty, plus a true >editLimit silent-overflow regression.
+Dedicated regressions/full rerun and final review remain in progress; do not duplicate already journaled outbox dispatch or infer
 historical non-delivery. Agent freeze_next owns `feat/durable-edit-outcomes` in
 `../gopod-edit-outcomes`; review_pickers independently reviews. Root owns global
 state and the standing review/CI/merge/Pi controller deploy/housekeeping cycle.
