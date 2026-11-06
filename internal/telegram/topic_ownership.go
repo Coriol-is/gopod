@@ -25,16 +25,16 @@ func (e *ownershipSendError) Error() string {
 func (e *ownershipSendError) Unwrap() error  { return e.cause }
 func (e *ownershipSendError) NoReplay() bool { return true }
 
-// ownedTextSend journals only registered-private main targets: these lack the
-// source topic in future callback updates. Ordinary topic sends keep their
-// existing transport path. The journal covers the HTTP/receipt crash gap.
+// ownedTextSend journals registered-private text sends before HTTP, including
+// topic targets and main-chat fallback. The source and effective target remain
+// bound to the attempt across the HTTP/receipt crash gap.
 func (b *Bot) ownedTextSend(ctx context.Context, chat int64, source int, p *bot.SendMessageParams) (sent *models.Message, err error) {
 	origin := topicOrigin(ctx, chat, source)
 	err = b.topicRequest(ctx, chat, source, func(callCtx context.Context) error {
 		var owner store.TelegramMessageOwner
-		if b.store != nil && chat > 0 && p.MessageThreadID == 0 {
+		if b.store != nil && chat > 0 {
 			var e error
-			owner, e = b.store.BeginTelegramMessageOwner(callCtx, chat, origin.thread, 0)
+			owner, e = b.store.BeginTelegramMessageOwner(callCtx, chat, origin.thread, p.MessageThreadID)
 			if e != nil {
 				return &ownershipSendError{cause: e}
 			}
