@@ -40,8 +40,11 @@ A negative overlay restoring the raw delete path fails the false/nil regression
 by invoking paid generation, confirming the new assertion catches the defect.
 Pi baseline was rechecked: `6820422`, healthy/no restarts/OOM, ten idle counts zero.
 
-Next action: finish and review the bounded implementation, full checks/races,
-required PR CI, merge, Pi-only deployment/acceptance, then docs and housekeeping.
+Source PR #193 is open on `29f7a7659b025263074cd0bc0aab5ff8f826f000`.
+Independent exact-head review PASS, focused race Store8.331s/Telegram8.073s PASS.
+Required CI `42238010448` is running; Sonar initially NOT_COMPUTED, not a success.
+Next action: final local revalidation and required PR CI, merge, Pi-only
+deployment/acceptance, then docs PR #192 and housekeeping.
 The previous D070 docs PR #190 merged as `e8c9757`; its branch is removed and both
 retained worktrees were clean at cycle start.
 
