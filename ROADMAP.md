@@ -1,8 +1,8 @@
 # gopod — Roadmap
 
-Latest rollout: `a85b328` on Pi, 2026-11-06 12:26 UTC, includes #189/D069;
+Latest rollout: `6820422` on Pi, 2026-11-06 14:27 UTC, includes #191/D070;
 no worker. D068 guide migration and bounded read-only matching-consumer acceptance
-passed; unrelated native/client gates remain. [Evidence](docs/deployments/2026-11-06-durable-repair-rollout.md).
+passed; unrelated native/client gates remain. [Evidence](docs/deployments/2026-11-06-direct-edit-rollout.md).
 
 
 Live milestone tracker. Update the **Status** column whenever you change reality.
@@ -23,11 +23,11 @@ right now" view, see [docs/HANDOFF.md](docs/HANDOFF.md).
 
 ## Current backlog — 2026-11-04
 
-Refreshed 2026-11-06 at `a85b328`. The [active code-backed backlog](docs/BACKLOG.md)
-contains remaining implementation and acceptance scope. Pi `a85b328` includes
-#168–#180/#182/#183/#186/#187/#189; the foreground producer is disconnected, managed tasks are off and
+Refreshed 2026-11-06 at `6820422`. The [active code-backed backlog](docs/BACKLOG.md)
+contains remaining implementation and acceptance scope. Pi `6820422` includes
+#168–#180/#182/#183/#186/#187/#189/#191; the foreground producer is disconnected, managed tasks are off and
 CP-037 remains legacy. Health/version and bounded D068 consumer checks passed.
-[Rollout](docs/deployments/2026-11-06-durable-repair-rollout.md).
+[Rollout](docs/deployments/2026-11-06-direct-edit-rollout.md).
 
 Completed queue/delivery/Stop/IPC slices and superseded queues have moved to the
 [completed ledger](docs/history/BACKLOG-2026-11-05-completed.md) and
@@ -62,6 +62,11 @@ parent activation gates remain; D069 below supplies the durable repair barrier.
 exact DB-only settlement, outbox preclaim holds and backup/idle evidence. Full
 checks/races, independent review and required CI PASS; deployed in `a85b328`. Historical
 and non-repair uncertainty plus wider foreground qualification remain open.
+
+#191 (`6820422`, D070) covers registered-private direct edits with durable provenance,
+exact attempt receipts, raw-target barriers and NoReplay through outer streaming/voice
+paths. Full checks/races, independent review and required CI PASS; deployed in `6820422`.
+Groups/unregistered/history/non-edit effects and broader foreground gates remain.
 
 ## Execution priority — 2026-11-04
 
@@ -348,7 +353,7 @@ and [implementation/acceptance plan](docs/superpowers/plans/2026-10-25-personal-
 track the work. **Implementation deployed; final provider/client qualification remains open.**
 The architecture merged in #66/#67; follow-ups #88/#89 fixed Codex tree-budget admission and
 admit registered groups by default. #93/#95/#97 implement triggers, owner-in-group controls
-and private group-login guidance. Security groups 1–8 were deployed in `e3b5401`; current controller is `a85b328`.
+and private group-login guidance. Security groups 1–8 were deployed in `e3b5401`; current controller is `6820422`.
 Historical 2026-10-29 evidence records Claude group new/resume success after owner login;
 final Codex two-turn/tool and cross-boundary acceptance remain open. Earlier TCP/offline-tool
 checks are in the [2026-10-27 report](docs/deployments/2026-10-27-group-isolation.md),

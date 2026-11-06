@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-06 (D069 repair journal deployed and reconciled)
+**Last updated:** 2026-11-06 (D070 direct edits deployed and reconciled)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -13,7 +13,31 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — durable repair journal deployed, 2026-11-06
+## Resume here — D070 deployed, 2026-11-06
+
+#191 (`6820422`, D070) journals registered-private direct text/HTML/keyboard edits
+with durable creation/control/ACKed-outbox provenance. Pending direct/repair/outbox
+effects mutually fence the physical target across restart; exact receipts settle
+SQLite only. Unknown edits prevent outer fallback/replacement/TTS. Historical
+private targets without provenance hold truthfully; no blanket overwrite authority.
+[Review](reviews/2026-11-06-durable-edit-outcomes.md).
+
+Full build/vet/tests and affected Store/Telegram/backup/control races PASS;
+independent exact-head review and CI `42232618774` PASS on `a47d53b`.
+Sonar OK,26 smells read/retained. Pi controller `6820422` passed exact-main CI
+`42233254945`, isolated readiness, pre/post-migration backup verification, unchanged
+state hashes, health and Telegram version. Ten idle counters zero, including
+`direct_edits_pending`; ledger exists. No worker or foreground activation.
+[Release and housekeeping](deployments/2026-11-06-direct-edit-rollout.md).
+No implementation in flight; integrated feature worktree and branch removed.
+Protected backups/auth/rollback retained; current docs branch cleanup after merge.
+
+**Next:** groups/unregistered edits, DeleteMessage and other non-edit effects,
+historical missing provenance and explicit unknown reconciliation. Eager old-row
+cleanup, mixed-path ordering and integrated foreground qualification remain open.
+D070 covers direct edits in registered private scope, not full CP-002/CP-016.
+
+## Previous completed repair journal — 2026-11-06
 
 PR #189 (`a85b328`, D069) journals each control repair before HTTP, preserves
 unknown outcomes across restart/rebinding/retention, and holds conflicting message
@@ -28,11 +52,11 @@ isolated readiness, pre-rollout matched-stopped backup, post-migration database
 backup, health/state preservation and Telegram version acceptance. No worker.
 Nine idle counters zero including `control_repairs_pending`; ledger exists.
 [Release and housekeeping](deployments/2026-11-06-durable-repair-rollout.md).
-No implementation in flight; one integrated clean agent worktree and feature branch
+D070 above is now deployed; one integrated clean agent worktree and feature branch
 removed. D069 evidence must be preserved on downgrade; no automatic unknown clearing.
 
 **Remaining:** historical pre-journal repair evidence and explicit resolution of
-unknowns without positive evidence, wider non-repair edit attempts, eager old-row
+unknowns without positive evidence, remaining groups/unregistered and non-edit effects after D070, eager old-row
 cleanup, mixed-path ordering and integrated foreground qualification. CP-016
 retains nontext/history/managed/native/retirement gaps. No foreground activation.
 
@@ -129,7 +153,7 @@ Separate 556 KiB NanoClaw/OneCLI/systemd archives retained. No broad Docker prun
 
 Use [active backlog](BACKLOG.md) for remaining scope and
 [ROADMAP](../ROADMAP.md#execution-priority--2026-11-04) for order.
-Before foreground cutover, complete historical/non-repair uncertainty reconciliation,
+Before foreground cutover, complete historical/group/unregistered/non-edit uncertainty reconciliation,
 eager cleanup, mixed-path ordering and integrated preview/Stop/publication qualification.
 Local arbitration and D069 exact-evidence repair settlement are implemented; unsupported
 unknowns remain held. The completed bounded callback slice is described above. `WithResultFreeze` and `PrepareFrozenFinalReply` still
@@ -148,18 +172,18 @@ or full restore qualification was added by the latest rollout or this docs audit
 
 ## Release and recovery pointers
 
-- Source deployed: `a85b328d1d98aa28c4757e30d43cf8abe3a50891`;
-  exact-main [CI 42217121239](https://github.com/Coriol-is/gopod/actions/runs/42217121239) passed.
-- Documentation reconciled against source/runtime `a85b328`.
+- Source deployed: `682042284175b7a9559acb3b5ed32a126ace64d4`;
+  exact-main [CI 42233254945](https://github.com/Coriol-is/gopod/actions/runs/42233254945) passed.
+- Documentation reconciled against source/runtime `6820422`.
 - Pi: `ssh spaceinvaderz@192.168.1.128`; checkout `~/gopod`, data `/opt/gopod/data`,
   mounted workspace repository `/opt/gopod/repo`.
-- Rollback image: `gopod-rollback:pre-a85b328`; preserve it and all named backups.
-- Matched-stopped backup: `20261106T122616Z-ms-a8ac2967`; new-schema database
-  backup: `20261106T122805Z-db-5ea83652`.
+- Rollback image: `gopod-rollback:pre-6820422`; preserve it and all named backups.
+- Matched-stopped backup: `20261106T142641Z-ms-fdaef581`; new-schema database
+  backup: `20261106T142752Z-db-949e93c5`.
 - Guide originals: `~/gopod-backups/consumer-migration-757faa2`;
   cleanup inventory: `~/gopod-backups/cleanup-20261105-757faa2.json`.
-- Release evidence: `/tmp/gopod-release-a85b328` on Pi; durable summary is in the
-  [deployment report](deployments/2026-11-06-durable-repair-rollout.md).
+- Release evidence: `/tmp/gopod-release-6820422` on Pi; durable summary is in the
+  [deployment report](deployments/2026-11-06-direct-edit-rollout.md).
 - Preserve task claim spool and SQLite ledgers before any downgrade; complete
   IPC restore remains unqualified. Status-only legacy consumers remain unqualified.
 - If SSH Git authentication fails, use per-command HTTPS with `gh auth git-credential`;

@@ -130,3 +130,17 @@ Rollout tracked in handoff. Historical/non-repair uncertainty and parent gates r
 Deployment closure2026-11-06: #189 shipped in `a85b328`; exact-main CI, verified
 pre/post-migration backups, health/state and Telegram version PASS.
 [Rollout and housekeeping](../deployments/2026-11-06-durable-repair-rollout.md). Parent gates remain open.
+
+## Registered-private direct edits — 2026-11-06
+
+#191 (`6820422`, D070) journals five direct text/HTML/keyboard wrappers, validates
+durable provenance, holds conflicting effects and propagates NoReplay through outer
+streaming/silent/voice paths. Review-fixed registration race, false-success/latch and
+ignored-error paths have deterministic regressions and negative overlay evidence.
+Full checks/races, independent exact-head review and required CI PASS; Sonar OK26
+smells retained. [Review](../reviews/2026-11-06-durable-edit-outcomes.md).
+Rollout tracked in handoff; historical/group/unregistered/non-edit and parent gaps stay.
+
+Deployment closure 2026-11-06: #191 shipped in `6820422`; exact-main CI,
+pre/post-migration backup verification, health/state and Telegram version PASS.
+[Rollout and cleanup](../deployments/2026-11-06-direct-edit-rollout.md). Parent/compatibility gates remain.
