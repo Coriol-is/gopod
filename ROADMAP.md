@@ -23,7 +23,7 @@ right now" view, see [docs/HANDOFF.md](docs/HANDOFF.md).
 
 ## Current backlog — 2026-11-04
 
-Refreshed 2026-11-06 at `a85b328`. The [active code-backed backlog](docs/BACKLOG.md)
+Refreshed 2026-11-06 at `6820422`. The [active code-backed backlog](docs/BACKLOG.md)
 contains remaining implementation and acceptance scope. Pi `a85b328` includes
 #168–#180/#182/#183/#186/#187/#189; the foreground producer is disconnected, managed tasks are off and
 CP-037 remains legacy. Health/version and bounded D068 consumer checks passed.
@@ -62,6 +62,11 @@ parent activation gates remain; D069 below supplies the durable repair barrier.
 exact DB-only settlement, outbox preclaim holds and backup/idle evidence. Full
 checks/races, independent review and required CI PASS; deployed in `a85b328`. Historical
 and non-repair uncertainty plus wider foreground qualification remain open.
+
+#191 (`6820422`, D070) covers registered-private direct edits with durable provenance,
+exact attempt receipts, raw-target barriers and NoReplay through outer streaming/voice
+paths. Full checks/races, independent review and required CI PASS; rollout pending.
+Groups/unregistered/history/non-edit effects and broader foreground gates remain.
 
 ## Execution priority — 2026-11-04
 

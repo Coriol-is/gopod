@@ -1,6 +1,6 @@
 # Code-backed backlog
 
-Reconciled 2026-11-06 against source at `a85b328` and the recorded Pi deployment
+Reconciled 2026-11-06 against source at `6820422` and the recorded Pi deployment
 `a85b328`. Production call sites were rechecked; release health/state/version acceptance
 is recorded separately from remaining feature qualification. [ROADMAP](../ROADMAP.md) owns priority,
 [proposal registry](proposals/README.md) owns lifecycle and
@@ -12,8 +12,9 @@ here; proposed, deferred and paused work is not cancelled.
 
 ## Current priority
 
-1. CP-002 delivery with necessary CP-003 slices: historical/non-repair edit
-   uncertainty and explicit reconciliation, eager old-row cleanup, mixed legacy/durable newest-row
+1. CP-002 delivery with necessary CP-003 slices: remaining group/unregistered and
+   non-edit effects, historical uncertainty and explicit reconciliation, eager old-row
+   cleanup, mixed legacy/durable newest-row
    ordering, then integrated preview/Stop/publication qualification and foreground
    producer/cutover. Local control/final edit arbitration and More/Back retirement
    checkpoints are deployed in #187 (`0cd8078`); D069 durable repair journal follows in #189; unknowns stay held without supported settlement.
@@ -28,11 +29,13 @@ The independent acceptance lane starts with CP-040 A22–A25, then remaining
 Stop/restart and isolation checks. Coordinate one Telegram actor and avoid overlap
 with deployment/auth changes. No new work is activated by this reconciliation.
 
-## Active next slice — 2026-11-06
+## Latest direct edit slice — 2026-11-06
 
-Non-repair edit call sites are being audited from `8dcc4f9` for bounded durable
-unknown-outcome coverage. Scope/review checkpoints live in HANDOFF; current
-activation gates and historical uncertainty remain unchanged.
+#191 (`6820422`, D070) covers the five registered-private direct text/HTML/keyboard
+wrappers with durable provenance/attempts and symmetric barriers. No fallback or
+TTS after unknown outcomes. Full checks/races, exact-head review and required CI
+PASS; rollout pending. Groups/unregistered, historical missing provenance,
+DeleteMessage/non-edit effects and foreground qualification remain open.
 
 ## Latest repair journal — 2026-11-06
 
@@ -60,7 +63,7 @@ Foreground producer remains disconnected; managed tasks remain off.
 
 | Item | Code present and actual runtime wiring | Remaining work / next action |
 |---|---|---|
-| CP-002 foreground final delivery | [result_freeze.go](../internal/runner/result_freeze.go) provides `WithResultFreeze`; [final_reply.go](../internal/telegram/final_reply.go) provides `PrepareFrozenFinalReply`; neither has a non-test caller. Batch identity and immutable publication storage exist. [main.go](../cmd/gopod/main.go) calls `recoverReadyFinalReplies` before queue recovery when the dispatcher is enabled; [recovery adapter](../cmd/gopod/final_reply.go) publishes existing ready plans only. | Implement the foreground producer/context binding and publication call sites together with preview ownership, late cancellation and reply-action parity. Successful voice/text/code presentation parity is corrected in PR #169 (`c1966dc`); conditional code-inline alternatives are deployed in PR #173 (D065); PR #174 adds successful-final process-local ownership; PR #175 holds new publication for currently stopped members; D066 intent and late completion evidence are implemented in PR #176; PR #183 (`261805e`) adds fully ACKed restart-safe callback readthrough. Local control/final arbitration and More/Back retirement checkpoints are merged in #187. D069 repair attempts/barriers and exact-evidence settlement are implemented in #189; historical/non-repair uncertainty, explicit unknown reconciliation, eager cleanup and mixed-path ordering remain; full preview/reply-action integration, native/client qualification and producer activation remain open. Existing recovery is not foreground cutover. D063/D065 remain the contracts. |
+| CP-002 foreground final delivery | [result_freeze.go](../internal/runner/result_freeze.go) provides `WithResultFreeze`; [final_reply.go](../internal/telegram/final_reply.go) provides `PrepareFrozenFinalReply`; neither has a non-test caller. Batch identity and immutable publication storage exist. [main.go](../cmd/gopod/main.go) calls `recoverReadyFinalReplies` before queue recovery when the dispatcher is enabled; [recovery adapter](../cmd/gopod/final_reply.go) publishes existing ready plans only. | Implement the foreground producer/context binding and publication call sites together with preview ownership, late cancellation and reply-action parity. Successful voice/text/code presentation parity is corrected in PR #169 (`c1966dc`); conditional code-inline alternatives are deployed in PR #173 (D065); PR #174 adds successful-final process-local ownership; PR #175 holds new publication for currently stopped members; D066 intent and late completion evidence are implemented in PR #176; PR #183 (`261805e`) adds fully ACKed restart-safe callback readthrough. Local control/final arbitration and More/Back retirement checkpoints are merged in #187. D069 repair attempts/barriers and exact-evidence settlement are implemented in #189; D070 registered-private direct edits are implemented in #191; group/unregistered and non-edit effects, historical uncertainty, explicit unknown reconciliation, eager cleanup and mixed-path ordering remain; full preview/reply-action integration, native/client qualification and producer activation remain open. Existing recovery is not foreground cutover. D063/D065 remain the contracts. |
 | CP-003 typed IPC | [artifact_request.go](../internal/ipc/artifact_request.go) validates typed file/voice requests; [outbox.go](../cmd/gopod/outbox.go) wires durable IPC preparation/transport; immutable artifact and voice/code preparation foundations are present. | Complete the wider CP-002-linked typed-output/protected-challenge/release scope. Do not reimplement file delivery already exposed by CP-040. Photo-to-document upload fallback now has separate durable attempts (PR #172, `a016b82`); conditional code-inline assembly is deployed in #173/D065. Full matched recovery remains a separate CP-007 gap. |
 | CP-016 topic deletion | [topic_quiescence.go](../internal/telegram/topic_quiescence.go) implements tested quiescence and refusal reopening. `main.go` calls `RestoreTopicFences` before recovery. Queue/native/transport guards and durable store/outbox fences are wired. `QuiesceTopic` has no non-test caller; no Telegram delete orchestration is exposed. | New main/fallback text-control provenance is implemented in PR #170 (`dacefc0`), including restart-safe lookup and no-replay receipt failures. Positive receipt DB-ACK repair is implemented in PR #171 (`930586a`), with no HTTP resend. Noncontrol restart/lifecycle/IPC main-text ownership and no-replay are merged in #182 (`0ac9b3f`, deployed in `80f4b11`). Exact private topic-target text ownership is deployed in #186 (`0cd8078`). Historical provenance/retention, nontext/edit-attempt ownership, unknown remote ambiguity reconciliation, managed settlement, ordinary native-login exit qualification, then confirmed API/outcome/retirement command remain. Deployed guards do not mean `/thread delete` is usable. D064 remains the contract. |
 | CP-004 managed tasks | `main.go` installs the managed ledger; under `ManagedTasksEnabled` it installs [taskexec](../internal/taskexec) handler/snapshot and runner policy. [task_run.go](../internal/runner/task_run.go) implements isolated native execution. Main supplies no qualified task credential adapter and explicitly keeps task-role execution denied. | PR 4–5 settlement/visibility and schedule policies; owner-deferred credential adapter and native qualification before activation. Flag remains off in the recorded deployment. A wired executor is not an operational managed task service. |

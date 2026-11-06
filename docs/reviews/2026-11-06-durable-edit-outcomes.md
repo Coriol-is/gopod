@@ -95,3 +95,13 @@ is enabled by this change. Docker isolation remains the CI gate.
 
 No live Telegram/API/provider execution, deployment or production mutation was
 performed. CI and exact committed-head reviewer binding follow in the PR.
+
+## Integration — 2026-11-06
+
+PR #191 merged as `6820422`; exact reviewed head
+`a47d53beaad68aab9d93839cc550cdbeabf391e6` PASS. Independent focused race
+Store10.932s/Telegram12.354s and final quota/checkpoint delta7.397s PASS.
+Required [CI42232618774](https://github.com/Coriol-is/gopod/actions/runs/42232618774)
+PASS. Sonar14:17:40 UTC matches head: OK,26 code smells (complexity/parameter count,
+existing lifecycle/literal comments), zero bugs/vulnerabilities; read, none suppressed.
+No production source changed after reviewed corrections. Rollout tracked in handoff.

@@ -167,3 +167,11 @@ eager cleanup, mixed-path ordering and foreground qualification remain open.
 Deployment closure2026-11-06: #189 shipped in `a85b328`; exact-main CI, verified
 pre/post-migration backups, health/state and Telegram version PASS.
 [Rollout and housekeeping](../deployments/2026-11-06-durable-repair-rollout.md). Parent gates remain open.
+
+## Direct edit outcomes — 2026-11-06
+
+#191 (`6820422`, D070) implements registered-private direct text/HTML/keyboard
+provenance and durable attempts, symmetric barriers and outer NoReplay propagation.
+Full checks/races, review and required CI PASS; [report](../reviews/2026-11-06-durable-edit-outcomes.md).
+Historical missing provenance holds, groups/unregistered/non-edit operations, eager
+cleanup, mixed-path order and integrated foreground qualification remain open.

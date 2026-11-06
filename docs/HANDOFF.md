@@ -13,34 +13,24 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — non-repair edit coverage in progress, 2026-11-06
+## Resume here — D070 merged, rollout pending, 2026-11-06
 
-Owner resumed CP-002 from `8dcc4f9`: audit remaining non-repair EditMessage paths
-and implement D070 direct-edit provenance/attempt barriers for five registered-private
-text/HTML/keyboard wrappers. Durable owner/control/ACKed-outbox evidence required;
-historical unknown targets hold truthfully. Groups/unregistered remain compatibility
-gaps. Independent design review PASS. Initial implementation connects direct
-provenance transaction, five wrappers, shared raw-target barriers, outbox preclaim,
-repair selection, quiescence and backup idle. Streaming NoReplay prevents fallback/
-replacement sends. Focused tests and independent source review in progress. Review blocker: loss
-of registration between owner resolution and Begin must not downgrade a covered
-edit into unjournaled compatibility HTTP; exact-identity zero-HTTP regression pending.
-Silent overflow/voice/terminal-error outer helpers must preserve NoReplay instead of
-continuing final/TTS, and control admission refusal must not return fake success.
-Corrections implemented; Store D070 suite PASS (restart/rebind/admission race/
-outbox exclusion/migration). First Telegram run found and corrected unregistered
-compatibility resolution. Second review requires zero-HTTP historical-owner refusal
-not to latch chat-wide uncertainty, plus a true >editLimit silent-overflow regression.
-Corrections and focused D070/fresh MoreBack/Stop/model callbacks PASS, including
-zero-HTTP/no-chat-latch, 5000-byte silent overflow and enabled-fake-TTS voice tests.
-Quota fixture corrected to actual sent offer; final full build/vet/test and
-Store/Telegram/backup/control races PASS. Independent exact-head review PASS on
-`a47d53b`; negative overlays prove silent/voice TTS regressions. PR/CI publishing
-in progress; deployment remains `a85b328`; do not duplicate already journaled outbox dispatch or infer
-historical non-delivery. Agent freeze_next owns `feat/durable-edit-outcomes` in
-`../gopod-edit-outcomes`; review_pickers independently reviews. Root owns global
-state and the standing review/CI/merge/Pi controller deploy/housekeeping cycle.
-Current Pi `a85b328`; no foreground, worker, managed or deletion activation.
+#191 (`6820422`, D070) journals registered-private direct text/HTML/keyboard edits
+with durable creation/control/ACKed-outbox provenance. Pending direct/repair/outbox
+effects mutually fence the physical target across restart; exact receipts settle
+SQLite only. Unknown edits prevent outer fallback/replacement/TTS. Historical
+private targets without provenance hold truthfully; no blanket overwrite authority.
+[Review](reviews/2026-11-06-durable-edit-outcomes.md).
+
+Full build/vet/tests and affected Store/Telegram/backup/control races PASS;
+independent exact-head review and CI `42232618774` PASS on `a47d53b`.
+Sonar OK,26 smells read/retained. Deploy target `6820422`; exact-main CI and rollout
+pending. Current Pi `a85b328`, controller only. Root owns rollout/docs/cleanup.
+
+**Next:** groups/unregistered edits, DeleteMessage and other non-edit effects,
+historical missing provenance and explicit unknown reconciliation. Eager old-row
+cleanup, mixed-path ordering and integrated foreground qualification remain open.
+D070 covers direct edits in registered private scope, not full CP-002/CP-016.
 
 ## Previous completed repair journal — 2026-11-06
 
@@ -57,7 +47,7 @@ isolated readiness, pre-rollout matched-stopped backup, post-migration database
 backup, health/state preservation and Telegram version acceptance. No worker.
 Nine idle counters zero including `control_repairs_pending`; ledger exists.
 [Release and housekeeping](deployments/2026-11-06-durable-repair-rollout.md).
-The next non-repair audit/implementation above is active; one integrated clean agent worktree and feature branch
+D070 above is merged; rollout is in progress; one integrated clean agent worktree and feature branch
 removed. D069 evidence must be preserved on downgrade; no automatic unknown clearing.
 
 **Remaining:** historical pre-journal repair evidence and explicit resolution of
