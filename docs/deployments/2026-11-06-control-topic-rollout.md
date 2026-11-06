@@ -54,7 +54,7 @@ qualification, crash injection, deletion or foreground acceptance.
 Exact PR-file equivalence to squash commits and ancestry in main verified before
 removing two clean agent worktrees and local/remote `fix/control-final-arbitration`
 and `feat/topic-ownership-next` branches. Canonical/session worktrees retained;
-cycle docs branch removed after merge. Removed only disposable check container
+current PR #185 docs branch is scheduled for removal after its merge. Removed only disposable check container
 and candidate alias; live/rollback images retained. Backup root290MiB after new
 set, no backup deletion, broad Docker prune, NAS or unrelated-service mutation.
 Untracked credential backup untouched.
