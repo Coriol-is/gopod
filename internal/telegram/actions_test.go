@@ -36,6 +36,7 @@ func failedTurn(t *testing.T, b *Bot, chatID int64) int64 {
 func TestRetryCallback_EnqueuesOriginalTextSameThread(t *testing.T) {
 	fake := &fakeTelegram{respond: okResponder}
 	b := newCallbackFixture(t, fake)
+	seedPrivateTarget(t, b, 99, 9)
 	b.registerCallbacks()
 	mt := withQueue(t, b)
 	id := failedTurn(t, b, streamChat)
@@ -197,6 +198,7 @@ func stubLogin(b *Bot) *loginStub {
 func TestLoginCallback_ConcurrentPressesStartOne(t *testing.T) {
 	fake := &fakeTelegram{respond: okResponder}
 	b := newCallbackFixture(t, fake)
+	seedPrivateTarget(t, b, 99, 7)
 	b.registerCallbacks()
 	stub := stubLogin(b)
 	ctx := context.Background()
@@ -312,6 +314,7 @@ func pressed(t *testing.T, b *Bot, fake *fakeTelegram, qid string, thread, msgID
 func TestRegenerate_SameThreadNewTurn(t *testing.T) {
 	fake := &fakeTelegram{respond: okResponder}
 	b := newCallbackFixture(t, fake)
+	seedPrivateTarget(t, b, 99, 7)
 	b.registerCallbacks()
 	mt := withQueue(t, b)
 	id := failedTurn(t, b, streamChat) // topic 7, "original question"
@@ -487,6 +490,9 @@ func TestAsFile_SendsDocumentInThread(t *testing.T) {
 func TestMoreBack_SwapsMarkupOnly(t *testing.T) {
 	fake := seqFake()
 	b := newCallbackFixture(t, fake)
+	if err := b.store.RegisterChat(t.Context(), store.RegisteredChat{JID: buildChatJID(streamChat), Folder: "owner", IsOwner: true, AddedAt: 1}); err != nil {
+		t.Fatal(err)
+	}
 	b.registerCallbacks()
 	item := turnIn(t, b, 0, 21)
 	if err := streamAll(t, b, item, "короткий ответ"); err != nil {

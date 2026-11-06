@@ -49,6 +49,7 @@ func TestPrivateStopPlaceholderSurvivesWaitAndStreaming(t *testing.T) {
 		t.Run(map[bool]string{false: "complete", true: "stop"}[stop], func(t *testing.T) {
 			fake := &fakeTelegram{respond: okResponder}
 			b, item := newStreamFixture(t, fake)
+			registerPrivateFixture(t, b)
 			item.ThreadID = 7
 			runCtx, cancel := context.WithCancel(t.Context())
 			defer cancel()

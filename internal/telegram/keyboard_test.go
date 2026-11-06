@@ -19,12 +19,14 @@ import (
 // editPathFake answers like a chat that refuses drafts: placeholders and
 // edits succeed with message id 77.
 func editPathFake() *fakeTelegram {
-	return &fakeTelegram{respond: func(method string, _ map[string]string) (int, string) {
+	return &fakeTelegram{respond: func(method string, form map[string]string) (int, string) {
 		switch method {
 		case "sendMessageDraft":
 			return apiError(http.StatusBadRequest, "Bad Request: method is not available")
-		case "sendMessage", "editMessageText":
+		case "sendMessage":
 			return sentMessage("77")
+		case "editMessageText", "editMessageReplyMarkup":
+			return sentMessage(form["message_id"])
 		}
 		return http.StatusOK, `{"ok":true,"result":true}`
 	}}
@@ -231,6 +233,7 @@ func TestStopCallbackAfterFinishToastsFinished(t *testing.T) {
 func TestStopCallbackEndsEditPathTurnStopped(t *testing.T) {
 	fake := editPathFake()
 	b, item := newStreamFixture(t, fake)
+	registerPrivateFixture(t, b)
 	b.ownerChatID = streamChat
 	b.registerCallbacks()
 	runCtx, cancelRun := context.WithCancel(context.Background())
@@ -290,7 +293,7 @@ func TestWaitPlaceholderCarriesStopButton(t *testing.T) {
 		t.Fatalf("wait placeholder = %+v", sends)
 	}
 	// Taken over by the stream: back to the cursor, Stop kept.
-	if ph := b.takeWaitPlaceholder(ctx, item); ph != 88 {
+	if ph, err := b.takeWaitPlaceholder(ctx, item); ph != 88 || err != nil {
 		t.Fatalf("placeholder = %d", ph)
 	}
 	edits := fake.callsTo("editMessageText")

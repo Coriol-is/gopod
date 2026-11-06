@@ -19,6 +19,7 @@ var rowCountSQL = map[string]string{
 	"elevated_native_contexts":         "SELECT count(*) FROM elevated_native_contexts",
 	"elevated_transcript":              "SELECT count(*) FROM elevated_transcript",
 	"topic_deletions":                  "SELECT count(*) FROM topic_deletions",
+	"telegram_edit_attempts":           "SELECT count(*) FROM telegram_edit_attempts",
 	"telegram_control_repair_attempts": "SELECT count(*) FROM telegram_control_repair_attempts",
 	"telegram_control_messages":        "SELECT count(*) FROM telegram_control_messages",
 	"outbox_plain_fallbacks":           "SELECT count(*) FROM outbox_plain_fallbacks",

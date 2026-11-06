@@ -94,8 +94,7 @@ func (b *Bot) durableReplyKeyboard(ctx context.Context, q cbQuery, turn store.Tu
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return &ownershipSendError{cause: err}
 		}
-		_, err = b.api.EditMessageReplyMarkup(callCtx, &bot.EditMessageReplyMarkupParams{ChatID: q.ChatID, MessageID: q.MessageID, ReplyMarkup: kb})
-		return err
+		return b.directMarkup(callCtx, &bot.EditMessageReplyMarkupParams{ChatID: q.ChatID, MessageID: q.MessageID, ReplyMarkup: kb}, turn.ID)
 	})
 }
 
@@ -131,7 +130,6 @@ func (b *Bot) legacyReplyKeyboard(ctx context.Context, q cbQuery, kb *models.Inl
 		}
 	}
 	return b.topicEditRequest(ctx, q.ChatID, q.MessageID, func(callCtx context.Context) error {
-		_, err := b.api.EditMessageReplyMarkup(callCtx, &bot.EditMessageReplyMarkupParams{ChatID: q.ChatID, MessageID: q.MessageID, ReplyMarkup: kb})
-		return err
+		return b.directMarkup(callCtx, &bot.EditMessageReplyMarkupParams{ChatID: q.ChatID, MessageID: q.MessageID, ReplyMarkup: kb}, 0)
 	})
 }

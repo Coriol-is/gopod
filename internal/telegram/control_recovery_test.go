@@ -143,7 +143,7 @@ func TestTerminalControlRejectsLateProgress(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := len(fake.callsTo("editMessageText"))
-	if err := b.editMessageKB(t.Context(), streamChat, 77, "late chunk", kb); err != nil {
+	if err := b.editMessageKB(t.Context(), streamChat, 77, "late chunk", kb); !noReplayError(err) {
 		t.Fatal(err)
 	}
 	unregister()

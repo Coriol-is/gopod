@@ -220,10 +220,10 @@ func TestPublishedFinalRejectsLateLegacyEdits(t *testing.T) {
 	b, fake, id := recoveryFixture(t)
 	publishControlFinal(t, b, id)
 	before := len(fake.callsTo("editMessageText"))
-	if err := b.editMessageKB(t.Context(), streamChat, 77, "late partial", nil); err != nil {
+	if err := b.editMessageKB(t.Context(), streamChat, 77, "late partial", nil); !noReplayError(err) {
 		t.Fatal(err)
 	}
-	if err := b.editMessageHTMLKB(t.Context(), streamChat, 77, "late final", nil); err != nil {
+	if err := b.editMessageHTMLKB(t.Context(), streamChat, 77, "late final", nil); !noReplayError(err) {
 		t.Fatal(err)
 	}
 	b.setKeyboard(t.Context(), streamChat, 77, noKeyboard())

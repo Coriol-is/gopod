@@ -60,9 +60,9 @@ func stopMarkup(m models.ReplyMarkup) bool {
 }
 
 // checkpoint precedes the network edit: a failed final edit remains recoverable.
-func (b *Bot) checkpointControl(ctx context.Context, chat int64, msg int, text string, html bool, kb models.ReplyMarkup) {
+func (b *Bot) checkpointControl(ctx context.Context, chat int64, msg int, text string, html bool, kb models.ReplyMarkup) error {
 	if b.store == nil {
-		return
+		return nil
 	}
 	terminal := !stopMarkup(kb)
 	if c, e := b.store.GetControlMessage(ctx, chat, msg); e == nil && b.executionUncertain(ctx, c.Scope.Folder) {
@@ -70,7 +70,9 @@ func (b *Bot) checkpointControl(ctx context.Context, chat int64, msg int, text s
 	}
 	if err := b.store.CheckpointControlMessage(ctx, chat, msg, text, html, terminal); err != nil {
 		b.log.Warn("control checkpoint failed", "error", err)
+		return err
 	}
+	return nil
 }
 
 func recoveredStatus(t store.Turn) string {
@@ -129,6 +131,9 @@ func (b *Bot) RepairControls(ctx context.Context) error {
 	}
 	if err := b.reconcileRepairReceipts(ctx, nil); err != nil {
 		b.log.Warn("control repair receipt reconciliation", "error", err)
+	}
+	if err := b.reconcileEditReceipts(ctx, nil); err != nil {
+		b.log.Warn("direct edit receipt reconciliation", "error", err)
 	}
 	rows, err := b.store.ControlMessages(ctx)
 	if err != nil {

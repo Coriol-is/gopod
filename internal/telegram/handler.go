@@ -504,7 +504,9 @@ func (b *Bot) runAgentSyncContext(ctx, runCtx context.Context, item queue.Item) 
 			return errors.Join(err, ownershipErr)
 		}
 		if ph := b.popWaitPlaceholder(ctx, item); ph != 0 {
-			b.editMessage(ctx, item.ChatID, ph, "Answer failed.")
+			if editErr := b.editMessage(ctx, item.ChatID, ph, "Answer failed."); noReplayError(editErr) {
+				return errors.Join(err, editErr)
+			}
 		}
 		b.replyError(ctx, item, err)
 		if noReplayError(err) {
@@ -529,7 +531,9 @@ func (b *Bot) runAgentSyncContext(ctx, runCtx context.Context, item queue.Item) 
 				return e
 			}); err != nil {
 				b.log.Warn("remove voice reply placeholder", slog.Any("err", err))
-				b.editMessage(ctx, item.ChatID, ph, "Finished.")
+				if editErr := b.editMessage(ctx, item.ChatID, ph, "Finished."); noReplayError(editErr) {
+					return editErr
+				}
 			}
 			status.Set(stDone)
 			b.deliverSyncReply(ctx, item, reply)

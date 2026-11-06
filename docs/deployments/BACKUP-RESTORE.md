@@ -180,3 +180,19 @@ the complete database/manifest and keep conflicting dispatch held until exact
 success or definite-unsent evidence settles the original attempt. No automatic
 operator settlement command or force-clear is provided. Process-local retained
 receipts may repair SQLite only; losing them on restart does not permit HTTP retry.
+
+### Durable direct edit compatibility (2026-11-06)
+
+D070 adds `telegram_edit_attempts` to schema/table counts and
+`direct_edits_pending` to unsettled work. Existing repair/outbox attempts keep
+their authority and hashes. Pending direct evidence has no cascading control
+reference, is not removed by retention, and blocks the physical chat/message
+after restart or registration changes. Both settled and pending rows are retained.
+
+Older binaries cannot enforce these barriers and older backup manifest allowlists
+may refuse the new table. Do not downgrade across unresolved direct edits. Preserve
+the database and backup manifest; use only exact positive/definite-unsent evidence
+to settle the original attempt. No expiry/absence-based force-clear is provided.
+Process-local receipt loss on restart preserves the hold. Historical registered
+private targets without durable provenance may no longer accept callback edits;
+request a fresh control/message instead of fabricating ownership from caches.
