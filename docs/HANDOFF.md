@@ -33,9 +33,10 @@ compatibility resolution. Second review requires zero-HTTP historical-owner refu
 not to latch chat-wide uncertainty, plus a true >editLimit silent-overflow regression.
 Corrections and focused D070/fresh MoreBack/Stop/model callbacks PASS, including
 zero-HTTP/no-chat-latch, 5000-byte silent overflow and enabled-fake-TTS voice tests.
-Build/vet PASS; full test/race found one quota-offer synthetic target fixture
-without durable provenance. Narrow real-host-offer fixture correction and full
-rerun pending; independent production/focused race review is provisional PASS; do not duplicate already journaled outbox dispatch or infer
+Quota fixture corrected to actual sent offer; final full build/vet/test and
+Store/Telegram/backup/control races PASS. Independent exact-head review PASS on
+`a47d53b`; negative overlays prove silent/voice TTS regressions. PR/CI publishing
+in progress; deployment remains `a85b328`; do not duplicate already journaled outbox dispatch or infer
 historical non-delivery. Agent freeze_next owns `feat/durable-edit-outcomes` in
 `../gopod-edit-outcomes`; review_pickers independently reviews. Root owns global
 state and the standing review/CI/merge/Pi controller deploy/housekeeping cycle.
