@@ -72,3 +72,10 @@ PR194 initial Sonar analysis15:29:58UTC is OK with zero issue/file components:
 changed Python scripts are excluded. Project exclusions were read back after update.
 New exact-head CI and review follow final prose reconciliation. The owner explicitly
 requested merge/push only, with no deployment. Local hook installation follows merge.
+
+Separate unchanged-test observation: CI42243855328 on731ba4d failed
+`TestStopDuringNotStartedBackoffLeavesNoLiveRunWithRealStore` at managed_turns_test.go:316
+(`turn = running` after attempt cancellation). Prior full local/CI runs passed;
+30 targeted local repetitions also passed (2.015s). Cause remains unproven; a green
+subsequent run does not resolve it. Runtime/test source was not altered in this
+hook/Sonar batch. Track independently; merge still requires green exact-head CI.

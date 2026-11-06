@@ -27,6 +27,9 @@ Owner explicitly requests merge/push only, no deployment. Finish final review/CI
 squash merge, enable the local hook and clean the integrated task worktree.
 Pi runtime remains0200892; no restart or deployment is part of this follow-up.
 [Development checks and audit](DEVELOPMENT-CHECKS.md).
+Separate unresolved CI observation: unchanged managed Stop/backoff test saw
+`turn = running` in run42243855328;30 local repeats passed. Do not treat subsequent
+CI success as root-cause resolution; no runtime change/deploy in this batch.
 
 ## Resume here — D071 deployed, 2026-11-06
 

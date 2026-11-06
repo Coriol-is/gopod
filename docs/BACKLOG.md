@@ -118,6 +118,8 @@ owner deferrals. CP-035 hooks research is merged documentation, not activated ho
 
 ## Separate unresolved observations
 
+- CI42243855328 failed unchanged managed Stop/backoff test at `managed_turns_test.go:316` (`turn = running`);30 local repeats passed, cause unproven. [Audit](DEVELOPMENT-CHECKS.md). No runtime fix in the hook/Sonar batch.
+
 - The first #168 CI attempt failed unchanged runner force-drain qualification;
   later green runs do not explain it. Track separately from the repaired queue race
   ([review](reviews/2026-11-04-queue-idle-handoff.md)).
