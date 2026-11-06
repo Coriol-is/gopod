@@ -13,6 +13,18 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
+## Current follow-up — deadcode hook and Sonar scope, 2026-11-06
+
+Owner requested deadcode in pre-commit and exclusion of scripts/all Python from
+Sonar. Work is on `ci/deadcode-precommit`, worktree `gopod-deadcode-hook`, base3ea9328.
+Staged-snapshot Linux/ARM64 analysis uses pinned v0.49.0 with tests;16-symbol
+baseline prevents new unreachable functions without deleting planned disconnected
+features. Four disposable-Git integration tests and baseline analysis PASS.
+Independent review and full required checks pending. Sonar configs now include
+`scripts/**,**/*.py`; scanner readback follows. No runtime source changes/deployment
+needed. First finish review/CI/merge, then install local hook and clean task worktree.
+[Development checks and audit](DEVELOPMENT-CHECKS.md).
+
 ## Resume here — D071 deployed, 2026-11-06
 
 #193 (`0200892`, D071) closes the registered-private sync voice-placeholder

@@ -1,0 +1,18 @@
+[
+  "github.com/Coriol-is/gopod/internal/groupsandbox.Executor.saveDockerChecked",
+  "github.com/Coriol-is/gopod/internal/ipc.Watcher.readTask",
+  "github.com/Coriol-is/gopod/internal/log.RetentionCleanup",
+  "github.com/Coriol-is/gopod/internal/memory.sanitizeFTS",
+  "github.com/Coriol-is/gopod/internal/observability.Gauge.Add",
+  "github.com/Coriol-is/gopod/internal/observability.Gauge.Dec",
+  "github.com/Coriol-is/gopod/internal/observability.Gauge.Inc",
+  "github.com/Coriol-is/gopod/internal/queue.Queue.drainPending",
+  "github.com/Coriol-is/gopod/internal/runner.shellQuoteArgs",
+  "github.com/Coriol-is/gopod/internal/store.ExecState.live",
+  "github.com/Coriol-is/gopod/internal/telegram.Bot.clearReaction",
+  "github.com/Coriol-is/gopod/internal/telegram.Bot.pingHandler",
+  "github.com/Coriol-is/gopod/internal/telegram.Bot.react",
+  "github.com/Coriol-is/gopod/internal/telegram.Bot.whoamiHandler",
+  "github.com/Coriol-is/gopod/internal/telegram.extractURL",
+  "github.com/Coriol-is/gopod/internal/telegram.generationStopped"
+]
