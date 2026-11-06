@@ -39,3 +39,16 @@ login exit qualification and confirmed retirement orchestration remain open.
 No absence is inferred from restart, elapsed time or canceled HTTP. Group topic
 semantics and unregistered diagnostics retain their current paths. `/thread delete`
 remains unavailable.
+
+## Integration — 2026-11-06
+
+PR #186 merged as `6faa197`; reviewed head `613edd3a816fe2bade013f2a37608a1763323e97`.
+Required [CI 42209821093](https://github.com/Coriol-is/gopod/actions/runs/42209821093)
+PASS. Independent exact-head review PASS; focused races Store 11.720s, Telegram
+14.392s. Sonar analysis 11:22:56 UTC matches head: gate OK, five complexity smells
+in ownership helpers/tests, zero bugs/vulnerabilities. Findings read, none suppressed.
+Deployment awaits the combined batch; Pi remains `80f4b11` at this checkpoint.
+
+Deployment closure 2026-11-06: #186/#187 shipped in `0cd8078`, with exact-main CI,
+verified backup, health/state and Telegram version PASS.
+[Rollout and cleanup](../deployments/2026-11-06-control-topic-rollout.md). Parent activation gates remain.

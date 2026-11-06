@@ -102,3 +102,18 @@ Their "not deployed" statements record merge-time status and are superseded by
 [this rollout](../deployments/2026-11-06-reliability-cycle-rollout.md). Parent CP-002/
 CP-016 and remaining acceptance gates stay open. Two clean agent worktrees and six
 integrated local/remote branches removed; named backups/rollback evidence preserved.
+
+## Subsequent completed implementation — 2026-11-06
+
+- #186 (`6faa197`): registered-private topic text uses existing ownership journal,
+  exact target binding and receipt-only repair/no-replay. [Review](../reviews/2026-11-06-topic-ownership-next.md).
+- #187 (`0cd8078`): message edit arbitration, final-target protection, More/Back
+  old-control retirement, fair held-row scheduling and obsolete Stop requeue guard.
+  [Review](../reviews/2026-11-06-control-final-arbitration.md).
+
+Full checks/races, independent exact-head review and required CI PASS; Sonar OK
+with five/nine smells. Rollout is tracked in current handoff; parent CPs remain open.
+
+Deployment closure 2026-11-06: #186/#187 shipped in `0cd8078`, with exact-main CI,
+verified backup, health/state and Telegram version PASS.
+[Rollout and cleanup](../deployments/2026-11-06-control-topic-rollout.md). Parent activation gates remain.
