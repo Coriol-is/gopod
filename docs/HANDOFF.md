@@ -33,7 +33,11 @@ dedicated fault/restart/voice regressions are in progress. Registration-removal 
 compatibility path. Independent review found and corrected a global recovery
 stall on deletion receipt settlement failure: unrelated controls continue while
 only the affected target stays held. Fairness coverage places an eligible control
-after more than 100 held targets. Full validation and exact-head review follow.
+after more than 100 held targets. Initial full build/vet/tests PASS (Telegram80.892s, Store56.220s), affected
+Store/Telegram/backup/control races PASS. Final test-only fairness and fallback
+budget refinements are being revalidated, with independent focused race review.
+A negative overlay restoring the raw delete path fails the false/nil regression
+by invoking paid generation, confirming the new assertion catches the defect.
 Pi baseline was rechecked: `6820422`, healthy/no restarts/OOM, ten idle counts zero.
 
 Next action: finish and review the bounded implementation, full checks/races,
