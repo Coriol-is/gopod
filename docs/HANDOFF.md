@@ -25,8 +25,9 @@ Owner resumed implementation with the standing full release cycle. Base `8b53386
   (not only main/fallback), retaining receipt repair/no-replay. No schema change;
   nontext/history/unknown reconciliation and retirement remain separate.
 - CP-016 source checkpoint: registered-private topic text journal implemented,
-  no schema change; focused independent review/races PASS, final SHA/full checks
-  pending. Unknown or ACK-failed sends stay held across restart; exact target
+  no schema change; PR #186 head `613edd3`, full checks/races and exact-head
+  independent review PASS. CI `42209821093` pending; Sonar OK, five complexity
+  smells read, none suppressed. Unknown or ACK-failed sends stay held across restart; exact target
   validation rejects foreign routes while siblings/main remain available.
 - Independent reviewer review_pickers; root integrates global docs, required CI,
   merge, Pi controller rollout/acceptance and bounded housekeeping. No worker.
