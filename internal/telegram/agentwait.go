@@ -154,12 +154,12 @@ func (b *Bot) popWaitPlaceholder(ctx context.Context, item queue.Item) int {
 
 // takeWaitPlaceholder hands the turn's early placeholder to streamReply,
 // back to the cursor now that the agent runs. 0 when there is none.
-func (b *Bot) takeWaitPlaceholder(ctx context.Context, item queue.Item) int {
+func (b *Bot) takeWaitPlaceholder(ctx context.Context, item queue.Item) (int, error) {
 	ph := b.popWaitPlaceholder(ctx, item)
 	if ph != 0 {
-		withGenerationPreview(ctx, func() error { return b.editMessageKB(ctx, item.ChatID, ph, "", b.turnKeyboard(ctx, item.ID)) })
+		return ph, withGenerationPreview(ctx, func() error { return b.editMessageKB(ctx, item.ChatID, ph, "", b.turnKeyboard(ctx, item.ID)) })
 	}
-	return ph
+	return ph, nil
 }
 
 // streamNotStarted also handles a stopped buffered fallback with no partial output.
@@ -183,7 +183,9 @@ func (b *Bot) streamNotStarted(ctx, runCtx context.Context, item queue.Item) (bo
 	b.log.Info("turn stopped without streamed output",
 		slog.Int64("turn", item.ID), slog.String("folder", item.Folder))
 	if ph != 0 {
-		b.editMessage(ctx, item.ChatID, ph, stoppedEmpty)
+		if err := b.editMessage(ctx, item.ChatID, ph, stoppedEmpty); noReplayError(err) {
+			return true, errors.Join(queue.ErrStopped, err)
+		}
 	} else {
 		b.sendFormatted(ctx, item.ChatID, item.ThreadID, item.MessageID, stoppedEmpty)
 	}

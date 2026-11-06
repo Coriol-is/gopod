@@ -81,34 +81,34 @@ func (b *Bot) turnKeyboard(ctx context.Context, turnID int64) models.ReplyMarkup
 
 // clearKeyboard removes a message's inline keyboard without touching its
 // text. Best-effort: a failure is logged only.
-func (b *Bot) clearKeyboard(ctx context.Context, chatID int64, msgID int) {
-	b.setKeyboard(ctx, chatID, msgID, noKeyboard())
+func (b *Bot) clearKeyboard(ctx context.Context, chatID int64, msgID int) error {
+	return b.setKeyboard(ctx, chatID, msgID, noKeyboard())
 }
 
 // setKeyboard replaces a message's inline keyboard without touching its
 // text. Best-effort: a failure is logged only.
-func (b *Bot) setKeyboard(ctx context.Context, chatID int64, msgID int, markup models.ReplyMarkup) {
+func (b *Bot) setKeyboard(ctx context.Context, chatID int64, msgID int, markup models.ReplyMarkup) error {
 	release, lockErr := b.lockMessageEdit(ctx, chatID, msgID)
 	if lockErr != nil {
-		return
+		return lockErr
 	}
 	defer release()
 	if !b.controlEditAllowed(ctx, chatID, msgID, markup) {
-		return
+		return &ownershipSendError{cause: store.ErrTelegramEditHeld}
 	}
 
 	err := b.topicEditRequest(ctx, chatID, msgID, func(ctx context.Context) error {
-		_, e := b.api.EditMessageReplyMarkup(ctx, &bot.EditMessageReplyMarkupParams{
+		return b.directMarkup(ctx, &bot.EditMessageReplyMarkupParams{
 			ChatID:      chatID,
 			MessageID:   msgID,
 			ReplyMarkup: markup,
-		})
-		return e
+		}, 0)
 	})
 	if err != nil {
 		b.log.Debug("set keyboard failed",
 			slog.Int64("chat_id", chatID), slog.Int("msg_id", msgID), slog.Any("err", err))
 	}
+	return err
 }
 
 // stopCallback handles ⏹ (st:<turnID>): it stops the turn when it is

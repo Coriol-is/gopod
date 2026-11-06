@@ -15,6 +15,7 @@ import (
 	"github.com/Coriol-is/gopod/internal/control"
 	"github.com/Coriol-is/gopod/internal/queue"
 	"github.com/Coriol-is/gopod/internal/runner"
+	"github.com/Coriol-is/gopod/internal/store"
 )
 
 // sendPlaceholder sends a "▍" (blinking cursor) message and returns
@@ -106,21 +107,22 @@ func (b *Bot) editMessageKB(ctx context.Context, chatID int64, msgID int, text s
 }
 func (b *Bot) editMessageKBLocked(ctx context.Context, chatID int64, msgID int, text string, markup models.ReplyMarkup) error {
 	if !b.controlEditAllowed(ctx, chatID, msgID, markup) {
-		return nil
+		return &ownershipSendError{cause: store.ErrTelegramEditHeld}
 	}
 	text = b.safeControlText(ctx, chatID, msgID, text, markup)
-	b.checkpointControl(ctx, chatID, msgID, text, false, markup)
+	if err := b.checkpointControl(ctx, chatID, msgID, text, false, markup); err != nil {
+		return &ownershipSendError{cause: err}
+	}
 	if text == "" {
 		text = "\u2758" // keep cursor visible if empty
 	}
 	err := b.topicEditRequest(ctx, chatID, msgID, func(requestCtx context.Context) error {
-		_, err := b.api.EditMessageText(requestCtx, &bot.EditMessageTextParams{
+		return b.directText(requestCtx, &bot.EditMessageTextParams{
 			ChatID:      chatID,
 			MessageID:   msgID,
 			Text:        text,
 			ReplyMarkup: markup,
 		})
-		return err
 	})
 	if err != nil {
 		b.log.Debug("editMessage failed",
@@ -129,7 +131,7 @@ func (b *Bot) editMessageKBLocked(ctx context.Context, chatID int64, msgID int, 
 			slog.Any("err", err))
 		return fmt.Errorf("editMessageText: %w", err)
 	}
-	if b.store != nil {
+	if b.store != nil && chatID <= 0 {
 		if err := b.store.AcknowledgeControlEdit(ctx, chatID, msgID); err != nil {
 			b.log.Warn("control edit acknowledge failed", slog.Int64("chat_id", chatID), slog.Int("msg_id", msgID), slog.Any("err", err))
 		}
@@ -161,25 +163,26 @@ func (b *Bot) editMessageHTMLKB(ctx context.Context, chatID int64, msgID int, ht
 }
 func (b *Bot) editMessageHTMLKBLocked(ctx context.Context, chatID int64, msgID int, html string, markup models.ReplyMarkup) error {
 	if !b.controlEditAllowed(ctx, chatID, msgID, markup) {
-		return nil
+		return &ownershipSendError{cause: store.ErrTelegramEditHeld}
 	}
 	html = b.safeControlText(ctx, chatID, msgID, html, markup)
-	b.checkpointControl(ctx, chatID, msgID, html, true, markup)
+	if err := b.checkpointControl(ctx, chatID, msgID, html, true, markup); err != nil {
+		return &ownershipSendError{cause: err}
+	}
 	if html == "" {
 		return nil
 	}
 	err := b.topicEditRequest(ctx, chatID, msgID, func(requestCtx context.Context) error {
-		_, err := b.api.EditMessageText(requestCtx, &bot.EditMessageTextParams{
+		return b.directText(requestCtx, &bot.EditMessageTextParams{
 			ChatID:      chatID,
 			MessageID:   msgID,
 			Text:        html,
 			ParseMode:   models.ParseModeHTML,
 			ReplyMarkup: markup,
 		})
-		return err
 	})
 	if err != nil {
-		if isNotModified(err) {
+		if noReplayError(err) || isNotModified(err) {
 			// The message already shows this text: nothing to fall back to.
 			return fmt.Errorf("editMessageText: %w", err)
 		}
@@ -190,14 +193,14 @@ func (b *Bot) editMessageHTMLKBLocked(ctx context.Context, chatID int64, msgID i
 			slog.Int("msg_id", msgID),
 			slog.Any("err", err))
 		perr := b.editMessageKBLocked(ctx, chatID, msgID, htmlToPlain(html), markup)
-		if perr != nil && hasButtons(markup) && !isNotModified(perr) {
+		if perr != nil && !noReplayError(perr) && hasButtons(markup) && !isNotModified(perr) {
 			if _, limited := retryAfter(perr); !limited {
 				return b.editMessageHTMLKBLocked(ctx, chatID, msgID, html, noKeyboard())
 			}
 		}
 		return perr
 	}
-	if b.store != nil {
+	if b.store != nil && chatID <= 0 {
 		if err := b.store.AcknowledgeControlEdit(ctx, chatID, msgID); err != nil {
 			b.log.Warn("control edit acknowledge failed", slog.Int64("chat_id", chatID), slog.Int("msg_id", msgID), slog.Any("err", err))
 		}
@@ -340,7 +343,11 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 	draftID := 0 // non-zero while the turn streams through drafts
 	var lastDraft time.Time
 	var draftHold time.Time // no draft updates before this (429 retry_after)
-	if placeholder = b.takeWaitPlaceholder(ctx, item); placeholder != 0 {
+	placeholder, placeholderErr = b.takeWaitPlaceholder(ctx, item)
+	if noReplayError(placeholderErr) {
+		return b.drainHeldStream(ctx, item, stream, placeholderErr)
+	}
+	if placeholder != 0 {
 		// Sent before startup or while the turn waited for the agent gate.
 	} else if placeholder = b.reusePlaceholder(ctx, item); placeholder != 0 {
 		b.recordPlaceholder(ctx, item, placeholder)
@@ -433,7 +440,10 @@ func (b *Bot) streamReply(ctx context.Context, item queue.Item, stream *runner.A
 			return true
 		}
 		// Edit path: finalize this placeholder, continue in a new one.
-		withGenerationPreview(ctx, func() error { return b.editMessage(ctx, item.ChatID, placeholder, accumulated.String()) })
+		if err := withGenerationPreview(ctx, func() error { return b.editMessage(ctx, item.ChatID, placeholder, accumulated.String()) }); noReplayError(err) {
+			drainErr = b.drainHeldStream(ctx, item, stream, err)
+			return false
+		}
 		placeholder, placeholderErr = b.sendPlaceholderResult(ctx, item.ChatID, item.ThreadID, 0, "❘", kb)
 		if placeholder == 0 || noReplayError(placeholderErr) {
 			drainErr = drainFallback()
@@ -576,6 +586,9 @@ loop:
 				continue
 			}
 			err := withGenerationPreview(ctx, func() error { return b.editMessageKB(ctx, item.ChatID, placeholder, text, kb) })
+			if noReplayError(err) {
+				return b.drainHeldStream(ctx, item, stream, err)
+			}
 			if wait, ok := retryAfter(err); ok {
 				editHold = time.Now().Add(wait)
 				continue // dirty stays: retried after the wait
@@ -622,7 +635,9 @@ loop:
 	}
 	if res.Err != nil {
 		if placeholder != 0 {
-			b.editMessage(ctx, item.ChatID, placeholder, "")
+			if err := b.editMessage(ctx, item.ChatID, placeholder, ""); noReplayError(err) {
+				return errors.Join(res.Err, err)
+			}
 		}
 		b.handleStreamError(ctx, item, res.Err)
 		if noReplayError(res.Err) {
@@ -672,6 +687,9 @@ loop:
 		// documents first; the reply in main keeps their notes.
 		shown := b.attachLongCode(ctx, item.ChatID, item.ThreadID, finalText)
 		err := b.editMessageHTMLKB(ctx, item.ChatID, placeholder, finalReplyHTML(shown), b.replyMarkup(item, finalText))
+		if noReplayError(err) {
+			return err
+		}
 		if b.finalEditLost(item, err) {
 			if err := b.replyInMain(ctx, item, shown); err != nil {
 				return err
@@ -685,6 +703,9 @@ loop:
 		// text, then send the full formatted response as a new reply.
 		if accumulated.Len() > 0 {
 			err := b.editMessage(ctx, item.ChatID, placeholder, accumulated.String())
+			if noReplayError(err) {
+				return err
+			}
 			if b.finalEditLost(item, err) {
 				if err := b.replyInMain(ctx, item, finalText); err != nil {
 					return err
@@ -693,9 +714,13 @@ loop:
 			}
 		} else if silent {
 			// Leave the progress summary (no cursor, no Stop button).
-			b.editMessage(ctx, item.ChatID, placeholder, view())
+			if err := b.editMessage(ctx, item.ChatID, placeholder, view()); noReplayError(err) {
+				return err
+			}
 		} else if kb != nil {
-			b.clearKeyboard(ctx, item.ChatID, placeholder)
+			if err := b.clearKeyboard(ctx, item.ChatID, placeholder); noReplayError(err) {
+				return err
+			}
 		}
 		sent, _ := b.sendFinal(ctx, item.ChatID, item.ThreadID, item.MessageID, finalText, b.replyMarkup(item, finalText))
 		b.recordReply(ctx, item, sent, finalText)
@@ -733,7 +758,7 @@ func (b *Bot) silentMode(ctx context.Context, item queue.Item) bool {
 // when the error says so. In the main chat (thread 0) an edit failure
 // stays only logged, as before topics existed.
 func (b *Bot) finalEditLost(item queue.Item, err error) bool {
-	if item.ThreadID == 0 || err == nil || isNotModified(err) {
+	if item.ThreadID == 0 || err == nil || noReplayError(err) || isNotModified(err) {
 		return false
 	}
 	b.checkThreadGone(item.ChatID, item.ThreadID, err)
@@ -881,7 +906,9 @@ func (b *Bot) finishStoppedEdit(ctx context.Context, item queue.Item, stream *ru
 	if hold := stopFailure(ctx); hold != nil {
 		return hold
 	}
-	b.clearKeyboard(ctx, item.ChatID, placeholder)
+	if err := b.clearKeyboard(ctx, item.ChatID, placeholder); noReplayError(err) {
+		return err
+	}
 	sent := b.sendFormatted(ctx, item.ChatID, item.ThreadID, item.MessageID, stoppedEmpty)
 	b.noteBareReply(ctx, item, sent)
 	b.turnStatus(item).Set(stStopped)

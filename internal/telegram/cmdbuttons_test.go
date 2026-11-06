@@ -26,6 +26,7 @@ func newCommandFixture(t *testing.T) (*Bot, *fakeTelegram, *control.Router) {
 	t.Helper()
 	fake := seqFake()
 	b := newCallbackFixture(t, fake)
+	registerPrivateFixture(t, b)
 	r := control.New(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	b.router = r
 	b.registerCallbacks()

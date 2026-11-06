@@ -19,12 +19,12 @@ import (
 func seqFake() *fakeTelegram {
 	var n atomic.Int64
 	n.Store(499)
-	return &fakeTelegram{respond: func(method string, _ map[string]string) (int, string) {
+	return &fakeTelegram{respond: func(method string, form map[string]string) (int, string) {
 		switch method {
 		case "sendMessage", "sendDocument":
 			return sentMessage(strconv.FormatInt(n.Add(1), 10))
-		case "editMessageText":
-			return sentMessage("77")
+		case "editMessageText", "editMessageReplyMarkup":
+			return sentMessage(form["message_id"])
 		}
 		return http.StatusOK, `{"ok":true,"result":true}`
 	}}

@@ -2377,3 +2377,40 @@ operator reconciliation command, native exit proof or full repair of historical
 requests emitted before this journal. Pending evidence must be preserved through
 backup and downgrade; an older binary cannot enforce it. No paused feature or
 confirmed topic-deletion orchestration is activated by this contract.
+
+## D070 — Durable direct edit attempts and provenance
+
+**Status:** implementation contract for the owner-resumed CP-002 non-repair edit
+coverage, 2026-11-06. Extends D063/D064 conservative uncertainty handling alongside
+D069; activation and full legacy-history qualification remain separate.
+
+Registered-private direct text/HTML and reply-markup edits require durable target
+provenance from a message-creation owner, exact control binding or acknowledged
+outbox target. An in-memory cache alone cannot authorize historical edits. Missing
+or conflicting authority must yield a truthful hold without HTTP, never fabricated
+success. Historical keyboard/callback edits may therefore expire or hold. A creation
+owner proves provenance, not permission to overwrite a published outbox target;
+only the existing exact acknowledged durable callback authority is an exception.
+Group/unregistered compatibility paths are not qualified by this slice.
+
+Each direct edit commits a distinct immutable attempt before HTTP, binding exact
+method/request hash, physical chat/message, source topic, registration scope and
+owner evidence. Repair and outbox retain their own journals; their HTTP is never
+recorded as a second direct attempt. Raw-target barriers apply across these paths:
+unresolved direct/repair edits and sending/uncertain outbox effects cannot authorize
+conflicting direct writes. Holds survive restart/rebinding/retention, count toward
+relevant quiescence and idle, and must not consume outbox budgets or starve siblings.
+
+Only an exactly attributed success/not-modified or definite refusal/proven-unsent
+outcome settles its original attempt. Distinct fallback HTTP requires settlement
+of the refused predecessor and its own attempt. Unknown/failed settlement never
+permits fallback, replacement sends or replay; outer helpers must preserve NoReplay.
+Bounded positive/refusal receipts reconcile SQLite
+only; loss after restart preserves the hold. A direct text ACK may retire only the
+exact bound control checkpoint; reply-markup ACK cannot assert text success.
+
+No timeout/TTL/absence-based force-clear or historical reconstruction is introduced.
+Pending evidence is not removed by compaction/control cleanup. Backup/idle counts
+and downgrade guidance include the new ledger; old binaries cannot enforce these
+barriers. Wider nontext/history reconciliation and integrated foreground acceptance
+remain open; no foreground, topic deletion, managed tasks or worker is activated.

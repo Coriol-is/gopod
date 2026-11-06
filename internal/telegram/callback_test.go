@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"errors"
+	"github.com/Coriol-is/gopod/internal/store"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -272,5 +273,25 @@ func TestAllowedUpdatesExplicit(t *testing.T) {
 		if !want[u] {
 			t.Fatalf("unexpected allowed update %q", u)
 		}
+	}
+}
+
+// seedPrivateTarget supplies the host creation receipt for a synthetic callback
+// message; historical targets without this evidence are tested separately.
+func seedPrivateTarget(t *testing.T, b *Bot, message, thread int) {
+	t.Helper()
+	registerPrivateFixture(t, b)
+	o, err := b.store.BeginTelegramMessageOwner(t.Context(), streamChat, thread, thread)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = b.store.AcknowledgeTelegramMessageOwner(t.Context(), o, message); err != nil {
+		t.Fatal(err)
+	}
+}
+func registerPrivateFixture(t *testing.T, b *Bot) {
+	t.Helper()
+	if err := b.store.RegisterChat(t.Context(), store.RegisteredChat{JID: buildChatJID(streamChat), Folder: "owner", IsOwner: true, AddedAt: 1}); err != nil {
+		t.Fatal(err)
 	}
 }
