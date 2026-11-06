@@ -30,10 +30,11 @@ func (s *Store) applyTelegramOwnershipSchema(ctx context.Context) error {
 	return err
 }
 
-// BeginTelegramMessageOwner commits provenance before a host-issued main-chat
-// send. Unregistered diagnostics remain compatible; they return an empty attempt.
+// BeginTelegramMessageOwner commits provenance before a host-issued private-chat
+// send. Only the source topic or its main-chat fallback is an allowed target.
+// Unregistered diagnostics remain compatible; they return an empty attempt.
 func (s *Store) BeginTelegramMessageOwner(ctx context.Context, chat int64, source, target int) (o TelegramMessageOwner, err error) {
-	if chat <= 0 || source < 0 || target != 0 {
+	if chat <= 0 || source < 0 || target < 0 || (target != 0 && target != source) {
 		return o, ErrInvalidConversation
 	}
 	_, err = s.withTx(ctx, func(q taskSQL) error {
