@@ -24,8 +24,8 @@ private targets without provenance hold truthfully; no blanket overwrite authori
 
 Full build/vet/tests and affected Store/Telegram/backup/control races PASS;
 independent exact-head review and CI `42232618774` PASS on `a47d53b`.
-Sonar OK,26 smells read/retained. Deploy target `6820422`; exact-main CI and rollout
-pending. Current Pi `a85b328`, controller only. Root owns rollout/docs/cleanup.
+Sonar OK,26 smells read/retained. Deploy target `6820422`; exact-main CI
+`42233254945` and isolated readiness PASS. Idle-only backup/rollout started. Current Pi `a85b328`, controller only. Root owns rollout/docs/cleanup.
 
 **Next:** groups/unregistered edits, DeleteMessage and other non-edit effects,
 historical missing provenance and explicit unknown reconciliation. Eager old-row
