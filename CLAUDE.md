@@ -117,6 +117,25 @@ the user before any spec or code exists for it.
 
 ## Workflow rules
 
+- **Permanent development cycle (owner-approved 2026-11-06).** For each completed
+  implementation batch, continue through independent review and green required CI,
+  squash merge, Pi controller deployment and acceptance, backlog/documentation/
+  handoff reconciliation, then bounded housekeeping. These follow-through steps
+  are part of the authorized development task; do not ask the owner to repeat
+  `deploy / update backlog / housekeeping` after every batch. The latest explicit
+  scope wins: Pi controller only by default, no worker or paused-feature activation.
+  Check live idleness, retain rollback evidence, create and verify the required
+  backup before rollout, and verify health/version/state afterwards. If a gate or
+  connectivity blocks deployment, record the exact blocker and next action; never
+  report merged code as deployed. Keep intermediate documentation checkpoints.
+  Archive completed/cancelled backlog slices while retaining parent acceptance
+  gaps. Housekeeping removes only proven-integrated clean task branches/worktrees
+  and reviewed disposable artifacts; preserve others' dirty work, named backups,
+  credentials, rollback evidence and unrelated services. No broad prune or deletion
+  of user data is implied. Documentation-only batches do not require a runtime
+  redeploy; use a docs PR and focused hygiene/link checks, keeping mandatory checks
+  green before merge. Never push directly to main.
+
 - **Autonomous Telegram acceptance (owner-approved 2026-11-03).** Agents may
   access Telegram themselves to perform acceptance checks for gopod, without
   asking the owner to send each message or approve each check. This includes
@@ -154,7 +173,7 @@ the user before any spec or code exists for it.
   Wait for the `ci` workflow (`test` and `isolation-spike`) rather than requiring
   every external check returned by `gh pr checks` to succeed. This exception
   applies only to Sonar; it does not waive independent review or other checks.
-- **Documentation-only exception (owner-approved 2026-11-03).** Documentation updates may be committed and pushed directly without a PR or full build/vet/test/CI verification. Check `git diff --check`, changed local links and consistency with current project state. Changes to source, dependencies, workflows or executable configuration retain the normal PR/review/CI process. Existing documentation PRs may be merged after these focused checks.
+- **Documentation-only validation.** Use a feature branch and docs PR. Check `git diff --check`, changed local links and consistency with current project state; no additional local full test run is needed for prose alone. Required PR checks remain green before merge. Source, dependency, workflow and executable configuration changes retain full validation. This replaces the earlier direct-push exception.
 - **Don't add features the user didn't ask for.** This project's discipline is
   *smaller than NanoClaw*. Resist scope creep aggressively.
 

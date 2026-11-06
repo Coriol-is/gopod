@@ -1,8 +1,8 @@
 # gopod — Roadmap
 
-Latest rollout: `757faa2` on Pi, 2026-11-05 15:11 UTC, includes #173–#177;
+Latest rollout: `80f4b11` on Pi, 2026-11-06 10:25 UTC, includes #178–#180/#182/#183;
 no worker. D068 guide migration and bounded read-only matching-consumer acceptance
-passed; unrelated native/client gates remain. [Evidence](docs/deployments/2026-11-05-stop-ipc-rollout.md).
+passed; unrelated native/client gates remain. [Evidence](docs/deployments/2026-11-06-reliability-cycle-rollout.md).
 
 
 Live milestone tracker. Update the **Status** column whenever you change reality.
@@ -24,8 +24,8 @@ right now" view, see [docs/HANDOFF.md](docs/HANDOFF.md).
 ## Current backlog — 2026-11-04
 
 Refreshed 2026-11-06 at `261805e`. The [active code-backed backlog](docs/BACKLOG.md)
-contains remaining implementation and acceptance scope. Pi `757faa2` includes
-#168–#177; the foreground producer is disconnected, managed tasks are off and
+contains remaining implementation and acceptance scope. Pi `80f4b11` includes
+#168–#180/#182/#183; the foreground producer is disconnected, managed tasks are off and
 CP-037 remains legacy. Health/version and bounded D068 consumer checks passed.
 [Rollout](docs/deployments/2026-11-05-stop-ipc-rollout.md).
 
@@ -37,20 +37,20 @@ not extra active queue entries. Partial proposals are not marked complete.
 
 CP-002 bounded draft/Stop-keyboard generation fix merged in #178 (`da8b4fe`),
 with review and required CI passed; wait maps/durable control binding followed
-in #179 (`bbc30b4`) with the same gates passed. Both are not deployed. Integrated
+in #179 (`bbc30b4`) with the same gates passed. Both deployed in `80f4b11`. Integrated
 lifecycle qualification, reply-action parity and foreground cutover remain open.
 
 CP-002 keyboard-refusal fallback merged in #180 (`6722e6a`), with full checks,
-races, independent review and required CI passed; not deployed. Advisory Sonar
+races, independent review and required CI passed; deployed in `80f4b11`. Advisory Sonar
 ERROR on duplication is recorded in the [review](docs/reviews/2026-11-05-outbox-keyboard-fallback.md).
 Durable reply-action readthrough followed in #183 (`261805e`), with full checks,
-races, independent review and required CI passed; not deployed. Legacy repair
+races, independent review and required CI passed; deployed in `80f4b11`. Legacy repair
 arbitration, More/Back checkpoints, eager cleanup, mixed-path ordering and
 foreground lifecycle qualification remain open.
 
 CP-016 noncontrol main-text notice ownership merged in #182 (`0ac9b3f`);
 restart/lifecycle/IPC reuse durable receipt/no-replay handling. Full checks,
-races, independent review and required CI PASS; not deployed. Historical/nontext
+races, independent review and required CI PASS; deployed in `80f4b11`. Historical/nontext
 ownership, unknown outcomes, managed/native settlement and deletion remain open.
 
 ## Execution priority — 2026-11-04
@@ -338,7 +338,7 @@ and [implementation/acceptance plan](docs/superpowers/plans/2026-10-25-personal-
 track the work. **Implementation deployed; final provider/client qualification remains open.**
 The architecture merged in #66/#67; follow-ups #88/#89 fixed Codex tree-budget admission and
 admit registered groups by default. #93/#95/#97 implement triggers, owner-in-group controls
-and private group-login guidance. Security groups 1–8 were deployed in `e3b5401`; current controller is `757faa2`.
+and private group-login guidance. Security groups 1–8 were deployed in `e3b5401`; current controller is `80f4b11`.
 Historical 2026-10-29 evidence records Claude group new/resume success after owner login;
 final Codex two-turn/tool and cross-boundary acceptance remain open. Earlier TCP/offline-tool
 checks are in the [2026-10-27 report](docs/deployments/2026-10-27-group-isolation.md),
