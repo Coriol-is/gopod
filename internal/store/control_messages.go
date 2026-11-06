@@ -99,6 +99,6 @@ func (s *Store) AcknowledgeControlEdit(ctx context.Context, chat int64, msg int)
 // RequeueControlRepair is used after an obsolete button press. It does not send
 // anything and cannot change ownership or the execution state.
 func (s *Store) RequeueControlRepair(ctx context.Context, chat int64, msg int, token string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE telegram_control_messages SET acknowledged=0,retry_at=0 WHERE chat_id=? AND message_id=? AND token=?`, chat, msg, token)
+	_, err := s.db.ExecContext(ctx, `UPDATE telegram_control_messages SET acknowledged=0,retry_at=0 WHERE chat_id=? AND message_id=? AND token=? AND (terminal=0 OR acknowledged<revision)`, chat, msg, token)
 	return err
 }

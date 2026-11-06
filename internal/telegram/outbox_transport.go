@@ -112,6 +112,7 @@ type ArtifactOpener interface {
 
 // botTransport is the Telegram implementation.
 type botTransport struct {
+	editGuard  func(context.Context, int64, int) (func(), error)
 	topicGuard func(context.Context, int64, int) (context.Context, func(), error)
 	api        outboxAPI
 	artifacts  ArtifactOpener
@@ -120,7 +121,7 @@ type botTransport struct {
 
 // NewOutboxTransport returns the single-attempt transport over the bot API.
 func (b *Bot) NewOutboxTransport(artifacts ArtifactOpener) *botTransport {
-	return &botTransport{api: b.api, artifacts: artifacts, log: b.log, topicGuard: func(ctx context.Context, chat int64, thread int) (context.Context, func(), error) {
+	return &botTransport{editGuard: b.lockMessageEdit, api: b.api, artifacts: artifacts, log: b.log, topicGuard: func(ctx context.Context, chat int64, thread int) (context.Context, func(), error) {
 		if err := b.topicAdmission(ctx, chat, thread); err != nil {
 			return ctx, nil, err
 		}
@@ -167,6 +168,13 @@ func (t *botTransport) Attempt(ctx context.Context, req SendRequest) Outcome {
 	case store.PartEdit:
 		if req.TargetMessageID <= 0 || req.TargetMessageID > int64(^uint32(0)>>1) {
 			return refused("invalid_target")
+		}
+		if t.editGuard != nil {
+			release, err := t.editGuard(ctx, req.ChatID, int(req.TargetMessageID))
+			if err != nil {
+				return Outcome{Kind: OutcomeNotSent, Code: "canceled_before_dispatch"}
+			}
+			defer release()
 		}
 		msg, err := t.api.EditMessageText(ctx, &bot.EditMessageTextParams{
 			ChatID: req.ChatID, MessageID: int(req.TargetMessageID), Text: req.Text,
