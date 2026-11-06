@@ -42,7 +42,10 @@ Pi baseline was rechecked: `6820422`, healthy/no restarts/OOM, ten idle counts z
 
 Source PR #193 is open on `29f7a7659b025263074cd0bc0aab5ff8f826f000`.
 Independent exact-head review PASS, focused race Store8.331s/Telegram8.073s PASS.
-Required CI `42238010448` is running; Sonar initially NOT_COMPUTED, not a success.
+Final full build/vet/tests and four-package races PASS on the committed head.
+Required CI `42238010448` is running. Exact-head Sonar at 14:53:54 UTC is ERROR:
+new duplication8.8% vs3%, predominantly regression tests;33 code smells,
+zero bugs/vulnerabilities, all read and retained. Advisory soft-gate policy applies.
 Next action: final local revalidation and required PR CI, merge, Pi-only
 deployment/acceptance, then docs PR #192 and housekeeping.
 The previous D070 docs PR #190 merged as `e8c9757`; its branch is removed and both
