@@ -24,6 +24,10 @@ Owner resumed implementation with the standing full release cycle. Base `8b53386
   topic_next; extend existing text ownership journal to exact private topic targets
   (not only main/fallback), retaining receipt repair/no-replay. No schema change;
   nontext/history/unknown reconciliation and retirement remain separate.
+- CP-016 source checkpoint: registered-private topic text journal implemented,
+  no schema change; focused independent review/races PASS, final SHA/full checks
+  pending. Unknown or ACK-failed sends stay held across restart; exact target
+  validation rejects foreign routes while siblings/main remain available.
 - Independent reviewer review_pickers; root integrates global docs, required CI,
   merge, Pi controller rollout/acceptance and bounded housekeeping. No worker.
 
