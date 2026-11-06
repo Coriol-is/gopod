@@ -49,8 +49,12 @@ zero bugs/vulnerabilities, all read and retained. Advisory soft-gate policy appl
 Owner requested all tests excluded from Sonar. Source PR head is now `5ff03d3`
 (configuration-only delta; Go source unchanged): automatic `.sonarcloud.properties`
 added, CLI config aligned and project exclusions mirrored/read back. Prior file
-was ignored by automatic analysis. New analysis must show no test components;
-historical Sonar ERROR above remains evidence, not the new head result.
+was ignored by automatic analysis. New exact-head analysis at14:57:45UTC is OK:16 PR file components, zero test
+components,22 OPEN code smells/no bugs or vulnerabilities;11 excluded-test issues
+automatically CLOSED/FIXED. No manual suppression. Full main scope readback follows
+merge. Historical Sonar ERROR above remains evidence, not the new head result.
+Refreshed config-only independent review PASS on full head
+`5ff03d313c22eb7611f23ebc2dfa143f1585148c`; required CI42238584841 running.
 Next action: refreshed exact-head review/required PR CI and Sonar scope readback, merge, Pi-only
 deployment/acceptance, then docs PR #192 and housekeeping.
 The previous D070 docs PR #190 merged as `e8c9757`; its branch is removed and both
