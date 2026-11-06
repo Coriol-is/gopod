@@ -13,7 +13,7 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Active parallel workstreams — 2026-11-06
+## Resume here — active parallel workstreams, 2026-11-06
 
 Owner requested backlog items 1–2 in agents. Both start from `6c20646` in isolated
 worktrees; main remains unchanged until independent review and required CI pass.
@@ -26,13 +26,16 @@ worktrees; main remains unchanged until independent review and required CI pass.
   `topic_next`. Scope: ownership/no-replay for restart/lifecycle and IPC noncontrol text
   notices, including original-topic to main fallback; reuse existing receipt repair.
   Historical/nontext/unknown outcomes remain separate; delete command stays off.
+- CP-016 checkpoint: PR #182, `752120d`, full build/vet/tests and affected race
+  PASS; independent exact-head review PASS. Required CI `42196527739` pending.
+  Sonar gate OK, two complexity smells read, none suppressed.
 - Root integrates reports, HANDOFF/BACKLOG/ROADMAP and review. Agents own separate
   source slices and checkpoint reports. Coordinate overlapping Store/schema files.
 
 No deployment, live deletion, managed-task activation or foreground cutover is
 implied. #178–#180 still await deployment; last verified Pi remains `757faa2`.
 
-## Resume here — keyboard fallback merged, 2026-11-05
+## Previous completed slice — keyboard fallback, 2026-11-05
 
 PR [#180](https://github.com/Coriol-is/gopod/pull/180), `6722e6a`, implements
 outbox fallback after explicit keyboard refusal. The bare-keyboard attempt is
@@ -46,7 +49,7 @@ merge used the documented soft-gate policy. [Evidence](reviews/2026-11-05-outbox
 
 **First next action:** reply-action memo/callback parity after durable ACK
 (More/Back/As file and newest-row handling), then integrated preview/Stop/publication
-qualification and foreground cutover. No implementation in flight. #178–#180 are
+qualification and foreground cutover. The parallel workstreams above are active. #178–#180 are
 not deployed; Pi remains `757faa2`. Before downgrading a future deployment of #180,
 drain bare-keyboard selections or hold the dispatcher and preserve its ledger;
 see [runbook](deployments/BACKUP-RESTORE.md#durable-keyboard-fallback-compatibility-2026-11-05).
