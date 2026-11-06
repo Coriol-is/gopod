@@ -22,7 +22,9 @@ historical unknown targets hold truthfully. Groups/unregistered remain compatibi
 gaps. Independent design review PASS. Initial implementation connects direct
 provenance transaction, five wrappers, shared raw-target barriers, outbox preclaim,
 repair selection, quiescence and backup idle. Streaming NoReplay prevents fallback/
-replacement sends. Focused tests and independent source review in progress; do not duplicate already journaled outbox dispatch or infer
+replacement sends. Focused tests and independent source review in progress. Review blocker: loss
+of registration between owner resolution and Begin must not downgrade a covered
+edit into unjournaled compatibility HTTP; exact-identity zero-HTTP regression pending; do not duplicate already journaled outbox dispatch or infer
 historical non-delivery. Agent freeze_next owns `feat/durable-edit-outcomes` in
 `../gopod-edit-outcomes`; review_pickers independently reviews. Root owns global
 state and the standing review/CI/merge/Pi controller deploy/housekeeping cycle.
