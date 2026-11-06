@@ -1,8 +1,8 @@
 # Code-backed backlog
 
 Reconciled 2026-11-06 against source at `261805e` and the recorded Pi deployment
-`80f4b11`. Production call sites were rechecked; this documentation refresh adds
-no new runtime acceptance. [ROADMAP](../ROADMAP.md) owns priority,
+`80f4b11`. Production call sites were rechecked; release health/state/version acceptance
+is recorded separately from remaining feature qualification. [ROADMAP](../ROADMAP.md) owns priority,
 [proposal registry](proposals/README.md) owns lifecycle and
 [ACCEPTANCE](ACCEPTANCE.md) owns client/provider qualification.
 

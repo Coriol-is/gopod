@@ -24,8 +24,8 @@ right now" view, see [docs/HANDOFF.md](docs/HANDOFF.md).
 ## Current backlog — 2026-11-04
 
 Refreshed 2026-11-06 at `261805e`. The [active code-backed backlog](docs/BACKLOG.md)
-contains remaining implementation and acceptance scope. Pi `757faa2` includes
-#168–#177; the foreground producer is disconnected, managed tasks are off and
+contains remaining implementation and acceptance scope. Pi `80f4b11` includes
+#168–#180/#182/#183; the foreground producer is disconnected, managed tasks are off and
 CP-037 remains legacy. Health/version and bounded D068 consumer checks passed.
 [Rollout](docs/deployments/2026-11-05-stop-ipc-rollout.md).
 
@@ -338,7 +338,7 @@ and [implementation/acceptance plan](docs/superpowers/plans/2026-10-25-personal-
 track the work. **Implementation deployed; final provider/client qualification remains open.**
 The architecture merged in #66/#67; follow-ups #88/#89 fixed Codex tree-budget admission and
 admit registered groups by default. #93/#95/#97 implement triggers, owner-in-group controls
-and private group-login guidance. Security groups 1–8 were deployed in `e3b5401`; current controller is `757faa2`.
+and private group-login guidance. Security groups 1–8 were deployed in `e3b5401`; current controller is `80f4b11`.
 Historical 2026-10-29 evidence records Claude group new/resume success after owner login;
 final Codex two-turn/tool and cross-boundary acceptance remain open. Earlier TCP/offline-tool
 checks are in the [2026-10-27 report](docs/deployments/2026-10-27-group-isolation.md),
