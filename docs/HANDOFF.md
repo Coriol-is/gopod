@@ -29,6 +29,9 @@ Owner resumed implementation with the standing full release cycle. Base `8b53386
   independent review PASS. CI `42209821093` pending; Sonar OK, five complexity
   smells read, none suppressed. Unknown or ACK-failed sends stay held across restart; exact target
   validation rejects foreign routes while siblings/main remain available.
+- CP-002 review blocker: held repair rows can monopolize the LIMIT100 query
+  without retry advancement and starve unrelated controls. Exact-revision bounded
+  scheduling plus a >100-row regression is required before approval.
 - Independent reviewer review_pickers; root integrates global docs, required CI,
   merge, Pi controller rollout/acceptance and bounded housekeeping. No worker.
 
