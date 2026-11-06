@@ -143,7 +143,8 @@ type Bot struct {
 
 	// inflight maps turn id to its stoppable streaming state (stop.go).
 	generationMu sync.Mutex // serializes registration with durable placeholder binding; no HTTP
-	controlMu    sync.Mutex // serializes control-message writers and recovery
+	controlMu    sync.Mutex // protects the message-edit gate registry
+	messageEdits map[messageEditKey]*messageEditGate
 	inflightMu   sync.Mutex
 	inflight     map[int64]*inflightTurn
 

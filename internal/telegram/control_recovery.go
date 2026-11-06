@@ -139,24 +139,6 @@ func (b *Bot) RepairControls(ctx context.Context) error {
 		if c.RetryAt > time.Now().UnixMilli() {
 			continue
 		}
-		// The lock covers only the live check and the lease claim; the network
-		// edit runs outside it so streaming edits of other turns never stall
-		// behind repair I/O. A turn that resumes meanwhile re-edits its own
-		// placeholder on its next progress, and the revision CAS in
-		// FinishControlRepair keeps a newer checkpoint authoritative.
-		b.controlMu.Lock()
-		b.inflightMu.Lock()
-		live := b.inflight[c.TurnID] != nil
-		b.inflightMu.Unlock()
-		lease := b.store.FinishControlRepair(ctx, c, false, time.Now().Add(30*time.Second).UnixMilli())
-		b.controlMu.Unlock()
-		if lease != nil {
-			b.log.Warn("control repair lease failed", "turn", c.TurnID, "error", lease)
-			continue
-		}
-		if live {
-			continue
-		}
 		err = b.repairControl(ctx, c)
 		if err != nil {
 			b.log.Warn("control repair pending", "turn", c.TurnID, "error", err)
@@ -166,6 +148,32 @@ func (b *Bot) RepairControls(ctx context.Context) error {
 }
 
 func (b *Bot) repairControl(ctx context.Context, c store.ControlMessage) error {
+	release, err := b.lockMessageEdit(ctx, c.ChatID, c.MessageID)
+	if err != nil {
+		return err
+	}
+	defer release()
+	current, err := b.store.GetControlMessage(ctx, c.ChatID, c.MessageID)
+	if err != nil {
+		return err
+	}
+	if current.Revision != c.Revision || current.Token != c.Token || current.Terminal && current.Acknowledged >= current.Revision {
+		return nil
+	}
+	b.inflightMu.Lock()
+	live := b.inflight[c.TurnID] != nil
+	b.inflightMu.Unlock()
+	if live {
+		return b.store.FinishControlRepair(ctx, c, false, time.Now().Add(30*time.Second).UnixMilli())
+	}
+	held, err := b.store.ControlFinalOwnership(ctx, c)
+	if err != nil {
+		return err
+	}
+	if held {
+		return b.store.FinishControlRepair(ctx, c, false, time.Now().Add(30*time.Second).UnixMilli())
+	}
+
 	if err := b.store.ValidateScope(ctx, c.Scope); err != nil {
 		// Revoked scope: suppress edits rather than address a new registration.
 		if errors.Is(err, store.ErrStaleScope) {
@@ -297,6 +305,10 @@ func (b *Bot) controlEditAllowed(ctx context.Context, chat int64, msg int, kb mo
 		return errors.Is(err, sql.ErrNoRows)
 	} // ordinary non-control messages have no binding
 	if b.store.ValidateScope(ctx, c.Scope) != nil {
+		return false
+	}
+	held, err := b.store.ControlFinalOwnership(ctx, c)
+	if err != nil || held {
 		return false
 	}
 	return !(c.Terminal && stopMarkup(kb))

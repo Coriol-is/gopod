@@ -296,8 +296,7 @@ func (b *Bot) moreRow(ctx context.Context, q cbQuery) (string, error) {
 	if view.durable != nil {
 		return "", b.durableReplyKeyboard(ctx, q, turn, view, &kb)
 	}
-	b.setKeyboard(ctx, q.ChatID, q.MessageID, &kb)
-	return "", nil
+	return "", b.legacyReplyKeyboard(ctx, q, &kb)
 }
 
 // backRow restores Copy from the acknowledged immutable result when available;
@@ -315,8 +314,7 @@ func (b *Bot) backRow(ctx context.Context, q cbQuery) (string, error) {
 	if view.durable != nil {
 		return "", b.durableReplyKeyboard(ctx, q, turn, view, &kb)
 	}
-	b.setKeyboard(ctx, q.ChatID, q.MessageID, &kb)
-	return "", nil
+	return "", b.legacyReplyKeyboard(ctx, q, &kb)
 }
 
 // showSteps handles 🧭 (st2:<turnID>): the turn's tool steps (D024
