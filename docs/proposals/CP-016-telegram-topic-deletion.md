@@ -63,3 +63,13 @@ open. This slice is merged, not deployed; CP-016 remains in progress.
 PR #171 (`930586a`) adds bounded DB-only repair for exact positive Telegram receipts after ACK persistence failure. Unknown outcomes and receipts lost on crash remain held; delete orchestration is not enabled.
 Merged after review/full checks/required CI; not deployed. See [HANDOFF](../HANDOFF.md)
 for evidence and remaining gates. Status remains in progress.
+
+## Noncontrol main-text notice ownership — 2026-11-06
+
+PR #182 (`0ac9b3f`) extends the existing ownership/no-replay helper to restart,
+lifecycle and IPC notices. Original-topic provenance survives main fallback; IPC
+unknown outcomes and failed positive ACKs cannot trigger whole-message replay.
+Full checks, affected races, independent review and required CI passed.
+[Evidence](../reviews/2026-11-06-topic-retirement.md). Not deployed. Historical
+and nontext/topic-target ownership, unknown-outcome reconciliation, managed/native
+settlement and confirmed deletion orchestration remain open; status stays in-progress.

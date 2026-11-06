@@ -97,7 +97,7 @@ not enabling the feature merely by merging that document.
 | CP | Title | Status | Size |
 |---|---|---|---|
 | [CP-001](CP-001-memory-api-capability-token.md) | Capability token for the memory API | done | S |
-| [CP-002](CP-002-telegram-outbox.md) | Telegram outbox with retry and `uncertain` state (PRs 1-5 of 8 merged, plus rich-message formatting P1 / D045; PR 6a/6b and immutable final-plan/ready recovery and D065 conditional code-inline slices merged; process-local final-owner handoff merged in PR #174, D066 durable Stop merged in PR #176; full foreground cutover and PR 7-8 pending) | in-progress | M |
+| [CP-002](CP-002-telegram-outbox.md) | Telegram outbox with retry and `uncertain` state (PRs 1-5 of 8 merged, plus rich-message formatting P1 / D045; PR 6a/6b and immutable final-plan/ready recovery and D065 conditional code-inline slices merged; process-local final-owner handoff merged in PR #174, D066 durable Stop merged in PR #176; durable ACK reply-action readthrough merged in #183; full lifecycle parity, foreground cutover and PR 7-8 pending) | in-progress | M |
 | [CP-003](CP-003-typed-replies-via-ipc.md) | Typed IPC replies with immutable file/voice snapshots (PRs 4-5 of 8 merged) | in-progress | M |
 | [CP-004](CP-004-isolated-task-sessions.md) | Scheduled tasks run in their own session (task-reliability PR 1-3 of 5 merged: storage, managed dispatch/recovery, policy-guarded execution and reports; PR 4-5 pending) | in-progress | S–M |
 | [CP-005](CP-005-tools-base-image.md) | Lightweight bases and optional tool runtimes | proposed | L |
@@ -111,7 +111,7 @@ not enabling the feature merely by merging that document.
 | [CP-013](CP-013-transcript-provenance.md) | Speech transcript provenance | done | S |
 | [CP-014](CP-014-telegram-media-input.md) | Telegram media — three delivery queues (design only) | accepted | L |
 | [CP-015](CP-015-agent-scheduling.md) | Generic agent scheduling and IPC receipts | done | M |
-| [CP-016](CP-016-telegram-topic-deletion.md) | Telegram topic deletion and conversation retirement (store/outbox and native/queue/transport fences deployed; new main-control ownership merged; historical ownership/reconciliation and command activation pending) | in-progress | M |
+| [CP-016](CP-016-telegram-topic-deletion.md) | Telegram topic deletion and conversation retirement (store/outbox and native/queue/transport fences deployed; main-control and noncontrol notice ownership merged; historical/nontext ownership, reconciliation and command activation pending) | in-progress | M |
 | [CP-017](CP-017-telegram-capability-diagnostics.md) | Telegram capability diagnostics (initial private-DM slice) | done | M |
 | [CP-018](CP-018-per-thread-providers.md) | Provider selection per conversation (design only) | accepted | M |
 | [CP-019](CP-019-telegram-ephemeral-commands.md) | Private command/service/error replies in groups (design only) | accepted | M |
