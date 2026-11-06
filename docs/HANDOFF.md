@@ -18,9 +18,12 @@ owner. No acceptance result or deployment status changes with this instruction.
 Owner resumed implementation with the standing full release cycle. Base `8b53386`:
 - CP-002: `fix/control-final-arbitration`, worktree `../gopod-control-arbitration`,
   agent freeze_next; scope control-repair versus final-edit arbitration and bounded
-  More/Back lifecycle checkpoints. Exact plan/review follows source inspection.
+  More/Back lifecycle checkpoints. Planned per-message edit gate plus published
+  outbox target ownership/current control revision checks; no schema change.
 - CP-016: `feat/topic-ownership-next`, worktree `../gopod-topic-ownership`, agent
-  topic_next; next bounded ownership prerequisite after noncontrol main notices.
+  topic_next; extend existing text ownership journal to exact private topic targets
+  (not only main/fallback), retaining receipt repair/no-replay. No schema change;
+  nontext/history/unknown reconciliation and retirement remain separate.
 - Independent reviewer review_pickers; root integrates global docs, required CI,
   merge, Pi controller rollout/acceptance and bounded housekeeping. No worker.
 
