@@ -175,3 +175,7 @@ provenance and durable attempts, symmetric barriers and outer NoReplay propagati
 Full checks/races, review and required CI PASS; [report](../reviews/2026-11-06-durable-edit-outcomes.md).
 Historical missing provenance holds, groups/unregistered/non-edit operations, eager
 cleanup, mixed-path order and integrated foreground qualification remain open.
+
+Deployment closure 2026-11-06: #191 shipped in `6820422`; exact-main CI,
+pre/post-migration backup verification, health/state and Telegram version PASS.
+[Rollout and cleanup](../deployments/2026-11-06-direct-edit-rollout.md). Parent/compatibility gates remain.

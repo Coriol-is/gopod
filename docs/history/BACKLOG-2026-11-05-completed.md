@@ -140,3 +140,7 @@ ignored-error paths have deterministic regressions and negative overlay evidence
 Full checks/races, independent exact-head review and required CI PASS; Sonar OK26
 smells retained. [Review](../reviews/2026-11-06-durable-edit-outcomes.md).
 Rollout tracked in handoff; historical/group/unregistered/non-edit and parent gaps stay.
+
+Deployment closure 2026-11-06: #191 shipped in `6820422`; exact-main CI,
+pre/post-migration backup verification, health/state and Telegram version PASS.
+[Rollout and cleanup](../deployments/2026-11-06-direct-edit-rollout.md). Parent/compatibility gates remain.

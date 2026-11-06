@@ -105,3 +105,7 @@ Required [CI42232618774](https://github.com/Coriol-is/gopod/actions/runs/4223261
 PASS. Sonar14:17:40 UTC matches head: OK,26 code smells (complexity/parameter count,
 existing lifecycle/literal comments), zero bugs/vulnerabilities; read, none suppressed.
 No production source changed after reviewed corrections. Rollout tracked in handoff.
+
+Deployment closure 2026-11-06: #191 shipped in `6820422`; exact-main CI,
+pre/post-migration backup verification, health/state and Telegram version PASS.
+[Rollout and cleanup](../deployments/2026-11-06-direct-edit-rollout.md). Parent/compatibility gates remain.

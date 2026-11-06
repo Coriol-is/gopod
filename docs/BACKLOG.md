@@ -1,7 +1,7 @@
 # Code-backed backlog
 
 Reconciled 2026-11-06 against source at `6820422` and the recorded Pi deployment
-`a85b328`. Production call sites were rechecked; release health/state/version acceptance
+`6820422`. Production call sites were rechecked; release health/state/version acceptance
 is recorded separately from remaining feature qualification. [ROADMAP](../ROADMAP.md) owns priority,
 [proposal registry](proposals/README.md) owns lifecycle and
 [ACCEPTANCE](ACCEPTANCE.md) owns client/provider qualification.
@@ -34,7 +34,7 @@ with deployment/auth changes. No new work is activated by this reconciliation.
 #191 (`6820422`, D070) covers the five registered-private direct text/HTML/keyboard
 wrappers with durable provenance/attempts and symmetric barriers. No fallback or
 TTS after unknown outcomes. Full checks/races, exact-head review and required CI
-PASS; rollout pending. Groups/unregistered, historical missing provenance,
+PASS; deployed in `6820422` with health/state/version and new-schema backup verification. Groups/unregistered, historical missing provenance,
 DeleteMessage/non-edit effects and foreground qualification remain open.
 
 ## Latest repair journal — 2026-11-06
@@ -53,10 +53,10 @@ and bounded acceptance passed; see [handoff](HANDOFF.md). Parent activation gate
 
 ## Current deployed baseline
 
-PRs #168–#180/#182/#183/#186/#187/#189 are deployed on Pi, latest `a85b328`; no worker. Exact-main CI,
+PRs #168–#180/#182/#183/#186/#187/#189/#191 are deployed on Pi, latest `6820422`; no worker. Exact-main CI,
 health, state preservation and Telegram version passed. Three D068 scheduling
 guides migrated; actual matching Node consumer passed read-only list/replay/conflict.
-[Latest deployment and cleanup evidence](deployments/2026-11-06-durable-repair-rollout.md).
+[Latest deployment and cleanup evidence](deployments/2026-11-06-direct-edit-rollout.md).
 Foreground producer remains disconnected; managed tasks remain off.
 
 ## Unfinished implementation
