@@ -26,7 +26,10 @@ replacement sends. Focused tests and independent source review in progress. Revi
 of registration between owner resolution and Begin must not downgrade a covered
 edit into unjournaled compatibility HTTP; exact-identity zero-HTTP regression pending.
 Silent overflow/voice/terminal-error outer helpers must preserve NoReplay instead of
-continuing final/TTS, and control admission refusal must not return fake success; do not duplicate already journaled outbox dispatch or infer
+continuing final/TTS, and control admission refusal must not return fake success.
+Corrections implemented; Store D070 suite PASS (restart/rebind/admission race/
+outbox exclusion/migration). First Telegram run found and corrected unregistered
+compatibility resolution; dedicated outer-path regressions and full rerun in progress; do not duplicate already journaled outbox dispatch or infer
 historical non-delivery. Agent freeze_next owns `feat/durable-edit-outcomes` in
 `../gopod-edit-outcomes`; review_pickers independently reviews. Root owns global
 state and the standing review/CI/merge/Pi controller deploy/housekeeping cycle.
