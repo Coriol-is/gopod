@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-06 (Pi deploy, backlog and housekeeping complete)
+**Last updated:** 2026-11-06 (control/topic batch deployed and reconciled)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -13,7 +13,7 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — merged next batch, rollout in progress, 2026-11-06
+## Resume here — control/topic batch deployed, 2026-11-06
 
 - #187 (`0cd8078`): per-message edit arbitration protects published final targets
   from subsequent legacy repair/writes; More/Back checkpoint old control retirement.
@@ -24,10 +24,12 @@ owner. No acceptance result or deployment status changes with this instruction.
   [Report](reviews/2026-11-06-topic-ownership-next.md). No schema change.
 
 Full build/vet/tests, affected races, independent exact-head review and required
-PR CI PASS. Sonar OK for both (nine/five smells retained). Deploy target `0cd8078`,
-exact-main CI `42210762626` PASS; isolated candidate readiness PASS. Idle-only
-matched-stopped backup and rollout started; `80f4b11` remains last verified release.
-No worker or foreground/topic-delete activation. Root owns rollout/docs/housekeeping.
+PR CI PASS. Sonar OK for both (nine/five smells retained). Pi controller `0cd8078`
+passed exact-main CI `42210762626`, isolated readiness, matched-stopped backup
+verification, health/state preservation and Telegram version acceptance. No worker.
+[Release, acceptance and housekeeping](deployments/2026-11-06-control-topic-rollout.md).
+No source implementation in flight. Two clean integrated agent worktrees and their
+local/remote branches removed; protected backups/auth/rollback retained.
 
 **Next implementation:** persist/settle unknown remote legacy repair outcomes before
 foreground activation; local ordering cannot prove remote completion. Eager row
@@ -60,7 +62,7 @@ Both passed full build/vet/tests, affected races, independent exact-head review
 and required CI: #183 `42197591379` on `ef3dbd0`; #182 `42196527739` on `752120d`.
 Sonar gate OK for both, six and two smells respectively, zero bugs/vulnerabilities;
 findings read, none suppressed. Reports record exact heads and analysis times.
-All five source slices #178–#180/#182/#183 are deployed in `80f4b11`.
+All five source slices #178–#180/#182/#183 first deployed in `80f4b11` and remain included.
 
 ## Deployed delivery prerequisites
 
@@ -104,9 +106,9 @@ Separate 556 KiB NanoClaw/OneCLI/systemd archives retained. No broad Docker prun
 
 Use [active backlog](BACKLOG.md) for remaining scope and
 [ROADMAP](../ROADMAP.md#execution-priority--2026-11-04) for order.
-Before foreground cutover, complete integrated preview/Stop/publication qualification,
-reply-action lifecycle parity and legacy control-repair arbitration for reused final
-edit targets. The completed bounded callback slice is described above. `WithResultFreeze` and `PrepareFrozenFinalReply` still
+Before foreground cutover, complete durable unknown repair settlement, eager cleanup,
+mixed-path ordering and integrated preview/Stop/publication qualification. Local
+control/final edit arbitration is implemented; unknown remote effects remain open. The completed bounded callback slice is described above. `WithResultFreeze` and `PrepareFrozenFinalReply` still
 have no production callers. CP-016 `QuiesceTopic` has no production caller either;
 `/thread delete` is unavailable. Do not reopen completed #168–#177 slices.
 
@@ -122,17 +124,17 @@ or full restore qualification was added by the latest rollout or this docs audit
 
 ## Release and recovery pointers
 
-- Source deployed: `80f4b11cc5077cde1df28afb0274b5f79b7bb7ba`;
-  exact-main [CI 42198643997](https://github.com/Coriol-is/gopod/actions/runs/42198643997) passed.
-- Documentation reconciled against source `261805e`; runtime is `80f4b11`.
+- Source deployed: `0cd807858f1c355631fb38ccc239f02d739445d8`;
+  exact-main [CI 42210762626](https://github.com/Coriol-is/gopod/actions/runs/42210762626) passed.
+- Documentation reconciled against source/runtime `0cd8078`.
 - Pi: `ssh spaceinvaderz@192.168.1.128`; checkout `~/gopod`, data `/opt/gopod/data`,
   mounted workspace repository `/opt/gopod/repo`.
-- Rollback image: `gopod-rollback:pre-80f4b11`; preserve it and all named backups.
-- Matched-stopped backup: `20261106T102424Z-ms-44bebb93`.
+- Rollback image: `gopod-rollback:pre-0cd8078`; preserve it and all named backups.
+- Matched-stopped backup: `20261106T113359Z-ms-d860fe6a`.
 - Guide originals: `~/gopod-backups/consumer-migration-757faa2`;
   cleanup inventory: `~/gopod-backups/cleanup-20261105-757faa2.json`.
-- Release evidence: `/tmp/gopod-release-80f4b11` on Pi; durable summary is in the
-  [deployment report](deployments/2026-11-06-reliability-cycle-rollout.md).
+- Release evidence: `/tmp/gopod-release-0cd8078` on Pi; durable summary is in the
+  [deployment report](deployments/2026-11-06-control-topic-rollout.md).
 - Preserve task claim spool and SQLite ledgers before any downgrade; complete
   IPC restore remains unqualified. Status-only legacy consumers remain unqualified.
 - If SSH Git authentication fails, use per-command HTTPS with `gh auth git-credential`;

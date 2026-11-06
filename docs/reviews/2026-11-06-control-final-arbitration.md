@@ -85,3 +85,7 @@ vulnerabilities. Complexity, empty-function comments and literal duplication rem
 review confirmed the existing cancelRecovery defer/join lifecycle. None suppressed.
 Negative-overlay controls reproduce both corrected regressions without changing
 committed source. Unknown remote repair settlement remains an activation gate.
+
+Deployment closure 2026-11-06: #186/#187 shipped in `0cd8078`, with exact-main CI,
+verified backup, health/state and Telegram version PASS.
+[Rollout and cleanup](../deployments/2026-11-06-control-topic-rollout.md). Parent activation gates remain.

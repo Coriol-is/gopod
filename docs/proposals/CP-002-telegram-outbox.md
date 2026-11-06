@@ -151,3 +151,7 @@ retirement, with fair held-row scheduling and obsolete Stop requeue protection.
 Unknown remote repair settlement remains a foreground activation gate.
 [Review](../reviews/2026-11-06-control-final-arbitration.md).
 Full checks, races, review and required CI PASS; status remains in-progress.
+
+Deployment closure 2026-11-06: #186/#187 shipped in `0cd8078`, with exact-main CI,
+verified backup, health/state and Telegram version PASS.
+[Rollout and cleanup](../deployments/2026-11-06-control-topic-rollout.md). Parent activation gates remain.

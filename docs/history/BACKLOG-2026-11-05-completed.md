@@ -113,3 +113,7 @@ integrated local/remote branches removed; named backups/rollback evidence preser
 
 Full checks/races, independent exact-head review and required CI PASS; Sonar OK
 with five/nine smells. Rollout is tracked in current handoff; parent CPs remain open.
+
+Deployment closure 2026-11-06: #186/#187 shipped in `0cd8078`, with exact-main CI,
+verified backup, health/state and Telegram version PASS.
+[Rollout and cleanup](../deployments/2026-11-06-control-topic-rollout.md). Parent activation gates remain.
