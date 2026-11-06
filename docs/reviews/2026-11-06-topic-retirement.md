@@ -55,3 +55,12 @@ managed settlement and ordinary native-login exit qualification still need
 explicit qualification. Positive receipt repair remains bounded and DB-only;
 this slice does not infer absence from timeouts or restart. The confirmed
 API/outcome/retirement command is still absent; `/thread delete` stays disabled.
+
+## Integration — 2026-11-06
+
+PR #182 merged as `0ac9b3f`. Independent review PASS and required CI
+[42196527739](https://github.com/Coriol-is/gopod/actions/runs/42196527739)
+PASS on `752120d0977fb180f4b73ec2cf8ac7092909e648`; independent focused race 7.452s.
+Sonar analysis at 09:38:07 UTC matches that head: gate OK, two complexity
+smells (`ipc_sink.go` and the regression test), zero bugs/vulnerabilities.
+Findings read, none suppressed. Not deployed.

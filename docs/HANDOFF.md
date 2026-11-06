@@ -15,8 +15,8 @@ owner. No acceptance result or deployment status changes with this instruction.
 
 ## Resume here — active parallel workstreams, 2026-11-06
 
-Owner requested backlog items 1–2 in agents. Both start from `6c20646` in isolated
-worktrees; main remains unchanged until independent review and required CI pass.
+Owner requested backlog items 1–2 in agents. Both started from `6c20646` in isolated
+worktrees. CP-016 is merged; CP-002/003 remains under review.
 
 - CP-002/003: `feat/reply-actions-ack`, worktree `../gopod-reply-actions`, agent
   `freeze_next`. Scope: no-schema callback read model from fully ACKed frozen results; exact
@@ -26,14 +26,15 @@ worktrees; main remains unchanged until independent review and required CI pass.
   `topic_next`. Scope: ownership/no-replay for restart/lifecycle and IPC noncontrol text
   notices, including original-topic to main fallback; reuse existing receipt repair.
   Historical/nontext/unknown outcomes remain separate; delete command stays off.
-- CP-016 checkpoint: PR #182, `752120d`, full build/vet/tests and affected race
-  PASS; independent exact-head review PASS. Required CI `42196527739` pending.
+- CP-016 checkpoint: PR #182 merged as `0ac9b3f`; reviewed head `752120d`.
+  Full build/vet/tests, affected race, independent review and required CI
+  `42196527739` PASS.
   Sonar gate OK, two complexity smells read, none suppressed.
 - Root integrates reports, HANDOFF/BACKLOG/ROADMAP and review. Agents own separate
   source slices and checkpoint reports. Coordinate overlapping Store/schema files.
 
 No deployment, live deletion, managed-task activation or foreground cutover is
-implied. #178–#180 still await deployment; last verified Pi remains `757faa2`.
+implied. #178–#180 and #182 await deployment; last verified Pi remains `757faa2`.
 
 ## Previous completed slice — keyboard fallback, 2026-11-05
 

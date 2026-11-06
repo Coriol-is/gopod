@@ -45,6 +45,11 @@ races, independent review and required CI passed; not deployed. Advisory Sonar
 ERROR on duplication is recorded in the [review](docs/reviews/2026-11-05-outbox-keyboard-fallback.md).
 Reply-action state/callback parity and foreground qualification remain open.
 
+CP-016 noncontrol main-text notice ownership merged in #182 (`0ac9b3f`);
+restart/lifecycle/IPC reuse durable receipt/no-replay handling. Full checks,
+races, independent review and required CI PASS; not deployed. Historical/nontext
+ownership, unknown outcomes, managed/native settlement and deletion remain open.
+
 ## Execution priority — 2026-11-04
 
 Owner-approved order, refreshed 2026-11-05 after removing completed queue repair.
