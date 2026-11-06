@@ -17,11 +17,13 @@ owner. No acceptance result or deployment status changes with this instruction.
 
 Owner resumed the next CP-002 barrier from `a0a3f1e`: persist repair HTTP attempts
 and retain unknown effects across restart, preventing conflicting final/control
-writes until supported settlement. Scope/design under review, no activation or
-forced reconciliation. Agent freeze_next owns `feat/durable-repair-outcomes` in
+writes until supported settlement. Additive per-attempt ledger under [D069](DECISIONS.md#d069--durable-legacy-control-repair-attempts):
+commit before HTTP; exact success/refusal-only settlement; unknown survives restart
+and holds physical message edits/quiescence/idle. No TTL, activation or forced
+reconciliation. Design review in progress. Agent freeze_next owns `feat/durable-repair-outcomes` in
 `../gopod-repair-outcomes`; independent reviewer review_pickers. Root owns global
 docs and the standing review/CI/merge/Pi-deploy/housekeeping cycle. Current deployed
-Pi remains `0cd8078`, no worker. Exact design and schema implications follow review.
+Pi remains `0cd8078`, no worker. Schema/backup compatibility is part of this slice; old binaries cannot enforce pending repair evidence.
 
 ## Previous completed control/topic batch — 2026-11-06
 
