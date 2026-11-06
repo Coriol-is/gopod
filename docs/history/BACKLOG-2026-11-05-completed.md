@@ -50,6 +50,12 @@ checks/races, independent review and required CI passed; Sonar OK, two complexit
 smells retained. [Review](../reviews/2026-11-06-topic-retirement.md). Not deployed;
 historical/nontext ownership and full CP-016 retirement remain open.
 
+PR #183 (`261805e`) adds exact-scope restart-safe More/Back/As file from fully
+ACKed frozen results; managed ineligibility never falls back to stale memo.
+Full tests/races, independent review and required CI passed; Sonar OK with six
+smells retained. [Review](../reviews/2026-11-06-reply-actions-ack.md). Not deployed;
+control-repair arbitration, eager cleanup, mixed-path ordering and cutover stay open.
+
 ## Completed operations
 
 - Pi controller-only release `757faa2`: exact-main CI, isolated readiness,

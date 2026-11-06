@@ -130,3 +130,12 @@ Merged as `51fbb7a`; independent review, final checks/races and required CI pass
 No deployment or foreground activation. Native exit/remote delivery remain
 separate evidence; full preview metadata/reply-action parity and producer cutover
 are still open. CP-002 remains in-progress.
+
+## Durable reply-action readthrough — 2026-11-06
+
+PR #183 (`261805e`) restores More/Back/As file from fully ACKed frozen results
+with exact scope/topic/message/markup checks and conservative supersession.
+[Review and validation](../reviews/2026-11-06-reply-actions-ack.md): full checks,
+races, independent review and required CI PASS; not deployed. Legacy control
+repair versus reused final edits, More/Back checkpoints, eager cleanup, mixed-path
+ordering and integrated foreground qualification remain open. Status in-progress.

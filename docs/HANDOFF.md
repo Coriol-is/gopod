@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-06 (CP-002/003 and CP-016 delegated in parallel)
+**Last updated:** 2026-11-06 (parallel slices #182/#183 merged)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -13,33 +13,30 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — active parallel workstreams, 2026-11-06
+## Resume here — parallel slices merged, 2026-11-06
 
-Owner requested backlog items 1–2 in agents. Both started from `6c20646` in isolated
-worktrees. CP-016 is merged; CP-002/003 remains under review.
+- CP-002/003: #183 (`261805e`) adds restart-safe More/Back/As file from fully
+  acknowledged immutable results. Exact scope/topic/message/markup checks reject
+  partial, uncertain, compacted, bare-keyboard and superseded rows. Original text
+  survives process-local memo loss. A review-found pre-HTTP failure classification
+  bug was fixed and regression-tested. [Report](reviews/2026-11-06-reply-actions-ack.md).
+- CP-016: #182 (`0ac9b3f`) journals restart/lifecycle/IPC noncontrol main-text
+  notices, preserving fallback origin and no-replay on unknown/ACK-failed sends.
+  [Report](reviews/2026-11-06-topic-retirement.md).
 
-- CP-002/003: `feat/reply-actions-ack`, worktree `../gopod-reply-actions`, agent
-  `freeze_next`. Scope: no-schema callback read model from fully ACKed frozen results; exact
-  scope/topic/message checks, restart-safe More/Back/As file, conservative stale-row
-  handling. Mixed legacy ordering and eager row cleanup stay separate.
-- CP-016: `feat/topic-retirement-next`, worktree `../gopod-topic-retirement`, agent
-  `topic_next`. Scope: ownership/no-replay for restart/lifecycle and IPC noncontrol text
-  notices, including original-topic to main fallback; reuse existing receipt repair.
-  Historical/nontext/unknown outcomes remain separate; delete command stays off.
-- CP-016 checkpoint: PR #182 merged as `0ac9b3f`; reviewed head `752120d`.
-  Full build/vet/tests, affected race, independent review and required CI
-  `42196527739` PASS.
-  Sonar gate OK, two complexity smells read, none suppressed.
-- CP-002 review checkpoint: PR #183, combined head `ef3dbd0`, independent review
-  PASS after correcting known-unsent pre-dispatch failure handling. Deterministic
-  newer-ACK regression and independent Store/Telegram focused races pass.
-  Final full checks and required CI `42197591379` are pending. Legacy control
-  repair versus reused final-edit targets remains a foreground activation gate.
-- Root integrates reports, HANDOFF/BACKLOG/ROADMAP and review. Agents own separate
-  source slices and checkpoint reports. Coordinate overlapping Store/schema files.
+Both passed full build/vet/tests, affected races, independent exact-head review
+and required CI: #183 `42197591379` on `ef3dbd0`; #182 `42196527739` on `752120d`.
+Sonar gate OK for both, six and two smells respectively, zero bugs/vulnerabilities;
+findings read, none suppressed. Reports record exact heads and analysis times.
+No implementation remains in flight. #178–#180/#182/#183 are not deployed;
+last verified Pi remains `757faa2`, controller only.
 
-No deployment, live deletion, managed-task activation or foreground cutover is
-implied. #178–#180 and #182 await deployment; last verified Pi remains `757faa2`.
+**First next action:** CP-002 legacy control repair versus reused final-edit
+arbitration and More/Back control lifecycle checkpoints; then eager old-row cleanup,
+mixed legacy/durable latest-row ordering and integrated preview/Stop/publication
+qualification before foreground cutover. CP-016 retains historical/nontext and
+topic-target ownership, unknown outcomes, managed/native exit qualification and
+confirmed retirement orchestration. `/thread delete` stays unavailable.
 
 ## Merged delivery prerequisites — pending rollout
 
@@ -85,7 +82,7 @@ Use [active backlog](BACKLOG.md) for remaining scope and
 [ROADMAP](../ROADMAP.md#execution-priority--2026-11-04) for order.
 Before foreground cutover, complete integrated preview/Stop/publication qualification,
 reply-action lifecycle parity and legacy control-repair arbitration for reused final
-edit targets. The active bounded callback slice is described above. `WithResultFreeze` and `PrepareFrozenFinalReply` still
+edit targets. The completed bounded callback slice is described above. `WithResultFreeze` and `PrepareFrozenFinalReply` still
 have no production callers. CP-016 `QuiesceTopic` has no production caller either;
 `/thread delete` is unavailable. Do not reopen completed #168–#177 slices.
 
@@ -103,7 +100,7 @@ or full restore qualification was added by the latest rollout or this docs audit
 
 - Source deployed: `757faa22ec28c6e1f025d9943924637d2e2dc88b`;
   exact-main [CI 42050073211](https://github.com/Coriol-is/gopod/actions/runs/42050073211) passed.
-- Documentation reconciliation starts from `a4078ec`; no application source changes.
+- Documentation reconciled against source `261805e`; runtime remains `757faa2`.
 - Pi: `ssh spaceinvaderz@192.168.1.128`; checkout `~/gopod`, data `/opt/gopod/data`,
   mounted workspace repository `/opt/gopod/repo`.
 - Rollback image: `gopod-rollback:pre-757faa2`; preserve it and all named backups.

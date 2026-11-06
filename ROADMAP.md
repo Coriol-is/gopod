@@ -23,7 +23,7 @@ right now" view, see [docs/HANDOFF.md](docs/HANDOFF.md).
 
 ## Current backlog — 2026-11-04
 
-Refreshed 2026-11-05 at `a4078ec`. The [active code-backed backlog](docs/BACKLOG.md)
+Refreshed 2026-11-06 at `261805e`. The [active code-backed backlog](docs/BACKLOG.md)
 contains remaining implementation and acceptance scope. Pi `757faa2` includes
 #168–#177; the foreground producer is disconnected, managed tasks are off and
 CP-037 remains legacy. Health/version and bounded D068 consumer checks passed.
@@ -43,7 +43,10 @@ lifecycle qualification, reply-action parity and foreground cutover remain open.
 CP-002 keyboard-refusal fallback merged in #180 (`6722e6a`), with full checks,
 races, independent review and required CI passed; not deployed. Advisory Sonar
 ERROR on duplication is recorded in the [review](docs/reviews/2026-11-05-outbox-keyboard-fallback.md).
-Reply-action state/callback parity and foreground qualification remain open.
+Durable reply-action readthrough followed in #183 (`261805e`), with full checks,
+races, independent review and required CI passed; not deployed. Legacy repair
+arbitration, More/Back checkpoints, eager cleanup, mixed-path ordering and
+foreground lifecycle qualification remain open.
 
 CP-016 noncontrol main-text notice ownership merged in #182 (`0ac9b3f`);
 restart/lifecycle/IPC reuse durable receipt/no-replay handling. Full checks,

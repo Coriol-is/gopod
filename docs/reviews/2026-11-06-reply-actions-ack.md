@@ -64,3 +64,16 @@ disconnected; this report does not claim those lifecycle gates are closed.
 
 Before review corrections, full build/vet/tests and full store/Telegram race tests
 passed. Final combined-head validation is recorded below after merging main.
+
+## Final validation and integration — 2026-11-06
+
+PR #183 merged as `261805e`. Reviewed combined head
+`ef3dbd0d6a1f7252d6ab26ea580d384e4c508b03` includes #182 with no own-source changes.
+Build/vet/full tests PASS (Store 18.463s, Telegram 46.108s); full Store/Telegram
+races PASS (29.736s / 61.807s); diff check PASS. Independent exact-head review PASS,
+with focused races 6.886s / 7.237s. Required CI
+[42197591379](https://github.com/Coriol-is/gopod/actions/runs/42197591379) PASS.
+Sonar analysis 09:46:51 UTC matches reviewed head: gate OK, six code smells,
+zero bugs/vulnerabilities. Findings: complexity in Store helper/test and Telegram
+test, two redundant test variables, empty-function explanation in actions.go.
+Read, none suppressed. Not deployed; the activation boundaries above remain.
