@@ -26,15 +26,13 @@ Owner resumed implementation with the standing full release cycle. Base `8b53386
   nontext/history/unknown reconciliation and retirement remain separate.
 - CP-016 source checkpoint: registered-private topic text journal implemented,
   no schema change; PR #186 head `613edd3`, full checks/races and exact-head
-  independent review PASS. CI `42209821093` pending; Sonar OK, five complexity
+  independent review PASS. CI `42209821093` PASS; merged as `6faa197`. Sonar OK, five complexity
   smells read, none suppressed. Unknown or ACK-failed sends stay held across restart; exact target
   validation rejects foreign routes while siblings/main remain available.
-- CP-002 review blocker: held repair rows can monopolize the LIMIT100 query
-  without retry advancement and starve unrelated controls. Exact-revision bounded
-  scheduling plus a >100-row regression is required before approval. Obsolete Stop
-  must not requeue ACKed terminal controls after More/Back. Unknown remote repair
-  effects after timeout remain an explicit foreground gate: a local lock cannot
-  prove Telegram completed or discarded a request.
+- CP-002 correction checkpoint: LIMIT100 starvation and obsolete Stop requeue
+  fixed with deterministic regressions; repeated independent review/races PASS.
+  Combined-head full checks and final SHA pending. Remote ambiguous repair effects
+  remain an explicit foreground gate; local serialization is not remote proof.
 - Independent reviewer review_pickers; root integrates global docs, required CI,
   merge, Pi controller rollout/acceptance and bounded housekeeping. No worker.
 
