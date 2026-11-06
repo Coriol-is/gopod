@@ -58,7 +58,7 @@ baseline preserves the exact16 strongest candidates. No source was deleted.
 Owner excludes test files/fixtures, scripts and all Python code. Both automatic
 `.sonarcloud.properties` and CLI `sonar-project.properties` must agree, with project
 settings mirrored. These exclusions do not stop Python/Go tests or CI qualification.
-Current added exclusions are `scripts/**,**/*.py`; no additional Go production
+Current added exclusions are `scripts/**,**/*.py,**/*.sh,.githooks/**`; no additional Go production
 packages are hidden. Earlier main analysis reported57,111 lines including2,351
 Python lines: the new exclusion is useful but is not expected to reach50k alone.
 Exact effective scope and remaining cap outcome must be verified on a new analysis.

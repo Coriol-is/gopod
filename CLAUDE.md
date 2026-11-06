@@ -173,7 +173,7 @@ the user before any spec or code exists for it.
   Wait for the `ci` workflow (`test` and `isolation-spike`) rather than requiring
   every external check returned by `gh pr checks` to succeed. This exception
   applies only to Sonar; it does not waive independent review or other checks.
-- **Sonar production scope (owner-approved 2026-11-06).** Test files, fixtures, `scripts/**` and all Python files
+- **Sonar production scope (owner-approved 2026-11-06).** Test files, fixtures, `scripts/**`, shell/hooks and all Python files
   are excluded from Sonar analysis entirely, not only from duplication metrics.
   Keep `.sonarcloud.properties` (automatic analysis) and `sonar-project.properties`
   (CLI/CI scanner) aligned: production source exclusions plus exclusion of all

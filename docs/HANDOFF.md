@@ -22,7 +22,7 @@ baseline prevents new unreachable functions without deleting planned disconnecte
 features. Five disposable-Git integration tests, actual staged hook and baseline analysis
 PASS. Independent source/config review PASS on298d1e3; full build/vet/tests PASS
 (Telegram73.339s). PR194 Sonar15:29:58UTC OK; zero changed file/issue components,
-Python/scripts excluded, project settings read back. Final prose/required CI follow. Sonar configs include `scripts/**,**/*.py`. No application Go code was renamed.
+Python/scripts excluded, project settings read back. Final prose/required CI follow. Sonar configs include `scripts/**,**/*.py,**/*.sh,.githooks/**`. No application Go code was renamed.
 Owner explicitly requests merge/push only, no deployment. Finish final review/CI,
 squash merge, enable the local hook and clean the integrated task worktree.
 Pi runtime remains0200892; no restart or deployment is part of this follow-up.
