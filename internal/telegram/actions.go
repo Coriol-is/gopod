@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
 	"github.com/Coriol-is/gopod/internal/queue"
@@ -194,6 +195,11 @@ func (b *Bot) chatTurn(ctx context.Context, q cbQuery) (turn store.Turn, toast s
 			slog.String("act", q.Data.Act), slog.Int64("turn", turnID), slog.Int64("chat_id", q.ChatID))
 		return store.Turn{}, cbToastNotYours, nil
 	}
+	// Every durable reply button uses the same ACK/message authority, including
+	// Regenerate and Steps reached from the rows restored by More/Back.
+	if _, toast, err := b.replyActionViewFor(ctx, q, turn); toast != "" || err != nil {
+		return store.Turn{}, toast, err
+	}
 	return turn, "", nil
 }
 
@@ -282,21 +288,33 @@ func (b *Bot) moreRow(ctx context.Context, q cbQuery) (string, error) {
 	if toast != "" || err != nil {
 		return toast, err
 	}
+	view, toast, err := b.replyActionViewFor(ctx, q, turn)
+	if toast != "" || err != nil {
+		return toast, err
+	}
 	kb := moreKeyboard(turn.ID)
+	if view.durable != nil {
+		return "", b.durableReplyKeyboard(ctx, q, turn, view, &kb)
+	}
 	b.setKeyboard(ctx, q.ChatID, q.MessageID, &kb)
 	return "", nil
 }
 
-// backRow handles ‹ (mb:<turnID>): the action row comes back. Copy needs
-// the reply text, which only the memo has; without it (restart, expiry)
-// the row comes back without Copy.
+// backRow restores Copy from the acknowledged immutable result when available;
+// legacy replies retain their existing process-local memo lifetime.
 func (b *Bot) backRow(ctx context.Context, q cbQuery) (string, error) {
 	turn, toast, err := b.chatTurn(ctx, q)
 	if toast != "" || err != nil {
 		return toast, err
 	}
-	memo, _ := b.turnMemoFor(turn.ID, q.ChatID)
-	kb := replyKeyboard(turn.ID, memo.reply)
+	view, toast, err := b.replyActionViewFor(ctx, q, turn)
+	if toast != "" || err != nil {
+		return toast, err
+	}
+	kb := replyKeyboard(turn.ID, view.memo.reply)
+	if view.durable != nil {
+		return "", b.durableReplyKeyboard(ctx, q, turn, view, &kb)
+	}
 	b.setKeyboard(ctx, q.ChatID, q.MessageID, &kb)
 	return "", nil
 }
@@ -325,15 +343,30 @@ func (b *Bot) showSteps(ctx context.Context, q cbQuery) (string, error) {
 
 // asFile handles 📄 (af:<turnID>): the full reply as reply.md, in the
 // reply's topic (the D025 document helper, with its topic-gone
-// fallback). The text is kept in memory for memoTTL.
+// fallback). Legacy text is kept for memoTTL; durable text comes from a fully
+// acknowledged result and is sent without a topic-gone redirect.
 func (b *Bot) asFile(ctx context.Context, q cbQuery) (string, error) {
 	turn, toast, err := b.chatTurn(ctx, q)
 	if toast != "" || err != nil {
 		return toast, err
 	}
-	memo, ok := b.turnMemoFor(turn.ID, q.ChatID)
-	if !ok || memo.reply == "" {
+	view, toast, err := b.replyActionViewFor(ctx, q, turn)
+	if toast != "" || err != nil {
+		return toast, err
+	}
+	memo := view.memo
+	if memo.reply == "" {
 		return fileToastGone, nil
+	}
+	if view.durable != nil {
+		err := b.durableReplyRequest(ctx, q, turn, view, func(callCtx context.Context) error {
+			_, err := b.api.SendDocument(callCtx, &bot.SendDocumentParams{ChatID: q.ChatID, MessageThreadID: q.ThreadID, Document: &models.InputFileUpload{Filename: "reply.md", Data: strings.NewReader(memo.reply)}})
+			return err
+		})
+		if err != nil {
+			return fileToastFailed, nil
+		}
+		return "", nil
 	}
 	if _, err := b.sendDocument(ctx, q.ChatID, q.ThreadID, "reply.md", []byte(memo.reply), ""); err != nil {
 		b.log.Warn("as-file send failed", slog.Int64("turn", turn.ID), slog.Any("err", err))
