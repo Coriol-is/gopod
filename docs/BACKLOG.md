@@ -28,6 +28,12 @@ The independent acceptance lane starts with CP-040 A22–A25, then remaining
 Stop/restart and isolation checks. Coordinate one Telegram actor and avoid overlap
 with deployment/auth changes. No new work is activated by this reconciliation.
 
+## Active next slice — 2026-11-06
+
+Non-repair edit call sites are being audited from `8dcc4f9` for bounded durable
+unknown-outcome coverage. Scope/review checkpoints live in HANDOFF; current
+activation gates and historical uncertainty remain unchanged.
+
 ## Latest repair journal — 2026-11-06
 
 #189 (`a85b328`, D069) adds commit-before-HTTP repair evidence, restart-safe raw-target
