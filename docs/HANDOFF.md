@@ -13,7 +13,7 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — registered-private placeholder deletion, 2026-11-06
+## Resume here — D071 merged; deployment gates, 2026-11-06
 
 Owner resumed the next bounded CP-002 slice after D070. The sole production
 `DeleteMessage` call removes the sync voice-answer wait placeholder; currently it
@@ -55,8 +55,12 @@ automatically CLOSED/FIXED. No manual suppression. Full main scope readback foll
 merge. Historical Sonar ERROR above remains evidence, not the new head result.
 Refreshed config-only independent review PASS on full head
 `5ff03d313c22eb7611f23ebc2dfa143f1585148c`; required CI42238584841 running.
-Next action: refreshed exact-head review/required PR CI and Sonar scope readback, merge, Pi-only
-deployment/acceptance, then docs PR #192 and housekeeping.
+#193 merged as `0200892127074d6b48ef5bb9ae62baaf23a2b81d` after required
+PR CI42238584841 PASS. Exact-main CI42239307009 running; ARM64 candidate built.
+Pi still `6820422`; deployment has not occurred. Main Sonar analysis remains stale
+until the new post-merge run completes; PR exclusion evidence is current.
+Next action: exact-main CI, isolated readiness, idle/verified matched backup,
+Pi-only deployment/acceptance, docs PR #192 and bounded housekeeping.
 The previous D070 docs PR #190 merged as `e8c9757`; its branch is removed and both
 retained worktrees were clean at cycle start.
 
