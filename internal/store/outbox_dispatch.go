@@ -207,6 +207,7 @@ func nextCandidateQ(ctx context.Context, q taskSQL, nowMs int64) (OutboxClaim, b
  g.result_id,g.expires_at,g.namespace_id,g.namespace_epoch,g.registration_revision,g.chat_jid,g.chat_folder,g.thread_id,g.visibility
  FROM outbox_parts p JOIN delivery_groups g ON g.delivery_id=p.delivery_id
  WHERE p.state=? AND p.next_attempt_at<=?
+ AND NOT EXISTS(SELECT 1 FROM telegram_delete_attempts d WHERE p.kind='edit' AND d.chat_id=CAST(SUBSTR(g.chat_jid,4) AS INTEGER) AND d.message_id=p.target_message_id AND d.state IN ('pending','ack'))
  AND NOT EXISTS(SELECT 1 FROM telegram_edit_attempts e WHERE p.kind='edit' AND e.chat_id=CAST(SUBSTR(g.chat_jid,4) AS INTEGER) AND e.message_id=p.target_message_id AND e.state='pending')
  AND NOT EXISTS(SELECT 1 FROM telegram_control_repair_attempts r WHERE p.kind='edit' AND r.chat_id=CAST(SUBSTR(g.chat_jid,4) AS INTEGER) AND r.message_id=p.target_message_id AND r.state='pending')
  AND NOT EXISTS (SELECT 1 FROM outbox_code_plans cp WHERE cp.delivery_id=p.delivery_id AND cp.selected_mask IS NULL AND p.ordinal>=cp.prefix_count)

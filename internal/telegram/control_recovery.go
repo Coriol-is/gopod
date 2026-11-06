@@ -132,6 +132,9 @@ func (b *Bot) RepairControls(ctx context.Context) error {
 	if err := b.reconcileRepairReceipts(ctx, nil); err != nil {
 		b.log.Warn("control repair receipt reconciliation", "error", err)
 	}
+	if err := b.reconcileDeleteReceipts(ctx, nil); err != nil {
+		b.log.Warn("deletion receipt reconciliation", "error", err)
+	}
 	if err := b.reconcileEditReceipts(ctx, nil); err != nil {
 		b.log.Warn("direct edit receipt reconciliation", "error", err)
 	}

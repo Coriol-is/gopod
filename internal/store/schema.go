@@ -267,6 +267,9 @@ func (s *Store) applySchema(ctx context.Context) error {
 	if err := s.applyControlRepairSchema(ctx); err != nil {
 		return err
 	}
+	if err := s.applyTelegramDeleteSchema(ctx); err != nil {
+		return err
+	}
 	if err := s.applyTelegramEditSchema(ctx); err != nil {
 		return err
 	}

@@ -196,3 +196,19 @@ to settle the original attempt. No expiry/absence-based force-clear is provided.
 Process-local receipt loss on restart preserves the hold. Historical registered
 private targets without durable provenance may no longer accept callback edits;
 request a fresh control/message instead of fabricating ownership from caches.
+
+### D071 deletion ledger and acknowledged tombstones
+
+The additive `telegram_delete_attempts` table participates in manifest row counts.
+`deletes_pending` counts only unresolved attempts for idle/backup admission;
+acknowledged deletions are settled but retain raw chat/message tombstones. Both
+pending attempts and ACK tombstones resist deletion and have no cascading parent
+foreign key or TTL. They must survive control cleanup, registration changes,
+backup and restore. Refused rows are also retained by normal operation.
+
+An older binary cannot enforce pending deletion barriers or ACK tombstones and may
+write a deleted message; its manifest table allowlist also predates this schema.
+Do not blindly downgrade or erase this ledger, even when pending count is zero.
+Exact in-process ACK/refusal receipts retry SQLite only. If lost at restart or
+bounded-map capacity, uncertainty remains held: never replay HTTP or infer success
+from missing messages/time. No force-clear or reconciliation command is added.

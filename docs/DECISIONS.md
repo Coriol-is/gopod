@@ -2414,3 +2414,35 @@ Pending evidence is not removed by compaction/control cleanup. Backup/idle count
 and downgrade guidance include the new ledger; old binaries cannot enforce these
 barriers. Wider nontext/history reconciliation and integrated foreground acceptance
 remain open; no foreground, topic deletion, managed tasks or worker is activated.
+
+## D071 — Durable synchronous placeholder deletion outcomes
+
+**Status:** implementation contract for the owner-resumed CP-002 registered-private
+voice-placeholder deletion slice, 2026-11-06. Preserves D063/D064/D069/D070
+unknown-outcome rules; no foreground or topic-deletion activation.
+
+The sole synchronous voice-placeholder DeleteMessage operation requires durable
+creation/control provenance and an immutable attempt committed before HTTP under
+the existing message gate and topic lease. Admission revalidates registration,
+source and exact owner, and rejects published result targets regardless of creation
+provenance. A separate deletion ledger preserves the existing D070 schema unchanged.
+Raw-target pending edit/repair/outbox and deletion effects mutually block conflicts;
+local holds are known-unsent and cannot consume outbox budgets.
+
+Only true success or a definite refusal/proven-unsent outcome settles its exact
+attempt. False/nil, ambiguous errors and failed settlement remain pending; outer
+helpers must stop before Finished edits, replacement delivery or TTS. Bounded
+exact receipts may retry SQLite only, never HTTP. Receipt loss after restart
+preserves uncertainty; no timeout, absence inference or force-clear is introduced.
+
+Success atomically removes only the exactly captured control identity/revision;
+it does not acknowledge control text or retire a successor. A retained raw-target
+ACK tombstone prevents subsequent edit/repair/outbox/deletion even after rebind or
+registration change. Pending and ACK evidence have no cascading parent cleanup or
+TTL. Only pending attempts count toward idle and relevant source-topic quiescence.
+Backup manifests preserve the ledger; older binaries cannot enforce its pending
+barriers or ACK tombstones and are unsafe for blind downgrade.
+
+Historical missing-provenance targets hold before HTTP. Groups/unregistered
+compatibility and other nontext effects remain unqualified. This does not implement
+operator unknown resolution, confirmed topic deletion or foreground cutover.

@@ -225,8 +225,8 @@ func (d BackupDeps) idle(ctx context.Context, cmd Command) (Response, error) {
 	if err != nil {
 		return Response{Text: "backup idle: " + err.Error(), Code: 1}, nil
 	}
-	text := fmt.Sprintf("turns pending=%d running=%d; outbox parts in flight=%d; unresolved deliveries=%d; artifact reservations=%d; task runs executing=%d; task attempts held=%d; final replies pending=%d; control repairs pending=%d; direct edits pending=%d",
-		ev.TurnsPending, ev.TurnsRunning, ev.OutboxPartsInFlight, ev.DeliveriesUnresolved, ev.ArtifactReservations, ev.TaskRunsExecuting, ev.TaskAttemptsHeld, ev.FinalRepliesPending, ev.ControlRepairsPending, ev.DirectEditsPending)
+	text := fmt.Sprintf("turns pending=%d running=%d; outbox parts in flight=%d; unresolved deliveries=%d; artifact reservations=%d; task runs executing=%d; task attempts held=%d; final replies pending=%d; control repairs pending=%d; direct edits pending=%d; deletes pending=%d",
+		ev.TurnsPending, ev.TurnsRunning, ev.OutboxPartsInFlight, ev.DeliveriesUnresolved, ev.ArtifactReservations, ev.TaskRunsExecuting, ev.TaskAttemptsHeld, ev.FinalRepliesPending, ev.ControlRepairsPending, ev.DirectEditsPending, ev.DeletesPending)
 	code := 0
 	if ev.Unsettled() {
 		text = "BUSY (defer a matched capture): " + text

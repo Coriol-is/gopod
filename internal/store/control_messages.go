@@ -55,7 +55,7 @@ func (s *Store) CheckpointControlMessage(ctx context.Context, chat int64, msg in
 }
 
 func (s *Store) ControlMessages(ctx context.Context) ([]ControlMessage, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT chat_id,message_id,turn_id,token,scope_json,thread_id,text,html,terminal,revision,acknowledged,retry_at FROM telegram_control_messages WHERE (terminal=0 OR acknowledged<revision) AND retry_at<=? AND NOT EXISTS(SELECT 1 FROM telegram_control_repair_attempts r WHERE r.chat_id=telegram_control_messages.chat_id AND r.message_id=telegram_control_messages.message_id AND r.state='pending') AND NOT EXISTS(SELECT 1 FROM telegram_edit_attempts e WHERE e.chat_id=telegram_control_messages.chat_id AND e.message_id=telegram_control_messages.message_id AND e.state='pending') ORDER BY retry_at,chat_id,message_id LIMIT 100`, time.Now().UnixMilli())
+	rows, err := s.db.QueryContext(ctx, `SELECT chat_id,message_id,turn_id,token,scope_json,thread_id,text,html,terminal,revision,acknowledged,retry_at FROM telegram_control_messages WHERE (terminal=0 OR acknowledged<revision) AND retry_at<=? AND NOT EXISTS(SELECT 1 FROM telegram_control_repair_attempts r WHERE r.chat_id=telegram_control_messages.chat_id AND r.message_id=telegram_control_messages.message_id AND r.state='pending') AND NOT EXISTS(SELECT 1 FROM telegram_edit_attempts e WHERE e.chat_id=telegram_control_messages.chat_id AND e.message_id=telegram_control_messages.message_id AND e.state='pending') AND NOT EXISTS(SELECT 1 FROM telegram_delete_attempts d WHERE d.chat_id=telegram_control_messages.chat_id AND d.message_id=telegram_control_messages.message_id AND d.state IN ('pending','ack')) ORDER BY retry_at,chat_id,message_id LIMIT 100`, time.Now().UnixMilli())
 	if err != nil {
 		return nil, err
 	}
