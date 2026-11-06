@@ -27,7 +27,8 @@ and full source review are in progress. Both review corrections are implemented:
 topic-scoped receipt reconciliation and known-unsent fallback guard failures.
 Focused regression suite PASS, including delayed remote effect/restart hold,
 sibling progress, exact DB-only settlement and migration/hash preservation.
-Full build/vet/tests and races running; final approval/CI remain gates. Agent freeze_next owns `feat/durable-repair-outcomes` in
+PR #189 head `e329bf2`: full build/vet/tests and Store/Telegram/backup/control
+races PASS. Independent exact-head approval and CI `42216574391` remain gates. Agent freeze_next owns `feat/durable-repair-outcomes` in
 `../gopod-repair-outcomes`; independent reviewer review_pickers. Root owns global
 docs and the standing review/CI/merge/Pi-deploy/housekeeping cycle. Current deployed
 Pi remains `0cd8078`, no worker. Schema/backup compatibility is part of this slice; old binaries cannot enforce pending repair evidence.
