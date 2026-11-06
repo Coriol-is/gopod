@@ -13,30 +13,26 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — next parallel reliability batch, 2026-11-06
+## Resume here — merged next batch, rollout in progress, 2026-11-06
 
-Owner resumed implementation with the standing full release cycle. Base `8b53386`:
-- CP-002: `fix/control-final-arbitration`, worktree `../gopod-control-arbitration`,
-  agent freeze_next; scope control-repair versus final-edit arbitration and bounded
-  More/Back lifecycle checkpoints. Planned per-message edit gate plus published
-  outbox target ownership/current control revision checks; no schema change.
-- CP-016: `feat/topic-ownership-next`, worktree `../gopod-topic-ownership`, agent
-  topic_next; extend existing text ownership journal to exact private topic targets
-  (not only main/fallback), retaining receipt repair/no-replay. No schema change;
-  nontext/history/unknown reconciliation and retirement remain separate.
-- CP-016 source checkpoint: registered-private topic text journal implemented,
-  no schema change; PR #186 head `613edd3`, full checks/races and exact-head
-  independent review PASS. CI `42209821093` PASS; merged as `6faa197`. Sonar OK, five complexity
-  smells read, none suppressed. Unknown or ACK-failed sends stay held across restart; exact target
-  validation rejects foreign routes while siblings/main remain available.
-- CP-002 correction checkpoint: LIMIT100 starvation and obsolete Stop requeue
-  fixed with deterministic regressions; repeated independent review/races PASS.
-  Combined-head full checks and final SHA pending. Remote ambiguous repair effects
-  remain an explicit foreground gate; local serialization is not remote proof.
-- Independent reviewer review_pickers; root integrates global docs, required CI,
-  merge, Pi controller rollout/acceptance and bounded housekeeping. No worker.
+- #187 (`0cd8078`): per-message edit arbitration protects published final targets
+  from subsequent legacy repair/writes; More/Back checkpoint old control retirement.
+  CAS scheduling prevents LIMIT100 starvation; obsolete Stop cannot requeue an
+  ACKed terminal control. [Report](reviews/2026-11-06-control-final-arbitration.md).
+- #186 (`6faa197`): existing durable ownership journal covers private topic-target
+  text with exact source/target validation and receipt-only repair/no-replay.
+  [Report](reviews/2026-11-06-topic-ownership-next.md). No schema change.
 
-Foreground activation and topic deletion remain gated. Current Pi `80f4b11`.
+Full build/vet/tests, affected races, independent exact-head review and required
+PR CI PASS. Sonar OK for both (nine/five smells retained). Deploy target `0cd8078`,
+exact-main CI `42210762626` pending; Pi remains `80f4b11` until verified rollout.
+No worker or foreground/topic-delete activation. Root owns rollout/docs/housekeeping.
+
+**Next implementation:** persist/settle unknown remote legacy repair outcomes before
+foreground activation; local ordering cannot prove remote completion. Eager row
+cleanup, mixed-path latest ordering and integrated preview/Stop/publication remain.
+CP-016 still needs nontext/edit attempts, historical ownership/retention, unknown
+reconciliation, managed/native settlement and confirmed retirement orchestration.
 
 ## Previous completed cycle — 2026-11-06
 
@@ -64,13 +60,6 @@ and required CI: #183 `42197591379` on `ef3dbd0`; #182 `42196527739` on `752120d
 Sonar gate OK for both, six and two smells respectively, zero bugs/vulnerabilities;
 findings read, none suppressed. Reports record exact heads and analysis times.
 All five source slices #178–#180/#182/#183 are deployed in `80f4b11`.
-
-**First next action:** CP-002 legacy control repair versus reused final-edit
-arbitration and More/Back control lifecycle checkpoints; then eager old-row cleanup,
-mixed legacy/durable latest-row ordering and integrated preview/Stop/publication
-qualification before foreground cutover. CP-016 retains historical/nontext and
-topic-target ownership, unknown outcomes, managed/native exit qualification and
-confirmed retirement orchestration. `/thread delete` stays unavailable.
 
 ## Deployed delivery prerequisites
 

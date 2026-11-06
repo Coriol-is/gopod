@@ -143,3 +143,11 @@ ordering and integrated foreground qualification remain open. Status in-progress
 Deployment checkpoint 2026-11-06: all merged slices above shipped in `80f4b11`
 ([rollout](../deployments/2026-11-06-reliability-cycle-rollout.md)); implementation
 and native/client activation gates remain open.
+
+## Next reliability slice — 2026-11-06
+
+PR #187 (`0cd8078`) adds local message edit arbitration and More/Back old-control
+retirement, with fair held-row scheduling and obsolete Stop requeue protection.
+Unknown remote repair settlement remains a foreground activation gate.
+[Review](../reviews/2026-11-06-control-final-arbitration.md).
+Full checks, races, review and required CI PASS; status remains in-progress.

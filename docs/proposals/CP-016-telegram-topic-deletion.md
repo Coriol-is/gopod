@@ -77,3 +77,11 @@ settlement and confirmed deletion orchestration remain open; status stays in-pro
 Deployment checkpoint 2026-11-06: all merged slices above shipped in `80f4b11`
 ([rollout](../deployments/2026-11-06-reliability-cycle-rollout.md)); implementation
 and native/client activation gates remain open.
+
+## Next reliability slice — 2026-11-06
+
+PR #186 (`6faa197`) extends the existing ownership journal to exact private topic
+text targets, with receipt-only repair/no-replay and no schema change. Nontext/edit
+attempts, history/retention, unknown reconciliation and retirement remain open.
+[Review](../reviews/2026-11-06-topic-ownership-next.md).
+Full checks, races, review and required CI PASS; status remains in-progress.

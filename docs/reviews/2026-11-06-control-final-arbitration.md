@@ -71,3 +71,17 @@ restoring prior skip/requeue behavior fail both regressions as expected: `repair
 overwrote acknowledged action` and `unrelated row starved`. The real source stays
 unchanged during this falsification check. Final combined-head validation follows
 a merge of the parallel CP-016 source; root records final evidence in global docs.
+
+## Final validation and integration — 2026-11-06
+
+PR #187 merged as `0cd8078`; reviewed combined head
+`83659f72567b15c6cdf110cc14df61b5d79a4a94` includes approved #186.
+Build/vet/full tests PASS (Store 44.942s, Telegram 71.746s); full Store/Telegram
+races PASS (30.362s / 62.880s); diff check PASS. Independent exact-head review
+and focused races PASS (7.181s / 7.718s). Required
+[CI 42210387269](https://github.com/Coriol-is/gopod/actions/runs/42210387269) PASS.
+Sonar 11:27:32 UTC matches reviewed head: OK, nine code smells, no bugs or
+vulnerabilities. Complexity, empty-function comments and literal duplication remain;
+review confirmed the existing cancelRecovery defer/join lifecycle. None suppressed.
+Negative-overlay controls reproduce both corrected regressions without changing
+committed source. Unknown remote repair settlement remains an activation gate.

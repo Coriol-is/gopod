@@ -23,7 +23,7 @@ right now" view, see [docs/HANDOFF.md](docs/HANDOFF.md).
 
 ## Current backlog — 2026-11-04
 
-Refreshed 2026-11-06 at `261805e`. The [active code-backed backlog](docs/BACKLOG.md)
+Refreshed 2026-11-06 at `0cd8078`. The [active code-backed backlog](docs/BACKLOG.md)
 contains remaining implementation and acceptance scope. Pi `80f4b11` includes
 #168–#180/#182/#183; the foreground producer is disconnected, managed tasks are off and
 CP-037 remains legacy. Health/version and bounded D068 consumer checks passed.
@@ -44,14 +44,19 @@ CP-002 keyboard-refusal fallback merged in #180 (`6722e6a`), with full checks,
 races, independent review and required CI passed; deployed in `80f4b11`. Advisory Sonar
 ERROR on duplication is recorded in the [review](docs/reviews/2026-11-05-outbox-keyboard-fallback.md).
 Durable reply-action readthrough followed in #183 (`261805e`), with full checks,
-races, independent review and required CI passed; deployed in `80f4b11`. Legacy repair
-arbitration, More/Back checkpoints, eager cleanup, mixed-path ordering and
+races, independent review and required CI passed; deployed in `80f4b11`. Local arbitration and More/Back retirement checkpoints followed in #187;
+durable unknown repair settlement, eager cleanup, mixed-path ordering and
 foreground lifecycle qualification remain open.
 
 CP-016 noncontrol main-text notice ownership merged in #182 (`0ac9b3f`);
 restart/lifecycle/IPC reuse durable receipt/no-replay handling. Full checks,
 races, independent review and required CI PASS; deployed in `80f4b11`. Historical/nontext
 ownership, unknown outcomes, managed/native settlement and deletion remain open.
+
+#186 (`6faa197`) extends text ownership to private topic targets; #187 (`0cd8078`)
+adds local control/final edit arbitration and fixes repair scheduling/requeue.
+Full checks, races, independent review and required CI PASS. Rollout in progress;
+parent activation gates remain, including unknown remote repair settlement.
 
 ## Execution priority — 2026-11-04
 
