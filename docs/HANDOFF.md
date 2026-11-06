@@ -13,7 +13,17 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — control/topic batch deployed, 2026-11-06
+## Resume here — durable repair outcomes in progress, 2026-11-06
+
+Owner resumed the next CP-002 barrier from `a0a3f1e`: persist repair HTTP attempts
+and retain unknown effects across restart, preventing conflicting final/control
+writes until supported settlement. Scope/design under review, no activation or
+forced reconciliation. Agent freeze_next owns `feat/durable-repair-outcomes` in
+`../gopod-repair-outcomes`; independent reviewer review_pickers. Root owns global
+docs and the standing review/CI/merge/Pi-deploy/housekeeping cycle. Current deployed
+Pi remains `0cd8078`, no worker. Exact design and schema implications follow review.
+
+## Previous completed control/topic batch — 2026-11-06
 
 - #187 (`0cd8078`): per-message edit arbitration protects published final targets
   from subsequent legacy repair/writes; More/Back checkpoint old control retirement.
@@ -28,7 +38,7 @@ PR CI PASS. Sonar OK for both (nine/five smells retained). Pi controller `0cd807
 passed exact-main CI `42210762626`, isolated readiness, matched-stopped backup
 verification, health/state preservation and Telegram version acceptance. No worker.
 [Release, acceptance and housekeeping](deployments/2026-11-06-control-topic-rollout.md).
-No source implementation in flight. Two clean integrated agent worktrees and their
+The next implementation is in progress as listed above. Two clean integrated agent worktrees and their
 local/remote branches removed; protected backups/auth/rollback retained.
 
 **Next implementation:** persist/settle unknown remote legacy repair outcomes before

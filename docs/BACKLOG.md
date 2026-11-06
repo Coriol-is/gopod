@@ -28,6 +28,12 @@ The independent acceptance lane starts with CP-040 A22–A25, then remaining
 Stop/restart and isolation checks. Coordinate one Telegram actor and avoid overlap
 with deployment/auth changes. No new work is activated by this reconciliation.
 
+## Active implementation — 2026-11-06
+
+Durable repair unknown-outcome barrier is in progress from `a0a3f1e`, with separate
+implementation and independent review. No foreground activation or invented remote
+settlement; exact design is recorded in the handoff as it is verified.
+
 ## Latest completed batch — 2026-11-06
 
 #186 (`6faa197`) and #187 (`0cd8078`) passed full checks, races, exact-head independent
