@@ -29,8 +29,11 @@ Implementation checkpoint: separate `telegram_delete_attempts` ledger is wired
 through the message gate/topic lease. True ACK retires only its captured control;
 a durable tombstone blocks later writes without claiming text delivery. Pending
 attempts enter backup/idle/quiescence. Initial existing repair/edit tests pass;
-dedicated fault/restart/voice regressions are in progress. Root review identified
-registration-removal compatibility bypass as an explicit regression requirement.
+dedicated fault/restart/voice regressions are in progress. Registration-removal regression checks the shared raw-target gate before the
+compatibility path. Independent review found and corrected a global recovery
+stall on deletion receipt settlement failure: unrelated controls continue while
+only the affected target stays held. Fairness coverage places an eligible control
+after more than 100 held targets. Full validation and exact-head review follow.
 Pi baseline was rechecked: `6820422`, healthy/no restarts/OOM, ten idle counts zero.
 
 Next action: finish and review the bounded implementation, full checks/races,
