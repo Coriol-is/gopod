@@ -19,10 +19,13 @@ Owner requested deadcode in pre-commit and exclusion of scripts/all Python from
 Sonar. Work is on `ci/deadcode-precommit`, worktree `gopod-deadcode-hook`, base3ea9328.
 Staged-snapshot Linux/ARM64 analysis uses pinned v0.49.0 with tests;16-symbol
 baseline prevents new unreachable functions without deleting planned disconnected
-features. Four disposable-Git integration tests and baseline analysis PASS.
-Independent review and full required checks pending. Sonar configs now include
-`scripts/**,**/*.py`; scanner readback follows. No runtime source changes/deployment
-needed. First finish review/CI/merge, then install local hook and clean task worktree.
+features. Five disposable-Git integration tests, actual staged hook and baseline analysis
+PASS. Independent source/config review PASS on298d1e3; full build/vet/tests PASS
+(Telegram73.339s). PR194 Sonar15:29:58UTC OK; zero changed file/issue components,
+Python/scripts excluded, project settings read back. Final prose/required CI follow. Sonar configs include `scripts/**,**/*.py`. No application Go code was renamed.
+Owner explicitly requests merge/push only, no deployment. Finish final review/CI,
+squash merge, enable the local hook and clean the integrated task worktree.
+Pi runtime remains0200892; no restart or deployment is part of this follow-up.
 [Development checks and audit](DEVELOPMENT-CHECKS.md).
 
 ## Resume here — D071 deployed, 2026-11-06

@@ -10,7 +10,7 @@ git config --local core.hooksPath .githooks
 
 The local Git setting is shared by linked worktrees; the relative hook path uses
 that worktree's version. Inspect an existing hooksPath/custom hook before replacing
-it. This repository had neither at installation. New clones require installation;
+it. Pre-installation inspection found neither in this repository. New clones require installation;
 Git does not activate tracked hooks automatically.
 
 Requires Go and Python3. First use downloads/builds pinned
@@ -62,3 +62,13 @@ Current added exclusions are `scripts/**,**/*.py`; no additional Go production
 packages are hidden. Earlier main analysis reported57,111 lines including2,351
 Python lines: the new exclusion is useful but is not expected to reach50k alone.
 Exact effective scope and remaining cap outcome must be verified on a new analysis.
+
+## Validation and merge handoff
+
+Five disposable-repository regressions passed; no application Go file was renamed.
+The actual staged hook passed during commit. Independent source/config review PASS
+on298d1e3; full `go build ./...`, `go vet ./...`, `go test ./...` PASS (Telegram73.339s).
+PR194 initial Sonar analysis15:29:58UTC is OK with zero issue/file components:
+changed Python scripts are excluded. Project exclusions were read back after update.
+New exact-head CI and review follow final prose reconciliation. The owner explicitly
+requested merge/push only, with no deployment. Local hook installation follows merge.

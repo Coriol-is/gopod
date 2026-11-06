@@ -10,6 +10,18 @@ Completed slices and explicitly superseded/rejected choices are in the
 [archive](history/BACKLOG-2026-11-05-completed.md). Partial parent proposals remain
 here; proposed, deferred and paused work is not cancelled.
 
+## Development hygiene follow-up — 2026-11-06
+
+PR194 adds staged-snapshot deadcode pre-commit with a16-symbol reviewed audit
+baseline; new unreachable functions and stale entries fail. Initial audit found
+59 functions unreachable without tests and16 with tests, matching Linux/ARM64 and
+macOS. These16 total about141 physical function lines and are candidates for a
+separate reviewed cleanup, not approved removal of disconnected planned features.
+Scripts/all Python are additionally excluded from Sonar by owner request. Their
+2,351 previous Python lines cannot alone close the57,111-to50k gap. Go CI unchanged.
+Owner scope for this batch: merge/push only, no deployment.
+[Checks and audit](DEVELOPMENT-CHECKS.md).
+
 ## Current priority
 
 1. CP-002 delivery with necessary CP-003 slices: remaining group/unregistered and
