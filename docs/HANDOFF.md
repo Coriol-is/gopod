@@ -30,10 +30,11 @@ worktrees. CP-016 is merged; CP-002/003 remains under review.
   Full build/vet/tests, affected race, independent review and required CI
   `42196527739` PASS.
   Sonar gate OK, two complexity smells read, none suppressed.
-- CP-002 review checkpoint: pre-dispatch authority/DB failures must be marked
-  known-unsent instead of latching remote ambiguity; fix and deterministic newer-ACK
-  regression are in progress. Legacy control repair versus reused final-edit targets
-  remains a separate foreground activation gate.
+- CP-002 review checkpoint: PR #183, combined head `ef3dbd0`, independent review
+  PASS after correcting known-unsent pre-dispatch failure handling. Deterministic
+  newer-ACK regression and independent Store/Telegram focused races pass.
+  Final full checks and required CI `42197591379` are pending. Legacy control
+  repair versus reused final-edit targets remains a foreground activation gate.
 - Root integrates reports, HANDOFF/BACKLOG/ROADMAP and review. Agents own separate
   source slices and checkpoint reports. Coordinate overlapping Store/schema files.
 
