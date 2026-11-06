@@ -19,10 +19,13 @@ Owner requested backlog items 1–2 in agents. Both start from `6c20646` in isol
 worktrees; main remains unchanged until independent review and required CI pass.
 
 - CP-002/003: `feat/reply-actions-ack`, worktree `../gopod-reply-actions`, agent
-  `freeze_next`. Scope selection: reply-action memo/callback state after durable ACK.
+  `freeze_next`. Scope: no-schema callback read model from fully ACKed frozen results; exact
+  scope/topic/message checks, restart-safe More/Back/As file, conservative stale-row
+  handling. Mixed legacy ordering and eager row cleanup stay separate.
 - CP-016: `feat/topic-retirement-next`, worktree `../gopod-topic-retirement`, agent
-  `topic_next`. Scope selection: next D064 retirement prerequisite; delete command
-  stays unavailable until all gates qualify.
+  `topic_next`. Scope: ownership/no-replay for restart/lifecycle and IPC noncontrol text
+  notices, including original-topic to main fallback; reuse existing receipt repair.
+  Historical/nontext/unknown outcomes remain separate; delete command stays off.
 - Root integrates reports, HANDOFF/BACKLOG/ROADMAP and review. Agents own separate
   source slices and checkpoint reports. Coordinate overlapping Store/schema files.
 
