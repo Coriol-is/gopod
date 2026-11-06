@@ -23,8 +23,8 @@ definite-unsent receipts settle SQLite only; no automatic replay/force-clear.
 
 Full build/vet/tests, Store/Telegram/backup/control races, independent exact-head
 review and required PR CI `42216574391` PASS on `e329bf2`. Sonar OK,30 smells read,
-none suppressed. Deploy target `a85b328`; exact-main CI and candidate rollout
-pending. Last verified Pi remains `0cd8078`; controller only, no worker.
+none suppressed. Deploy target `a85b328`; exact-main CI `42217121239` and
+isolated candidate readiness PASS. Idle-only backup/rollout started. Last verified Pi remains `0cd8078`; controller only, no worker.
 D069 ledger and `control_repairs_pending` must be preserved on backup/downgrade.
 
 **Remaining:** historical pre-journal repair evidence and explicit resolution of
