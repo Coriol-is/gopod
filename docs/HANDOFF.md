@@ -40,45 +40,23 @@ worktrees. CP-016 is merged; CP-002/003 remains under review.
 No deployment, live deletion, managed-task activation or foreground cutover is
 implied. #178–#180 and #182 await deployment; last verified Pi remains `757faa2`.
 
-## Previous completed slice — keyboard fallback, 2026-11-05
+## Merged delivery prerequisites — pending rollout
 
-PR [#180](https://github.com/Coriol-is/gopod/pull/180), `6722e6a`, implements
-outbox fallback after explicit keyboard refusal. The bare-keyboard attempt is
-committed before HTTP; text/route/targets remain immutable. HTML/plain fallback
-composes both ways; ambiguous outcomes are not retried. Full checks, Store/
-Telegram races, independent review and required exact-head CI PASS.
+- #178 (`da8b4fe`): draft metadata and Stop keyboard use captured registration.
+- #179 (`bbc30b4`): generation-scoped wait maps/refresher joins and durable control
+  binding reject stale writes while preserving unregistered-sender compatibility.
+- #180 (`6722e6a`): committed bare-keyboard attempt after explicit refusal, composing
+  HTML/plain alternatives without retrying ambiguous outcomes.
 
-Advisory Sonar on `6dde8c9`: **ERROR**, new-code duplication 22.4% versus 3%;
-18 code smells, zero bugs/vulnerabilities. Findings read, none suppressed;
-merge used the documented soft-gate policy. [Evidence](reviews/2026-11-05-outbox-keyboard-fallback.md).
-
-**First next action:** reply-action memo/callback parity after durable ACK
-(More/Back/As file and newest-row handling), then integrated preview/Stop/publication
-qualification and foreground cutover. The parallel workstreams above are active. #178–#180 are
-not deployed; Pi remains `757faa2`. Before downgrading a future deployment of #180,
-drain bare-keyboard selections or hold the dispatcher and preserve its ledger;
-see [runbook](deployments/BACKUP-RESTORE.md#durable-keyboard-fallback-compatibility-2026-11-05).
-
-## Previous completed slice — generation ownership fixes, 2026-11-05
-
-PR [#178](https://github.com/Coriol-is/gopod/pull/178), `da8b4fe`, binds draft
-metadata and Stop keyboards to the captured registration.
-PR [#179](https://github.com/Coriol-is/gopod/pull/179), `bbc30b4`, extends this to
-wait-placeholder/refresher ownership and durable control binding. Late old HTTP
-results cannot replace successor metadata; concurrent refresher stops both join.
-Unregistered sender compatibility is preserved without successor recapture.
-
-Both passed full build/vet/tests, Telegram races, independent review and exact-head
-required CI. Latest Sonar gate OK (16 code smells, zero bugs/vulnerabilities;
-findings read, none suppressed). [#178 review](reviews/2026-11-05-preview-generation-controls.md) ·
-[#179 review and regression evidence](reviews/2026-11-05-wait-control-generation.md).
-
-**Remaining gates:** reply-action parity and integrated preview/control lifecycle
-qualification, then qualified foreground producer/cutover under D063/D065/D066.
-These bounded fixes do not establish full native/client qualification or published
-delivery cancellation settlement. No implementation in flight. #178–#179 are not
-deployed; Pi remains `757faa2`. CP-016 remains the separate retirement lane;
-backup stays lowered, managed credentials and parallel execution deferred.
+Full checks, affected races, independent review and required CI passed.
+[#178 review](reviews/2026-11-05-preview-generation-controls.md) ·
+[#179 review](reviews/2026-11-05-wait-control-generation.md) ·
+[#180 review](reviews/2026-11-05-outbox-keyboard-fallback.md).
+Sonar #180 was ERROR on reviewed `6dde8c9`: duplication 22.4% versus 3%,
+18 smells and zero bugs/vulnerabilities. None suppressed; soft-gate policy applied.
+Before downgrading a future release containing #180, drain bare-keyboard selections
+or hold dispatch and preserve the ledger; see the
+[runbook](deployments/BACKUP-RESTORE.md#durable-keyboard-fallback-compatibility-2026-11-05).
 
 ## Last deployment — Pi rollout and cleanup complete, 2026-11-05
 
@@ -100,19 +78,13 @@ All 20 matched-stopped, three database-only anchors, manual/auth baselines,
 rollback images and guide originals retained; backup directory now 275 MiB.
 Separate 556 KiB NanoClaw/OneCLI/systemd archives retained. No broad Docker prune.
 
-**Remaining sequence:** CP-002 preview/control generation ownership and
-reply-action parity, then qualified foreground cutover. CP-016 retirement remains
-a separate lane. Backup stays lowered; managed credentials/parallel execution
-remain deferred. Foreground producer disconnected, managed tasks off. No source
-implementation in flight. Preserve new ledgers/spool before any downgrade; complete
-IPC restore remains unqualified. Canonical and session worktrees retained.
-
 ## Next implementation and acceptance
 
 Use [active backlog](BACKLOG.md) for remaining scope and
 [ROADMAP](../ROADMAP.md#execution-priority--2026-11-04) for order.
-Before foreground cutover, implement general preview/control generation ownership
-and reply-action parity. `WithResultFreeze` and `PrepareFrozenFinalReply` still
+Before foreground cutover, complete integrated preview/Stop/publication qualification,
+reply-action lifecycle parity and legacy control-repair arbitration for reused final
+edit targets. The active bounded callback slice is described above. `WithResultFreeze` and `PrepareFrozenFinalReply` still
 have no production callers. CP-016 `QuiesceTopic` has no production caller either;
 `/thread delete` is unavailable. Do not reopen completed #168–#177 slices.
 
