@@ -2389,7 +2389,10 @@ Registered-private direct text/HTML and reply-markup edits require durable targe
 provenance from a message-creation owner, exact control binding or acknowledged
 outbox target. An in-memory cache alone cannot authorize historical edits. Missing
 or conflicting authority must yield a truthful hold without HTTP, never fabricated
-success. Group/unregistered compatibility paths are not qualified by this slice.
+success. Historical keyboard/callback edits may therefore expire or hold. A creation
+owner proves provenance, not permission to overwrite a published outbox target;
+only the existing exact acknowledged durable callback authority is an exception.
+Group/unregistered compatibility paths are not qualified by this slice.
 
 Each direct edit commits a distinct immutable attempt before HTTP, binding exact
 method/request hash, physical chat/message, source topic, registration scope and
@@ -2402,7 +2405,8 @@ relevant quiescence and idle, and must not consume outbox budgets or starve sibl
 Only an exactly attributed success/not-modified or definite refusal/proven-unsent
 outcome settles its original attempt. Distinct fallback HTTP requires settlement
 of the refused predecessor and its own attempt. Unknown/failed settlement never
-permits fallback or replay. Bounded positive/refusal receipts reconcile SQLite
+permits fallback, replacement sends or replay; outer helpers must preserve NoReplay.
+Bounded positive/refusal receipts reconcile SQLite
 only; loss after restart preserves the hold. A direct text ACK may retire only the
 exact bound control checkpoint; reply-markup ACK cannot assert text success.
 
