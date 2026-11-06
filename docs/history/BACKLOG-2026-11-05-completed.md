@@ -126,3 +126,7 @@ Exact success/refusal receipts repair DB only; unknown never auto-clears. Schema
 backup idle/counts and downgrade notes included. Full checks/races, independent
 review and required CI PASS; [review](../reviews/2026-11-06-durable-repair-outcomes.md).
 Rollout tracked in handoff. Historical/non-repair uncertainty and parent gates remain.
+
+Deployment closure2026-11-06: #189 shipped in `a85b328`; exact-main CI, verified
+pre/post-migration backups, health/state and Telegram version PASS.
+[Rollout and housekeeping](../deployments/2026-11-06-durable-repair-rollout.md). Parent gates remain open.

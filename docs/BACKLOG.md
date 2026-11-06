@@ -1,7 +1,7 @@
 # Code-backed backlog
 
 Reconciled 2026-11-06 against source at `a85b328` and the recorded Pi deployment
-`0cd8078`. Production call sites were rechecked; release health/state/version acceptance
+`a85b328`. Production call sites were rechecked; release health/state/version acceptance
 is recorded separately from remaining feature qualification. [ROADMAP](../ROADMAP.md) owns priority,
 [proposal registry](proposals/README.md) owns lifecycle and
 [ACCEPTANCE](ACCEPTANCE.md) owns client/provider qualification.
@@ -32,7 +32,8 @@ with deployment/auth changes. No new work is activated by this reconciliation.
 
 #189 (`a85b328`, D069) adds commit-before-HTTP repair evidence, restart-safe raw-target
 barriers, exact DB-only settlement, outbox preclaim holds and backup/idle coverage.
-Full checks/races, independent review and required CI PASS. Rollout in progress.
+Full checks/races, independent review and required CI PASS. Deployed in `a85b328`;
+health/state/version and new-schema backup verification passed.
 Historical requests and non-repair edits are not retroactively qualified.
 
 ## Latest completed batch — 2026-11-06
@@ -43,10 +44,10 @@ and bounded acceptance passed; see [handoff](HANDOFF.md). Parent activation gate
 
 ## Current deployed baseline
 
-PRs #168–#180/#182/#183/#186/#187 are deployed on Pi, latest `0cd8078`; no worker. Exact-main CI,
+PRs #168–#180/#182/#183/#186/#187/#189 are deployed on Pi, latest `a85b328`; no worker. Exact-main CI,
 health, state preservation and Telegram version passed. Three D068 scheduling
 guides migrated; actual matching Node consumer passed read-only list/replay/conflict.
-[Latest deployment and cleanup evidence](deployments/2026-11-06-control-topic-rollout.md).
+[Latest deployment and cleanup evidence](deployments/2026-11-06-durable-repair-rollout.md).
 Foreground producer remains disconnected; managed tasks remain off.
 
 ## Unfinished implementation

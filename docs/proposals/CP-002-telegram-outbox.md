@@ -163,3 +163,7 @@ blocking conflicting edits and conserving outbox budgets across unknown outcomes
 [Review](../reviews/2026-11-06-durable-repair-outcomes.md). Full checks/races, review
 and required CI PASS. Historical/non-repair requests, unsupported unknown resolution,
 eager cleanup, mixed-path ordering and foreground qualification remain open.
+
+Deployment closure2026-11-06: #189 shipped in `a85b328`; exact-main CI, verified
+pre/post-migration backups, health/state and Telegram version PASS.
+[Rollout and housekeeping](../deployments/2026-11-06-durable-repair-rollout.md). Parent gates remain open.
