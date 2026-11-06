@@ -84,3 +84,10 @@ vulnerabilities;11 excluded-test findings automatically CLOSED/FIXED. No manual
 issue suppression. Go tests/race and required CI remain unchanged. Full main
 component verification follows merge; do not confuse the old main baseline with
 the current PR analysis.
+
+Main automatic analysis task `AaGxYlh3DnatzzXUJ49A` on0200892 failed at15:03:06UTC:
+57,111 lines exceed the50,000 plan allowance (Go54,651; Python2,351; remaining109).
+Scanner context explicitly confirms source test/fixture exclusions and all-test
+exclusion. Therefore test exclusion is effective, but the published main component
+snapshot remains stale2026-10-26 and cannot establish current scope or quality.
+No additional production exclusions or plan changes were made. Sonar remains advisory.
