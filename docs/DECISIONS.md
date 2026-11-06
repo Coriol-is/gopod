@@ -2344,3 +2344,36 @@ response attribution, not authentication of an agent-editable receipt.
 The [accepted amendment](plans/2026-11-05-task-ipc-receipt-identity.md) requires
 an executable test of the bundled consumer as well as host/restart regressions.
 No production deployment or live-client acceptance is implied.
+
+## D069 — Durable legacy control repair attempts
+
+**Status:** implementation contract for the owner-resumed CP-002 unknown-repair
+barrier, 2026-11-06; preserves D063/D064 unknown-outcome rules. Implementation and
+qualification are tracked in the current handoff; no foreground activation follows.
+
+A repair HTTP edit records an immutable attempt before dispatch, binding its unique
+identity to chat/message, control token/revision, captured registration scope and
+source topic, plus a hash of the exact rendered request. The message-creation
+ownership journal cannot stand in for this evidence: its unique message identity
+does not represent repeated edits of independent control revisions.
+
+An unresolved attempt survives restart and prevents conflicting edits of that
+physical chat/message, regardless of later control rebinding or scope changes.
+Relevant topic quiescence and idle/backup checks retain the unresolved work.
+Neither cancellation, timeout, elapsed time, retry scheduling, compaction nor
+restart proves absence of a remote edit. No TTL or automatic force-clear is added.
+
+Only exact success evidence (including a definitively attributed not-modified
+response) or a definite refusal/proven-unsent outcome may settle the corresponding
+attempt. Failed settlement keeps it held. Bounded process-local positive/refusal
+receipts may retry the database operation only, never the HTTP request; loss of
+those receipts on restart cannot clear durable uncertainty. Scope/revision checks
+must prevent late receipts from acknowledging successor controls.
+
+All conflicting transport paths check the barrier under existing per-message
+local arbitration. A pre-HTTP local hold must remain known-unsent rather than be
+misreported as a remote effect. The barrier preserves uncertainty; it is not an
+operator reconciliation command, native exit proof or full repair of historical
+requests emitted before this journal. Pending evidence must be preserved through
+backup and downgrade; an older binary cannot enforce it. No paused feature or
+confirmed topic-deletion orchestration is activated by this contract.

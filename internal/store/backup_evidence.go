@@ -59,14 +59,15 @@ func hasTable(ctx context.Context, db *sql.DB, name string) (bool, error) {
 // store keeps interrupted rows until the next start reconciles them. Counts
 // only; no message or task content is read.
 type WorkEvidence struct {
-	FinalRepliesPending  int64 `json:"final_replies_pending"`
-	TurnsPending         int64 `json:"turns_pending"` // pending or interrupted; includes held frozen work
-	TurnsRunning         int64 `json:"turns_running"`
-	OutboxPartsInFlight  int64 `json:"outbox_parts_in_flight"` // pending, sending or uncertain
-	DeliveriesUnresolved int64 `json:"deliveries_unresolved"`
-	ArtifactReservations int64 `json:"artifact_reservations_active"`
-	TaskRunsExecuting    int64 `json:"task_runs_executing"` // running, cancel_requested or execution_unknown
-	TaskAttemptsHeld     int64 `json:"task_attempts_held"`
+	ControlRepairsPending int64 `json:"control_repairs_pending"`
+	FinalRepliesPending   int64 `json:"final_replies_pending"`
+	TurnsPending          int64 `json:"turns_pending"` // pending or interrupted; includes held frozen work
+	TurnsRunning          int64 `json:"turns_running"`
+	OutboxPartsInFlight   int64 `json:"outbox_parts_in_flight"` // pending, sending or uncertain
+	DeliveriesUnresolved  int64 `json:"deliveries_unresolved"`
+	ArtifactReservations  int64 `json:"artifact_reservations_active"`
+	TaskRunsExecuting     int64 `json:"task_runs_executing"` // running, cancel_requested or execution_unknown
+	TaskAttemptsHeld      int64 `json:"task_attempts_held"`
 }
 
 // Unsettled reports whether any counter is non-zero.
@@ -86,6 +87,7 @@ func ReadWorkEvidence(ctx context.Context, path string) (WorkEvidence, error) {
 		query string
 		dst   *int64
 	}{
+		{"telegram_control_repair_attempts", `SELECT count(*) FROM telegram_control_repair_attempts WHERE state='pending'`, &e.ControlRepairsPending},
 		{"final_reply_intents", `SELECT count(*) FROM final_reply_intents WHERE state<>'published'`, &e.FinalRepliesPending},
 		{"turns", `SELECT count(*) FROM turns WHERE status IN ('pending','interrupted')`, &e.TurnsPending},
 		{"turns", `SELECT count(*) FROM turns WHERE status='running'`, &e.TurnsRunning},

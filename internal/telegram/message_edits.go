@@ -45,6 +45,13 @@ func (b *Bot) lockMessageEdit(ctx context.Context, chat int64, message int) (fun
 			drop()
 			return nil, err
 		}
-		return func() { g.token <- struct{}{}; drop() }, nil
+		release := func() { g.token <- struct{}{}; drop() }
+		if b.store != nil {
+			if err := b.store.ControlRepairBarrier(ctx, chat, message); err != nil {
+				release()
+				return nil, &ownershipSendError{cause: err}
+			}
+		}
+		return release, nil
 	}
 }

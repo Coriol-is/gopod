@@ -134,6 +134,11 @@ func (b *Bot) QuiesceTopic(ctx context.Context, expected store.TopicDeletion) er
 	if err = b.reconcileMessageReceipts(ctx, func(r messageReceipt) bool { return r.owner.ChatID == key.chat && r.owner.SourceThread == key.thread }); err != nil {
 		return err
 	}
+	if err = b.reconcileRepairReceipts(ctx, func(r repairReceipt) bool {
+		return r.attempt.ChatID == key.chat && r.attempt.SourceThread == key.thread
+	}); err != nil {
+		return err
+	}
 	b.topicMu.Lock()
 	uncertain := b.topicUncertain[key] || b.topicUncertain[chatThread{key.chat, -1}]
 	b.topicMu.Unlock()
