@@ -101,6 +101,7 @@ type Bot struct {
 	messageReceipts   map[string]messageReceipt
 	repairReceipts    map[string]repairReceipt
 	editReceipts      map[string]editReceipt
+	deleteReceipts    map[string]deleteReceipt
 	elevated          ElevatedInput
 	capabilities      *capabilityCache
 	api               *bot.Bot

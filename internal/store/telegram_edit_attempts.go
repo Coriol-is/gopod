@@ -48,6 +48,9 @@ func (s *Store) applyTelegramEditSchema(ctx context.Context) error {
 	return err
 }
 func editPendingQ(ctx context.Context, q taskSQL, chat int64, msg int) error {
+	if err := deleteBarrierQ(ctx, q, chat, msg); err != nil {
+		return err
+	}
 	var repair, direct bool
 	err := q.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM telegram_control_repair_attempts WHERE chat_id=? AND message_id=? AND state='pending'), EXISTS(SELECT 1 FROM telegram_edit_attempts WHERE chat_id=? AND message_id=? AND state='pending')`, chat, msg, chat, msg).Scan(&repair, &direct)
 	if err != nil {

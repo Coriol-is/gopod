@@ -42,6 +42,10 @@ func (b *Bot) topicRequest(ctx context.Context, chat int64, thread int, request 
 		return err
 	}
 	err = request(ctx)
+	var deleteErr *deleteOutcomeError
+	if errors.As(err, &deleteErr) {
+		return err
+	}
 	var editErr *directEditError
 	if errors.As(err, &editErr) {
 		return err
@@ -127,6 +131,10 @@ func (b *Bot) topicEditRequest(ctx context.Context, chat int64, message int, req
 		err = request(ctx)
 		var ownershipErr *ownershipSendError
 		if errors.As(err, &ownershipErr) && (!ownershipErr.attempted || ownershipErr.receiptBacked) {
+			return err
+		}
+		var deleteErr *deleteOutcomeError
+		if errors.As(err, &deleteErr) {
 			return err
 		}
 		var editErr *directEditError

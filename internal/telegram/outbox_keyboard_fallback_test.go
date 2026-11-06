@@ -341,7 +341,7 @@ func TestKeyboardFallbackAcceptedButUnrecordedNeverReplays(t *testing.T) {
 }
 
 func TestPlainFallbackEditGuardFailurePreservesPendingBudget(t *testing.T) {
-	for _, cause := range []error{errors.New("database unavailable"), context.Canceled} {
+	for _, cause := range []error{errors.New("database unavailable"), context.Canceled, store.ErrTelegramDeleteHeld} {
 		t.Run(cause.Error(), func(t *testing.T) {
 			f := newOutboxFixture(t)
 			delivery := publishKeyboard(t, f, store.PartEdit)
