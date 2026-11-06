@@ -310,7 +310,7 @@ func (l *Lifecycle) shutdownTargets(ctx context.Context) []chatThread {
 
 // sendNotice sends a plain-text system message into (chatID, thread),
 // or the main chat when the topic is gone. It is not a turn reply and
-// is not recorded anywhere.
+// its main-target transport ownership is journaled independently of turns.
 func (b *Bot) sendNotice(ctx context.Context, chatID int64, thread int, text string) error {
 	if err := b.topicAdmission(ctx, chatID, thread); err != nil {
 		return err
@@ -319,18 +319,12 @@ func (b *Bot) sendNotice(ctx context.Context, chatID int64, thread int, text str
 	if b.threadGone(chatID, thread) {
 		thread = 0
 	}
-	err := b.topicRequest(ctx, chatID, originalThread, func(requestCtx context.Context) error {
-		_, err := b.api.SendMessage(requestCtx, &bot.SendMessageParams{ChatID: chatID, MessageThreadID: thread, Text: text})
-		return err
-	})
+	_, err := b.ownedTextSend(ctx, chatID, originalThread, &bot.SendMessageParams{ChatID: chatID, MessageThreadID: thread, Text: text})
 	if err != nil && b.checkThreadGone(chatID, thread, err) {
 		if err := b.topicAdmission(ctx, chatID, originalThread); err != nil {
 			return err
 		}
-		err = b.topicRequest(ctx, chatID, originalThread, func(requestCtx context.Context) error {
-			_, err := b.api.SendMessage(requestCtx, &bot.SendMessageParams{ChatID: chatID, Text: text})
-			return err
-		})
+		_, err = b.ownedTextSend(ctx, chatID, originalThread, &bot.SendMessageParams{ChatID: chatID, Text: text})
 	}
 	if err != nil {
 		return fmt.Errorf("send notice: %w", err)

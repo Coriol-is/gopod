@@ -57,12 +57,13 @@ func (a *IPCSink) send(ctx context.Context, chatJID string, thread int, text str
 				return fmt.Errorf("conversation unavailable: %w: %w", err, ipc.ErrPermanent)
 			}
 		}
-		if err := a.bot.topicRequest(ctx, id, thread, func(requestCtx context.Context) error {
-			_, err := a.bot.api.SendMessage(requestCtx, &bot.SendMessageParams{ChatID: id, MessageThreadID: thread, Text: part})
-			return err
-		}); err != nil {
+		_, err := a.bot.ownedTextSend(ctx, id, thread, &bot.SendMessageParams{ChatID: id, MessageThreadID: thread, Text: part})
+		if err != nil {
 			if i > 0 {
 				return fmt.Errorf("partial delivery: %d of %d parts accepted; remaining delivery uncertain, do not retry whole message: %w: %w", i, len(parts), err, ipc.ErrPermanent)
+			}
+			if noReplayError(err) {
+				return fmt.Errorf("message ownership unresolved; do not replay: %w: %w", err, ipc.ErrPermanent)
 			}
 			if errors.Is(err, bot.ErrorBadRequest) || errors.Is(err, bot.ErrorForbidden) || errors.Is(err, bot.ErrorUnauthorized) || errors.Is(err, bot.ErrorNotFound) {
 				return fmt.Errorf("Telegram rejected message: %w: %w", err, ipc.ErrPermanent)
