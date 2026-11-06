@@ -73,3 +73,7 @@ Full checks, affected races, independent review and required CI passed.
 [Evidence](../reviews/2026-11-06-topic-retirement.md). Not deployed. Historical
 and nontext/topic-target ownership, unknown-outcome reconciliation, managed/native
 settlement and confirmed deletion orchestration remain open; status stays in-progress.
+
+Deployment checkpoint 2026-11-06: all merged slices above shipped in `80f4b11`
+([rollout](../deployments/2026-11-06-reliability-cycle-rollout.md)); implementation
+and native/client activation gates remain open.

@@ -1,8 +1,8 @@
 # gopod — Roadmap
 
-Latest rollout: `757faa2` on Pi, 2026-11-05 15:11 UTC, includes #173–#177;
+Latest rollout: `80f4b11` on Pi, 2026-11-06 10:25 UTC, includes #178–#180/#182/#183;
 no worker. D068 guide migration and bounded read-only matching-consumer acceptance
-passed; unrelated native/client gates remain. [Evidence](docs/deployments/2026-11-05-stop-ipc-rollout.md).
+passed; unrelated native/client gates remain. [Evidence](docs/deployments/2026-11-06-reliability-cycle-rollout.md).
 
 
 Live milestone tracker. Update the **Status** column whenever you change reality.
@@ -37,20 +37,20 @@ not extra active queue entries. Partial proposals are not marked complete.
 
 CP-002 bounded draft/Stop-keyboard generation fix merged in #178 (`da8b4fe`),
 with review and required CI passed; wait maps/durable control binding followed
-in #179 (`bbc30b4`) with the same gates passed. Both are not deployed. Integrated
+in #179 (`bbc30b4`) with the same gates passed. Both deployed in `80f4b11`. Integrated
 lifecycle qualification, reply-action parity and foreground cutover remain open.
 
 CP-002 keyboard-refusal fallback merged in #180 (`6722e6a`), with full checks,
-races, independent review and required CI passed; not deployed. Advisory Sonar
+races, independent review and required CI passed; deployed in `80f4b11`. Advisory Sonar
 ERROR on duplication is recorded in the [review](docs/reviews/2026-11-05-outbox-keyboard-fallback.md).
 Durable reply-action readthrough followed in #183 (`261805e`), with full checks,
-races, independent review and required CI passed; not deployed. Legacy repair
+races, independent review and required CI passed; deployed in `80f4b11`. Legacy repair
 arbitration, More/Back checkpoints, eager cleanup, mixed-path ordering and
 foreground lifecycle qualification remain open.
 
 CP-016 noncontrol main-text notice ownership merged in #182 (`0ac9b3f`);
 restart/lifecycle/IPC reuse durable receipt/no-replay handling. Full checks,
-races, independent review and required CI PASS; not deployed. Historical/nontext
+races, independent review and required CI PASS; deployed in `80f4b11`. Historical/nontext
 ownership, unknown outcomes, managed/native settlement and deletion remain open.
 
 ## Execution priority — 2026-11-04

@@ -94,3 +94,11 @@ paused CP-037, deferred CP-004 credentials and proposed research remain recorded
 Snapshots preserve original evidence and outdated recommendations. Use current
 [BACKLOG](../BACKLOG.md), [HANDOFF](../HANDOFF.md) and [ROADMAP](../../ROADMAP.md)
 for next actions.
+
+## Deployment closure — 2026-11-06
+
+All subsequent slices #178–#180/#182/#183 above are now deployed in `80f4b11`.
+Their "not deployed" statements record merge-time status and are superseded by
+[this rollout](../deployments/2026-11-06-reliability-cycle-rollout.md). Parent CP-002/
+CP-016 and remaining acceptance gates stay open. Two clean agent worktrees and six
+integrated local/remote branches removed; named backups/rollback evidence preserved.

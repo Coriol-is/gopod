@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-06 (parallel slices #182/#183 merged)
+**Last updated:** 2026-11-06 (Pi deploy, backlog and housekeeping complete)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -13,14 +13,15 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Release checkpoint — 2026-11-06
+## Resume here — deployed and reconciled, 2026-11-06
 
-Owner requested the permanent implementation/review/CI/merge/deploy/backlog/
-housekeeping cycle; recorded in CLAUDE.md. Deploying exact `80f4b11` to Pi
-controller only, no worker. Exact-main CI `42198643997` PASS. Live idle counters
-zero and controller healthy; candidate build/backup/acceptance still pending.
-Prior source `757faa2` remains deployed until verified switch. Preserve protected
-backups and credentials; cleanup only integrated clean task branches/worktrees.
+Permanent development cycle is recorded in [CLAUDE.md](../CLAUDE.md#workflow-rules):
+review/CI/merge → Pi controller deploy/acceptance → backlog/docs/handoff → housekeeping.
+Deployment `80f4b11` passed exact-main CI `42198643997`, isolated readiness, verified
+matched-stopped backup, health/state preservation and Telegram version acceptance.
+Controller only; no worker. [Release and cleanup evidence](deployments/2026-11-06-reliability-cycle-rollout.md).
+Two integrated clean worktrees and six local/remote branches removed. Protected
+backups/auth/rollback and unrelated services preserved. No source work in flight.
 
 ## Completed parallel slices — 2026-11-06
 
@@ -37,8 +38,7 @@ Both passed full build/vet/tests, affected races, independent exact-head review
 and required CI: #183 `42197591379` on `ef3dbd0`; #182 `42196527739` on `752120d`.
 Sonar gate OK for both, six and two smells respectively, zero bugs/vulnerabilities;
 findings read, none suppressed. Reports record exact heads and analysis times.
-No implementation remains in flight. #178–#180/#182/#183 are not deployed;
-last verified Pi remains `757faa2`, controller only.
+All five source slices #178–#180/#182/#183 are deployed in `80f4b11`.
 
 **First next action:** CP-002 legacy control repair versus reused final-edit
 arbitration and More/Back control lifecycle checkpoints; then eager old-row cleanup,
@@ -47,7 +47,7 @@ qualification before foreground cutover. CP-016 retains historical/nontext and
 topic-target ownership, unknown outcomes, managed/native exit qualification and
 confirmed retirement orchestration. `/thread delete` stays unavailable.
 
-## Merged delivery prerequisites — pending rollout
+## Deployed delivery prerequisites
 
 - #178 (`da8b4fe`): draft metadata and Stop keyboard use captured registration.
 - #179 (`bbc30b4`): generation-scoped wait maps/refresher joins and durable control
@@ -65,7 +65,7 @@ Before downgrading a future release containing #180, drain bare-keyboard selecti
 or hold dispatch and preserve the ledger; see the
 [runbook](deployments/BACKUP-RESTORE.md#durable-keyboard-fallback-compatibility-2026-11-05).
 
-## Last deployment — Pi rollout and cleanup complete, 2026-11-05
+## Previous deployment — 2026-11-05 (historical evidence)
 
 Pi controller deployed as `757faa2` at 15:11:59 UTC; no worker deployment.
 PRs #173–#177 are now deployed. Exact-main CI passed, candidate isolated readiness
@@ -107,17 +107,17 @@ or full restore qualification was added by the latest rollout or this docs audit
 
 ## Release and recovery pointers
 
-- Source deployed: `757faa22ec28c6e1f025d9943924637d2e2dc88b`;
-  exact-main [CI 42050073211](https://github.com/Coriol-is/gopod/actions/runs/42050073211) passed.
-- Documentation reconciled against source `261805e`; runtime remains `757faa2`.
+- Source deployed: `80f4b11cc5077cde1df28afb0274b5f79b7bb7ba`;
+  exact-main [CI 42198643997](https://github.com/Coriol-is/gopod/actions/runs/42198643997) passed.
+- Documentation reconciled against source `261805e`; runtime is `80f4b11`.
 - Pi: `ssh spaceinvaderz@192.168.1.128`; checkout `~/gopod`, data `/opt/gopod/data`,
   mounted workspace repository `/opt/gopod/repo`.
-- Rollback image: `gopod-rollback:pre-757faa2`; preserve it and all named backups.
-- Matched-stopped backup: `20261105T151122Z-ms-6ff01519`.
+- Rollback image: `gopod-rollback:pre-80f4b11`; preserve it and all named backups.
+- Matched-stopped backup: `20261106T102424Z-ms-44bebb93`.
 - Guide originals: `~/gopod-backups/consumer-migration-757faa2`;
   cleanup inventory: `~/gopod-backups/cleanup-20261105-757faa2.json`.
-- Release evidence: `/tmp/gopod-release-757faa2` on Pi; durable summary is in the
-  [deployment report](deployments/2026-11-05-stop-ipc-rollout.md).
+- Release evidence: `/tmp/gopod-release-80f4b11` on Pi; durable summary is in the
+  [deployment report](deployments/2026-11-06-reliability-cycle-rollout.md).
 - Preserve task claim spool and SQLite ledgers before any downgrade; complete
   IPC restore remains unqualified. Status-only legacy consumers remain unqualified.
 - If SSH Git authentication fails, use per-command HTTPS with `gh auth git-credential`;
