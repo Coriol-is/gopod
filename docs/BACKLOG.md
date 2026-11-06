@@ -30,6 +30,13 @@ The independent acceptance lane starts with CP-040 A22–A25, then remaining
 Stop/restart and isolation checks. Coordinate one Telegram actor and avoid overlap
 with deployment/auth changes. No new work is activated by this reconciliation.
 
+## Active work — 2026-11-06
+
+Owner requested items 1–2 in parallel agents, base `6c20646`: reply-action ACK
+state on `feat/reply-actions-ack` and the next topic-retirement prerequisite on
+`feat/topic-retirement-next`. Scope, implementation and verification reports will
+be consolidated into the handoff before merge. Activation/deployment gates remain.
+
 ## Current deployed baseline
 
 PRs #168–#177 are deployed on Pi in `757faa2`; no worker. Exact-main CI,

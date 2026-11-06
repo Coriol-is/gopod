@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-05 (#178–#180 merged; Pi remains 757faa2)
+**Last updated:** 2026-11-06 (CP-002/003 and CP-016 delegated in parallel)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -12,6 +12,22 @@ messages, commands, attachments and supported button interactions, without
 per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older references
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
+
+## Active parallel workstreams — 2026-11-06
+
+Owner requested backlog items 1–2 in agents. Both start from `6c20646` in isolated
+worktrees; main remains unchanged until independent review and required CI pass.
+
+- CP-002/003: `feat/reply-actions-ack`, worktree `../gopod-reply-actions`, agent
+  `freeze_next`. Scope selection: reply-action memo/callback state after durable ACK.
+- CP-016: `feat/topic-retirement-next`, worktree `../gopod-topic-retirement`, agent
+  `topic_next`. Scope selection: next D064 retirement prerequisite; delete command
+  stays unavailable until all gates qualify.
+- Root integrates reports, HANDOFF/BACKLOG/ROADMAP and review. Agents own separate
+  source slices and checkpoint reports. Coordinate overlapping Store/schema files.
+
+No deployment, live deletion, managed-task activation or foreground cutover is
+implied. #178–#180 still await deployment; last verified Pi remains `757faa2`.
 
 ## Resume here — keyboard fallback merged, 2026-11-05
 
