@@ -11,7 +11,6 @@ import (
 
 	"github.com/Coriol-is/gopod/internal/queue"
 	"github.com/Coriol-is/gopod/internal/store"
-	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
 
@@ -128,6 +127,9 @@ func (b *Bot) RepairControls(ctx context.Context) error {
 	if err := b.ReconcileMessageReceipts(ctx); err != nil {
 		b.log.Warn("message receipt reconciliation", "error", err)
 	}
+	if err := b.reconcileRepairReceipts(ctx, nil); err != nil {
+		b.log.Warn("control repair receipt reconciliation", "error", err)
+	}
 	rows, err := b.store.ControlMessages(ctx)
 	if err != nil {
 		return err
@@ -226,15 +228,10 @@ func (b *Bot) repairControl(ctx context.Context, c store.ControlMessage) error {
 	if c.Terminal && c.HTML {
 		parse = models.ParseModeHTML
 	}
-	err = b.topicEditRequest(ctx, c.ChatID, c.MessageID, func(ctx context.Context) error {
-		_, e := b.api.EditMessageText(ctx, &bot.EditMessageTextParams{ChatID: c.ChatID, MessageID: c.MessageID, Text: text, ParseMode: parse, ReplyMarkup: noKeyboard()})
-		return e
-	})
-	if err != nil && c.HTML && c.Terminal && strings.Contains(err.Error(), "parse entities") {
-		err = b.topicEditRequest(ctx, c.ChatID, c.MessageID, func(ctx context.Context) error {
-			_, e := b.api.EditMessageText(ctx, &bot.EditMessageTextParams{ChatID: c.ChatID, MessageID: c.MessageID, Text: htmlToPlain(text), ReplyMarkup: noKeyboard()})
-			return e
-		})
+	final := !uncertain && (c.Terminal || t.Status == store.TurnDone || t.Status == store.TurnStopped || t.Status == store.TurnFailed)
+	err = b.repairEdit(ctx, c, text, parse, final)
+	if err != nil && c.HTML && c.Terminal && isParseRefusal(err) {
+		err = b.repairEdit(ctx, c, htmlToPlain(text), "", final)
 	}
 	success := err == nil || isNotModified(err)
 	// A terminally unavailable message is no longer retried; no fallback send can

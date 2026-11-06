@@ -13,6 +13,14 @@ import (
 )
 
 func publishControlFinal(t *testing.T, b *Bot, id int64) (store.Delivery, *store.OutboxOwner, store.OutboxClaim) {
+	d, o := stageControlFinal(t, b, id)
+	c, ok, err := o.ClaimNext(t.Context(), time.Now())
+	if err != nil || !ok {
+		t.Fatal(ok, err)
+	}
+	return d, o, c
+}
+func stageControlFinal(t *testing.T, b *Bot, id int64) (store.Delivery, *store.OutboxOwner) {
 	t.Helper()
 	if err := b.store.MarkTurnRunning(t.Context(), id); err != nil {
 		t.Fatal(err)
@@ -35,11 +43,7 @@ func publishControlFinal(t *testing.T, b *Bot, id int64) (store.Delivery, *store
 		t.Fatal(err)
 	}
 	t.Cleanup(o.Release)
-	c, ok, err := o.ClaimNext(t.Context(), time.Now())
-	if err != nil || !ok {
-		t.Fatal(ok, err)
-	}
-	return d, o, c
+	return d, o
 }
 func waitEditUsers(t *testing.T, b *Bot, n int) {
 	t.Helper()
@@ -76,7 +80,7 @@ func TestIssuedRepairFinishesBeforeFinalEdit(t *testing.T) {
 	repairDone := make(chan error, 1)
 	go func() { repairDone <- b.RepairControls(t.Context()) }()
 	<-entered
-	_, o, c := publishControlFinal(t, b, id)
+	_, o := stageControlFinal(t, b, id)
 	finalDone := make(chan Outcome, 1)
 	go func() {
 		finalDone <- b.NewOutboxTransport(nil).Attempt(t.Context(), SendRequest{Kind: store.PartEdit, ChatID: streamChat, TargetMessageID: 77, Text: "final rendered"})
@@ -94,6 +98,10 @@ func TestIssuedRepairFinishesBeforeFinalEdit(t *testing.T) {
 	}
 	if out := <-finalDone; out.Kind != OutcomeAck {
 		t.Fatal(out)
+	}
+	c, ok, err := o.ClaimNext(t.Context(), time.Now())
+	if err != nil || !ok {
+		t.Fatal(ok, err)
 	}
 	if err = o.AckPart(t.Context(), c, 77); err != nil {
 		t.Fatal(err)

@@ -42,6 +42,10 @@ func (b *Bot) topicRequest(ctx context.Context, chat int64, thread int, request 
 		return err
 	}
 	err = request(ctx)
+	var repairErr *repairOutcomeError
+	if errors.As(err, &repairErr) {
+		return err
+	}
 	var ownershipErr *ownershipSendError
 	if errors.As(err, &ownershipErr) && (!ownershipErr.attempted || ownershipErr.receiptBacked) {
 		return err
@@ -117,6 +121,10 @@ func (b *Bot) topicEditRequest(ctx context.Context, chat int64, message int, req
 			return err
 		}
 		err = request(ctx)
+		var repairErr *repairOutcomeError
+		if errors.As(err, &repairErr) {
+			return err
+		}
 		if err != nil && !definiteTopicRefusal(err) {
 			b.topicMu.Lock()
 			if b.topicUncertain == nil {

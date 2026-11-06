@@ -2345,7 +2345,6 @@ The [accepted amendment](plans/2026-11-05-task-ipc-receipt-identity.md) requires
 an executable test of the bundled consumer as well as host/restart regressions.
 No production deployment or live-client acceptance is implied.
 
-
 ## D069 — Durable legacy control repair attempts
 
 **Status:** implementation contract for the owner-resumed CP-002 unknown-repair

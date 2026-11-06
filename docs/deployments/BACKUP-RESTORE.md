@@ -164,3 +164,19 @@ The image running on the Pi before this change has no `gopod backup`. Take the p
 introduces it the old way (graceful stop, cold copy of `store.sqlite`, `-wal`, `-shm`, `.env`, mode 0600), then use
 this runbook for every later backup. Run a first `create` plus `verify` on the Pi and record the set id, duration
 and size before relying on it; a restore drill into a scratch directory is still to be qualified.
+
+### Durable control repair compatibility (2026-11-06)
+
+D069 adds `telegram_control_repair_attempts` to backup table counts and
+`control_repairs_pending` to unsettled work evidence. Opening an older database
+creates an empty ledger without changing existing controls, results or outbox
+hashes. A pending row is evidence of a potentially issued edit; it survives
+restart, control deletion, scope rotation and retention. Do not delete it or
+infer non-delivery from elapsed time, message absence, cancellation or a backup.
+
+Older binaries do not enforce this barrier and older manifest allowlists may
+reject the new table. Do not downgrade across pending repair attempts: preserve
+the complete database/manifest and keep conflicting dispatch held until exact
+success or definite-unsent evidence settles the original attempt. No automatic
+operator settlement command or force-clear is provided. Process-local retained
+receipts may repair SQLite only; losing them on restart does not permit HTTP retry.

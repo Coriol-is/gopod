@@ -99,6 +99,7 @@ type Bot struct {
 	topicQuiesceMu    sync.Mutex
 	receiptMu         sync.Mutex
 	messageReceipts   map[string]messageReceipt
+	repairReceipts    map[string]repairReceipt
 	elevated          ElevatedInput
 	capabilities      *capabilityCache
 	api               *bot.Bot
