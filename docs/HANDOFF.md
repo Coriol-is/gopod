@@ -16,8 +16,10 @@ owner. No acceptance result or deployment status changes with this instruction.
 ## Resume here — non-repair edit coverage in progress, 2026-11-06
 
 Owner resumed CP-002 from `8dcc4f9`: audit remaining non-repair EditMessage paths
-and implement a bounded durable unknown-outcome barrier. Exact scope follows
-source/design review; do not duplicate already journaled outbox dispatch or infer
+and implement D070 direct-edit provenance/attempt barriers for five registered-private
+text/HTML/keyboard wrappers. Durable owner/control/ACKed-outbox evidence required;
+historical unknown targets hold truthfully. Groups/unregistered remain compatibility
+gaps. Independent design review in progress; do not duplicate already journaled outbox dispatch or infer
 historical non-delivery. Agent freeze_next owns `feat/durable-edit-outcomes` in
 `../gopod-edit-outcomes`; review_pickers independently reviews. Root owns global
 state and the standing review/CI/merge/Pi controller deploy/housekeeping cycle.
