@@ -526,11 +526,11 @@ func (b *Bot) runAgentSyncContext(ctx, runCtx context.Context, item queue.Item) 
 			// The Stop placeholder must not turn a buffered voice-only answer
 			// into voice+text. Retire the control, then keep the original delivery.
 			ph := b.popWaitPlaceholder(ctx, item)
-			if err := b.topicEditRequest(ctx, item.ChatID, ph, func(ctx context.Context) error {
-				_, e := b.api.DeleteMessage(ctx, &bot.DeleteMessageParams{ChatID: item.ChatID, MessageID: ph})
-				return e
-			}); err != nil {
+			if err := b.deletePlaceholder(ctx, item.ChatID, ph); err != nil {
 				b.log.Warn("remove voice reply placeholder", slog.Any("err", err))
+				if noReplayError(err) {
+					return err
+				}
 				if editErr := b.editMessage(ctx, item.ChatID, ph, "Finished."); noReplayError(editErr) {
 					return editErr
 				}

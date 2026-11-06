@@ -143,6 +143,9 @@ func (s *Store) SettleControlRepair(ctx context.Context, a ControlRepairAttempt,
 	return err
 }
 func (s *Store) ControlRepairBarrier(ctx context.Context, chat int64, msg int) error {
+	if err := deleteBarrierQ(ctx, s.db, chat, msg); err != nil {
+		return err
+	}
 	var held bool
 	err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM telegram_control_repair_attempts WHERE chat_id=? AND message_id=? AND state='pending')`, chat, msg).Scan(&held)
 	if err != nil {
