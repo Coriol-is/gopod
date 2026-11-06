@@ -25,6 +25,14 @@ restart/backup/quiescence coverage and outer NoReplay propagation. No group,
 foreground, worker or topic deletion activation. Independent review and all release
 gates follow implementation; runtime remains `6820422`.
 
+Implementation checkpoint: separate `telegram_delete_attempts` ledger is wired
+through the message gate/topic lease. True ACK retires only its captured control;
+a durable tombstone blocks later writes without claiming text delivery. Pending
+attempts enter backup/idle/quiescence. Initial existing repair/edit tests pass;
+dedicated fault/restart/voice regressions are in progress. Root review identified
+registration-removal compatibility bypass as an explicit regression requirement.
+Pi baseline was rechecked: `6820422`, healthy/no restarts/OOM, ten idle counts zero.
+
 Next action: finish and review the bounded implementation, full checks/races,
 required PR CI, merge, Pi-only deployment/acceptance, then docs and housekeeping.
 The previous D070 docs PR #190 merged as `e8c9757`; its branch is removed and both
