@@ -26,7 +26,11 @@ Owner requested priorities 1–3 in agents. Three isolated worktrees start from
   preferences, immutable attempt routing and confirmed quota fallback.
 
 Root integration worktree: `gopod-priority-integration`, branch
-`integration/backlog-1-3`. Source work is in progress, not reviewed/merged/deployed.
+`integration/backlog-1-3`. Source work is in progress, not merged/deployed. First delivery checkpoint
+`7c15035` (integrated locally as `22dd325`) implements pre-dispatch mixed-path
+reply ordering; build/vet/full tests and focused races passed in its worktree.
+Root independently reviewed the bounded checkpoint; late-ACK ordering correction
+is included. Foreground integration and parent delivery qualification remain open.
 No paused parallel-session/managed-task/worker activation. Native/client acceptance
 and existing uncertainty gates remain mandatory; command wiring alone is not full
 acceptance. Existing unrelated state-machine worktrees remain untouched.
