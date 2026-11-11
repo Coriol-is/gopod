@@ -163,7 +163,7 @@ func (b *Bot) QuiesceTopic(ctx context.Context, expected store.TopicDeletion) er
 	if b.topicLoginActive(key) {
 		return ErrTopicLoginActive
 	}
-	if f.restored {
+	if f.restored && current.State != "deleted" {
 		return ErrTopicRestartReconciliation
 	}
 	// Catch registration changes while cancellation/join was in progress.

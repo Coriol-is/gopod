@@ -25,6 +25,8 @@ import (
 // observability endpoints, etc.) — they live next to the subsystems that own
 // them, gathered into Config at Load time.
 type Config struct {
+	// TopicDeletionEnabled stays off until D064 destructive lifecycle qualification.
+	TopicDeletionEnabled                       bool
 	ElevatedEnabled                            bool
 	ElevatedImage, ElevatedCodexImage          string
 	ElevatedMemory, ElevatedCPUs, ElevatedPids int64
@@ -230,6 +232,7 @@ func Load(loadDotenv bool) (Config, error) {
 		ManagedTasksEnabled:     envFlag("GOPOD_MANAGED_TASKS"),
 		OutboxIPCEnabled:        envFlag("GOPOD_OUTBOX_IPC"),
 		OutboxArtifactsEnabled:  !envOff("GOPOD_OUTBOX_ARTIFACTS"),
+		TopicDeletionEnabled:    envFlag("GOPOD_TOPIC_DELETION_ENABLED"),
 		RecoveryQuarantine:      envFlag("GOPOD_RECOVERY_QUARANTINE"),
 		CompactAfter:            compactAfter,
 		CompactInterval:         os.Getenv("GOPOD_COMPACT_INTERVAL"),

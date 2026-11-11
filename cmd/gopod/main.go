@@ -751,6 +751,11 @@ func run() error {
 		restart.notify = tgBot.SendRestartNotice
 		control.RegisterRestartLifecycle(router, restart.command)
 		control.RegisterStopCommand(router, tgBot.RequestStopCurrentTurn)
+		var deleteTopic func(context.Context, store.ScopeRef, int) error
+		if cfg.TopicDeletionEnabled {
+			deleteTopic = tgBot.RequestTopicDeletion
+		}
+		control.RegisterThreadCommands(router, st, deleteTopic)
 		if bindElevatedLogin != nil {
 			bindElevatedLogin(tgBot.LoginElevated)
 		}

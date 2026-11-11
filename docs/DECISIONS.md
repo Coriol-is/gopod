@@ -2446,3 +2446,28 @@ barriers or ACK tombstones and are unsafe for blind downgrade.
 Historical missing-provenance targets hold before HTTP. Groups/unregistered
 compatibility and other nontext effects remain unqualified. This does not implement
 operator unknown resolution, confirmed topic deletion or foreground cutover.
+
+## D073 — Confirmed topic deletion dispatch and local recovery
+
+**Status:** implementation contract, 2026-11-12, CP-016 continuation; activation
+remains gated by D064 qualification and `GOPOD_TOPIC_DELETION_ENABLED` defaults off.
+
+Control confirmation binds actor/chat/thread/current registration and expiry.
+The worker runs after command admission can drain, records one-shot dispatch
+before DeleteForumTopic, and never retries an issued or historical intent. An
+additive dispatch marker defaults historical rows to issued. Only an unissued
+intent can be refused by a preflight failure; an API refusal settles the exact
+issued request. Unknown results remain held.
+
+Exact returned outcomes survive transient database failures in bounded in-memory
+receipts and are retried against SQLite/runtime only. Crash loss of a receipt is
+not evidence of non-delivery. Pending topic operations are backup-idle evidence.
+
+This extends D064's blanket startup-cleanup hold only for durable `deleted`
+records: current native/queue/transport quiescence must still pass, then local
+retirement may complete with no delete HTTP or notice replay. `deleting` and
+`uncertain` records remain untouched; restored intent alone is never dispatch
+permission. Known historical/nontext/managed/native qualification gaps still
+prevent activation. No real existing topic deletion is authorized by this ADR.
+
+[Implementation and qualification boundaries](reviews/2026-11-12-topic-deletion-orchestration.md).

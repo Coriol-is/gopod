@@ -99,9 +99,9 @@ func (s *Store) BeginTopicDeletion(ctx context.Context, scope ScopeRef, thread i
 			return err
 		}
 		d = TopicDeletion{Scope: scope, ThreadID: thread, IntentID: id, State: "deleting"}
-		_, err = q.ExecContext(ctx, `INSERT INTO topic_deletions(namespace_id,namespace_epoch,thread_id,intent_id,registration_revision,chat_jid,folder,state,updated_at)
- VALUES(?,?,?,?,?,?,?,'deleting',?) ON CONFLICT(namespace_id,namespace_epoch,thread_id) DO UPDATE SET
- intent_id=excluded.intent_id,state=excluded.state,updated_at=excluded.updated_at`, scope.NamespaceID, scope.NamespaceEpoch, thread, id, scope.RegistrationRevision, scope.JID, scope.Folder, time.Now().UnixMilli())
+		_, err = q.ExecContext(ctx, `INSERT INTO topic_deletions(namespace_id,namespace_epoch,thread_id,intent_id,registration_revision,chat_jid,folder,state,updated_at,dispatch_started)
+ VALUES(?,?,?,?,?,?,?,'deleting',?,0) ON CONFLICT(namespace_id,namespace_epoch,thread_id) DO UPDATE SET
+ intent_id=excluded.intent_id,state=excluded.state,updated_at=excluded.updated_at,dispatch_started=0`, scope.NamespaceID, scope.NamespaceEpoch, thread, id, scope.RegistrationRevision, scope.JID, scope.Folder, time.Now().UnixMilli())
 		created = err == nil
 		return err
 	})
@@ -329,6 +329,59 @@ func (s *Store) WithRefusedTopicFence(ctx context.Context, expected TopicDeletio
 			return ErrTopicDeletionState
 		}
 		return release()
+	})
+	return err
+}
+
+// ClaimTopicDeletionDispatch records the irreversible HTTP boundary once. Existing
+// pre-migration intents default to dispatched; they never acquire retry authority.
+func (s *Store) ClaimTopicDeletionDispatch(ctx context.Context, expected TopicDeletion) error {
+	_, err := s.withTx(ctx, func(q taskSQL) error {
+		d, err := ownedTopicDeletionQ(ctx, q, expected)
+		if err != nil {
+			return err
+		}
+		if d.State != "deleting" {
+			return ErrTopicDeletionState
+		}
+		res, err := q.ExecContext(ctx, `UPDATE topic_deletions SET dispatch_started=1,updated_at=? WHERE intent_id=? AND dispatch_started=0`, time.Now().UnixMilli(), d.IntentID)
+		if err != nil {
+			return err
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if n != 1 {
+			return ErrTopicDeletionState
+		}
+		return nil
+	})
+	return err
+}
+
+// RefuseUnissuedTopicDeletion cannot reclassify an issued or historical request.
+func (s *Store) RefuseUnissuedTopicDeletion(ctx context.Context, expected TopicDeletion) error {
+	_, err := s.withTx(ctx, func(q taskSQL) error {
+		d, err := ownedTopicDeletionQ(ctx, q, expected)
+		if err != nil {
+			return err
+		}
+		if d.State != "deleting" {
+			return ErrTopicDeletionState
+		}
+		res, err := q.ExecContext(ctx, `UPDATE topic_deletions SET state='refused',updated_at=? WHERE intent_id=? AND dispatch_started=0`, time.Now().UnixMilli(), d.IntentID)
+		if err != nil {
+			return err
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if n != 1 {
+			return ErrTopicDeletionState
+		}
+		return nil
 	})
 	return err
 }

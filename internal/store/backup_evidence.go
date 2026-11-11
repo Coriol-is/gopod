@@ -59,6 +59,7 @@ func hasTable(ctx context.Context, db *sql.DB, name string) (bool, error) {
 // store keeps interrupted rows until the next start reconciles them. Counts
 // only; no message or task content is read.
 type WorkEvidence struct {
+	TopicDeletionsPending int64 `json:"topic_deletions_pending"`
 	DeletesPending        int64 `json:"deletes_pending"`
 	DirectEditsPending    int64 `json:"direct_edits_pending"`
 	ControlRepairsPending int64 `json:"control_repairs_pending"`
@@ -89,6 +90,7 @@ func ReadWorkEvidence(ctx context.Context, path string) (WorkEvidence, error) {
 		query string
 		dst   *int64
 	}{
+		{"topic_deletions", `SELECT count(*) FROM topic_deletions WHERE state IN ('deleting','uncertain','deleted')`, &e.TopicDeletionsPending},
 		{"telegram_delete_attempts", `SELECT count(*) FROM telegram_delete_attempts WHERE state='pending'`, &e.DeletesPending},
 		{"telegram_edit_attempts", `SELECT count(*) FROM telegram_edit_attempts WHERE state='pending'`, &e.DirectEditsPending},
 		{"telegram_control_repair_attempts", `SELECT count(*) FROM telegram_control_repair_attempts WHERE state='pending'`, &e.ControlRepairsPending},

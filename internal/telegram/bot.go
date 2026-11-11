@@ -209,7 +209,13 @@ type Bot struct {
 
 	// inboundHandlers tracks our async handlers; the SDK only waits for
 	// its polling workers, not its default async handler goroutines.
-	inboundHandlers sync.WaitGroup
+	inboundHandlers         sync.WaitGroup
+	topicDeleteJobs         chan store.TopicDeletion
+	topicDeleteReceipts     map[string]topicDeleteReceipt // protected by topicMu
+	topicDeleteAllocated    int                           // reserved queued + executing + unsettled slots, topicMu
+	topicDeleteReservations map[string]bool               // topicMu
+	topicReceiptCursor      int                           // topicMu
+	topicRecoveryCursor     int                           // deletion worker only
 
 	// albums holds media groups being collected (inbound_context.go);
 	// albumClock is their window's clock, nil means the real one.
@@ -269,18 +275,19 @@ func New(token string, deps Deps) (*Bot, error) {
 	}
 
 	b := &Bot{
-		store:         deps.Store,
-		runner:        deps.Runner,
-		elevated:      deps.Elevated,
-		queue:         deps.Queue,
-		router:        deps.Router,
-		allowlist:     deps.Allowlist,
-		ownerChatID:   deps.OwnerChatID,
-		botID:         id,
-		groupReason:   deps.GroupReason,
-		log:           deps.Log,
-		logins:        newLoginSessions(),
-		streamEnabled: deps.StreamEnabled,
+		topicDeleteJobs: make(chan store.TopicDeletion, 16),
+		store:           deps.Store,
+		runner:          deps.Runner,
+		elevated:        deps.Elevated,
+		queue:           deps.Queue,
+		router:          deps.Router,
+		allowlist:       deps.Allowlist,
+		ownerChatID:     deps.OwnerChatID,
+		botID:           id,
+		groupReason:     deps.GroupReason,
+		log:             deps.Log,
+		logins:          newLoginSessions(),
+		streamEnabled:   deps.StreamEnabled,
 	}
 
 	client := &http.Client{Timeout: time.Minute}
@@ -345,6 +352,10 @@ func (b *Bot) registerHandlers(api *bot.Bot) {
 // publish failure is logged at warn level and the bot keeps running —
 // command discovery is nice-to-have, not a hard requirement.
 func (b *Bot) Run(ctx context.Context) error {
+	deleteCtx, cancelDelete := context.WithCancel(ctx)
+	deleteDone := make(chan struct{})
+	go func() { defer close(deleteDone); b.runTopicDeletions(deleteCtx) }()
+	defer func() { cancelDelete(); <-deleteDone }()
 	recoveryCtx, cancelRecovery := context.WithCancel(ctx)
 	recoveryDone := make(chan struct{})
 	go func() { defer close(recoveryDone); b.runControlRecovery(recoveryCtx) }()
