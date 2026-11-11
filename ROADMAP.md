@@ -15,6 +15,16 @@ D071 (#193) adds durable private placeholder deletion outcomes/tombstones; unkno
 results cannot reach fallback/TTS. Sonar excludes all tests by owner request;
 production-only main analysis remains over the50k plan limit. Go CI unchanged.
 
+## Active implementation — 2026-11-12
+
+Owner resumed priorities 1–3 in isolated agents. The integration branch now contains
+mixed-path reply ordering, gated immutable foreground delivery, gated confirmed
+topic deletion/recovery, and scoped provider/model routing. Shared retirement and
+preference cleanup has a transaction rollback test. Source implementation, required
+CI, merge, deployment and native acceptance are separate; none of these checkpoints
+changes the recorded Pi baseline or enables paused modes. See [BACKLOG](docs/BACKLOG.md)
+for exact remaining code/qualification boundaries. The priority order below remains.
+
 ## Status legend
 
 - ⬜ not started

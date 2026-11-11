@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-06 (D071 deployed; Sonar tests excluded)
+**Last updated:** 2026-11-12 (priorities 1–3 integration; no deployment)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -24,6 +24,15 @@ Owner requested priorities 1–3 in agents. Three isolated worktrees start from
   confirmed orchestration, exact outcome/recovery and safe retirement.
 - `feat/conversation-providers` (`gopod-conversation-providers`): CP-018 scoped
   preferences, immutable attempt routing and confirmed quota fallback.
+
+Implementation checkpoints now integrated locally: delivery `7c15035` and
+`becd396`; topic orchestration `6246398`; provider selection `0c0593b`/`3186ba8`.
+Integration `9f07f09` adds atomic topic preference cleanup and rollback/sibling/
+idempotency coverage; focused tests and independent review pass. New foreground
+and deletion flags default off. Source work continues on eager keyboard cleanup,
+exact external-deletion observation and cross-feature attempt scope validation.
+No final parent-completion or runtime activation claim. An owner choice about
+holding gone-topic replies versus a durable main-chat destination contract is pending.
 
 Root integration worktree: `gopod-priority-integration`, branch
 `integration/backlog-1-3`. Source work is in progress, not merged/deployed. First delivery checkpoint
