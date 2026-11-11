@@ -105,6 +105,7 @@ func (b *Bot) ObserveForegroundAcknowledgement(c store.OutboxClaim) {
 		}
 		b.turnStatus(queue.Item{ChatID: turn.ChatID, ThreadID: turn.ThreadID, MessageID: int(turn.TGMessageID)}).Set(stDone)
 	}
+	b.cleanupReplyKeyboards(ctx)
 }
 
 func foregroundMode(ctx context.Context) string {

@@ -20,12 +20,13 @@ type TelegramEditOwner struct {
 	Control      *ControlMessage
 }
 type TelegramEditRequest struct {
-	ChatID       int64
-	MessageID    int
-	SourceThread int // -1 means no supplied origin; never grants provenance
-	Method       string
-	RequestHash  string
-	FinalTurn    int64 // only the exact durable reply callback may edit final markup
+	ChatID         int64
+	MessageID      int
+	SourceThread   int // -1 means no supplied origin; never grants provenance
+	Method         string
+	RequestHash    string
+	RetireSequence int64 // exact prior ACKed reply surface; fixed empty keyboard only
+	FinalTurn      int64 // only the exact durable reply callback may edit final markup
 }
 type TelegramEditAttempt struct {
 	ID          string
@@ -185,7 +186,26 @@ func (s *Store) BeginTelegramEdit(ctx context.Context, r TelegramEditRequest, ex
 		if e != nil {
 			return e
 		}
-		if published {
+		if r.RetireSequence != 0 {
+			if final || r.Method != "markup" || r.FinalTurn != 0 || r.RequestHash != ReplyRetirementHash(r.ChatID, r.MessageID) {
+				return ErrTelegramEditHeld
+			}
+			if e = validateReplyRetirementQ(ctx, q, r.RetireSequence, o); e != nil {
+				return e
+			}
+		}
+		// A retired surface cannot regain buttons or receive a second generic
+		// clear from the legacy in-memory row tracker.
+		if r.RetireSequence == 0 && r.Method == "markup" {
+			var retired bool
+			if e = q.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM telegram_reply_retirements r JOIN telegram_reply_surfaces s ON s.sequence=r.sequence WHERE s.message_id=? AND json_extract(s.scope_json,'$.JID')=?)`, r.MessageID, o.Scope.JID).Scan(&retired); e != nil {
+				return e
+			}
+			if retired {
+				return ErrTelegramEditHeld
+			}
+		}
+		if published && r.RetireSequence == 0 {
 			if r.Method != "markup" || r.FinalTurn <= 0 {
 				return ErrTelegramEditHeld
 			}
@@ -206,6 +226,11 @@ func (s *Store) BeginTelegramEdit(ctx context.Context, r TelegramEditRequest, ex
 		}
 		_, e = q.ExecContext(ctx, `INSERT INTO telegram_edit_attempts(attempt_id,chat_id,message_id,source_thread,owner_json,method,request_hash,final) VALUES(?,?,?,?,?,?,?,?)`, id, r.ChatID, r.MessageID, o.SourceThread, string(raw), r.Method, r.RequestHash, final)
 		if e == nil {
+			if r.RetireSequence != 0 {
+				if _, e = q.ExecContext(ctx, `INSERT INTO telegram_reply_retirements(sequence,attempt_id) VALUES(?,?)`, r.RetireSequence, id); e != nil {
+					return e
+				}
+			}
 			a = TelegramEditAttempt{ID: id, OwnerJSON: string(raw), Method: r.Method, RequestHash: r.RequestHash, Final: final}
 		}
 		return e

@@ -19,6 +19,10 @@ func (s *Store) applyReplyRowOrderSchema(ctx context.Context) error {
  turn_id INTEGER NOT NULL CHECK(turn_id>0),
  source TEXT NOT NULL CHECK(source IN ('legacy','outbox')),
  CHECK(thread_id>=0));
+ CREATE TABLE IF NOT EXISTS telegram_reply_retirements (
+ sequence INTEGER PRIMARY KEY,attempt_id TEXT NOT NULL UNIQUE);
+ CREATE TRIGGER IF NOT EXISTS reply_retirement_immutable BEFORE UPDATE ON telegram_reply_retirements BEGIN SELECT RAISE(ABORT,'immutable reply retirement'); END;
+ CREATE TRIGGER IF NOT EXISTS reply_retirement_retained BEFORE DELETE ON telegram_reply_retirements BEGIN SELECT RAISE(ABORT,'retained reply retirement'); END;
  CREATE INDEX IF NOT EXISTS idx_reply_surface_scope ON telegram_reply_surfaces(namespace_id,namespace_epoch,registration_revision,thread_id,visibility,sequence);
  CREATE TRIGGER IF NOT EXISTS reply_surface_immutable BEFORE UPDATE OF sequence,effect_id,scope_json,namespace_id,namespace_epoch,registration_revision,thread_id,visibility,turn_id,source ON telegram_reply_surfaces BEGIN SELECT RAISE(ABORT,'immutable reply surface'); END;
  CREATE TRIGGER IF NOT EXISTS reply_surface_ack_immutable BEFORE UPDATE OF message_id ON telegram_reply_surfaces WHEN OLD.message_id!=0 AND NEW.message_id!=OLD.message_id BEGIN SELECT RAISE(ABORT,'immutable reply receipt'); END;`)

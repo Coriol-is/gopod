@@ -131,6 +131,7 @@ type Bot struct {
 	// (code documents, voice). Nil: legacy paths only.
 	prepared           *PreparedDelivery
 	foregroundDelivery atomic.Bool
+	replyCleanupAfter  atomic.Int64
 
 	// taskRun overrides how silent scheduled turns run the agent. Tests only.
 	taskRun func(ctx context.Context, folder string, thread int, tier runner.Tier, prompt string) (string, error)
