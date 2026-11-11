@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-06 (D071 deployed; Sonar tests excluded)
+**Last updated:** 2026-11-11 (widget design only; runtime unchanged)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -12,6 +12,20 @@ messages, commands, attachments and supported button interactions, without
 per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older references
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
+
+## Current design — Telegram widgets, 2026-11-11
+
+Owner requested specifications only after the sendWidget feasibility assessment.
+[CP-041](proposals/CP-041-telegram-widgets.md) is accepted for design only;
+[product](superpowers/specs/2026-11-11-telegram-widget-panel.md) and
+[protocol](superpowers/specs/2026-11-11-telegram-widget-protocol.md) drafts define
+an owner-private read-only status panel, Refresh, text compatibility, durable
+creation, ownership/expiry and native-client acceptance. Baseline da529a8.
+No application/dependency/configuration changes, Telegram probes or deployment.
+Existing priority and paused-feature gates are unchanged. Next for this feature:
+review the design; implementation requires a subsequent owner request and SDK,
+scoped snapshot/control-outbox and generation-identity qualification.
+Documentation branch: `docs/telegram-widget-spec`, worktree `gopod-widget-spec`.
 
 ## Current follow-up — deadcode hook and Sonar scope, 2026-11-06
 
