@@ -13,6 +13,31 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
+## Active implementation — backlog priorities 1–3, 2026-11-11
+
+Owner requested priorities 1–3 in agents. Three isolated worktrees start from
+`da529a8`; integration order remains delivery, topic retirement, scoped providers.
+
+- `feat/delivery-completion` (`gopod-delivery-completion`): CP-002/003 remaining
+  delivery contracts, mixed reply-row ordering and integrated foreground path.
+- `feat/topic-retirement-completion` (`gopod-topic-retirement-completion`): CP-016
+  confirmed orchestration, exact outcome/recovery and safe retirement.
+- `feat/conversation-providers` (`gopod-conversation-providers`): CP-018 scoped
+  preferences, immutable attempt routing and confirmed quota fallback.
+
+Root integration worktree: `gopod-priority-integration`, branch
+`integration/backlog-1-3`. Source work is in progress, not reviewed/merged/deployed.
+No paused parallel-session/managed-task/worker activation. Native/client acceptance
+and existing uncertainty gates remain mandatory; command wiring alone is not full
+acceptance. Existing unrelated state-machine worktrees remain untouched.
+
+GitHub's active ruleset requires a PR approval. Prior widget docs PR196 has green
+CI and independent review but remains unmerged: REVIEW_REQUIRED; auto-merge is
+disabled. Do not bypass that requirement or count local agent review as a GitHub
+approval. Finish concrete source/test/review artifacts before seeking any missing
+merge approval. Runtime baseline remains the previously recorded0200892, not
+reverified by this documentation checkpoint.
+
 ## Current follow-up — deadcode hook and Sonar scope, 2026-11-06
 
 Owner requested deadcode in pre-commit and exclusion of scripts/all Python from
