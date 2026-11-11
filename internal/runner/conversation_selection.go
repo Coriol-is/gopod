@@ -19,6 +19,7 @@ type conversationSelectionStore interface {
 type selectedConversationKey struct{}
 type selectionLoginKey struct{}
 type selectionAttemptsKey struct{}
+type selectionScopeKey struct{}
 type selectedConversation struct {
 	selection store.ConversationSelection
 	provider  AgentProvider
@@ -37,6 +38,15 @@ func (r *Runner) EnableConversationSelection(providers map[string]AgentProvider)
 func WithSelectionAttempts(ctx context.Context, members []store.ResultMember) context.Context {
 	return context.WithValue(ctx, selectionAttemptsKey{}, slices.Clone(members))
 }
+
+// WithScopedSelectionAttempts preserves the registration captured by queue/control
+// admission while the batch waits for the runner slot. The slot must not silently
+// reinterpret a batch under a replacement registration.
+func WithScopedSelectionAttempts(ctx context.Context, scope store.ScopeRef, members []store.ResultMember) context.Context {
+	ctx = WithSelectionAttempts(ctx, members)
+	return context.WithValue(ctx, selectionScopeKey{}, scope)
+}
+
 func (r *Runner) ConversationSelection(ctx context.Context, folder string, thread int) (store.ConversationSelection, error) {
 	s, ok := r.store.(conversationSelectionStore)
 	if !ok {
@@ -105,6 +115,12 @@ func (r *Runner) selectConversation(ctx context.Context, folder string, thread i
 		selected, err = r.ConversationSelection(ctx, folder, thread)
 	}
 	if err != nil {
+		return ctx, err
+	}
+	if expected, ok := ctx.Value(selectionScopeKey{}).(store.ScopeRef); ok && expected != selected.Scope {
+		return ctx, store.ErrStaleScope
+	}
+	if err = validateResultSelection(ctx, selected); err != nil {
 		return ctx, err
 	}
 	if members, ok := ctx.Value(selectionAttemptsKey{}).([]store.ResultMember); ok {

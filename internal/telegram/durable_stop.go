@@ -37,7 +37,7 @@ func (b *Bot) bindOrdinaryBatch(ctx context.Context, items []queue.Item) (contex
 		}
 		binding.Members = append(binding.Members, store.ResultMember{TurnID: it.ID, Attempt: it.Attempts})
 	}
-	ctx = runner.WithSelectionAttempts(ctx, binding.Members)
+	ctx = runner.WithScopedSelectionAttempts(ctx, binding.Conversation.Scope, binding.Members)
 	ctx = context.WithValue(ctx, ordinaryBatchKey{}, binding)
 	return b.bindForegroundDelivery(ctx, binding, pickBatchItem(items)), nil
 }

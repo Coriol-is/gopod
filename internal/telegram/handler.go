@@ -654,7 +654,18 @@ func (b *Bot) NewAgentHandler() queue.Handler {
 		}
 		if item.Source == "task" {
 			if item.ID > 0 && item.Attempts > 0 {
-				ctx = runner.WithSelectionAttempts(ctx, []store.ResultMember{{TurnID: item.ID, Attempt: item.Attempts}})
+				scope, err := b.store.SnapshotScope(ctx, item.Folder)
+				if err != nil {
+					return err
+				}
+				members := make([]store.ResultMember, 0, len(items))
+				for _, it := range items {
+					if it.ID <= 0 || it.Attempts <= 0 || it.AttemptID != "" || it.Source != "task" || it.Folder != item.Folder || it.ThreadID != item.ThreadID {
+						return fmt.Errorf("invalid scheduled selection batch")
+					}
+					members = append(members, store.ResultMember{TurnID: it.ID, Attempt: it.Attempts})
+				}
+				ctx = runner.WithScopedSelectionAttempts(ctx, scope, members)
 			}
 			return b.runTaskSilently(ctx, item)
 		}

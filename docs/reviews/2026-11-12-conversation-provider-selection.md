@@ -65,8 +65,17 @@ stored data, immutable per-attempt reuse, conflicting durable bindings, native
 command selection, streaming and maintenance scope, slot wait/cancel, allocation
 failure, login fence, confirmation controls and scoped quota retry.
 
-Build/vet/full tests and focused races are recorded by the parent after exact-head
-review. Fake native-command tests do not establish real Docker image alternation,
+Recovery validation passed build/vet/full tests on `3186ba8`, plus focused races
+across store, runner, control and Telegram. Follow-up integration review found that
+captured Stop/freeze identity must also survive waiting for the runner slot. The
+runner now checks captured registration scope and exact freeze/selection batch
+membership before persisting attempts or starting native execution. Tests cover
+registration revision changes while waiting, mismatched batches, and successful
+selection/result composition. Legacy scheduled batches can coalesce: every valid
+member now gets the same immutable conversation-zero attempt snapshot; this does
+not change the existing last-prompt execution semantics.
+
+The parent records final integrated exact-head build/vet/full-test and race proof. Fake native-command tests do not establish real Docker image alternation,
 CLI continuity or Telegram client acceptance. Those remain release gates.
 
 ## Proposed ADR D074 — conversation-scoped selection

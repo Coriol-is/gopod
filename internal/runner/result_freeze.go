@@ -86,3 +86,34 @@ func freezeModel(ctx context.Context, model string) context.Context {
 	f.ref.Model = model
 	return context.WithValue(ctx, resultFreezeKey{}, f)
 }
+
+// validateResultSelection joins the controller's captured execution identity with
+// the provider snapshot resolved under the runner slot. A post-execution freeze
+// failure is too late to reject a replacement registration or different batch.
+func validateResultSelection(ctx context.Context, selected store.ConversationSelection) error {
+	f, frozen := ctx.Value(resultFreezeKey{}).(resultFreeze)
+	if !frozen {
+		return nil
+	}
+	if f.ref.Conversation.Scope != selected.Scope || f.ref.Conversation.ThreadID != selected.ThreadID {
+		return store.ErrStaleScope
+	}
+	members, ok := ctx.Value(selectionAttemptsKey{}).([]store.ResultMember)
+	if !ok || len(members) != len(f.ref.Members) {
+		return ErrInvalidResultFreeze
+	}
+	want := make(map[store.ResultMember]bool, len(f.ref.Members))
+	for _, m := range f.ref.Members {
+		want[m] = true
+	}
+	for _, m := range members {
+		if !want[m] {
+			return ErrInvalidResultFreeze
+		}
+		delete(want, m)
+	}
+	if len(want) != 0 {
+		return ErrInvalidResultFreeze
+	}
+	return nil
+}

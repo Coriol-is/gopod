@@ -199,3 +199,140 @@ func TestScopedAllocationFailurePreservesAttemptAndPreferences(t *testing.T) {
 		t.Fatal("allocation changed preference")
 	}
 }
+
+func TestScopedLegacyTaskPersistsMainAttemptSelection(t *testing.T) {
+	h, s := scopedHarness(t)
+	setSelection(t, h.r, 0, "provider", "codex")
+	setSelection(t, h.r, 0, "model", "gpt-5")
+	setSelection(t, h.r, 7, "model", "haiku")
+	ctx := t.Context()
+	id, _, err := s.InsertTurn(ctx, store.Turn{Source: "task", SourceID: "scheduled:1", ChatFolder: convChat, ThreadID: 0, Text: "scheduled request"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.MarkTurnRunning(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	other, _, err := s.InsertTurn(ctx, store.Turn{Source: "task", SourceID: "scheduled:2", ChatFolder: convChat, ThreadID: 0, Text: "other scheduled request"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.MarkTurnRunning(ctx, other); err != nil {
+		t.Fatal(err)
+	}
+	selected, err := h.r.ConversationSelection(ctx, convChat, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx = WithScopedSelectionAttempts(ctx, selected.Scope, []store.ResultMember{{TurnID: id, Attempt: 1}, {TurnID: other, Attempt: 1}})
+	if _, err = h.r.Run(ctx, convChat, 0, TierOwner, nil, "scheduled request"); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := s.TurnSelection(ctx, id, 1)
+	if err != nil || saved.Provider != "codex" || saved.Model != "gpt-5" || saved.ThreadID != 0 {
+		t.Fatalf("legacy task selection = %+v, %v", saved, err)
+	}
+	otherSaved, err := s.TurnSelection(ctx, other, 1)
+	if err != nil || otherSaved != saved {
+		t.Fatalf("coalesced task member missing selection: %+v, %v", otherSaved, err)
+	}
+	setSelection(t, h.r, 0, "provider", "claude")
+	// Re-entering the same recorded attempt uses its original snapshot; a new
+	// queue attempt gets a new identity and resolves at its own start boundary.
+	if _, err = h.r.Run(ctx, convChat, 0, TierOwner, nil, "same attempt"); err != nil {
+		t.Fatal(err)
+	}
+	if cmd := h.home.lastRun(); cmd[0] != "codex" || !containsSeq(cmd, "-m", "gpt-5") {
+		t.Fatalf("legacy task attempt was reinterpreted: %v", cmd)
+	}
+}
+
+func TestScopedFreezeRejectsDifferentAttemptMembershipBeforeExecution(t *testing.T) {
+	for _, streaming := range []bool{false, true} {
+		t.Run(map[bool]string{false: "sync", true: "stream"}[streaming], func(t *testing.T) {
+			s, ref := freezeFixture(t)
+			h := newConvHarness(t, NewClaudeProvider("img"))
+			h.r.SetStore(s)
+			h.r.EnableConversationSelection(map[string]AgentProvider{"claude": NewClaudeProvider("img")})
+			ctx := WithResultFreeze(t.Context(), ref, s)
+			// A controller integration must never freeze a different batch than
+			// the one whose actual provider/model metadata will be persisted.
+			ctx = WithScopedSelectionAttempts(ctx, ref.Conversation.Scope, ref.Members[:1])
+			var err error
+			if streaming {
+				_, err = h.r.RunStream(ctx, convChat, 7, TierOwner, nil, "must not execute")
+			} else {
+				_, err = h.r.Run(ctx, convChat, 7, TierOwner, nil, "must not execute")
+			}
+			if !errors.Is(err, ErrInvalidResultFreeze) {
+				t.Fatalf("mismatched membership: %v", err)
+			}
+			if len(h.home.runs) != 0 {
+				t.Fatal("native execution preceded membership validation")
+			}
+			if _, err = s.TurnSelection(ctx, ref.Members[0].TurnID, 1); err == nil {
+				t.Fatal("mismatched batch persisted selection")
+			}
+		})
+	}
+}
+
+func TestScopedSelectionRejectsReregistrationWhileWaitingForSlot(t *testing.T) {
+	for _, freeze := range []bool{false, true} {
+		t.Run(map[bool]string{false: "legacy_stop_binding", true: "frozen_binding"}[freeze], func(t *testing.T) {
+			s, ref := freezeFixture(t)
+			h := newConvHarness(t, NewClaudeProvider("img"))
+			h.r.SetStore(s)
+			h.r.EnableConversationSelection(map[string]AgentProvider{"claude": NewClaudeProvider("img")})
+			ctx := WithScopedSelectionAttempts(t.Context(), ref.Conversation.Scope, ref.Members)
+			if freeze {
+				ctx = WithResultFreeze(ctx, ref, s)
+			}
+			release, err := h.r.acquireAgentSlot(ctx, convChat)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result := make(chan error, 1)
+			go func() {
+				_, e := h.r.Run(ctx, convChat, 7, TierOwner, nil, "stale registration")
+				result <- e
+			}()
+			if err = s.RegisterChat(t.Context(), store.RegisteredChat{JID: "tg:1", Folder: convChat, Name: "changed registration", IsOwner: true, AddedAt: 2}); err != nil {
+				release()
+				t.Fatal(err)
+			}
+			release()
+			if err = <-result; !errors.Is(err, store.ErrStaleScope) {
+				t.Fatalf("replacement registration admitted: %v", err)
+			}
+			if len(h.home.runs) != 0 {
+				t.Fatal("native execution preceded scope validation")
+			}
+			if _, err = s.TurnSelection(ctx, ref.Members[0].TurnID, 1); err == nil {
+				t.Fatal("stale registration persisted selection")
+			}
+		})
+	}
+}
+
+func TestScopedSelectionAndResultFreezeShareIdentity(t *testing.T) {
+	s, ref := freezeFixture(t)
+	h := newConvHarness(t, NewClaudeProvider("img"))
+	h.r.SetStore(s)
+	h.r.EnableConversationSelection(map[string]AgentProvider{"claude": NewClaudeProvider("img")})
+	ctx := WithScopedSelectionAttempts(t.Context(), ref.Conversation.Scope, ref.Members)
+	ctx = WithResultFreeze(ctx, ref, s)
+	if _, err := h.r.Run(ctx, convChat, 7, TierOwner, nil, "same execution"); err != nil {
+		t.Fatal(err)
+	}
+	for _, member := range ref.Members {
+		selected, err := s.TurnSelection(ctx, member.TurnID, member.Attempt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, found, err := s.TurnResultForAttempt(ctx, member.TurnID, member.Attempt)
+		if err != nil || !found || result.Provider != selected.Provider || result.Model != selected.Model {
+			t.Fatalf("selection/result identity mismatch: %+v %+v %v", selected, result, err)
+		}
+	}
+}
