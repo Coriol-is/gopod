@@ -205,6 +205,9 @@ func (s *Store) RetireDeletedTopic(ctx context.Context, expected TopicDeletion) 
 		if _, err = q.ExecContext(ctx, `INSERT INTO router_state(key,value) VALUES(?,'1') ON CONFLICT(key) DO UPDATE SET value='1'`, continuityKey(d.Scope.Folder, d.ThreadID, "seeded")); err != nil {
 			return err
 		}
+		if err = retireConversationPreferencesQ(ctx, q, d.Scope, d.ThreadID); err != nil {
+			return err
+		}
 		_, err = q.ExecContext(ctx, `UPDATE topic_deletions SET state='retired',updated_at=? WHERE intent_id=?`, time.Now().UnixMilli(), d.IntentID)
 		return err
 	})
