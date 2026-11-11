@@ -71,7 +71,12 @@ func (r *Runner) managementCheck(ctx context.Context, folder string, inspect fun
 		report.ErrorClass = "selection_blocked"
 		return report
 	}
-	prov := r.ProviderForChat(folder)
+	ctx, err = r.selectConversation(ctx, folder, 0)
+	if err != nil {
+		report.ErrorClass = "selection_unavailable"
+		return report
+	}
+	prov := r.providerForContext(ctx, folder)
 	report.Provider = prov.Name()
 	if report.Provider != "codex" {
 		report.ErrorClass = "unsupported"

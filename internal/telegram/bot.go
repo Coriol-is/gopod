@@ -316,6 +316,24 @@ func New(token string, deps Deps) (*Bot, error) {
 	b.api = api
 	b.registerHandlers(api)
 	b.registerCallbacks()
+	if b.runner != nil {
+		b.runner.SetConversationSelectionGuard(func(ctx context.Context, folder string) error {
+			ref, err := b.store.SnapshotScope(ctx, folder)
+			if err != nil {
+				return err
+			}
+			var chat int64
+			if _, err = fmt.Sscanf(ref.JID, "tg:%d", &chat); err != nil {
+				return err
+			}
+			b.logins.mu.Lock()
+			defer b.logins.mu.Unlock()
+			if b.logins.starting[chat] || b.logins.sessions[chat] != nil {
+				return fmt.Errorf("runner: authentication is active for this chat")
+			}
+			return nil
+		})
+	}
 
 	return b, nil
 }

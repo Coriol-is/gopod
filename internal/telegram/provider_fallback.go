@@ -34,6 +34,13 @@ func (b *Bot) offerProviderFallback(ctx context.Context, item queue.Item, runErr
 		return false
 	}
 	cmd := control.Command{Name: "provider.fallback", Args: []string{strconv.FormatInt(item.ID, 10), quota.Provider, target}, Caller: control.Caller{ChatID: item.ChatID, ThreadID: item.ThreadID, IsOwner: item.IsOwner, Source: control.SourceTelegram}}
+	if b.runner != nil && b.runner.ConversationSelectionEnabled() {
+		selected, e := b.store.TurnSelection(ctx, item.ID, turn.Attempts)
+		if e != nil || selected.Provider != quota.Provider {
+			return false
+		}
+		cmd.Args = append(cmd.Args, strconv.Itoa(turn.Attempts), strconv.FormatInt(selected.Revision, 10))
+	}
 	if _, err := b.router.Check(cmd); err != nil {
 		return false
 	}

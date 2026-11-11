@@ -635,6 +635,9 @@ func (b *Bot) NewAgentHandler() queue.Handler {
 			return nil
 		}
 		if item.Source == "task" {
+			if item.ID > 0 && item.Attempts > 0 {
+				ctx = runner.WithSelectionAttempts(ctx, []store.ResultMember{{TurnID: item.ID, Attempt: item.Attempts}})
+			}
 			return b.runTaskSilently(ctx, item)
 		}
 		bound, err := b.bindOrdinaryBatch(ctx, items)

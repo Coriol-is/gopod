@@ -8,6 +8,8 @@ package store
 // schema without being added here.
 var rowCountSQL = map[string]string{
 	"telegram_reply_surfaces":          "SELECT count(*) FROM telegram_reply_surfaces",
+	"conversation_preferences":         "SELECT count(*) FROM conversation_preferences",
+	"turn_provider_selections":         "SELECT count(*) FROM turn_provider_selections",
 	"ordinary_stop_intents":            "SELECT count(*) FROM ordinary_stop_intents",
 	"ordinary_stop_members":            "SELECT count(*) FROM ordinary_stop_members",
 	"ordinary_stop_completions":        "SELECT count(*) FROM ordinary_stop_completions",

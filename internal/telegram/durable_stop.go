@@ -37,6 +37,7 @@ func (b *Bot) bindOrdinaryBatch(ctx context.Context, items []queue.Item) (contex
 		}
 		binding.Members = append(binding.Members, store.ResultMember{TurnID: it.ID, Attempt: it.Attempts})
 	}
+	ctx = runner.WithSelectionAttempts(ctx, binding.Members)
 	return context.WithValue(ctx, ordinaryBatchKey{}, binding), nil
 }
 

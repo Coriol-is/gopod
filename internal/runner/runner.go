@@ -77,12 +77,14 @@ type Runner struct {
 	managed *managedState
 
 	// Per-chat provider and model overrides (/provider, /model).
-	providersMu          sync.RWMutex
-	chatProviders        map[string]AgentProvider
-	chatModels           map[string]string
-	selectionBlocks      map[string]bool
-	startupObservations  map[string]StartupObservation
-	selectionGenerations map[string]uint64
+	providersMu                sync.RWMutex
+	chatProviders              map[string]AgentProvider
+	conversationProviders      map[string]AgentProvider
+	conversationSelectionGuard func(context.Context, string) error
+	chatModels                 map[string]string
+	selectionBlocks            map[string]bool
+	startupObservations        map[string]StartupObservation
+	selectionGenerations       map[string]uint64
 
 	// containerLocksMu serialises EnsureRunning per chat. Without it,
 	// two simultaneous messages on the same chat could race two
@@ -199,7 +201,8 @@ func (r *Runner) ensure(ctx context.Context, chatFolder string, tier Tier, allow
 		return r.ensureFn(ctx, chatFolder, tier, allowlist)
 	}
 	// Internal callers (turns, auth checks, clears) hold the folder's agent slot.
-	return r.ensureContainer(ctx, chatFolder, tier, allowlist, false, true)
+	_, scoped := ctx.Value(selectedConversationKey{}).(selectedConversation)
+	return r.ensureContainer(ctx, chatFolder, tier, allowlist, scoped, true)
 }
 
 // Ensure boots (or re-uses) the container for the given chat folder
@@ -251,7 +254,7 @@ func (r *Runner) ensureContainer(ctx context.Context, chatFolder string, tier Ti
 	if r.managed != nil {
 		// Managed runtime: the foreground container goes through the same policy
 		// guard as a task, so roles cannot leak into each other.
-		prov := r.ProviderForChat(chatFolder)
+		prov := r.providerForContext(ctx, chatFolder)
 		id, err := r.ensureRole(ctx, chatFolder, RoleForegroundPersonal, prov, allowlist, reconcile, slotHeld, "")
 		if err != nil {
 			return "", err
@@ -275,7 +278,7 @@ func (r *Runner) ensureContainer(ctx context.Context, chatFolder string, tier Ti
 	}
 
 	// Use per-chat provider for image + env vars.
-	prov := r.ProviderForChat(chatFolder)
+	prov := r.providerForContext(ctx, chatFolder)
 	envAllow := containerEnvAllow(tier, prov, r.allow)
 
 	spawn := SpawnConfig{
@@ -353,6 +356,10 @@ func (r *Runner) Run(
 	defer releaseSlot()
 	ctx, finishOperation := r.operationContext(ctx)
 	defer finishOperation()
+	ctx, err = r.selectConversation(ctx, chatFolder, thread)
+	if err != nil {
+		return "", err
+	}
 	id, prov, releaseRuntime, err := r.turnRuntime(ctx, chatFolder, thread, tier, allowlist)
 	if err != nil {
 		return "", fmt.Errorf("runner: ensure %q: %w", chatFolder, err)
@@ -384,7 +391,7 @@ func (r *Runner) Run(
 	if err != nil {
 		return "", err
 	}
-	model := r.ModelForChat(chatFolder)
+	model := r.modelForContext(ctx, chatFolder)
 	ctx = freezeModel(ctx, model)
 	cmd := withModel(prov.RunCmd(agentPrompt, opts.AppendSystemPrompt, ref), prov, model)
 	releaseGate, err := r.admit(ctx, chatFolder, ClassInteractive)
@@ -531,6 +538,10 @@ func (r *Runner) RunStream(
 			releaseSlot()
 		}
 	}()
+	ctx, err = r.selectConversation(ctx, chatFolder, thread)
+	if err != nil {
+		return nil, err
+	}
 	id, prov, releaseRuntime, err := r.turnRuntime(ctx, chatFolder, thread, tier, allowlist)
 	if err != nil {
 		return nil, fmt.Errorf("runner: ensure %q: %w", chatFolder, err)
@@ -557,7 +568,7 @@ func (r *Runner) RunStream(
 	if err != nil {
 		return nil, err
 	}
-	model := r.ModelForChat(chatFolder)
+	model := r.modelForContext(ctx, chatFolder)
 	ctx = freezeModel(ctx, model)
 	mkCmd := func(ref SessionRef) []string {
 		return withModel(prov.RunCmd(agentPrompt, systemPrompt, ref), prov, model)
@@ -918,6 +929,17 @@ func (r *Runner) RunFresh(
 	allowlist *mountsec.Allowlist,
 	prompt string,
 ) (reply string, retErr error) {
+	return r.runFresh(ctx, chatFolder, -1, tier, allowlist, prompt)
+}
+
+// RunFreshInConversation scopes maintenance to the specified conversation.
+func (r *Runner) RunFreshInConversation(ctx context.Context, chatFolder string, thread int, tier Tier, allowlist *mountsec.Allowlist, prompt string) (string, error) {
+	if thread < 0 {
+		return "", errors.New("runner: invalid maintenance conversation")
+	}
+	return r.runFresh(ctx, chatFolder, thread, tier, allowlist, prompt)
+}
+func (r *Runner) runFresh(ctx context.Context, chatFolder string, thread int, tier Tier, allowlist *mountsec.Allowlist, prompt string) (reply string, retErr error) {
 	_, group, lookupErr := r.groupRegistration(ctx, chatFolder)
 	if lookupErr != nil {
 		return "", lookupErr
@@ -943,7 +965,11 @@ func (r *Runner) RunFresh(
 	defer releaseSlot()
 	ctx, finishOperation := r.operationContext(ctx)
 	defer finishOperation()
-	id, prov, releaseRuntime, err := r.turnRuntime(ctx, chatFolder, 0, tier, allowlist)
+	ctx, err = r.selectConversation(ctx, chatFolder, thread)
+	if err != nil {
+		return "", err
+	}
+	id, prov, releaseRuntime, err := r.turnRuntime(ctx, chatFolder, max(thread, 0), tier, allowlist)
 	if err != nil {
 		return "", fmt.Errorf("runner: ensure %q: %w", chatFolder, err)
 	}
@@ -953,7 +979,7 @@ func (r *Runner) RunFresh(
 	if err != nil {
 		return "", err
 	}
-	res, err := r.execAgentWithCancel(ctx, id, chatFolder, 0, prov, prov.RunFreshCmd(prompt), false)
+	res, err := r.execAgentWithCancel(ctx, id, chatFolder, max(thread, 0), prov, withModel(prov.RunFreshCmd(prompt), prov, r.modelForContext(ctx, chatFolder)), false)
 	r.releaseGateWhenSettled(ctx, chatFolder, releaseGate)
 	if err != nil {
 		return "", err
@@ -1182,7 +1208,7 @@ func (r *Runner) ClearSession(ctx context.Context, chatFolder string, thread int
 		return nil
 	}
 	defer r.resetTurnCount(chatFolder, thread)
-	prov := r.ProviderForChat(chatFolder)
+	prov := r.providerForContext(ctx, chatFolder)
 	if r.store == nil {
 		// No conversation ids without a store: legacy wipe of the
 		// chat's sessions, as before conversations existed.

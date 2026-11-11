@@ -364,7 +364,7 @@ func run() error {
 				// Session compact callback: summarize + store + supersede.
 				r.SetCompactFn(func(ctx context.Context, chatFolder string, thread int) error {
 					promptFn := func(c context.Context, f, p string) (string, error) {
-						return r.RunFresh(c, f, runner.TierRegistered, allowlist, p)
+						return r.RunFreshInConversation(c, f, thread, runner.TierRegistered, allowlist, p)
 					}
 					summary, err := promptFn(ctx, chatFolder,
 						"Summarize the key decisions, facts, and in-progress tasks from our conversation. "+
@@ -395,7 +395,7 @@ func run() error {
 						return
 					} // Shared automatic learning waits for qualified CP-006 maintenance; explicit local memory tools remain available.
 					promptFn := func(c context.Context, f, p string) (string, error) {
-						return r.RunFresh(c, f, runner.TierRegistered, allowlist, p)
+						return r.RunFreshInConversation(c, f, thread, runner.TierRegistered, allowlist, p)
 					}
 					facts, err := agentMemory.ExtractFromTurn(ctx, chatFolder, userMsg, agentReply, promptFn)
 					if err != nil {
@@ -556,24 +556,22 @@ func run() error {
 	control.RegisterProactiveCommand(router, control.ProactiveDeps{Service: proactiveSvc, ChatDir: proactiveChatDir(st, cfg.OwnerChatID, cfg.ChatsDir), Log: ctlLog})
 	upgradeProactiveTemplates(ctx, ctlLog, proactiveSvc)
 
-	var fallbackSwitch control.ProviderFallbackSwitchFunc
+	var fallbackSwitch control.ConversationFallbackSwitchFunc
 	// /provider command — per-chat agent provider switching.
 	if agentRunner != nil {
 		providers := map[string]runner.AgentProvider{
 			"claude": runner.NewClaudeProvider(cfg.ContainerImage),
 			"codex":  runner.NewCodexProvider(""),
 		}
-		fallbackSwitch = func(ctx context.Context, folder, expected, target string) error {
-			p, ok := providers[target]
-			if !ok {
-				return fmt.Errorf("unknown fallback provider")
-			}
-			err := agentRunner.SwitchChatProviderIfCurrent(ctx, folder, expected, p)
-			if errors.Is(err, runner.ErrProviderChanged) {
+		fallbackSwitch = func(ctx context.Context, selected store.ConversationSelection, target string) error {
+			_, err := agentRunner.ChangeConversationSelection(ctx, selected, "provider", target)
+			if errors.Is(err, store.ErrSelectionChanged) || errors.Is(err, store.ErrStaleScope) {
 				return control.ErrFallbackStale
 			}
 			return err
 		}
+
+		agentRunner.EnableConversationSelection(providers)
 		// Restore choices first, then warm/check only the configured owner before
 		// queue recovery, scheduled work or Telegram command dispatch can race it.
 		warmOwnerID := cfg.OwnerChatID
@@ -591,27 +589,10 @@ func run() error {
 		agentRunner.StartCompactWatcher(ctx, runner.CompactConfig{After: cfg.CompactAfter, Interval: compactInterval, TimeOfDay: cfg.CompactTime}, allowlist)
 		agentRunner.StartIdleWatcher(ctx, runner.DefaultIdleTimeout)
 
-		// /model (CP-008): per-chat model override, persisted like /provider.
-		control.RegisterModelCommand(router,
-			agentRunner.ModelForChat,
-			func(chatFolder, model string) (string, error) {
-				agentRunner.SetChatModel(chatFolder, model)
-				if err := st.SetState(context.Background(), "model:"+chatFolder, model); err != nil {
-					return "", fmt.Errorf("persist model: %w", err)
-				}
-				if model == "" {
-					return "Model reset to the provider default. Applies from the next message.", nil
-				}
-				return "Model set to " + model + ". Applies from the next message.", nil
-			},
-			// Picker choices (D028): the Claude aliases; Codex takes any
-			// model id the account has, so it offers only "default".
-			func(chatFolder string) []string {
-				if agentRunner.ProviderForChat(chatFolder).Name() == "claude" {
-					return []string{"fable", "opus", "sonnet", "haiku"}
-				}
-				return nil
-			}, chatFolderLookup)
+		control.RegisterConversationSelectionCommands(router, control.ConversationSelectionDeps{
+			Read: agentRunner.ConversationSelection, Change: agentRunner.ChangeConversationSelection,
+			Folder: chatFolderLookup, Providers: []string{"claude", "codex"},
+		})
 
 		// /silent (D055): per-chat progress-only streaming, persisted like /model.
 		control.RegisterSilentCommand(router,
@@ -633,23 +614,6 @@ func run() error {
 				return nil
 			}, chatFolderLookup)
 
-		control.RegisterProviderCommand(router, func(ctx context.Context, chatFolder, name string) (string, error) {
-			p, ok := providers[name]
-			if !ok {
-				return "", fmt.Errorf("unknown provider %q (available: claude, codex)", name)
-			}
-			hadModel := agentRunner.ModelForChat(chatFolder) != ""
-			if err := agentRunner.SwitchChatProvider(ctx, chatFolder, p); err != nil {
-				return "", err
-			}
-			msg := fmt.Sprintf("Switched to %s. Conversations continue with their own recent history; sessions, workspace and memory are preserved.", name)
-			if hadModel {
-				msg += " Model reset to the provider default; use /model to pick one for " + name + "."
-			}
-			return msg, nil
-		}, func(chatFolder string) string {
-			return agentRunner.ProviderForChat(chatFolder).Name()
-		}, []string{"claude", "codex"}, chatFolderLookup)
 	}
 
 	// /clear + /compact commands.
@@ -765,7 +729,7 @@ func run() error {
 		})
 
 		if fallbackSwitch != nil {
-			control.RegisterProviderFallbackCommand(router, st, fallbackSwitch, tgBot.EnqueueProviderFallback)
+			control.RegisterConversationFallbackCommand(router, st, fallbackSwitch, tgBot.EnqueueProviderFallback)
 		}
 
 		// Wire the GroupQueue if the runner is available. Turns are

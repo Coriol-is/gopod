@@ -40,7 +40,6 @@ func preferencesQ(ctx context.Context, q taskSQL, folder, global string) (ScopeR
 	}
 	p := conversationPreferences{Models: map[string]string{}, Providers: map[int]string{}, ConversationModels: map[int]map[string]string{}}
 	if err == sql.ErrNoRows {
-		p.Default = global
 		var provider, model string
 		if err = q.QueryRowContext(ctx, `SELECT COALESCE((SELECT value FROM router_state WHERE key=?),''),COALESCE((SELECT value FROM router_state WHERE key=?),'')`, "provider:"+folder, "model:"+folder).Scan(&provider, &model); err != nil {
 			return ref, p, 0, err
@@ -49,16 +48,23 @@ func preferencesQ(ctx context.Context, q taskSQL, folder, global string) (ScopeR
 			p.Default = provider
 		}
 		if model != "" {
-			p.Models[p.Default] = model
+			modelProvider := p.Default
+			if modelProvider == "" {
+				modelProvider = global
+			}
+			p.Models[modelProvider] = model
 		}
 		revision = 1
 		if err = writePreferencesQ(ctx, q, ref, p, revision); err != nil {
 			return ref, p, 0, err
 		}
-	} else if err = json.Unmarshal([]byte(raw), &p); err != nil {
-		return ref, p, 0, fmt.Errorf("decode conversation preferences: %w", err)
+	} else {
+		p = conversationPreferences{}
+		if err = json.Unmarshal([]byte(raw), &p); err != nil {
+			return ref, p, 0, fmt.Errorf("decode conversation preferences: %w", err)
+		}
 	}
-	if p.Default == "" || p.Models == nil || p.Providers == nil || p.ConversationModels == nil {
+	if p.Models == nil || p.Providers == nil || p.ConversationModels == nil {
 		return ref, p, 0, errors.New("store: invalid conversation preferences")
 	}
 	return ref, p, revision, nil
@@ -71,8 +77,12 @@ func writePreferencesQ(ctx context.Context, q taskSQL, ref ScopeRef, p conversat
 	_, err = q.ExecContext(ctx, `INSERT INTO conversation_preferences(namespace_id,namespace_epoch,payload,revision) VALUES(?,?,?,?) ON CONFLICT(namespace_id,namespace_epoch) DO UPDATE SET payload=excluded.payload,revision=excluded.revision`, ref.NamespaceID, ref.NamespaceEpoch, string(raw), revision)
 	return err
 }
-func resolvedPreference(ref ScopeRef, p conversationPreferences, rev int64, thread int) ConversationSelection {
-	s := ConversationSelection{Scope: ref, ThreadID: thread, DefaultProvider: p.Default, Provider: p.Default, ProviderInherited: true, ModelInherited: true, Revision: rev}
+func resolvedPreference(ref ScopeRef, p conversationPreferences, rev int64, thread int, global string) ConversationSelection {
+	effectiveDefault := p.Default
+	if effectiveDefault == "" {
+		effectiveDefault = global
+	}
+	s := ConversationSelection{Scope: ref, ThreadID: thread, DefaultProvider: effectiveDefault, Provider: effectiveDefault, ProviderInherited: true, ModelInherited: true, Revision: rev}
 	if v, ok := p.Providers[thread]; ok {
 		s.Provider = v
 		s.ProviderInherited = false
@@ -101,7 +111,7 @@ func (s *Store) ResolveConversationSelection(ctx context.Context, folder string,
 		if e != nil {
 			return e
 		}
-		out = resolvedPreference(ref, p, rev, thread)
+		out = resolvedPreference(ref, p, rev, thread, global)
 		return nil
 	})
 	return
@@ -121,7 +131,8 @@ func (s *Store) ChangeConversationSelection(ctx context.Context, expected Conver
 		if e != nil {
 			return e
 		}
-		if rev != expected.Revision {
+		current := resolvedPreference(ref, p, rev, expected.ThreadID, expected.DefaultProvider)
+		if rev != expected.Revision || current != expected {
 			return ErrSelectionChanged
 		}
 		switch kind {
@@ -151,7 +162,7 @@ func (s *Store) ChangeConversationSelection(ctx context.Context, expected Conver
 		if e = writePreferencesQ(ctx, q, ref, p, rev+1); e != nil {
 			return e
 		}
-		out = resolvedPreference(ref, p, rev+1, expected.ThreadID)
+		out = resolvedPreference(ref, p, rev+1, expected.ThreadID, expected.DefaultProvider)
 		return nil
 	})
 	return
@@ -206,6 +217,14 @@ func (s *Store) BindTurnSelection(ctx context.Context, turnID int64, attempt int
 		if e = json.Unmarshal([]byte(saved), &out); e != nil {
 			return e
 		}
+		var boundProvider, boundModel string
+		bindingErr := q.QueryRowContext(ctx, `SELECT provider,model FROM attempt_bindings WHERE turn_id=?`, turnID).Scan(&boundProvider, &boundModel)
+		if bindingErr != nil && bindingErr != sql.ErrNoRows {
+			return bindingErr
+		}
+		if bindingErr == nil && (boundProvider != out.Provider || boundModel != out.Model) {
+			return errors.New("store: durable binding conflicts with conversation selection")
+		}
 		if out.Scope != selected.Scope {
 			return ErrStaleScope
 		}
@@ -220,5 +239,19 @@ func (s *Store) TurnSelection(ctx context.Context, turnID int64, attempt int) (o
 		return out, fmt.Errorf("reading turn selection %s: %w", strconv.FormatInt(turnID, 10), err)
 	}
 	err = json.Unmarshal([]byte(raw), &out)
+	return
+}
+
+// ResolveDefaultSelection deliberately ignores main/thread-zero overrides.
+// Unscoped maintenance uses this API rather than pretending main is a wildcard.
+func (s *Store) ResolveDefaultSelection(ctx context.Context, folder, global string) (out ConversationSelection, err error) {
+	_, err = s.withTx(ctx, func(q taskSQL) error {
+		ref, p, rev, e := preferencesQ(ctx, q, folder, global)
+		if e != nil {
+			return e
+		}
+		out = resolvedPreference(ref, p, rev, -1, global)
+		return nil
+	})
 	return
 }

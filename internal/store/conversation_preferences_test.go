@@ -135,3 +135,59 @@ func TestRetireConversationPreferencesIsScoped(t *testing.T) {
 		t.Fatal(e)
 	}
 }
+
+func TestConversationDefaultRemainsInheritedAndForeignSnapshotRejected(t *testing.T) {
+	s := preferenceStore(t)
+	ctx := t.Context()
+	before := selection(t, s, 7)
+	after, e := s.ResolveConversationSelection(ctx, "owner", 7, "codex")
+	if e != nil || after.Provider != "codex" {
+		t.Fatalf("global fallback pinned: %+v %v", after, e)
+	}
+	forged := before
+	forged.Provider = "codex"
+	if _, e = s.ChangeConversationSelection(ctx, forged, "model", "gpt-5"); !errors.Is(e, ErrSelectionChanged) {
+		t.Fatalf("forged snapshot: %v", e)
+	}
+	changeSelection(t, s, 0, "provider", "codex")
+	def, e := s.ResolveDefaultSelection(ctx, "owner", "claude")
+	if e != nil || def.Provider != "claude" {
+		t.Fatalf("main treated as wildcard: %+v %v", def, e)
+	}
+}
+func TestMalformedConversationPreferencesFailClosed(t *testing.T) {
+	s := preferenceStore(t)
+	v := selection(t, s, 7)
+	if _, e := s.db.ExecContext(t.Context(), `UPDATE conversation_preferences SET payload='{}' WHERE namespace_id=?`, v.Scope.NamespaceID); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := s.ResolveConversationSelection(t.Context(), "owner", 7, "claude"); e == nil {
+		t.Fatal("malformed preferences accepted")
+	}
+}
+
+func TestConversationSelectionRefusesConflictingDurableBinding(t *testing.T) {
+	s := preferenceStore(t)
+	ctx := t.Context()
+	sel := selection(t, s, 7)
+	id, _, e := s.InsertTurn(ctx, Turn{Source: "telegram", SourceID: "42:durable", ChatFolder: "owner", ChatID: 42, ThreadID: 7, Text: "safe"})
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = s.MarkTurnRunning(ctx, id); e != nil {
+		t.Fatal(e)
+	}
+	binding, e := s.ResolveConversation(ctx, sel.Scope, 7)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = s.BindAttempt(ctx, sel.Scope, AttemptBinding{TurnID: id, SessionID: binding.ActiveSessionID, ContextEpoch: binding.ContextEpoch, Provider: "codex"}); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = s.BindTurnSelection(ctx, id, 1, sel); e == nil {
+		t.Fatal("conflicting durable binding allowed")
+	}
+	if _, e = s.TurnSelection(ctx, id, 1); e == nil {
+		t.Fatal("failed bind committed partial evidence")
+	}
+}
