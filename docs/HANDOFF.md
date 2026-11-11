@@ -25,7 +25,11 @@ No application/dependency/configuration changes, Telegram probes or deployment.
 Existing priority and paused-feature gates are unchanged. Next for this feature:
 review the design; implementation requires a subsequent owner request and SDK,
 scoped snapshot/control-outbox and generation-identity qualification.
-Documentation branch: `docs/telegram-widget-spec`, worktree `gopod-widget-spec`.
+Documentation: [PR #196](https://github.com/Coriol-is/gopod/pull/196), branch
+`docs/telegram-widget-spec`, worktree `gopod-widget-spec`. Local links and whitespace
+checks passed. Independent review findings addressed: per-panel expiry is excluded
+from shared snapshot caches, late receipts cannot revive expired/retired panels,
+and registry table formatting is corrected. Required PR CI is the merge gate.
 
 ## Current follow-up — deadcode hook and Sonar scope, 2026-11-06
 

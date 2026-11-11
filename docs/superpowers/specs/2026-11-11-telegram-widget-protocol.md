@@ -120,8 +120,11 @@ is not retried blindly; the user can Refresh again.
 
 Telegram limits queries per user across widgets. Local snapshot cache TTL is five
 seconds and preserves its original observed_at; cache hits never relabel old data
-as new. Reject excess concurrent work with busy rather than spawning unlimited
-readers. No persistent per-query rows or periodic polling in V1.
+as new. Cache only the snapshot payload, keyed by bot identity, resolved execution
+scope and registration/restore generation. Invalidate on generation change. Inject
+the authorized panel's expires_at into each response after ownership lookup; never
+cache a full panel response across messages. Reject excess concurrent work with
+busy rather than spawning unlimited readers. No persistent per-query rows or periodic polling in V1.
 
 ## 6. Durable creation and ownership
 
@@ -146,15 +149,29 @@ Logical lifecycle:
 ```mermaid
 stateDiagram-v2
     [*] --> prepared
+    prepared --> expired: expired before dispatch
+    prepared --> retired: authority retired before dispatch
     prepared --> dispatching: durable attempt before HTTP
     dispatching --> active: positive receipt and atomic DB bind
     dispatching --> refused: definite permanent rejection
     dispatching --> prepared: proven unsent retry under existing policy
     dispatching --> uncertain: outcome unknown
-    uncertain --> active: exact retained positive receipt, DB only
+    uncertain --> active: exact receipt and still eligible, DB only
+    uncertain --> expired: exact receipt after expiry, DB only
+    uncertain --> retired: exact receipt after retirement, DB only
     active --> expired: lifetime elapsed
     active --> retired: registration or topic retired
 ```
+
+The lifetime starts when the command is durably admitted: expires_at equals that
+time plus 24 hours. Delivery expiry must not exceed panel expiry. Recheck expiry
+and retirement before dispatch; prepared work can expire/retire without HTTP.
+A positive receipt always settles delivery evidence and binds ownership, even when
+late, but activates query access only if still unexpired and authorized. A late
+receipt after retirement/expiry produces a retired/expired panel, never revives it.
+This rule applies to immediate ACK settlement as well as uncertain recovery. An
+unknown send remains uncertain despite expiry: access stays denied and its delivery
+evidence is retained until an exact outcome exists.
 
 Crash recovery treats a dispatched attempt without an exact outcome as uncertain.
 Never automatically resend or send a text replacement after timeout, connection
@@ -197,7 +214,8 @@ Schema rollback must preserve new evidence; feature disable is not data deletion
   re-registration, retirement, missing receipt and restored-generation mismatch.
 - Faults: pre-dispatch cancellation, definite rejection, 429/proven-unsent retry,
   successful send with failed DB ACK, timeout after possible acceptance, crash at
-  every transition, exact-receipt settlement without another HTTP send.
+  every transition, expiry/retirement before dispatch, late positive receipts after
+  expiry/retirement, exact-receipt settlement without another HTTP send.
 - Concurrency: duplicate command update, repeated refresh, cache expiry, dedup
   capacity, concurrent topic retirement, gate change and two clients.
 - Regression: existing command callbacks, login, Stop, text/voice/document outbox,
