@@ -29,11 +29,15 @@ Implementation checkpoints now integrated locally: delivery `7c15035` and
 `becd396`; topic orchestration `6246398`; provider selection `0c0593b`/`3186ba8`.
 Integration `9f07f09` adds atomic topic preference cleanup and rollback/sibling/
 idempotency coverage; focused tests and independent review pass. New foreground
-and deletion flags default off. Source work continues on eager keyboard cleanup,
-exact external-deletion observation and cross-feature attempt scope validation.
+and deletion flags default off. Eager keyboard cleanup (`9ec3914`), exact external deletion (`b709fbd`), scoped
+counter retirement (`def3691`) and pre-native scope/task-batch validation (`3369c39`)
+are integrated. Each slice passed author tests; independent review covered cleanup,
+observation, the preference transaction and source scope checks. Final combined
+validation follows registered-private nontext ownership journal completion.
 No final parent-completion or runtime activation claim. An owner choice about
 holding gone-topic replies versus a durable main-chat destination contract is pending.
 
+Draft integration PR: [#197](https://github.com/Coriol-is/gopod/pull/197).
 Root integration worktree: `gopod-priority-integration`, branch
 `integration/backlog-1-3`. Source work is in progress, not merged/deployed. First delivery checkpoint
 `7c15035` (integrated locally as `22dd325`) implements pre-dispatch mixed-path

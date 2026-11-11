@@ -2447,6 +2447,35 @@ Historical missing-provenance targets hold before HTTP. Groups/unregistered
 compatibility and other nontext effects remain unqualified. This does not implement
 operator unknown resolution, confirmed topic deletion or foreground cutover.
 
+## D072 — Ordered reply surfaces and opt-in immutable foreground delivery
+
+**Status:** implementation contract, 2026-11-12, CP-002 continuation. Foreground
+activation remains off pending qualification; no group/unknown-history expansion.
+
+Reserve mixed legacy/outbox reply-surface order before presentation/publication.
+An exact later ACK fills only its reservation and never creates chronology.
+Unknown historical order stays unproven. Callback authority requires current
+scope, exact acknowledged target and newest eligible surface, not message-id order.
+
+An opt-in owner-private batch binds its complete attempt set to result freezing,
+captures presentation mode, seals/joins preview writers and publishes an immutable
+final plan. Only all-part ACK exposes final memo/action authority. Stop admission
+precedes preparation as well as publication; preparation failures preserve NoReplay.
+Old presentation versions remain recoverable without rendering or inference.
+
+Obsolete acknowledged keyboards may receive one fixed empty-markup request through
+separate exact retirement authority and the existing durable edit ledger. Recheck
+newer ACK and raw target before dispatch; never remove the current/rebound row,
+rewrite text or infer historical provenance. Unknown or refused cleanup is not
+blindly retried. This authority does not grant arbitrary edits to published output.
+
+The different-destination contract for gone topics is unresolved; the producer
+holds the frozen result rather than inventing a reroute. Registered group and
+unregistered durable publication require separate scope/permission qualification.
+[Ordering](reviews/2026-11-12-reply-surface-order.md),
+[foreground](reviews/2026-11-12-foreground-delivery.md),
+[keyboard retirement](reviews/2026-11-12-reply-keyboard-retirement.md).
+
 ## D073 — Confirmed topic deletion dispatch and local recovery
 
 **Status:** implementation contract, 2026-11-12, CP-016 continuation; activation
@@ -2479,3 +2508,29 @@ and existing intent/fence identity. No outer fallback, delete replay, generic
 error inference, or context retirement before current quiescence is allowed.
 A later exact observation supersedes an earlier refusal/unknown local receipt for
 that same intent; it cannot reopen the topic or leak its reserved capacity.
+
+## D074 — Conversation-scoped provider and model selection
+
+**Status:** implementation contract, 2026-11-12; implements the accepted CP-018
+specification under the owner's priorities 1–3 request. Supersedes only the
+chat-wide selection behavior of D030/D031; native rollout remains unqualified.
+
+Keep one native agent at a time per chat. Resolve provider from conversation
+override, optional chat default, then configured global default. Resolve model
+for that provider from its conversation override and provider-specific chat default.
+Main is a conversation, not a wildcard. Preserve explicit inherit/default choices
+and migrate the old model only to its recorded provider selection.
+
+Persist immutable actual provider/model per (turn, attempt) under the existing
+agent slot before native execution, including all coalesced scheduled members.
+Validate the pre-slot captured registration scope and exact frozen batch membership
+before side effects. Settings use namespace/epoch identity and revision-CAS; stale
+or foreign confirmations cannot mutate a different conversation. Retire scoped
+preferences in the same transaction as topic context. Clear preserves preferences.
+
+Login/native uncertainty prevents unsafe recycling. Preserve provider-specific
+native sessions and thread-scoped history through ephemeral image changes.
+Scoped maintenance selects that conversation; unscoped maintenance selects chat
+defaults. The paused durable-session binding wrapper fails closed on conflicting
+metadata; this contract neither activates CP-037 nor qualifies that wrapper.
+[Source and acceptance boundaries](reviews/2026-11-12-conversation-provider-selection.md).
