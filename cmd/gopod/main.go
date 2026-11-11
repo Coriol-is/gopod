@@ -883,7 +883,7 @@ func run() error {
 						closeArtifacts = func() { blobs.Close() }
 					}
 				}
-				dispatcher := telegram.NewOutboxDispatcher(owner, tgBot.NewOutboxTransport(opener), telegram.OutboxConfig{}, outboxLog)
+				dispatcher := telegram.NewOutboxDispatcher(owner, tgBot.NewOutboxTransport(opener), telegram.OutboxConfig{Acknowledged: tgBot.ObserveForegroundAcknowledgement}, outboxLog)
 				if err := dispatcher.Start(ctx); err != nil {
 					owner.Release()
 					health.Fail()
@@ -909,6 +909,10 @@ func run() error {
 					outboxLog.Info("outbox dispatcher running")
 				}
 			}
+		}
+
+		if err := enableForegroundDelivery(cfg.OutboxForegroundEnabled, outboxRunning, tgBot); err != nil {
+			return err
 		}
 
 		// IPC watcher (M7). Reads agent-authored JSON files under

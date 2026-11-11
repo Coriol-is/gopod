@@ -514,6 +514,24 @@ func (b *Bot) runAgentSyncContext(ctx, runCtx context.Context, item queue.Item) 
 		}
 		return nil
 	}
+	if usesForegroundDelivery(ctx) {
+		b.stopWaitDraftRefresh(ctx, item)
+		if err := handoff(ctx); err != nil {
+			if errors.Is(err, queue.ErrStopped) {
+				return b.finishBufferedStopped(ctx, item)
+			}
+			return err
+		}
+		ph := b.popWaitPlaceholder(ctx, item)
+		p := FinalReplyPresentation{EditMessageID: int64(ph)}
+		if ph != 0 && foregroundMode(ctx) == "voice" && stripCodeBlocks(reply) == reply {
+			if err := b.deletePlaceholder(ctx, item.ChatID, ph); err != nil {
+				return &finalPublicationError{err}
+			}
+			p.EditMessageID = 0
+		}
+		return b.publishForeground(ctx, item, p)
+	}
 	if b.waitPlaceholder(ctx, item) != 0 {
 		if b.getReplyMode(item.ChatID, item.IsVoice) == "voice" && stripCodeBlocks(reply) == reply {
 			b.stopWaitDraftRefresh(ctx, item)

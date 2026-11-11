@@ -154,6 +154,10 @@ type Config struct {
 	// dispatcher is running; group and shared chats always stay on the legacy path.
 	OutboxIPCEnabled bool
 
+	// OutboxForegroundEnabled selects immutable owner-private final delivery.
+	// Default false; requires a running dispatcher and artifact preparation.
+	OutboxForegroundEnabled bool
+
 	// OutboxArtifactsEnabled accepts strict V1 IPC requests with file
 	// attachments, snapshotted into an immutable host-private store and sent by
 	// the outbox dispatcher (CP-003 PR 4). Default true since D057 (owner
@@ -231,6 +235,7 @@ func Load(loadDotenv bool) (Config, error) {
 		OutboxDispatcherEnabled: envFlag("GOPOD_OUTBOX_DISPATCHER"),
 		ManagedTasksEnabled:     envFlag("GOPOD_MANAGED_TASKS"),
 		OutboxIPCEnabled:        envFlag("GOPOD_OUTBOX_IPC"),
+		OutboxForegroundEnabled: envFlag("GOPOD_OUTBOX_FOREGROUND"),
 		OutboxArtifactsEnabled:  !envOff("GOPOD_OUTBOX_ARTIFACTS"),
 		TopicDeletionEnabled:    envFlag("GOPOD_TOPIC_DELETION_ENABLED"),
 		RecoveryQuarantine:      envFlag("GOPOD_RECOVERY_QUARANTINE"),

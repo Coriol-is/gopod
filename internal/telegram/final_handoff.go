@@ -47,6 +47,10 @@ func (b *Bot) finalHandoff(ctx context.Context, turnID int64) (context.Context, 
 		if err := t.beginFinal(); err != nil {
 			return err
 		}
+		// Seal was published under phaseMu. Join any preview that passed its
+		// admission check before that seal before handing the target to outbox.
+		t.previewMu.Lock()
+		t.previewMu.Unlock()
 		if batch, ok := ctx.Value(ordinaryBatchKey{}).(store.OrdinaryStopBinding); ok && b.store != nil && t.home > 0 {
 			if err := b.store.ReserveLegacyReplySurface(ctx, batch.Conversation, turnID); err != nil {
 				return &ownershipSendError{cause: err}

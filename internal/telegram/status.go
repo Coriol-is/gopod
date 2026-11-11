@@ -41,26 +41,28 @@ const (
 	stStallSoft
 	stStallHard
 	stCompacting
+	stDeliveryQueued
 )
 
 // stateEmoji maps a state to its reaction. Every value must be in
 // Telegram's ReactionTypeEmoji list (TestStatusEmojiAllAllowed): ✅ and
 // ❌, for one, are not.
 var stateEmoji = map[turnState]string{
-	stQueued:     "👀",
-	stThinking:   "🤔",
-	stTool:       "👨‍💻",
-	stDone:       "👍",
-	stError:      "😱",
-	stStopped:    "👌",
-	stStallSoft:  "🥱",
-	stStallHard:  "😨",
-	stCompacting: "✍",
+	stQueued:         "👀",
+	stThinking:       "🤔",
+	stTool:           "👨‍💻",
+	stDone:           "👍",
+	stError:          "😱",
+	stStopped:        "👌",
+	stStallSoft:      "🥱",
+	stStallHard:      "😨",
+	stCompacting:     "✍",
+	stDeliveryQueued: "🕊",
 }
 
 // final reports whether s ends the message's reaction life.
 func (s turnState) final() bool {
-	return s == stDone || s == stError || s == stStopped
+	return s == stDone || s == stError || s == stStopped || s == stDeliveryQueued
 }
 
 const (
