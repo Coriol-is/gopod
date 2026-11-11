@@ -20,10 +20,11 @@ var (
 // A resumed deleting/uncertain intent is NOT permission to repeat the API call:
 // the original request may already have succeeded.
 type TopicDeletion struct {
-	Scope    ScopeRef
-	ThreadID int
-	IntentID string
-	State    string // deleting | uncertain | deleted | retired | refused
+	Scope                ScopeRef
+	ThreadID             int
+	IntentID             string
+	State                string // deleting | uncertain | deleted | retired | refused
+	ObservationAttemptID string // exact externally refused owned send, when present
 }
 
 func validatePrivateTopicQ(ctx context.Context, q taskSQL, scope ScopeRef, thread int) error {
@@ -39,9 +40,9 @@ func validatePrivateTopicQ(ctx context.Context, q taskSQL, scope ScopeRef, threa
 
 func readTopicDeletionQ(ctx context.Context, q taskSQL, scope ScopeRef, thread int) (TopicDeletion, error) {
 	d := TopicDeletion{Scope: scope, ThreadID: thread}
-	err := q.QueryRowContext(ctx, `SELECT intent_id,registration_revision,chat_jid,folder,state FROM topic_deletions
+	err := q.QueryRowContext(ctx, `SELECT intent_id,registration_revision,chat_jid,folder,state,observation_attempt_id FROM topic_deletions
  WHERE namespace_id=? AND namespace_epoch=? AND thread_id=?`, scope.NamespaceID, scope.NamespaceEpoch, thread).
-		Scan(&d.IntentID, &d.Scope.RegistrationRevision, &d.Scope.JID, &d.Scope.Folder, &d.State)
+		Scan(&d.IntentID, &d.Scope.RegistrationRevision, &d.Scope.JID, &d.Scope.Folder, &d.State, &d.ObservationAttemptID)
 	return d, err
 }
 

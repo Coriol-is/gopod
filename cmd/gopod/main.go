@@ -692,15 +692,16 @@ func run() error {
 			elevatedInput = elevated
 		}
 		tgBot, err := telegram.New(cfg.TelegramBotToken, telegram.Deps{
-			Store:         st,
-			Elevated:      elevatedInput,
-			Runner:        agentRunner,
-			Router:        router,
-			Allowlist:     allowlist,
-			OwnerChatID:   cfg.OwnerChatID,
-			GroupReason:   groupReasonFunc(groupManager),
-			Log:           tgLog,
-			StreamEnabled: cfg.StreamEnabled,
+			TopicDeletionEnabled: cfg.TopicDeletionEnabled,
+			Store:                st,
+			Elevated:             elevatedInput,
+			Runner:               agentRunner,
+			Router:               router,
+			Allowlist:            allowlist,
+			OwnerChatID:          cfg.OwnerChatID,
+			GroupReason:          groupReasonFunc(groupManager),
+			Log:                  tgLog,
+			StreamEnabled:        cfg.StreamEnabled,
 		})
 		if err != nil {
 			return fmt.Errorf("init telegram: %w", err)

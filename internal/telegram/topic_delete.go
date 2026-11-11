@@ -81,6 +81,9 @@ func (b *Bot) runTopicDeletions(ctx context.Context) {
 // deleteTopic is only for a freshly queued intent. Claim dispatch atomically
 // before the one remote call. A restored intent never enters this queue.
 func (b *Bot) deleteTopic(ctx context.Context, d store.TopicDeletion) error {
+	if observed, err := b.settleObservedTopic(ctx, d); observed {
+		return err
+	}
 	target, err := topicTarget(d)
 	if err != nil {
 		return err
@@ -96,6 +99,9 @@ func (b *Bot) deleteTopic(ctx context.Context, d store.TopicDeletion) error {
 		return err
 	} // no recovery dispatch authority
 	if err = b.store.ClaimTopicDeletionDispatch(ctx, d); err != nil {
+		if observed, settled := b.settleObservedTopic(ctx, d); observed {
+			return settled
+		}
 		return err
 	}
 	ok, callErr := b.api.DeleteForumTopic(ctx, &bot.DeleteForumTopicParams{ChatID: target.chat, MessageThreadID: target.thread})
@@ -157,6 +163,13 @@ func (b *Bot) settleTopicDeletionReceipt(ctx context.Context, r topicDeleteRecei
 	}
 	if !found || current.IntentID != r.intent.IntentID {
 		return store.ErrTopicDeletionState
+	}
+	// An exact external deletion observation supersedes an older refusal or
+	// unknown receipt for this same intent. Preserve its existing fence identity
+	// and settle locally rather than trying to reopen a now-deleted topic.
+	if current.ObservationAttemptID != "" && (current.State == "deleted" || current.State == "retired") && r.outcome != "deleted" {
+		r.outcome, r.unissued = "deleted", false
+		r.notice = "Telegram сообщил об удалённой теме; контекст сессий закрыт."
 	}
 	if r.unissued {
 		if current.State != "refused" {
@@ -276,4 +289,17 @@ func (b *Bot) recoverDeletedTopics(ctx context.Context) {
 			b.log.Warn("deleted topic local cleanup held", "thread", d.ThreadID, "err", err)
 		}
 	}
+}
+
+// An external observation can arrive while a confirmed command is still queued
+// or joining transports. Such a job owns a capacity slot but no API receipt yet.
+// Convert it into local settlement without acquiring any new dispatch authority.
+func (b *Bot) settleObservedTopic(ctx context.Context, expected store.TopicDeletion) (bool, error) {
+	current, found, err := b.store.GetTopicDeletion(ctx, expected.Scope, expected.ThreadID)
+	if err != nil || !found || current.IntentID != expected.IntentID || current.ObservationAttemptID == "" || (current.State != "deleted" && current.State != "retired") {
+		return false, err
+	}
+	r := topicDeleteReceipt{intent: expected, outcome: "deleted", notice: "Telegram сообщил об удалённой теме; контекст сессий закрыт."}
+	b.retainTopicDeletionReceipt(r)
+	return true, b.settleTopicDeletionReceipt(ctx, r)
 }

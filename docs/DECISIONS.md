@@ -2471,3 +2471,11 @@ permission. Known historical/nontext/managed/native qualification gaps still
 prevent activation. No real existing topic deletion is authorized by this ADR.
 
 [Implementation and qualification boundaries](reviews/2026-11-12-topic-deletion-orchestration.md).
+
+D073 follow-up: the same gate permits only exact typed TOPIC_DELETED observations
+from owner-private sends with precommitted same-topic source/target provenance.
+Atomic send-refusal settlement and observed deletion retain the captured scope
+and existing intent/fence identity. No outer fallback, delete replay, generic
+error inference, or context retirement before current quiescence is allowed.
+A later exact observation supersedes an earlier refusal/unknown local receipt for
+that same intent; it cannot reopen the topic or leak its reserved capacity.

@@ -70,6 +70,10 @@ type Deps struct {
 	// is disabled and /register is rejected from every chat.
 	OwnerChatID int64
 
+	// TopicDeletionEnabled qualifies scoped external deletion observations as well
+	// as the explicit command. Default false preserves existing compatibility.
+	TopicDeletionEnabled bool
+
 	// GroupReason describes privately, for the owner, why a registered group is
 	// not admitted. Optional.
 	GroupReason func(ctx context.Context, jid string) string
@@ -89,34 +93,36 @@ type Deps struct {
 // cancelled (typically by SIGINT/SIGTERM in main). One Bot instance
 // corresponds to one Telegram bot token.
 type Bot struct {
-	topicTransport    runner.ConversationGate
-	topicIngress      runner.ConversationGate
-	topicFences       map[chatThread]topicFence
-	topicMu           sync.Mutex
-	topicMessages     map[topicMessageKey]chatThread
-	topicMessageOrder []topicMessageKey
-	topicUncertain    map[chatThread]bool
-	topicQuiesceMu    sync.Mutex
-	receiptMu         sync.Mutex
-	messageReceipts   map[string]messageReceipt
-	repairReceipts    map[string]repairReceipt
-	editReceipts      map[string]editReceipt
-	deleteReceipts    map[string]deleteReceipt
-	elevated          ElevatedInput
-	capabilities      *capabilityCache
-	api               *bot.Bot
-	store             *store.Store
-	runner            *runner.Runner
-	queue             *queue.Queue
-	router            *control.Router
-	allowlist         *mountsec.Allowlist
-	ownerChatID       int64
-	resolveTries      int   // test seam: negative skips the startup username resolution
-	botID             int64 // from the token; identifies replies to and mentions of this bot
-	groupReason       func(ctx context.Context, jid string) string
-	log               *slog.Logger
-	logins            *loginSessions
-	streamEnabled     bool
+	topicTransport       runner.ConversationGate
+	topicIngress         runner.ConversationGate
+	topicFences          map[chatThread]topicFence
+	topicMu              sync.Mutex
+	topicMessages        map[topicMessageKey]chatThread
+	topicMessageOrder    []topicMessageKey
+	topicUncertain       map[chatThread]bool
+	topicFenceInstallMu  sync.Mutex // serializes non-waiting fence installation
+	topicQuiesceMu       sync.Mutex
+	receiptMu            sync.Mutex
+	messageReceipts      map[string]messageReceipt
+	repairReceipts       map[string]repairReceipt
+	editReceipts         map[string]editReceipt
+	deleteReceipts       map[string]deleteReceipt
+	elevated             ElevatedInput
+	capabilities         *capabilityCache
+	api                  *bot.Bot
+	store                *store.Store
+	runner               *runner.Runner
+	queue                *queue.Queue
+	router               *control.Router
+	allowlist            *mountsec.Allowlist
+	ownerChatID          int64
+	topicDeletionEnabled bool
+	resolveTries         int   // test seam: negative skips the startup username resolution
+	botID                int64 // from the token; identifies replies to and mentions of this bot
+	groupReason          func(ctx context.Context, jid string) string
+	log                  *slog.Logger
+	logins               *loginSessions
+	streamEnabled        bool
 
 	// tts is a test seam for the legacy personal TTS call; nil means the
 	// OpenAI endpoint (textToSpeech).
@@ -276,19 +282,20 @@ func New(token string, deps Deps) (*Bot, error) {
 	}
 
 	b := &Bot{
-		topicDeleteJobs: make(chan store.TopicDeletion, 16),
-		store:           deps.Store,
-		runner:          deps.Runner,
-		elevated:        deps.Elevated,
-		queue:           deps.Queue,
-		router:          deps.Router,
-		allowlist:       deps.Allowlist,
-		ownerChatID:     deps.OwnerChatID,
-		botID:           id,
-		groupReason:     deps.GroupReason,
-		log:             deps.Log,
-		logins:          newLoginSessions(),
-		streamEnabled:   deps.StreamEnabled,
+		topicDeleteJobs:      make(chan store.TopicDeletion, 16),
+		store:                deps.Store,
+		runner:               deps.Runner,
+		elevated:             deps.Elevated,
+		queue:                deps.Queue,
+		router:               deps.Router,
+		allowlist:            deps.Allowlist,
+		ownerChatID:          deps.OwnerChatID,
+		topicDeletionEnabled: deps.TopicDeletionEnabled,
+		botID:                id,
+		groupReason:          deps.GroupReason,
+		log:                  deps.Log,
+		logins:               newLoginSessions(),
+		streamEnabled:        deps.StreamEnabled,
 	}
 
 	client := &http.Client{Timeout: time.Minute}

@@ -84,3 +84,41 @@ and fixed retryable refusal reopening, delayed result notification and repeated
 local-cleanup gaps. Independent exact-head review and required CI remain integration
 gates.
 No deployment, external Telegram call or provider inference was performed.
+
+## Exact external deletion observation follow-up
+
+The same default-off gate now reaches Bot.Deps, not only the command callback.
+When enabled, an owner-private text send can record an external deletion only
+from a typed BadRequest whose complete SDK description is the known exact
+TOPIC_DELETED spelling. CLOSED, generic400, not-found, network errors, substring
+lookalikes, non-owner, main fallback targets and gate-off paths do not retire data.
+This is explicitly observational error handling, not a documented Telegram event.
+
+The send must already own durable pre-HTTP registration and exact nonzero
+source/target provenance. One SQLite transaction verifies it, settles only that
+refused send, and records the observation attempt ID on a deleted-topic intent.
+No current registration is substituted for an old captured scope. An observation
+preserves an existing intent ID, including an earlier refused command, so its
+native/queue/transport fence cannot become orphaned. A queued command or obsolete
+refusal/unknown receipt is converted to local settlement, releases its reserved
+capacity after retirement and never reopens or issues DeleteForumTopic.
+
+The caller returns NoReplay even though the send was definitely refused: outer
+legacy delivery must not reroute context from a now-deleted topic into main. A
+non-waiting serialized fence installation stops new work without joining the
+current transport lease; the existing worker joins it later. Observation/DB failure
+leaves pending send provenance and a truthful hold; it is not permission to infer
+success, discard evidence or fall back. Exact observation settlement is atomic;
+this slice does not add post-crash reconstruction of lost response evidence.
+
+Confirmed observations use the existing bounded restart/local-cleanup path with
+no deletion request or replayed notice. An unrelated external observation creates
+no new notice promise; main `/thread info` exposes its pending local state. A
+previous accepted command retains one truthful result notice through its receipt.
+
+Focused tests cover exact classification, flag/owner boundary, main fallback and
+ACK rejection, atomic DB rollback, re-registration, existing ingress drain,
+restart recovery, and both queued-command and pending-refusal races. Nontext
+sends/threadless edits without equivalent exact physical-topic provenance remain
+outside this observation slice. Historical unknown effects and live native/client
+qualification still gate activation; this follow-up does not complete all CP-016.

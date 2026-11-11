@@ -57,6 +57,19 @@ func (b *Bot) ownedTextSend(ctx context.Context, chat int64, source int, p *bot.
 		settle, cancel := context.WithTimeout(context.WithoutCancel(callCtx), 5*time.Second)
 		defer cancel()
 		if e != nil {
+			if b.topicDeletionEnabled && chat == b.ownerChatID && owner.TargetThread == owner.SourceThread && owner.SourceThread > 0 && isExactTopicDeleted(e) {
+				// The source registration was captured before HTTP. Atomically
+				// refuse this send and record the observation; do not resolve a
+				// new registration or let an outer caller reroute into main.
+				observed, observedErr := b.store.ObserveDeletedTelegramTopic(settle, owner)
+				if observedErr != nil {
+					return &ownershipSendError{attempted: true, cause: errors.Join(e, observedErr)}
+				}
+				// Installation seals/cancels but never waits for our current
+				// transport lease. The worker joins it after this call returns.
+				_, fenceErr := b.installTopicFence(observed, false)
+				return &ownershipSendError{attempted: true, receiptBacked: true, cause: errors.Join(e, fenceErr)}
+			}
 			if !definiteTopicRefusal(e) {
 				return &ownershipSendError{attempted: true, cause: e}
 			}
