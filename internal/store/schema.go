@@ -288,6 +288,9 @@ func (s *Store) applySchema(ctx context.Context) error {
 	if err := s.applyOrdinaryStopSchema(ctx); err != nil {
 		return err
 	}
+	if err := s.applyReplyRowOrderSchema(ctx); err != nil {
+		return err
+	}
 	return s.applyProactiveSchema(ctx)
 }
 

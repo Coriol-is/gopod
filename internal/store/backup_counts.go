@@ -7,6 +7,7 @@ package store
 // test TestRowCountSQLCoversEverySchemaTable fails when a table is added to the
 // schema without being added here.
 var rowCountSQL = map[string]string{
+	"telegram_reply_surfaces":          "SELECT count(*) FROM telegram_reply_surfaces",
 	"ordinary_stop_intents":            "SELECT count(*) FROM ordinary_stop_intents",
 	"ordinary_stop_members":            "SELECT count(*) FROM ordinary_stop_members",
 	"ordinary_stop_completions":        "SELECT count(*) FROM ordinary_stop_completions",

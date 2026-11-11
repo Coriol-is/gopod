@@ -343,6 +343,17 @@ func publishDeliveryQ(ctx context.Context, q taskSQL, limits OutboxLimits, req P
 		req.ExpiresAt, hash, codeCapacity(req), DeliveryPending, now, now); err != nil {
 		return Delivery{}, fmt.Errorf("store: insert delivery: %w", err)
 	}
+	if req.ResultID != "" {
+		res, err := readTurnResult(ctx, q, req.ResultID)
+		if err != nil {
+			return Delivery{}, err
+		}
+		if res.Kind == ExecInteractive && conv.Visibility == VisibilityConversation && len(res.Members) > 0 {
+			if err = reserveReplySurfaceQ(ctx, q, conv, "outbox:"+id, res.Members[len(res.Members)-1].TurnID, "outbox"); err != nil {
+				return Delivery{}, err
+			}
+		}
+	}
 	for i, p := range req.Parts {
 		ordinal := i
 		if a := req.CodeAlternatives; a != nil {

@@ -26,6 +26,17 @@ func (b *Bot) replyActionViewFor(ctx context.Context, q cbQuery, turn store.Turn
 	}
 	memo, _ := b.turnMemoFor(turn.ID, q.ChatID)
 	if !reply.Managed {
+		conv, err := b.store.SnapshotConversation(ctx, buildChatJID(q.ChatID), q.ThreadID, store.VisibilityConversation)
+		if err != nil {
+			return replyActionView{}, "", err
+		}
+		last, found, err := b.store.LatestReplySurface(ctx, conv)
+		if err != nil {
+			return replyActionView{}, "", err
+		}
+		if found && last.MessageID != int64(q.MessageID) {
+			return replyActionView{}, cbToastExpired, nil
+		}
 		return replyActionView{memo: memo}, "", nil
 	}
 	if !reply.Eligible || !reply.Newest || reply.MessageID != int64(q.MessageID) || reply.Conversation.Scope.JID != buildChatJID(q.ChatID) || reply.Conversation.Scope.Folder != q.Chat.Folder || reply.Conversation.ThreadID != q.ThreadID || !hasReplyActionOwner(reply.ReplyMarkup, turn.ID) {
@@ -34,13 +45,23 @@ func (b *Bot) replyActionViewFor(ctx context.Context, q cbQuery, turn store.Turn
 	if origin, ok := ctx.Value(topicOutputOriginKey{}).(chatThread); ok && origin != (chatThread{q.ChatID, q.ThreadID}) {
 		return replyActionView{}, cbToastExpired, nil
 	}
-	// The cache may know a later legacy row, but does not carry durable sequence
-	// evidence. Never choose between different mixed-path rows by message number.
+	// A process-local row can be ignored only when durable observations prove
+	// it is older. Missing history remains a hold rather than guessed order.
+	latest, ordered, err := b.store.LatestReplySurface(ctx, reply.Conversation)
+	if err != nil {
+		return replyActionView{}, "", err
+	}
 	b.rowMu.Lock()
 	last := b.rows.last[chatThread{q.ChatID, q.ThreadID}]
 	b.rowMu.Unlock()
 	if last.msgID != 0 && last.msgID != q.MessageID {
-		return replyActionView{}, cbToastExpired, nil
+		seq, found, err := b.store.ReplySurfaceSequence(ctx, reply.Conversation, int64(last.msgID))
+		if err != nil {
+			return replyActionView{}, "", err
+		}
+		if !ordered || !found || seq >= latest.Sequence {
+			return replyActionView{}, cbToastExpired, nil
+		}
 	}
 	memo.reply = reply.Text
 	return replyActionView{memo: memo, durable: &reply}, "", nil
