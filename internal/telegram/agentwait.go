@@ -228,6 +228,16 @@ func (b *Bot) startWaitDraftRefresh(ctx context.Context, item queue.Item, draftI
 				return
 			case <-ticker.C:
 			}
+			// A queued tick can win select even when shutdown is already ready.
+			// Recheck before dispatch rather than call the client with a canceled
+			// context (or start one more refresh after an explicit stop).
+			select {
+			case <-quit:
+				return
+			case <-ctx.Done():
+				return
+			default:
+			}
 			if time.Now().Before(hold) {
 				continue // rate limited: wait out retry_after
 			}
@@ -256,8 +266,9 @@ type waitRefresher struct {
 }
 
 // stopWaitDraftRefresh stops the turn's wait draft refresher, if any,
-// and returns once it has exited, so no refresh can land after the
-// stream's first draft.
+// and returns once it has exited, so no further refresh is dispatched. An HTTP
+// request already in flight when its context is canceled may still arrive at
+// Telegram after this local join; cancellation cannot retract remote work.
 func (b *Bot) stopWaitDraftRefresh(ctx context.Context, item queue.Item) {
 	k := b.waitKeyOf(ctx, item)
 	b.waitMu.Lock()
