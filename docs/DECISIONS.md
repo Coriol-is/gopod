@@ -2534,3 +2534,20 @@ Scoped maintenance selects that conversation; unscoped maintenance selects chat
 defaults. The paused durable-session binding wrapper fails closed on conflicting
 metadata; this contract neither activates CP-037 nor qualifies that wrapper.
 [Source and acceptance boundaries](reviews/2026-11-12-conversation-provider-selection.md).
+
+
+## D075 — Preserve frozen answers for disappeared topics without sending
+
+**Status:** accepted by the owner, 2026-11-12 ("Сохранить без отправки").
+Resolves the destination-policy question left open by D072.
+
+When the original topic is unavailable, preserve the already frozen answer without
+sending it. Do not rerun inference, automatically retry publication or redirect the
+answer to the main chat. Existing explicit delivery-failure/hold reporting remains;
+a saved result is not a delivered result. This policy does not infer remote success
+or clear unknown attempts. It grants no new recovery, export or deletion authority.
+
+The current gated foreground implementation already follows this behavior; this
+acceptance changes the specification and closes the policy question, not the
+production activation or native/client acceptance gates. Legacy non-frozen fallback
+behavior is outside this decision.

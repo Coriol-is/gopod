@@ -53,8 +53,8 @@ Earlier required CI on `56f7c28` and `8e2fb18` passed; these are not final-head 
   for exact current guard locations; the group namespace itself already exists.
 - Historical missing provenance and unknown remote/native outcomes retain holds;
   no inferred evidence, remote replay or manual force-clear was added.
-- Gone-topic frozen output remains held. The owner's saved-only versus durable
-  main-chat destination choice remains unanswered; no rerouting contract was added.
+- Gone-topic destination policy is resolved by owner decision D075: preserve the
+  frozen answer without sending or rerunning the model. No main-chat reroute.
 - No native/client or disposable-topic destructive acceptance, merge, deployment or
   runtime flag activation is claimed. Existing user topics were not deleted.
 - CP-037 parallel/session activation and managed-task credentials remain deferred.

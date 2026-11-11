@@ -41,17 +41,19 @@ The observation is best-effort UI and cannot create delivery/replay authority.
 It is scoped to the current attempt, avoiding a stale ACK overwriting a retry's
 status. No reply memo is populated before the existing all-part ACK transaction.
 
-## Explicit unresolved gates
+## Policy and remaining gates
 
-- Gone original topic: retain the frozen answer and report an error; no hidden
-  main-chat reroute. The owner was asked whether to retain this behavior or design
-  a frozen destination-override contract. No answer was received at this checkpoint.
-- Eager stale keyboard cleanup is not implemented. Shared ordering revokes stale
-  actions, but removing their keyboard requires exact retired-surface edit authority
-  and durable edit evidence; ordinary newest-row authority cannot authorize it.
+- Gone original topic: owner decision D075 accepts retaining the frozen answer
+  without sending or rerunning the model. No main-chat reroute. This policy is
+  resolved; native/client acceptance remains separate.
+- Eager stale keyboard cleanup was implemented in follow-up `9ec3914` using exact
+  retired-surface authority and durable edit evidence; see the
+  [review](2026-11-12-reply-keyboard-retirement.md).
 - Historical missing provenance and explicit unknown outcome reconciliation remain
   held. No age/absence-based success, retry or force-clear is introduced.
-- Group/unregistered and wider nontext uncertainty coverage remains unqualified.
+- Group/unregistered coverage remains unqualified. Registered-private document,
+  voice and As-file creation provenance was implemented in follow-up `9f321d7`;
+  historical and unknown-outcome holds remain.
 - Native/client tests, preview/Stop/full presentation qualification and rollout
   remain open. This branch does not enable foreground, topics deletion, managed
   tasks, workers or paused parallel sessions on production.

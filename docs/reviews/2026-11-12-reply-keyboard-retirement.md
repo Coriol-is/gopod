@@ -26,4 +26,4 @@ Independent read-only review by the provider agent found no confirmed blocker be
 
 ## Remaining boundaries
 
-No production enablement or real Telegram client acceptance is claimed. Gone-topic durable answers remain held pending the owner's destination-policy choice. Historical rows, group/unregistered coverage and unknown-operation reconciliation remain separate work; no blanket historical message edits are authorized by this checkpoint.
+No production enablement or real Telegram client acceptance is claimed. Gone-topic durable answers remain saved without sending or model rerun, per accepted D075. Historical rows, group/unregistered coverage and unknown-operation reconciliation remain separate work; no blanket historical message edits are authorized by this checkpoint.

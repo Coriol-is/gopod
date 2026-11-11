@@ -26,4 +26,4 @@ The negative-chat provenance/transport exclusions also need coordinated implemen
 
 ### Destination and recovery policy
 
-Gone-topic frozen answers remain held: saved-only versus explicit durable main-chat destination is still an owner decision. This change preserves existing legacy fallback only and does not select a new durable destination. Unknown remote sends/edits require receipt reconciliation or an explicit recovery policy; they are not automatically retried. Real-client acceptance, production flag activation and CP-037 worker activation are outside this checkpoint.
+Owner decision D075 resolves gone-topic frozen answers as saved-only: no send, model rerun or main-chat reroute. This change preserves existing legacy fallback only and does not select a new durable destination. Unknown remote sends/edits require receipt reconciliation or an explicit recovery policy; they are not automatically retried. Real-client acceptance, production flag activation and CP-037 worker activation are outside this checkpoint.

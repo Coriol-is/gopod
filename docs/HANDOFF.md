@@ -38,8 +38,8 @@ integrated as `28cea85`). Combined focused races pass. The combined full suite
 found `TestWaitDraftRefreshEndsWithContext` failing after cancellation; diagnosis
 found both late fake-server observation and a ready-tick/cancellation race. Follow-up `8a320eb` adds a pre-dispatch shutdown recheck and deterministic in-flight HTTP
 coverage; full build/vet/tests, 100 regression repeats and affected races pass; evidence is in the [integration review](reviews/2026-11-12-priority-integration.md).
-No final parent-completion or runtime activation claim. An owner choice about
-holding gone-topic replies versus a durable main-chat destination contract is pending.
+No final parent-completion or runtime activation claim. Owner decision D075: retain a gone-topic frozen answer without sending or rerunning
+the model; no main-chat reroute.
 
 Integration PR: [#197](https://github.com/Coriol-is/gopod/pull/197).
 Root integration worktree: `gopod-priority-integration`, branch
@@ -253,7 +253,7 @@ preview/Stop/publication paths. Ordering, eager keyboard retirement and register
 private document/voice/As-file ownership are now implemented in PR197.
 `WithResultFreeze`, final preparation and `QuiesceTopic` have production callers;
 foreground and `/thread delete` remain disabled by their default-off gates.
-Gone-topic frozen output remains held pending the owner's destination choice.
+Gone-topic frozen output remains saved without sending or rerunning the model (D075).
 Do not reopen completed #168–#177 slices. Older "next" lists above describe the
 recorded deployments, not missing source in the active integration branch.
 
