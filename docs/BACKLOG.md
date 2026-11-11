@@ -24,12 +24,11 @@ Owner scope for this batch: merge/push only, no deployment.
 
 ## Current priority
 
-1. CP-002 delivery with necessary CP-003 slices: remaining group/unregistered and
-   non-edit effects, historical uncertainty and explicit reconciliation, eager old-row
-   cleanup, mixed legacy/durable newest-row
-   ordering, then integrated preview/Stop/publication qualification and foreground
-   producer/cutover. Local control/final edit arbitration and More/Back retirement
-   checkpoints are deployed in #187 (`0cd8078`); D069 durable repair journal follows in #189; unknowns stay held without supported settlement.
+1. CP-002 delivery with necessary CP-003 slices: remaining group/unregistered
+   scope, historical uncertainty and explicit reconciliation, then native/client
+   qualification and foreground cutover. Mixed-path ordering, eager old-row cleanup,
+   integrated preview/Stop/publication and registered-private nontext creation
+   provenance are implemented in PR197; the producer defaults off.
 2. CP-016 full topic retirement.
 3. CP-018 per-conversation provider/model selection.
 4. CP-019 group command/service UX.
@@ -84,15 +83,16 @@ PRs #168–#180/#182/#183/#186/#187/#189/#191/#193 are deployed on Pi, latest `0
 health, state preservation and Telegram version passed. Three D068 scheduling
 guides migrated; actual matching Node consumer passed read-only list/replay/conflict.
 [Latest deployment and cleanup evidence](deployments/2026-11-06-durable-delete-rollout.md).
-Foreground producer remains disconnected; managed tasks remain off.
+In that deployed revision the foreground producer remains disconnected; PR197 adds
+default-off wiring. Managed tasks remain off.
 
 ## Unfinished implementation
 
 | Item | Code present and actual runtime wiring | Remaining work / next action |
 |---|---|---|
-| CP-002 foreground final delivery | [foreground_delivery.go](../internal/telegram/foreground_delivery.go) binds result freezing and publishes immutable finals from sync/stream/drain paths. `GOPOD_OUTBOX_FOREGROUND` defaults off and requires a started dispatcher. [Reply ordering](reviews/2026-11-12-reply-surface-order.md) now reserves mixed legacy/outbox ordering before effects. [Producer contract](reviews/2026-11-12-foreground-delivery.md). | Exact eager obsolete-keyboard cleanup is implemented; historical/group/unregistered/nontext uncertainty and explicit reconciliation remain. Gone-topic output is held; a different physical destination requires the pending owner decision. Native/client parity and activation remain open. Connected code is not production cutover. |
+| CP-002 foreground final delivery | [foreground_delivery.go](../internal/telegram/foreground_delivery.go) binds result freezing and publishes immutable finals from sync/stream/drain paths. `GOPOD_OUTBOX_FOREGROUND` defaults off and requires a started dispatcher. [Reply ordering](reviews/2026-11-12-reply-surface-order.md) now reserves mixed legacy/outbox ordering before effects. [Producer contract](reviews/2026-11-12-foreground-delivery.md). | Exact eager obsolete-keyboard cleanup is implemented; historical/group/unregistered and unknown-operation uncertainty and explicit reconciliation remain. Gone-topic output is held; a different physical destination requires the pending owner decision. Native/client parity and activation remain open. Connected code is not production cutover. |
 | CP-003 typed IPC | [artifact_request.go](../internal/ipc/artifact_request.go) validates typed file/voice requests; [outbox.go](../cmd/gopod/outbox.go) wires durable IPC preparation/transport; immutable artifact and voice/code preparation foundations are present. | Complete the wider CP-002-linked typed-output/protected-challenge/release scope. Do not reimplement file delivery already exposed by CP-040. Photo-to-document upload fallback now has separate durable attempts (PR #172, `a016b82`); conditional code-inline assembly is deployed in #173/D065. Full matched recovery remains a separate CP-007 gap. |
-| CP-016 topic deletion | [thread.go](../internal/control/thread.go) provides owner-private inspection and bound confirmation; [topic_delete.go](../internal/telegram/topic_delete.go) invokes quiescence, one-shot dispatch, exact outcome settlement and bounded local recovery. `GOPOD_TOPIC_DELETION_ENABLED` defaults off. Preference retirement is transactional with context removal. [Review](reviews/2026-11-12-topic-deletion-orchestration.md). | Exact owner-private TOPIC_DELETED observation is implemented; it never repeats delete HTTP. Historical/nontext/unknown native and remote effects retain holds. D064 qualification and explicitly disposable native/client acceptance remain; no real deletion or activation. |
+| CP-016 topic deletion | [thread.go](../internal/control/thread.go) provides owner-private inspection and bound confirmation; [topic_delete.go](../internal/telegram/topic_delete.go) invokes quiescence, one-shot dispatch, exact outcome settlement and bounded local recovery. `GOPOD_TOPIC_DELETION_ENABLED` defaults off. Preference retirement is transactional with context removal. [Review](reviews/2026-11-12-topic-deletion-orchestration.md). | Exact owner-private TOPIC_DELETED observation is implemented; it never repeats delete HTTP. Registered-private document/voice/As-file creation provenance is implemented; historical and unknown native/remote effects retain holds. D064 qualification and explicitly disposable native/client acceptance remain; no real deletion or activation. |
 | CP-004 managed tasks | `main.go` installs the managed ledger; under `ManagedTasksEnabled` it installs [taskexec](../internal/taskexec) handler/snapshot and runner policy. [task_run.go](../internal/runner/task_run.go) implements isolated native execution. Main supplies no qualified task credential adapter and explicitly keeps task-role execution denied. | PR 4–5 settlement/visibility and schedule policies; owner-deferred credential adapter and native qualification before activation. Flag remains off in the recorded deployment. A wired executor is not an operational managed task service. |
 | CP-007 backups | [backup_cli.go](../cmd/gopod/backup_cli.go), [backup](../internal/backup) and [maintenance](../internal/maintenance) implement create/verify/list/idle/quarantine, writer fences, restore latch and scratch verification. `matched_stopped` includes artifact blobs/config; the backup test covers that manifest. | ChatsDir/provider session/auth/IPC coverage; restore epoch invalidation; activation/restore command and Pi restore drill, then timer and bounded retention. Online artifact leases are needed for an online matched mode, not missing from every existing backup. CP-039 full migration remains proposed. |
 | CP-033 proactive presets | `main.go` registers `/proactive`, resolves owner workspace and upgrades templates. [proactive.go](../cmd/gopod/proactive.go), [catalog/upgrade/outcome](../internal/proactive), control panel and owner integration guide are present. The `Connector` dependency is not supplied, so readiness remains `unknown`, with explicit confirmation on enable. | Provider connector probe/readiness, setup/recheck/discovery-offer lifecycle and acceptance. Schedule quiet-window logic exists; it is not a complete quiet-hour delivery deferral mechanism. PR 3 is no longer “in review”. Presets are not enabled by this audit. |

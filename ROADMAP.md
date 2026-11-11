@@ -349,9 +349,9 @@ implementation.
 
 | Proposal | Status | Implementation scope |
 |---|---|---|
-| CP-016 topic deletion | 🟦 | Store/outbox/ingress and native/queue/transport fences through #167 deployed; command, durable legacy ownership/reconciliation and destructive acceptance remain open |
+| CP-016 topic deletion | 🟦 | PR197 adds gated confirmation/orchestration, exact deletion observation and local retirement; historical/unknown reconciliation and disposable native/client acceptance remain open |
 | CP-017 Telegram diagnostics | ✅ | Separate Telegram settings, subscriptions, code support and contextual rights; owner doctor and scoped help; [execution plan](docs/superpowers/plans/2026-10-25-telegram-capability-diagnostics.md) implemented for private DMs; group reports/notices deferred |
-| CP-018 per-thread providers | ⬜ | Chat default plus topic overrides, provider-specific models and scoped confirmed quota fallback |
+| CP-018 per-thread providers | 🟦 | PR197 implements chat defaults, conversation overrides, immutable attempt selection and scoped quota fallback; merge/deployment and native/client qualification remain open |
 | CP-019 ephemeral command/service/error replies | ⬜ | Public conversational messages unchanged; private delivery never falls back to public |
 
 Specifications are accepted for planning only; no associated mode or routing

@@ -13,7 +13,7 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Active implementation — backlog priorities 1–3, 2026-11-11
+## Resume here — backlog priorities 1–3 integration, 2026-11-12
 
 Owner requested priorities 1–3 in agents. Three isolated worktrees start from
 `da529a8`; integration order remains delivery, topic retirement, scoped providers.
@@ -33,17 +33,22 @@ and deletion flags default off. Eager keyboard cleanup (`9ec3914`), exact extern
 counter retirement (`def3691`) and pre-native scope/task-batch validation (`3369c39`)
 are integrated. Each slice passed author tests; independent review covered cleanup,
 observation, the preference transaction and source scope checks. Final combined
-validation follows registered-private nontext ownership journal completion.
+validation includes registered-private document/voice/As-file ownership (`9f321d7`,
+integrated as `28cea85`). Combined focused races pass. The combined full suite
+found `TestWaitDraftRefreshEndsWithContext` failing after cancellation; diagnosis
+found both late fake-server observation and a ready-tick/cancellation race. Follow-up `8a320eb` adds a pre-dispatch shutdown recheck and deterministic in-flight HTTP
+coverage; full build/vet/tests, 100 regression repeats and affected races pass; evidence is in the [integration review](reviews/2026-11-12-priority-integration.md).
 No final parent-completion or runtime activation claim. An owner choice about
 holding gone-topic replies versus a durable main-chat destination contract is pending.
 
-Draft integration PR: [#197](https://github.com/Coriol-is/gopod/pull/197).
+Integration PR: [#197](https://github.com/Coriol-is/gopod/pull/197).
 Root integration worktree: `gopod-priority-integration`, branch
-`integration/backlog-1-3`. Source work is in progress, not merged/deployed. First delivery checkpoint
+`integration/backlog-1-3`. Source review is complete, not merged/deployed; final-head CI and GitHub approval remain release gates. First delivery checkpoint
 `7c15035` (integrated locally as `22dd325`) implements pre-dispatch mixed-path
 reply ordering; build/vet/full tests and focused races passed in its worktree.
 Root independently reviewed the bounded checkpoint; late-ACK ordering correction
-is included. Foreground integration and parent delivery qualification remain open.
+is included. Foreground integration is present behind its default-off flag; parent
+delivery qualification remains open.
 No paused parallel-session/managed-task/worker activation. Native/client acceptance
 and existing uncertainty gates remain mandatory; command wiring alone is not full
 acceptance. Existing unrelated state-machine worktrees remain untouched.
@@ -55,7 +60,7 @@ approval. Finish concrete source/test/review artifacts before seeking any missin
 merge approval. Runtime baseline remains the previously recorded0200892, not
 reverified by this documentation checkpoint.
 
-## Current follow-up — deadcode hook and Sonar scope, 2026-11-06
+## Historical checkpoint — deadcode hook and Sonar scope, 2026-11-06
 
 Owner requested deadcode in pre-commit and exclusion of scripts/all Python from
 Sonar. Work is on `ci/deadcode-precommit`, worktree `gopod-deadcode-hook`, base3ea9328.
@@ -73,7 +78,7 @@ Separate unresolved CI observation: unchanged managed Stop/backoff test saw
 `turn = running` in run42243855328;30 local repeats passed. Do not treat subsequent
 CI success as root-cause resolution; no runtime change/deploy in this batch.
 
-## Resume here — D071 deployed, 2026-11-06
+## Recorded deployed baseline — D071, 2026-11-06
 
 #193 (`0200892`, D071) closes the registered-private sync voice-placeholder
 DeleteMessage gap: commit-before-HTTP attempts, exact outcomes, durable pending/
@@ -242,12 +247,15 @@ Separate 556 KiB NanoClaw/OneCLI/systemd archives retained. No broad Docker prun
 
 Use [active backlog](BACKLOG.md) for remaining scope and
 [ROADMAP](../ROADMAP.md#execution-priority--2026-11-04) for order.
-Before foreground cutover, complete historical/group/unregistered/non-edit uncertainty reconciliation,
-eager cleanup, mixed-path ordering and integrated preview/Stop/publication qualification.
-Local arbitration and D069 exact-evidence repair settlement are implemented; unsupported
-unknowns remain held. The completed bounded callback slice is described above. `WithResultFreeze` and `PrepareFrozenFinalReply` still
-have no production callers. CP-016 `QuiesceTopic` has no production caller either;
-`/thread delete` is unavailable. Do not reopen completed #168–#177 slices.
+Before foreground cutover, resolve group/unregistered scope policy, historical
+missing provenance and explicit unknown reconciliation, and qualify the integrated
+preview/Stop/publication paths. Ordering, eager keyboard retirement and registered-
+private document/voice/As-file ownership are now implemented in PR197.
+`WithResultFreeze`, final preparation and `QuiesceTopic` have production callers;
+foreground and `/thread delete` remain disabled by their default-off gates.
+Gone-topic frozen output remains held pending the owner's destination choice.
+Do not reopen completed #168–#177 slices. Older "next" lists above describe the
+recorded deployments, not missing source in the active integration branch.
 
 Managed-task credentials remain owner-deferred and activation off. CP-037 P2–P7
 and T5/T5b remain paused; P0/P1 are deployed in legacy mapping. T9 cgroup/reboot
