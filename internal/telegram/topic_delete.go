@@ -190,6 +190,9 @@ func (b *Bot) settleTopicDeletionReceipt(ctx context.Context, r topicDeleteRecei
 				return err
 			}
 		}
+		if b.runner != nil {
+			b.runner.ForgetRetiredConversationCounters(r.intent.Scope.Folder, r.intent.ThreadID)
+		}
 	case "refused":
 		if err = b.ReopenRefusedTopic(ctx, r.intent); err != nil {
 			return err
@@ -283,6 +286,9 @@ func (b *Bot) recoverDeletedTopics(ctx context.Context) {
 		err = b.QuiesceTopic(recoverCtx, d)
 		if err == nil {
 			err = b.store.RetireDeletedTopic(recoverCtx, d)
+			if err == nil && b.runner != nil {
+				b.runner.ForgetRetiredConversationCounters(d.Scope.Folder, d.ThreadID)
+			}
 		}
 		cancel()
 		if err != nil {

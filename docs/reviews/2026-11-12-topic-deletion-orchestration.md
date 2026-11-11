@@ -122,3 +122,9 @@ restart recovery, and both queued-command and pending-refusal races. Nontext
 sends/threadless edits without equivalent exact physical-topic provenance remain
 outside this observation slice. Historical unknown effects and live native/client
 qualification still gate activation; this follow-up does not complete all CP-016.
+
+Post-retirement runtime cleanup removes the exact folder/topic auto-compact count
+only after native work has joined and SQLite retirement succeeds, both for command
+receipts and periodic observation/restart cleanup. Main, siblings, other folders,
+shared activity, draft capability caches and durable admission fences are preserved.
+An idempotent sibling-preservation regression covers this transient cache cleanup.
