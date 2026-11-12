@@ -41,11 +41,32 @@ reconciliation boundaries, native/client delivery parity and disposable-topic
 retirement before activation. No existing user topic deletion is authorized.
 Do not reopen implemented slices or call these partial parents fully complete.
 
-Documentation reconciliation is on `docs/priority-rollout` in
-`gopod-priority-rollout`. Main application source is already deployed. Source and
-unrelated worktrees, rollback images, backups and credentials are preserved.
-The one-time admin authorization applied to PR197 only; do not infer blanket
-permission to bypass future PR approval requirements. Widget docs PR196 is separate.
+Rollout documentation PR198 is merged. State-machine audit PR195 and widget
+specification PR196 preserve their paused/design-only boundaries; neither authorizes
+implementation. Runtime remains `56d1a7d`; these documentation merges need no deploy.
+Source and unrelated worktrees, rollback images, backups and credentials are retained.
+Owner policy (2026-11-12): requested docs-only PRs may merge immediately after conflict
+resolution without additional validation or approval. Use admin merge for that
+explicitly requested docs-only scope when GitHub requires approval; source changes
+retain normal gates. PR197's source admin exception was one-time only.
+
+## Current design — Telegram widgets, 2026-11-11
+
+Owner requested specifications only after the sendWidget feasibility assessment.
+[CP-041](proposals/CP-041-telegram-widgets.md) is accepted for design only;
+[product](superpowers/specs/2026-11-11-telegram-widget-panel.md) and
+[protocol](superpowers/specs/2026-11-11-telegram-widget-protocol.md) drafts define
+an owner-private read-only status panel, Refresh, text compatibility, durable
+creation, ownership/expiry and native-client acceptance. Baseline da529a8.
+No application/dependency/configuration changes, Telegram probes or deployment.
+Existing priority and paused-feature gates are unchanged. Next for this feature:
+review the design; implementation requires a subsequent owner request and SDK,
+scoped snapshot/control-outbox and generation-identity qualification.
+Documentation: [PR #196](https://github.com/Coriol-is/gopod/pull/196), branch
+`docs/telegram-widget-spec`, worktree `gopod-widget-spec`. Local links and whitespace
+checks passed. Independent review findings addressed: per-panel expiry is excluded
+from shared snapshot caches, late receipts cannot revive expired/retired panels,
+and registry table formatting is corrected. This remains a design-only change under the owner-approved immediate docs-merge policy.
 
 ## Paused — explicit state machines refactor, items 1-6, 2026-11-08
 

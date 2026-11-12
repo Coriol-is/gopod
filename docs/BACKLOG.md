@@ -11,6 +11,14 @@ Completed slices and explicitly superseded/rejected choices are in the
 [archive](history/BACKLOG-2026-11-05-completed.md). Partial parent proposals remain
 here; proposed, deferred and paused work is not cancelled.
 
+## Design only — widgets, 2026-11-11
+
+[CP-041](proposals/CP-041-telegram-widgets.md): owner-private read-only status panel
+specifications prepared. No widget methods/models, update handlers, delivery parts
+or UI are implemented. SDK, scoped snapshot reads, control-origin durable sends
+and registration/restore identity remain implementation prerequisites. No change
+to the execution priority; implementation and activation are not authorized.
+
 ## State machine refactor, items 1-6 — 2026-11-08 (specified, paused)
 
 Source: [implicit state machines audit](reviews/2026-11-08-implicit-state-machines.md);

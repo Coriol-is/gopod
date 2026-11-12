@@ -136,3 +136,4 @@ not enabling the feature merely by merging that document.
 | [CP-038](CP-038-elevated-host-session.md) | Elevated host session deployed; bounded Codex check passed, Claude browser completion open | implemented | M |
 | [CP-039](CP-039-full-backup-restore-migration.md) | Automatic full backup/restore (files, sessions, auth) and device migration (draft) | proposed | L |
 | [CP-040](CP-040-agent-attachments.md) | Agent attachments: discoverable file delivery from the agent on top of CP-003; honest refusal; document presentation ([spec](../superpowers/specs/2026-11-02-agent-attachments.md), [D058](../DECISIONS.md); real-client acceptance pending) | implemented | M |
+| [CP-041](CP-041-telegram-widgets.md) | Private-chat status widgets ([product](../superpowers/specs/2026-11-11-telegram-widget-panel.md), [protocol](../superpowers/specs/2026-11-11-telegram-widget-protocol.md)); design only, implementation not authorized | accepted | M |
