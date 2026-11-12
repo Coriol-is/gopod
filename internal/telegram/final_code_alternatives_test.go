@@ -118,8 +118,8 @@ func TestConditionalCodeEditOverflowAndKeyboard(t *testing.T) {
 					t.Fatal("single suffix lost edit")
 				}
 			} else {
-				if len(edits) != 0 || len(messages) < 2 {
-					t.Fatal("overflow should send chunks")
+				if len(edits) != 1 || len(messages) < 2 || edits[0].Form["message_id"] != "42" || edits[0].Form["reply_markup"] != `{"inline_keyboard":[]}` {
+					t.Fatal("overflow must retire the preview before standalone chunks")
 				}
 				for i, m := range messages {
 					if (m.Form["reply_markup"] != "") != (i == len(messages)-1) {

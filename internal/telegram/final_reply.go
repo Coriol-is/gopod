@@ -21,6 +21,9 @@ type FinalReplyPresentation struct {
 	ReplyToMessageID int64
 	EditMessageID    int64
 	ReplyMarkup      string
+	RetireMessageID  int64  `json:",omitempty"`
+	PreviewText      string `json:",omitempty"`
+	legacy           bool
 }
 type finalReplyInput struct {
 	Version      int
@@ -31,9 +34,9 @@ type finalReplyInput struct {
 var ErrFinalReplyNoOutput = errors.New("telegram: final reply has no prepared output")
 
 // PrepareFrozenFinalReply is the host entrypoint for an already frozen personal
-// result. It does not run a model or send Telegram requests. Production foreground
-// creation is deliberately not wired until preview/cancellation/fallback parity
-// is qualified. Ready-intent recovery uses only Store.PublishReadyFinalReply.
+// result. It does not run a model or send Telegram requests. The opt-in owner
+// foreground path calls this after preview handoff; ready-intent recovery uses
+// only Store.PublishReadyFinalReply. Default foreground activation remains off.
 func (b *Bot) PrepareFrozenFinalReply(ctx context.Context, resultID string, presentation FinalReplyPresentation) (store.Delivery, error) {
 	if b.prepared == nil || b.store == nil {
 		return store.Delivery{}, store.ErrFinalReplyNotReady
@@ -41,22 +44,26 @@ func (b *Bot) PrepareFrozenFinalReply(ctx context.Context, resultID string, pres
 	if presentation.Mode != "text" && presentation.Mode != "voice" && presentation.Mode != "voice+text" {
 		return store.Delivery{}, store.ErrInvalidDelivery
 	}
-	if presentation.EditMessageID < 0 || presentation.ReplyToMessageID < 0 || presentation.EditMessageID > 2147483647 || presentation.ReplyToMessageID > 2147483647 {
+	if presentation.RetireMessageID < 0 || presentation.RetireMessageID > 2147483647 || presentation.EditMessageID < 0 || presentation.ReplyToMessageID < 0 || presentation.EditMessageID > 2147483647 || presentation.ReplyToMessageID > 2147483647 {
+		return store.Delivery{}, store.ErrInvalidDelivery
+	}
+	if presentation.EditMessageID != 0 && presentation.RetireMessageID != 0 {
 		return store.Delivery{}, store.ErrInvalidDelivery
 	}
 	if _, err := parseOutboxMarkup(presentation.ReplyMarkup); err != nil {
 		return store.Delivery{}, err
 	}
-	input := finalReplyInput{Version: 2, Presentation: presentation}
+	input := finalReplyInput{Version: 3, Presentation: presentation}
 	if presentation.Mode != "text" && b.prepared.Speech != nil && b.prepared.Speech.Backend != nil {
 		input.VoiceBackend = b.prepared.Speech.Backend.Name()
 	}
-	// Preserve the identity of already-recorded v1 inputs/plans. Their bytes
+	// Preserve the identity of already-recorded v1/v2 inputs/plans. Their bytes
 	// must never be upgraded during a retry or recovery.
 	if prior, e := b.store.GetFinalReply(ctx, resultID); e == nil {
 		var old finalReplyInput
-		if json.Unmarshal(prior.Input, &old) == nil && old.Version == 1 {
-			input.Version = 1
+		if json.Unmarshal(prior.Input, &old) == nil && (old.Version == 1 || old.Version == 2) {
+			input.Version = old.Version
+			presentation.legacy = true
 		}
 	}
 	raw, err := json.Marshal(input)

@@ -5,6 +5,7 @@ import (
 
 	"github.com/Coriol-is/gopod/internal/queue"
 	"github.com/Coriol-is/gopod/internal/runner"
+	"github.com/Coriol-is/gopod/internal/store"
 )
 
 type finalGenerationKey struct{}
@@ -43,7 +44,19 @@ func (b *Bot) finalHandoff(ctx context.Context, turnID int64) (context.Context, 
 		if t == nil {
 			return nil
 		}
-		return t.beginFinal()
+		if err := t.beginFinal(); err != nil {
+			return err
+		}
+		// Seal was published under phaseMu. Join any preview that passed its
+		// admission check before that seal before handing the target to outbox.
+		t.previewMu.Lock()
+		t.previewMu.Unlock()
+		if batch, ok := ctx.Value(ordinaryBatchKey{}).(store.OrdinaryStopBinding); ok && b.store != nil && t.home > 0 {
+			if err := b.store.ReserveLegacyReplySurface(ctx, batch.Conversation, turnID); err != nil {
+				return &ownershipSendError{cause: err}
+			}
+		}
+		return nil
 	}, stop
 }
 func finalGenerationRetired(ctx context.Context) bool {

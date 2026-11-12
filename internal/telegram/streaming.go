@@ -661,6 +661,22 @@ loop:
 	// would deliver nothing, so send the reply (to main) like a draft turn.
 	gone := placeholder != 0 && b.threadGone(item.ChatID, item.ThreadID)
 
+	if usesForegroundDelivery(ctx) {
+		p := FinalReplyPresentation{Streaming: true}
+		if placeholder != 0 && !gone {
+			if !overflow {
+				p.EditMessageID = int64(placeholder)
+			} else {
+				p.RetireMessageID = int64(placeholder)
+				p.PreviewText = accumulated.String()
+				if silent {
+					p.PreviewText = view()
+				}
+			}
+		}
+		return b.publishForeground(ctx, item, p)
+	}
+
 	switch {
 	case draftID != 0 || gone:
 		// The draft is only a preview: persist the reply as a real
@@ -951,6 +967,10 @@ func (b *Bot) drainAndSend(ctx context.Context, item queue.Item, stream *runner.
 	text := res.FullText
 	if text == "" {
 		text = "(empty reply)"
+	}
+
+	if usesForegroundDelivery(ctx) {
+		return b.publishForeground(ctx, item, FinalReplyPresentation{Streaming: true})
 	}
 
 	b.turnStatus(item).Set(stDone)

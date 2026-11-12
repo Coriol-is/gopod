@@ -10,6 +10,19 @@ import (
 func frozenTextParts(text string, p FinalReplyPresentation) []store.DeliveryPart {
 	chunks := chunkHTML(finalReplyHTML(text), 4000)
 	parts := make([]store.DeliveryPart, 0, len(chunks))
+	retire := p.RetireMessageID
+	if retire == 0 && !p.legacy && p.EditMessageID != 0 && len(chunks) > 1 {
+		retire = p.EditMessageID
+	}
+	if retire != 0 {
+		text := p.PreviewText
+		if text == "" {
+			text = "Finished."
+		}
+		// A bounded plain preview checkpoint retires Stop before standalone
+		// chunks. It is part of every immutable code-fallback variant.
+		parts = append(parts, store.DeliveryPart{Kind: store.PartEdit, TargetMessageID: retire, Payload: []byte(truncateRunes(text, 4000)), ReplyMarkup: `{"inline_keyboard":[]}`})
+	}
 	for i, chunk := range chunks {
 		part := store.DeliveryPart{Kind: store.PartText, Payload: []byte(chunk), ParseMode: "HTML"}
 		if i == 0 {

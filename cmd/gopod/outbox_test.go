@@ -247,3 +247,22 @@ func TestArtifactIssuerNeedsEveryGateAndSharesTheWatcherRegistry(t *testing.T) {
 		t.Error("issuer built for a group owner id")
 	}
 }
+
+type foregroundEnableProbe struct {
+	calls int
+	err   error
+}
+
+func (p *foregroundEnableProbe) EnableForegroundDelivery() error { p.calls++; return p.err }
+func TestForegroundEnableRequiresStartedDispatcher(t *testing.T) {
+	for _, tc := range []struct {
+		requested, running, wantErr bool
+		calls                       int
+	}{{false, false, false, 0}, {false, true, false, 0}, {true, false, true, 0}, {true, true, false, 1}} {
+		p := &foregroundEnableProbe{}
+		err := enableForegroundDelivery(tc.requested, tc.running, p)
+		if (err != nil) != tc.wantErr || p.calls != tc.calls {
+			t.Fatalf("%+v calls=%d err=%v", tc, p.calls, err)
+		}
+	}
+}

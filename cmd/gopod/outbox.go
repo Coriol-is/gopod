@@ -192,3 +192,22 @@ func artifactIssuer(cfg config.Config, ac ipc.ArtifactConfig, st *store.Store, l
 		Log: log,
 	}
 }
+
+// enableForegroundDelivery uses actual dispatcher startup, never just its flag.
+// A requested cutover with missing dependencies fails startup rather than
+// silently switching that owner's result back to legacy delivery.
+func enableForegroundDelivery(requested, running bool, bot interface{ EnableForegroundDelivery() error }) error {
+	if !requested {
+		return nil
+	}
+	if !running {
+		return fmt.Errorf("foreground delivery requires a running outbox dispatcher")
+	}
+	if bot == nil {
+		return fmt.Errorf("foreground delivery requires a Telegram bot")
+	}
+	if err := bot.EnableForegroundDelivery(); err != nil {
+		return fmt.Errorf("enable foreground delivery: %w", err)
+	}
+	return nil
+}

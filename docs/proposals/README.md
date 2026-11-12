@@ -111,9 +111,9 @@ not enabling the feature merely by merging that document.
 | [CP-013](CP-013-transcript-provenance.md) | Speech transcript provenance | done | S |
 | [CP-014](CP-014-telegram-media-input.md) | Telegram media — three delivery queues (design only) | accepted | L |
 | [CP-015](CP-015-agent-scheduling.md) | Generic agent scheduling and IPC receipts | done | M |
-| [CP-016](CP-016-telegram-topic-deletion.md) | Telegram topic deletion and conversation retirement (store/outbox and native/queue/transport fences deployed; main-control/noncontrol and private topic text ownership deployed; historical/nontext ownership, reconciliation and command activation pending) | in-progress | M |
+| [CP-016](CP-016-telegram-topic-deletion.md) | Telegram topic deletion and conversation retirement (store/outbox and native/queue/transport fences deployed; main-control/noncontrol and private topic text ownership deployed; PR197 adds registered-private nontext ownership, gated command orchestration and exact deletion observation; historical/unknown reconciliation and native/client activation pending) | in-progress | M |
 | [CP-017](CP-017-telegram-capability-diagnostics.md) | Telegram capability diagnostics (initial private-DM slice) | done | M |
-| [CP-018](CP-018-per-thread-providers.md) | Provider selection per conversation (design only) | accepted | M |
+| [CP-018](CP-018-per-thread-providers.md) | Provider selection per conversation (deployed in56d1a7d; full native acceptance open) | in-progress | M |
 | [CP-019](CP-019-telegram-ephemeral-commands.md) | Private command/service/error replies in groups (design only) | accepted | M |
 | [CP-020](CP-020-personal-group-isolation.md) | Personal/group isolation (controller deployed; groups admitted by default once registered, D047; final provider/client qualification open) | implemented | L |
 | [CP-021](CP-021-task-outcomes-checkpoints.md) | Task outcomes, evidence and checkpoints | proposed | M |

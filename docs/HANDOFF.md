@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-08 (state machine audit recorded; refactor items 1-6 specified, paused before dispatch)
+**Last updated:** 2026-11-12 (priorities 1–3 merged and deployed)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -12,6 +12,40 @@ messages, commands, attachments and supported button interactions, without
 per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older references
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
+
+## Resume here — priorities 1–3 deployed, 2026-11-12
+
+PR197 is squash-merged as `56d1a7d` after explicit owner authorization for a one-time
+admin merge. Required PR and exact-main CI, independent reviews, build/vet/tests
+and affected races passed. Pi controller `56d1a7d` is healthy; image/binary hashes,
+registration/session/task preservation and verified pre/post-migration backups pass.
+No worker/agent-image/credential change. [Release and acceptance evidence](deployments/2026-11-12-priority-rollout.md).
+
+Implemented: mixed legacy/outbox ordering, gated immutable foreground producer,
+one-shot obsolete keyboard retirement, registered-private document/voice/As-file
+ownership, gated topic confirmation/deletion/exact observation/local retirement,
+and conversation-scoped provider/model selection. Preference cleanup is atomic
+with retirement; per-topic counters are cleared only after quiescence. The final
+wait-refresher cancellation regression is fixed and validated100 times plus races.
+[Integration review](reviews/2026-11-12-priority-integration.md), D072–D075.
+
+Foreground and topic deletion flags remain off. CP-018 routing is live; initial
+Telegram version/provider inspection and one native Codex turn passed; immutable
+attempt selection was checked in SQLite and all12 idle counters returned to zero. Full provider alternation/session continuity and the broader client
+matrix remain open. CP-037 parallel/session activation and managed tasks remain
+paused/off. Owner decision D075: save a gone-topic frozen answer without sending,
+rerunning the model or redirecting to main. There is no pending destination choice.
+
+Next: qualify the remaining group/unregistered scope and historical/unknown
+reconciliation boundaries, native/client delivery parity and disposable-topic
+retirement before activation. No existing user topic deletion is authorized.
+Do not reopen implemented slices or call these partial parents fully complete.
+
+Documentation reconciliation is on `docs/priority-rollout` in
+`gopod-priority-rollout`. Main application source is already deployed. Source and
+unrelated worktrees, rollback images, backups and credentials are preserved.
+The one-time admin authorization applied to PR197 only; do not infer blanket
+permission to bypass future PR approval requirements. Widget docs PR196 is separate.
 
 ## Paused — explicit state machines refactor, items 1-6, 2026-11-08
 
@@ -27,7 +61,11 @@ restart with a held managed attempt fails in `cmd/gopod/restart.go:580-593`
 Owner approved refactoring ranking items 1-6 as parallel agent tasks, then paused
 before dispatch until the five-hour quota window resets. The implementer briefs are
 fixed in [specs/2026-11-08-explicit-state-machines.md](superpowers/specs/2026-11-08-explicit-state-machines.md).
-Nothing is implemented. Six clean worktrees exist at base `da529a8`, no commits:
+The six dedicated refactor branches remain unimplemented at base `da529a8`.
+The audit describes the November8 snapshot: PR197 subsequently connected foreground
+and topic retirement callers and fixed a wait-refresher cancellation race. Reconcile
+those changes before resuming; do not reimplement completed slices.
+Six clean worktrees exist with no commits:
 
 | Item | Branch | Worktree |
 |---|---|---|
@@ -38,7 +76,7 @@ Nothing is implemented. Six clean worktrees exist at base `da529a8`, no commits:
 | 5 legacy task status | `tasks/legacy-status-check` | `../gopod-legacy-task-status` |
 | 6 login/stream state | `telegram/login-stream-state` | `../gopod-telegram-view-state` |
 
-**Next (first action on resume):** merge this docs PR, then dispatch one implementer
+**Next (only on explicit resume):** refresh each branch against current main, then dispatch one implementer
 per brief (spec parts 1-6) into its worktree, following `superpowers:subagent-driven-development`
 with a task review per branch. Merge order to limit conflicts in
 `internal/store/restart.go` and `cmd/gopod/restart.go`: 2 (smallest), 1, 3, then 4, 5, 6
@@ -47,7 +85,7 @@ the spec's introduction and in the audit's recommendation table; items 2 and 4 k
 their out-of-scope lists. No deployment is part of this batch until all six merge
 and the owner confirms Pi scope.
 
-## Current follow-up — deadcode hook and Sonar scope, 2026-11-06
+## Historical checkpoint — deadcode hook and Sonar scope, 2026-11-06
 
 Owner requested deadcode in pre-commit and exclusion of scripts/all Python from
 Sonar. Work is on `ci/deadcode-precommit`, worktree `gopod-deadcode-hook`, base3ea9328.
@@ -65,7 +103,7 @@ Separate unresolved CI observation: unchanged managed Stop/backoff test saw
 `turn = running` in run42243855328;30 local repeats passed. Do not treat subsequent
 CI success as root-cause resolution; no runtime change/deploy in this batch.
 
-## Resume here — D071 deployed, 2026-11-06
+## Recorded deployed baseline — D071, 2026-11-06
 
 #193 (`0200892`, D071) closes the registered-private sync voice-placeholder
 DeleteMessage gap: commit-before-HTTP attempts, exact outcomes, durable pending/
@@ -234,12 +272,15 @@ Separate 556 KiB NanoClaw/OneCLI/systemd archives retained. No broad Docker prun
 
 Use [active backlog](BACKLOG.md) for remaining scope and
 [ROADMAP](../ROADMAP.md#execution-priority--2026-11-04) for order.
-Before foreground cutover, complete historical/group/unregistered/non-edit uncertainty reconciliation,
-eager cleanup, mixed-path ordering and integrated preview/Stop/publication qualification.
-Local arbitration and D069 exact-evidence repair settlement are implemented; unsupported
-unknowns remain held. The completed bounded callback slice is described above. `WithResultFreeze` and `PrepareFrozenFinalReply` still
-have no production callers. CP-016 `QuiesceTopic` has no production caller either;
-`/thread delete` is unavailable. Do not reopen completed #168–#177 slices.
+Before foreground cutover, resolve group/unregistered scope policy, historical
+missing provenance and explicit unknown reconciliation, and qualify the integrated
+preview/Stop/publication paths. Ordering, eager keyboard retirement and registered-
+private document/voice/As-file ownership are now implemented in PR197.
+`WithResultFreeze`, final preparation and `QuiesceTopic` have production callers;
+foreground and `/thread delete` remain disabled by their default-off gates.
+Gone-topic frozen output remains saved without sending or rerunning the model (D075).
+Do not reopen completed #168–#177 slices. Older "next" lists above describe the
+historical deployments, not missing source in deployed `56d1a7d`.
 
 Managed-task credentials remain owner-deferred and activation off. CP-037 P2–P7
 and T5/T5b remain paused; P0/P1 are deployed in legacy mapping. T9 cgroup/reboot
@@ -248,25 +289,24 @@ is not automatic retention or qualified full restore.
 
 CP-040 A22–A25, ordinary Stop/restart, CP-020 provider/client and CP-038 Claude
 browser-completion gates remain in [ACCEPTANCE](ACCEPTANCE.md). Existing Telegram
-authorization applies; coordinate a single actor. No forced crash, visual/native
-or full restore qualification was added by the latest rollout or this docs audit.
+authorization applies; coordinate a single actor. The latest rollout adds one bounded native Codex round trip; it adds no forced-crash,
+full visual/native/client matrix or full restore qualification.
 
 ## Release and recovery pointers
 
-- Source deployed: `0200892127074d6b48ef5bb9ae62baaf23a2b81d`;
-  exact-main [CI 42239307009](https://github.com/Coriol-is/gopod/actions/runs/42239307009) passed.
-- Documentation reconciled against source/runtime `0200892`.
+- Deployed source: `56d1a7decd3061ef308898805fc82102318ea549`; exact-main
+  [CI43289167370](https://github.com/Coriol-is/gopod/actions/runs/43289167370) passed.
 - Pi: `ssh spaceinvaderz@192.168.1.128`; checkout `~/gopod`, data `/opt/gopod/data`,
   mounted workspace repository `/opt/gopod/repo`.
-- Rollback image: `gopod-rollback:pre-0200892`; preserve it and all named backups.
-- Matched-stopped backup: `20261106T150647Z-ms-e23748f5`; new-schema database
-  backup: `20261106T150818Z-db-12e18380`.
-- Guide originals: `~/gopod-backups/consumer-migration-757faa2`;
-  cleanup inventory: `~/gopod-backups/cleanup-20261105-757faa2.json`.
-- Release evidence: `/tmp/gopod-release-0200892` on Pi; durable summary is in the
-  [deployment report](deployments/2026-11-06-durable-delete-rollout.md).
-- Preserve task claim spool and SQLite ledgers before any downgrade; complete
-  IPC restore remains unqualified. Status-only legacy consumers remain unqualified.
+- Rollback: `gopod-rollback:pre-56d1a7d`; preserve prior rollback images and backups.
+- Verified matched-stopped set `20261112T192455Z-ms-c62b8cd3`; post-migration
+  database-only set `20261112T192601Z-db-6dfbb091`.
+- Evidence `/tmp/gopod-release-56d1a7d` on Pi; durable
+  [release report](deployments/2026-11-12-priority-rollout.md).
+- Preserve task claim spool and SQLite ledgers before downgrade; full workspace,
+  auth/session/IPC restore remains unqualified. No automatic old-binary rollback.
+- Guide originals `~/gopod-backups/consumer-migration-757faa2` and prior cleanup
+  inventory `~/gopod-backups/cleanup-20261105-757faa2.json` remain protected.
 - If SSH Git authentication fails, use per-command HTTPS with `gh auth git-credential`;
   explicit URL/refspec fetch requires `--no-prune`. Do not change global auth settings.
 

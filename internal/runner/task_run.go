@@ -123,7 +123,11 @@ func (r *Runner) ResolveTaskSnapshot(ctx context.Context, folder string) (TaskSn
 	if _, group, err := r.groupRegistration(ctx, folder); err != nil || group {
 		return TaskSnapshot{}, fmt.Errorf("%w: group tasks are disabled", ErrTaskDenied)
 	}
-	prov := r.ProviderForChat(folder)
+	ctx, selectionErr := r.selectConversation(ctx, folder, 0)
+	if selectionErr != nil {
+		return TaskSnapshot{}, selectionErr
+	}
+	prov := r.providerForContext(ctx, folder)
 	if _, ok := prov.(TaskCommandProvider); !ok {
 		return TaskSnapshot{}, fmt.Errorf("%w: provider has no task command", ErrTaskDenied)
 	}
@@ -136,7 +140,7 @@ func (r *Runner) ResolveTaskSnapshot(ctx context.Context, folder string) (TaskSn
 	}
 	return TaskSnapshot{
 		Provider:           prov.Name(),
-		Model:              r.ModelForChat(folder),
+		Model:              r.modelForContext(ctx, folder),
 		ProfileFingerprint: plan.Policy.Fingerprint(),
 	}, nil
 }

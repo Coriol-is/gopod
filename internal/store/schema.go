@@ -22,6 +22,12 @@ import (
 // row in router_state and a migrations runner here. For now everything
 // is additive and IF NOT EXISTS keeps re-runs safe.
 var schemaStatements = []string{
+	`CREATE TABLE IF NOT EXISTS conversation_preferences (
+ namespace_id TEXT NOT NULL, namespace_epoch INTEGER NOT NULL, payload TEXT NOT NULL,
+ revision INTEGER NOT NULL, PRIMARY KEY(namespace_id,namespace_epoch))`,
+	`CREATE TABLE IF NOT EXISTS turn_provider_selections (
+ turn_id INTEGER NOT NULL, attempt INTEGER NOT NULL, payload TEXT NOT NULL,
+ PRIMARY KEY(turn_id,attempt))`,
 	`CREATE TABLE IF NOT EXISTS namespace_ownership (
  folder TEXT PRIMARY KEY, namespace_id TEXT NOT NULL, chat_jid TEXT NOT NULL,
  namespace_epoch INTEGER NOT NULL, retired INTEGER NOT NULL DEFAULT 0,
@@ -286,6 +292,9 @@ func (s *Store) applySchema(ctx context.Context) error {
 		return err
 	}
 	if err := s.applyOrdinaryStopSchema(ctx); err != nil {
+		return err
+	}
+	if err := s.applyReplyRowOrderSchema(ctx); err != nil {
 		return err
 	}
 	return s.applyProactiveSchema(ctx)

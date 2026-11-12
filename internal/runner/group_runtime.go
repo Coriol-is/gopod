@@ -66,13 +66,18 @@ func (r *Runner) turnRuntime(ctx context.Context, folder string, thread int, tie
 		if r.groups == nil {
 			return "", nil, func() {}, ErrProfileUnavailable
 		}
-		return r.groups.Start(ctx, c, r.ProviderForChat(folder), thread, r.ModelForChat(folder))
+		return r.groups.Start(ctx, c, r.providerForContext(ctx, folder), thread, r.modelForContext(ctx, folder))
 	}
 	if err := r.authorizeOwner(ctx, folder); err != nil {
 		return "", nil, func() {}, err
 	}
+	if _, scoped := ctx.Value(selectedConversationKey{}).(selectedConversation); scoped {
+		if err := r.verifyQuiescent(ctx, folder); err != nil {
+			return "", nil, func() {}, err
+		}
+	}
 	id, err := r.ensure(ctx, folder, tier, al)
-	return id, r.ProviderForChat(folder), func() {}, err
+	return id, r.providerForContext(ctx, folder), func() {}, err
 }
 
 func validateExecution(ctx context.Context, prov AgentProvider) error {

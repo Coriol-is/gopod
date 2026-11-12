@@ -110,5 +110,12 @@ func replyActionQ(ctx context.Context, q taskSQL, turnID int64, out *Acknowledge
 	out.Text = result.Text
 	out.Eligible = true
 	out.Newest = newer == 0
+	latest, found, err := latestReplySurfaceQ(ctx, q, sc)
+	if err != nil {
+		return err
+	}
+	if found {
+		out.Newest = out.Newest && latest.MessageID == out.MessageID && latest.Source == "outbox"
+	}
 	return nil
 }
