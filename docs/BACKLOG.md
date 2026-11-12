@@ -1,10 +1,11 @@
 # Code-backed backlog
 
-Implementation checkpoint 2026-11-12 on `integration/backlog-1-3`; source work
-is not merged or deployed. Recorded Pi baseline remains `0200892` (2026-11-06). Production call sites were rechecked; release health/state/version acceptance
-is recorded separately from remaining feature qualification. [ROADMAP](../ROADMAP.md) owns priority,
-[proposal registry](proposals/README.md) owns lifecycle and
-[ACCEPTANCE](ACCEPTANCE.md) owns client/provider qualification.
+Implementation/deployment checkpoint 2026-11-12: PR197 merged as `56d1a7d` and
+Pi controller deployment passed health/version/state/backup verification.
+[Release evidence](deployments/2026-11-12-priority-rollout.md). Foreground and topic
+deletion remain gated off; scoped provider selection is live with bounded acceptance.
+[ROADMAP](../ROADMAP.md) owns priority, [proposal registry](proposals/README.md)
+owns lifecycle and [ACCEPTANCE](ACCEPTANCE.md) owns client/provider qualification.
 
 Completed slices and explicitly superseded/rejected choices are in the
 [archive](history/BACKLOG-2026-11-05-completed.md). Partial parent proposals remain
@@ -28,7 +29,7 @@ Owner scope for this batch: merge/push only, no deployment.
    scope, historical uncertainty and explicit reconciliation, then native/client
    qualification and foreground cutover. Mixed-path ordering, eager old-row cleanup,
    integrated preview/Stop/publication and registered-private nontext creation
-   provenance are implemented in PR197; the producer defaults off.
+   provenance are deployed in PR197; the producer remains off.
 2. CP-016 full topic retirement.
 3. CP-018 per-conversation provider/model selection.
 4. CP-019 group command/service UX.
@@ -79,12 +80,12 @@ and bounded acceptance passed; see [handoff](HANDOFF.md). Parent activation gate
 
 ## Current deployed baseline
 
-PRs #168–#180/#182/#183/#186/#187/#189/#191/#193 are deployed on Pi, latest `0200892`; no worker. Exact-main CI,
+PRs #168–#180/#182/#183/#186/#187/#189/#191/#193/#197 are deployed on Pi, latest `56d1a7d`; no worker. Exact-main CI,
 health, state preservation and Telegram version passed. Three D068 scheduling
 guides migrated; actual matching Node consumer passed read-only list/replay/conflict.
-[Latest deployment and cleanup evidence](deployments/2026-11-06-durable-delete-rollout.md).
-In that deployed revision the foreground producer remains disconnected; PR197 adds
-default-off wiring. Managed tasks remain off.
+[Latest deployment and cleanup evidence](deployments/2026-11-12-priority-rollout.md);
+[historical D071 evidence](deployments/2026-11-06-durable-delete-rollout.md).
+PR197 connects the foreground producer behind its default-off gate. Managed tasks remain off.
 
 ## Unfinished implementation
 
@@ -101,12 +102,13 @@ default-off wiring. Managed tasks remain off.
 ## CP-018 implementation checkpoint — 2026-11-12
 
 [Scoped provider/model selection](reviews/2026-11-12-conversation-provider-selection.md)
-is implemented in the integration branch: resolver/migration, per-attempt metadata,
+is deployed in `56d1a7d`: resolver/migration, per-attempt metadata,
 commands/confirmations, quota fallback, login/runtime guards and scoped maintenance.
 Retirement deletes only the target topic preferences in the same transaction.
 Pre-native cross-feature scope binding and all task-batch members now have regression tests. Serialized
 legacy mapping remains supported; paused CP-037 remains off. Native image/session
-continuity and real client acceptance are unqualified. Not merged or deployed.
+continuity and the full real-client matrix remain unqualified; bounded checks are
+recorded in the release report.
 
 ## Implemented, with remaining acceptance
 
@@ -141,8 +143,9 @@ owner deferrals. CP-035 hooks research is merged documentation, not activated ho
 
 ## Verification boundary
 
-The integration branch now has gated production callers for `WithResultFreeze`,
+Deployed `56d1a7d` has gated production callers for `WithResultFreeze`,
 `PrepareFrozenFinalReply` and `QuiesceTopic`. The two new activation flags remain
-off by default; runtime activation and live acceptance have not occurred. Proactive wiring still omits Connector. These are
+off in production; foreground/deletion activation and their full live acceptance
+have not occurred. Bounded provider/native acceptance is in the release report. Proactive wiring still omits Connector. These are
 implementation gaps, not failures repaired by the latest rollout. Historical test
 results, including the pre-fix queue failure, are preserved in the archive.

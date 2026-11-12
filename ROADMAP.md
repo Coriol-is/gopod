@@ -1,8 +1,9 @@
 # gopod — Roadmap
 
-Latest rollout: `0200892` on Pi, 2026-11-06 15:07 UTC, includes #193/D071;
-no worker. D068 guide migration and bounded read-only matching-consumer acceptance
-passed; unrelated native/client gates remain. [Evidence](docs/deployments/2026-11-06-durable-delete-rollout.md).
+Latest rollout: `56d1a7d` on Pi, 2026-11-12 19:25 UTC, includes PR197/D072–D075;
+no worker. Required PR/main CI, backups and health/version/state verification pass.
+Foreground/topic deletion remain off; scoped provider selection is live with bounded
+acceptance. [Evidence](docs/deployments/2026-11-12-priority-rollout.md).
 
 
 Live milestone tracker. Update the **Status** column whenever you change reality.
@@ -15,15 +16,14 @@ D071 (#193) adds durable private placeholder deletion outcomes/tombstones; unkno
 results cannot reach fallback/TTS. Sonar excludes all tests by owner request;
 production-only main analysis remains over the50k plan limit. Go CI unchanged.
 
-## Active implementation — 2026-11-12
+## Latest implementation/deployment — 2026-11-12
 
-Owner resumed priorities 1–3 in isolated agents. The integration branch now contains
-mixed-path reply ordering, gated immutable foreground delivery, gated confirmed
-topic deletion/recovery, and scoped provider/model routing. Shared retirement and
-preference cleanup has a transaction rollback test. Source implementation, required
-CI, merge, deployment and native acceptance are separate; none of these checkpoints
-changes the recorded Pi baseline or enables paused modes. See [BACKLOG](docs/BACKLOG.md)
-for exact remaining code/qualification boundaries. The priority order below remains.
+Priorities1–3 were implemented in isolated agents and deployed via PR197 as `56d1a7d`.
+Mixed-path reply ordering, gated immutable foreground delivery, gated topic deletion
+and scoped provider/model routing are connected. Foreground/deletion remain off;
+CP-037 and managed activation stay paused. Full native/client and wider scope
+qualification remain separate from this verified controller rollout. See
+[BACKLOG](docs/BACKLOG.md) for remaining boundaries and the release report above.
 
 ## Status legend
 
@@ -351,7 +351,7 @@ implementation.
 |---|---|---|
 | CP-016 topic deletion | 🟦 | PR197 adds gated confirmation/orchestration, exact deletion observation and local retirement; historical/unknown reconciliation and disposable native/client acceptance remain open |
 | CP-017 Telegram diagnostics | ✅ | Separate Telegram settings, subscriptions, code support and contextual rights; owner doctor and scoped help; [execution plan](docs/superpowers/plans/2026-10-25-telegram-capability-diagnostics.md) implemented for private DMs; group reports/notices deferred |
-| CP-018 per-thread providers | 🟦 | PR197 implements chat defaults, conversation overrides, immutable attempt selection and scoped quota fallback; merge/deployment and native/client qualification remain open |
+| CP-018 per-thread providers | 🟦 | PR197 implements chat defaults, conversation overrides, immutable attempt selection and scoped quota fallback; full native/client qualification remains open; deployed in `56d1a7d` |
 | CP-019 ephemeral command/service/error replies | ⬜ | Public conversational messages unchanged; private delivery never falls back to public |
 
 Specifications are accepted for planning only; no associated mode or routing
@@ -367,7 +367,7 @@ and [implementation/acceptance plan](docs/superpowers/plans/2026-10-25-personal-
 track the work. **Implementation deployed; final provider/client qualification remains open.**
 The architecture merged in #66/#67; follow-ups #88/#89 fixed Codex tree-budget admission and
 admit registered groups by default. #93/#95/#97 implement triggers, owner-in-group controls
-and private group-login guidance. Security groups 1–8 were deployed in `e3b5401`; current controller is `0200892`.
+and private group-login guidance. Security groups 1–8 were deployed in `e3b5401`; current controller is `56d1a7d`.
 Historical 2026-10-29 evidence records Claude group new/resume success after owner login;
 final Codex two-turn/tool and cross-boundary acceptance remain open. Earlier TCP/offline-tool
 checks are in the [2026-10-27 report](docs/deployments/2026-10-27-group-isolation.md),

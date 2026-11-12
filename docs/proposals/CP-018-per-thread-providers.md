@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | in-progress — implementation authorized 2026-11-11; not deployed |
+| Status | in-progress — deployed in56d1a7d; full native/client qualification open |
 | Date | 2026-10-25 |
 | Origin | Owner requested a specification for different providers in different threads |
 | Size | M |
@@ -31,6 +31,8 @@ advertised as available.
 
 [Source and qualification review](../reviews/2026-11-12-conversation-provider-selection.md).
 Per-conversation preferences, attempt selection, command and quota routing are
-implemented on the integration branch; retirement cleanup is connected atomically.
-Independent review, final integration CI and native/client acceptance remain gates.
+deployed in `56d1a7d`; retirement cleanup is connected atomically. Independent
+review and required PR/main CI passed. One native Codex turn and Telegram settings
+inspection passed; provider alternation and the full native/client matrix remain
+open. [Release evidence](../deployments/2026-11-12-priority-rollout.md).
 No parallel execution, durable-mapping or worker activation.

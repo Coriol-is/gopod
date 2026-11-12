@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-12 (priorities 1–3 integration; no deployment)
+**Last updated:** 2026-11-12 (priorities 1–3 merged and deployed)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -13,52 +13,39 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — backlog priorities 1–3 integration, 2026-11-12
+## Resume here — priorities 1–3 deployed, 2026-11-12
 
-Owner requested priorities 1–3 in agents. Three isolated worktrees start from
-`da529a8`; integration order remains delivery, topic retirement, scoped providers.
+PR197 is squash-merged as `56d1a7d` after explicit owner authorization for a one-time
+admin merge. Required PR and exact-main CI, independent reviews, build/vet/tests
+and affected races passed. Pi controller `56d1a7d` is healthy; image/binary hashes,
+registration/session/task preservation and verified pre/post-migration backups pass.
+No worker/agent-image/credential change. [Release and acceptance evidence](deployments/2026-11-12-priority-rollout.md).
 
-- `feat/delivery-completion` (`gopod-delivery-completion`): CP-002/003 remaining
-  delivery contracts, mixed reply-row ordering and integrated foreground path.
-- `feat/topic-retirement-completion` (`gopod-topic-retirement-completion`): CP-016
-  confirmed orchestration, exact outcome/recovery and safe retirement.
-- `feat/conversation-providers` (`gopod-conversation-providers`): CP-018 scoped
-  preferences, immutable attempt routing and confirmed quota fallback.
+Implemented: mixed legacy/outbox ordering, gated immutable foreground producer,
+one-shot obsolete keyboard retirement, registered-private document/voice/As-file
+ownership, gated topic confirmation/deletion/exact observation/local retirement,
+and conversation-scoped provider/model selection. Preference cleanup is atomic
+with retirement; per-topic counters are cleared only after quiescence. The final
+wait-refresher cancellation regression is fixed and validated100 times plus races.
+[Integration review](reviews/2026-11-12-priority-integration.md), D072–D075.
 
-Implementation checkpoints now integrated locally: delivery `7c15035` and
-`becd396`; topic orchestration `6246398`; provider selection `0c0593b`/`3186ba8`.
-Integration `9f07f09` adds atomic topic preference cleanup and rollback/sibling/
-idempotency coverage; focused tests and independent review pass. New foreground
-and deletion flags default off. Eager keyboard cleanup (`9ec3914`), exact external deletion (`b709fbd`), scoped
-counter retirement (`def3691`) and pre-native scope/task-batch validation (`3369c39`)
-are integrated. Each slice passed author tests; independent review covered cleanup,
-observation, the preference transaction and source scope checks. Final combined
-validation includes registered-private document/voice/As-file ownership (`9f321d7`,
-integrated as `28cea85`). Combined focused races pass. The combined full suite
-found `TestWaitDraftRefreshEndsWithContext` failing after cancellation; diagnosis
-found both late fake-server observation and a ready-tick/cancellation race. Follow-up `8a320eb` adds a pre-dispatch shutdown recheck and deterministic in-flight HTTP
-coverage; full build/vet/tests, 100 regression repeats and affected races pass; evidence is in the [integration review](reviews/2026-11-12-priority-integration.md).
-No final parent-completion or runtime activation claim. Owner decision D075: retain a gone-topic frozen answer without sending or rerunning
-the model; no main-chat reroute.
+Foreground and topic deletion flags remain off. CP-018 routing is live; initial
+Telegram version/provider inspection and one native Codex turn passed; immutable
+attempt selection was checked in SQLite and all12 idle counters returned to zero. Full provider alternation/session continuity and the broader client
+matrix remain open. CP-037 parallel/session activation and managed tasks remain
+paused/off. Owner decision D075: save a gone-topic frozen answer without sending,
+rerunning the model or redirecting to main. There is no pending destination choice.
 
-Integration PR: [#197](https://github.com/Coriol-is/gopod/pull/197).
-Root integration worktree: `gopod-priority-integration`, branch
-`integration/backlog-1-3`. Source review is complete, not merged/deployed; final-head CI and GitHub approval remain release gates. First delivery checkpoint
-`7c15035` (integrated locally as `22dd325`) implements pre-dispatch mixed-path
-reply ordering; build/vet/full tests and focused races passed in its worktree.
-Root independently reviewed the bounded checkpoint; late-ACK ordering correction
-is included. Foreground integration is present behind its default-off flag; parent
-delivery qualification remains open.
-No paused parallel-session/managed-task/worker activation. Native/client acceptance
-and existing uncertainty gates remain mandatory; command wiring alone is not full
-acceptance. Existing unrelated state-machine worktrees remain untouched.
+Next: qualify the remaining group/unregistered scope and historical/unknown
+reconciliation boundaries, native/client delivery parity and disposable-topic
+retirement before activation. No existing user topic deletion is authorized.
+Do not reopen implemented slices or call these partial parents fully complete.
 
-GitHub's active ruleset requires a PR approval. Prior widget docs PR196 has green
-CI and independent review but remains unmerged: REVIEW_REQUIRED; auto-merge is
-disabled. Do not bypass that requirement or count local agent review as a GitHub
-approval. Finish concrete source/test/review artifacts before seeking any missing
-merge approval. Runtime baseline remains the previously recorded0200892, not
-reverified by this documentation checkpoint.
+Documentation reconciliation is on `docs/priority-rollout` in
+`gopod-priority-rollout`. Main application source is already deployed. Source and
+unrelated worktrees, rollback images, backups and credentials are preserved.
+The one-time admin authorization applied to PR197 only; do not infer blanket
+permission to bypass future PR approval requirements. Widget docs PR196 is separate.
 
 ## Historical checkpoint — deadcode hook and Sonar scope, 2026-11-06
 
@@ -255,7 +242,7 @@ private document/voice/As-file ownership are now implemented in PR197.
 foreground and `/thread delete` remain disabled by their default-off gates.
 Gone-topic frozen output remains saved without sending or rerunning the model (D075).
 Do not reopen completed #168–#177 slices. Older "next" lists above describe the
-recorded deployments, not missing source in the active integration branch.
+historical deployments, not missing source in deployed `56d1a7d`.
 
 Managed-task credentials remain owner-deferred and activation off. CP-037 P2–P7
 and T5/T5b remain paused; P0/P1 are deployed in legacy mapping. T9 cgroup/reboot
@@ -264,25 +251,24 @@ is not automatic retention or qualified full restore.
 
 CP-040 A22–A25, ordinary Stop/restart, CP-020 provider/client and CP-038 Claude
 browser-completion gates remain in [ACCEPTANCE](ACCEPTANCE.md). Existing Telegram
-authorization applies; coordinate a single actor. No forced crash, visual/native
-or full restore qualification was added by the latest rollout or this docs audit.
+authorization applies; coordinate a single actor. The latest rollout adds one bounded native Codex round trip; it adds no forced-crash,
+full visual/native/client matrix or full restore qualification.
 
 ## Release and recovery pointers
 
-- Source deployed: `0200892127074d6b48ef5bb9ae62baaf23a2b81d`;
-  exact-main [CI 42239307009](https://github.com/Coriol-is/gopod/actions/runs/42239307009) passed.
-- Documentation reconciled against source/runtime `0200892`.
+- Deployed source: `56d1a7decd3061ef308898805fc82102318ea549`; exact-main
+  [CI43289167370](https://github.com/Coriol-is/gopod/actions/runs/43289167370) passed.
 - Pi: `ssh spaceinvaderz@192.168.1.128`; checkout `~/gopod`, data `/opt/gopod/data`,
   mounted workspace repository `/opt/gopod/repo`.
-- Rollback image: `gopod-rollback:pre-0200892`; preserve it and all named backups.
-- Matched-stopped backup: `20261106T150647Z-ms-e23748f5`; new-schema database
-  backup: `20261106T150818Z-db-12e18380`.
-- Guide originals: `~/gopod-backups/consumer-migration-757faa2`;
-  cleanup inventory: `~/gopod-backups/cleanup-20261105-757faa2.json`.
-- Release evidence: `/tmp/gopod-release-0200892` on Pi; durable summary is in the
-  [deployment report](deployments/2026-11-06-durable-delete-rollout.md).
-- Preserve task claim spool and SQLite ledgers before any downgrade; complete
-  IPC restore remains unqualified. Status-only legacy consumers remain unqualified.
+- Rollback: `gopod-rollback:pre-56d1a7d`; preserve prior rollback images and backups.
+- Verified matched-stopped set `20261112T192455Z-ms-c62b8cd3`; post-migration
+  database-only set `20261112T192601Z-db-6dfbb091`.
+- Evidence `/tmp/gopod-release-56d1a7d` on Pi; durable
+  [release report](deployments/2026-11-12-priority-rollout.md).
+- Preserve task claim spool and SQLite ledgers before downgrade; full workspace,
+  auth/session/IPC restore remains unqualified. No automatic old-binary rollback.
+- Guide originals `~/gopod-backups/consumer-migration-757faa2` and prior cleanup
+  inventory `~/gopod-backups/cleanup-20261105-757faa2.json` remain protected.
 - If SSH Git authentication fails, use per-command HTTPS with `gh auth git-credential`;
   explicit URL/refspec fetch requires `--no-prune`. Do not change global auth settings.
 
