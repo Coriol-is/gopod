@@ -28,6 +28,8 @@ func topicTarget(d store.TopicDeletion) (chatThread, error) {
 	return chatThread{chat, d.ThreadID}, nil
 }
 func (b *Bot) installTopicFence(d store.TopicDeletion, restored bool) (topicFence, error) {
+	b.topicFenceInstallMu.Lock()
+	defer b.topicFenceInstallMu.Unlock()
 	key, err := topicTarget(d)
 	if err != nil {
 		return topicFence{}, err
@@ -163,7 +165,7 @@ func (b *Bot) QuiesceTopic(ctx context.Context, expected store.TopicDeletion) er
 	if b.topicLoginActive(key) {
 		return ErrTopicLoginActive
 	}
-	if f.restored {
+	if f.restored && current.State != "deleted" {
 		return ErrTopicRestartReconciliation
 	}
 	// Catch registration changes while cancellation/join was in progress.

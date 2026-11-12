@@ -65,16 +65,13 @@ func (b *Bot) uploadDocument(ctx context.Context, chatID int64, thread int, name
 	if err := b.topicAdmission(ctx, chatID, thread); err != nil {
 		return 0, err
 	}
-	var msg *models.Message
-	err := b.topicRequest(ctx, chatID, thread, func(requestCtx context.Context) error {
-		var err error
-		msg, err = b.api.SendDocument(requestCtx, &bot.SendDocumentParams{
+	msg, err := b.ownedMessageSend(ctx, chatID, thread, thread, func(requestCtx context.Context) (*models.Message, error) {
+		return b.api.SendDocument(requestCtx, &bot.SendDocumentParams{
 			ChatID:          chatID,
 			MessageThreadID: thread,
 			Document:        &models.InputFileUpload{Filename: name, Data: bytes.NewReader(data)},
 			Caption:         caption,
 		})
-		return err
 	})
 	if err != nil {
 		return 0, fmt.Errorf("sendDocument %s: %w", name, err)

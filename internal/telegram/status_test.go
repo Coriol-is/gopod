@@ -280,8 +280,8 @@ func TestStatusEmojiAllAllowed(t *testing.T) {
 			t.Errorf("%q is not an allowed reaction", e)
 		}
 	}
-	if len(stateEmoji) != int(stCompacting) {
-		t.Errorf("every state but stNone needs an emoji: %d of %d", len(stateEmoji), stCompacting)
+	if len(stateEmoji) != int(stDeliveryQueued) {
+		t.Errorf("every state but stNone needs an emoji: %d of %d", len(stateEmoji), stDeliveryQueued)
 	}
 }
 

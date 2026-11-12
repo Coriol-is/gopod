@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/Coriol-is/gopod/internal/queue"
 	"github.com/Coriol-is/gopod/internal/runner"
+	"github.com/go-telegram/bot"
 )
 
 func okResponder(method string, form map[string]string) (int, string) {
@@ -251,28 +253,87 @@ func TestWaitDraftRefreshHonoursRetryAfter(t *testing.T) {
 	waitFor(t, "refresh after retry_after", func() bool { return drafts.Load() >= 3 })
 }
 
-// Shutdown (the turn's ctx ends) stops the refresher by itself; the
-// later stopWaitDraftRefresh returns at once.
+// waitHTTPClientFunc measures client dispatch, not when a canceled request is
+// eventually recorded by the remote HTTP handler.
+type waitHTTPClientFunc func(*http.Request) (*http.Response, error)
+
+func (f waitHTTPClientFunc) Do(r *http.Request) (*http.Response, error) { return f(r) }
+
+// Shutdown exits the refresher by itself, including while HTTP is in flight.
+// Cancellation cannot retract a request already received by the remote server.
 func TestWaitDraftRefreshEndsWithContext(t *testing.T) {
 	fake := &fakeTelegram{respond: okResponder}
 	b, item := newStreamFixture(t, fake)
 	b.waitDraftEvery = 10 * time.Millisecond
+	arrived, release, recorded := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	var requests, dispatched atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if requests.Add(1) == 2 {
+			// Consume the in-flight request but delay the fake's observation until
+			// after the client notices cancellation and the refresher exits.
+			if err := r.ParseMultipartForm(1 << 20); err != nil {
+				t.Error(err)
+			}
+			close(arrived)
+			<-release
+			fake.ServeHTTP(w, r)
+			close(recorded)
+			return
+		}
+		fake.ServeHTTP(w, r)
+	}))
+	defer srv.Close()
+	defer func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	}()
+	client := waitHTTPClientFunc(func(r *http.Request) (*http.Response, error) {
+		dispatched.Add(1)
+		return srv.Client().Do(r)
+	})
+	var err error
+	b.api, err = bot.New("123:test", bot.WithServerURL(srv.URL), bot.WithSkipGetMe(), bot.WithHTTPClient(time.Second, client))
+	if err != nil {
+		t.Fatal(err)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	b.waitNotice(ctx, item)(runner.WaitSlot)
-	waitFor(t, "a refresh", func() bool { return len(waitDrafts(fake)) >= 2 })
+	select {
+	case <-arrived:
+	case <-time.After(time.Second):
+		t.Fatal("refresh did not reach server")
+	}
 	b.waitMu.Lock()
 	rf := b.waitRefresh[b.waitKeyOf(t.Context(), item)]
 	b.waitMu.Unlock()
+	// Leave another tick ready while the second HTTP call is blocked.
+	time.Sleep(3 * b.waitDraftEvery)
 	cancel()
 	select {
-	case <-rf.done: // exited on its own, before anyone stopped it
+	case <-rf.done:
 	case <-time.After(time.Second):
 		t.Fatal("refresher did not exit after ctx was cancelled")
 	}
-	b.stopWaitDraftRefresh(t.Context(), item) // returns at once
-	n := len(waitDrafts(fake))
-	time.Sleep(40 * time.Millisecond)
-	if got := len(waitDrafts(fake)); got != n {
-		t.Fatalf("refresher kept sending after cancel")
+	b.stopWaitDraftRefresh(t.Context(), item)
+	if got := dispatched.Load(); got != 2 {
+		t.Fatalf("client dispatched %d requests, want initial + one refresh", got)
+	}
+	before := len(waitDrafts(fake))
+	close(release)
+	select {
+	case <-recorded:
+	case <-time.After(time.Second):
+		t.Fatal("in-flight server request did not finish")
+	}
+	if got := len(waitDrafts(fake)); got != before+1 {
+		t.Fatalf("late pre-cancel observation = %d, want %d", got, before+1)
+	}
+	time.Sleep(4 * b.waitDraftEvery)
+	if got := dispatched.Load(); got != 2 {
+		t.Fatalf("refresher dispatched after cancellation: %d", got)
 	}
 }

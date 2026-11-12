@@ -2446,3 +2446,108 @@ barriers or ACK tombstones and are unsafe for blind downgrade.
 Historical missing-provenance targets hold before HTTP. Groups/unregistered
 compatibility and other nontext effects remain unqualified. This does not implement
 operator unknown resolution, confirmed topic deletion or foreground cutover.
+
+## D072 — Ordered reply surfaces and opt-in immutable foreground delivery
+
+**Status:** implementation contract, 2026-11-12, CP-002 continuation. Foreground
+activation remains off pending qualification; no group/unknown-history expansion.
+
+Reserve mixed legacy/outbox reply-surface order before presentation/publication.
+An exact later ACK fills only its reservation and never creates chronology.
+Unknown historical order stays unproven. Callback authority requires current
+scope, exact acknowledged target and newest eligible surface, not message-id order.
+
+An opt-in owner-private batch binds its complete attempt set to result freezing,
+captures presentation mode, seals/joins preview writers and publishes an immutable
+final plan. Only all-part ACK exposes final memo/action authority. Stop admission
+precedes preparation as well as publication; preparation failures preserve NoReplay.
+Old presentation versions remain recoverable without rendering or inference.
+
+Obsolete acknowledged keyboards may receive one fixed empty-markup request through
+separate exact retirement authority and the existing durable edit ledger. Recheck
+newer ACK and raw target before dispatch; never remove the current/rebound row,
+rewrite text or infer historical provenance. Unknown or refused cleanup is not
+blindly retried. This authority does not grant arbitrary edits to published output.
+
+The different-destination contract for gone topics is unresolved; the producer
+holds the frozen result rather than inventing a reroute. Registered group and
+unregistered durable publication require separate scope/permission qualification.
+[Ordering](reviews/2026-11-12-reply-surface-order.md),
+[foreground](reviews/2026-11-12-foreground-delivery.md),
+[keyboard retirement](reviews/2026-11-12-reply-keyboard-retirement.md).
+
+## D073 — Confirmed topic deletion dispatch and local recovery
+
+**Status:** implementation contract, 2026-11-12, CP-016 continuation; activation
+remains gated by D064 qualification and `GOPOD_TOPIC_DELETION_ENABLED` defaults off.
+
+Control confirmation binds actor/chat/thread/current registration and expiry.
+The worker runs after command admission can drain, records one-shot dispatch
+before DeleteForumTopic, and never retries an issued or historical intent. An
+additive dispatch marker defaults historical rows to issued. Only an unissued
+intent can be refused by a preflight failure; an API refusal settles the exact
+issued request. Unknown results remain held.
+
+Exact returned outcomes survive transient database failures in bounded in-memory
+receipts and are retried against SQLite/runtime only. Crash loss of a receipt is
+not evidence of non-delivery. Pending topic operations are backup-idle evidence.
+
+This extends D064's blanket startup-cleanup hold only for durable `deleted`
+records: current native/queue/transport quiescence must still pass, then local
+retirement may complete with no delete HTTP or notice replay. `deleting` and
+`uncertain` records remain untouched; restored intent alone is never dispatch
+permission. Known historical/nontext/managed/native qualification gaps still
+prevent activation. No real existing topic deletion is authorized by this ADR.
+
+[Implementation and qualification boundaries](reviews/2026-11-12-topic-deletion-orchestration.md).
+
+D073 follow-up: the same gate permits only exact typed TOPIC_DELETED observations
+from owner-private sends with precommitted same-topic source/target provenance.
+Atomic send-refusal settlement and observed deletion retain the captured scope
+and existing intent/fence identity. No outer fallback, delete replay, generic
+error inference, or context retirement before current quiescence is allowed.
+A later exact observation supersedes an earlier refusal/unknown local receipt for
+that same intent; it cannot reopen the topic or leak its reserved capacity.
+
+## D074 — Conversation-scoped provider and model selection
+
+**Status:** implementation contract, 2026-11-12; implements the accepted CP-018
+specification under the owner's priorities 1–3 request. Supersedes only the
+chat-wide selection behavior of D030/D031; native rollout remains unqualified.
+
+Keep one native agent at a time per chat. Resolve provider from conversation
+override, optional chat default, then configured global default. Resolve model
+for that provider from its conversation override and provider-specific chat default.
+Main is a conversation, not a wildcard. Preserve explicit inherit/default choices
+and migrate the old model only to its recorded provider selection.
+
+Persist immutable actual provider/model per (turn, attempt) under the existing
+agent slot before native execution, including all coalesced scheduled members.
+Validate the pre-slot captured registration scope and exact frozen batch membership
+before side effects. Settings use namespace/epoch identity and revision-CAS; stale
+or foreign confirmations cannot mutate a different conversation. Retire scoped
+preferences in the same transaction as topic context. Clear preserves preferences.
+
+Login/native uncertainty prevents unsafe recycling. Preserve provider-specific
+native sessions and thread-scoped history through ephemeral image changes.
+Scoped maintenance selects that conversation; unscoped maintenance selects chat
+defaults. The paused durable-session binding wrapper fails closed on conflicting
+metadata; this contract neither activates CP-037 nor qualifies that wrapper.
+[Source and acceptance boundaries](reviews/2026-11-12-conversation-provider-selection.md).
+
+
+## D075 — Preserve frozen answers for disappeared topics without sending
+
+**Status:** accepted by the owner, 2026-11-12 ("Сохранить без отправки").
+Resolves the destination-policy question left open by D072.
+
+When the original topic is unavailable, preserve the already frozen answer without
+sending it. Do not rerun inference, automatically retry publication or redirect the
+answer to the main chat. Existing explicit delivery-failure/hold reporting remains;
+a saved result is not a delivered result. This policy does not infer remote success
+or clear unknown attempts. It grants no new recovery, export or deletion authority.
+
+The current gated foreground implementation already follows this behavior; this
+acceptance changes the specification and closes the policy question, not the
+production activation or native/client acceptance gates. Legacy non-frozen fallback
+behavior is outside this decision.

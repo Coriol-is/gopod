@@ -269,6 +269,7 @@ func (b *Bot) runControlRecovery(ctx context.Context) {
 			b.log.Warn("control recovery", "error", err)
 		}
 		cancel()
+		b.cleanupReplyKeyboards(ctx)
 		select {
 		case <-ctx.Done():
 			return

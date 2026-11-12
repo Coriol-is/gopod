@@ -20,5 +20,12 @@ func (s *Store) applyTopicDeletionSchema(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("topic deletion schema: %w", err)
 	}
+	// Existing rows predate dispatch evidence and must never gain retry authority.
+	if _, err := s.db.ExecContext(ctx, `ALTER TABLE topic_deletions ADD COLUMN dispatch_started INTEGER NOT NULL DEFAULT 1 CHECK(dispatch_started IN (0,1))`); err != nil && !isDuplicateColumn(err) {
+		return fmt.Errorf("topic deletion dispatch schema: %w", err)
+	}
+	if _, err := s.db.ExecContext(ctx, `ALTER TABLE topic_deletions ADD COLUMN observation_attempt_id TEXT NOT NULL DEFAULT ''`); err != nil && !isDuplicateColumn(err) {
+		return fmt.Errorf("topic deletion observation schema: %w", err)
+	}
 	return nil
 }

@@ -421,6 +421,15 @@ func setReplyMemoIfComplete(ctx context.Context, q taskSQL, c OutboxClaim) error
 	if err != nil {
 		return err
 	}
+	// The final text observation shares one durable order with legacy finals.
+	// Register only when every part is acknowledged; an upload ACK alone cannot
+	// expose an unfinished reply or retire the preceding row.
+	if res.Conversation.Visibility == VisibilityConversation && len(res.Members) > 0 {
+		turn := res.Members[len(res.Members)-1].TurnID
+		if err = recordReplySurfaceQ(ctx, q, res.Conversation, "outbox:"+c.DeliveryID, last, turn, "outbox"); err != nil {
+			return err
+		}
+	}
 	for _, m := range res.Members {
 		if _, err = compareAndSetReplyMemoQ(ctx, q, m.TurnID, int(last)); err != nil && !errors.Is(err, ErrTurnNotFound) && !errors.Is(err, ErrReplyMemoUnavailable) {
 			return err

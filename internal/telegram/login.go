@@ -255,7 +255,7 @@ func (b *Bot) runLoginTarget(ctx context.Context, m *models.Message, thread int,
 	}
 
 	// Ensure container is running.
-	containerID, err := b.runner.Ensure(ctx, rc.Folder, tier, b.allowlist)
+	containerID, prov, err := b.runner.PrepareConversationLogin(ctx, rc.Folder, thread, tier, b.allowlist)
 	if err != nil {
 		b.loginFailed(ctx, m.Chat.ID, thread, rc.Folder, "ensure container", err)
 		return false
@@ -266,7 +266,6 @@ func (b *Bot) runLoginTarget(ctx context.Context, m *models.Message, thread int,
 	// Spawn interactive exec.
 	loginCtx, loginCancel := context.WithTimeout(context.Background(), loginTimeout)
 	// Use the per-chat provider (could be claude or codex).
-	prov := b.runner.ProviderForChat(rc.Folder)
 	exec, err := b.runner.Docker().ExecInteractive(loginCtx, containerID,
 		prov.LoginCmd(),
 		nil,
@@ -523,12 +522,7 @@ func (b *Bot) checkAuthAfterLogin(ctx context.Context, session *loginSession) bo
 	if b.runner == nil {
 		return false
 	}
-	tier := runner.TierRegistered
-	if session.provider != "" && b.runner.ProviderForChat(session.folder).Name() != session.provider {
-		return false
-	}
-	tier = session.tier
-	status, err := b.runner.CheckAuth(ctx, session.folder, tier, b.allowlist)
+	status, err := b.runner.CheckConversationAuth(ctx, session.folder, session.thread, session.provider, session.tier, b.allowlist)
 	if err != nil {
 		return false
 	}

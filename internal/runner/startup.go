@@ -40,7 +40,13 @@ func (r *Runner) StartupCheck(ctx context.Context, folder string, tier Tier, all
 		report.Container = "selection_unavailable"
 		return report
 	}
-	prov, model, generation := r.startupSelection(folder)
+	ctx, err = r.selectConversation(ctx, folder, 0)
+	if err != nil {
+		report.Container = "selection_unavailable"
+		return report
+	}
+	_, _, generation := r.startupSelection(folder)
+	prov, model := r.providerForContext(ctx, folder), r.modelForContext(ctx, folder)
 	report.Provider, report.Model, report.Image = prov.Name(), model, prov.Image()
 	defer func() { r.rememberStartupObservation(folder, report, generation) }()
 	var id string
@@ -215,6 +221,13 @@ func (r *Runner) CachedStartupObservation(folder string) (StartupObservation, bo
 	observation, ok := r.startupObservations[folder]
 	if !ok {
 		return StartupObservation{}, false
+	}
+	if r.conversationProviders != nil {
+		p := r.conversationProviders[observation.Report.Provider]
+		if p == nil || observation.Report.Image != p.Image() {
+			return StartupObservation{}, false
+		}
+		return observation, true
 	}
 	p := r.chatProviders[folder]
 	if p == nil {

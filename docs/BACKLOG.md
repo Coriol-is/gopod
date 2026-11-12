@@ -1,10 +1,11 @@
 # Code-backed backlog
 
-Reconciled 2026-11-06 against source at `0200892` and the recorded Pi deployment
-`0200892`. Production call sites were rechecked; release health/state/version acceptance
-is recorded separately from remaining feature qualification. [ROADMAP](../ROADMAP.md) owns priority,
-[proposal registry](proposals/README.md) owns lifecycle and
-[ACCEPTANCE](ACCEPTANCE.md) owns client/provider qualification.
+Implementation/deployment checkpoint 2026-11-12: PR197 merged as `56d1a7d` and
+Pi controller deployment passed health/version/state/backup verification.
+[Release evidence](deployments/2026-11-12-priority-rollout.md). Foreground and topic
+deletion remain gated off; scoped provider selection is live with bounded acceptance.
+[ROADMAP](../ROADMAP.md) owns priority, [proposal registry](proposals/README.md)
+owns lifecycle and [ACCEPTANCE](ACCEPTANCE.md) owns client/provider qualification.
 
 Completed slices and explicitly superseded/rejected choices are in the
 [archive](history/BACKLOG-2026-11-05-completed.md). Partial parent proposals remain
@@ -17,6 +18,39 @@ specifications prepared. No widget methods/models, update handlers, delivery par
 or UI are implemented. SDK, scoped snapshot reads, control-origin durable sends
 and registration/restore identity remain implementation prerequisites. No change
 to the execution priority; implementation and activation are not authorized.
+
+## State machine refactor, items 1-6 — 2026-11-08 (specified, paused)
+
+Source: [implicit state machines audit](reviews/2026-11-08-implicit-state-machines.md);
+briefs: [spec](superpowers/specs/2026-11-08-explicit-state-machines.md). Owner approved
+items 1-6 for parallel agent implementation and paused before dispatch. Worktrees exist
+at `da529a8` with no commits (HANDOFF table). This is the November8 audit snapshot;
+PR197 subsequently connected foreground/topic retirement callers and fixed a
+wait-refresher cancellation race. Reconcile the findings against current main before
+resuming. Merging the documentation does not resume the paused implementation.
+
+1. Turn transitions: guarded `TransitionTurn`, `execution_unknown` column, shutdown
+   race in `internal/queue/queue.go:453-489`, delete dead replay path, spec update.
+2. Managed ledger: fix `cmd/gopod/restart.go:580-593` stale reservation (verified bug,
+   gated by `GOPOD_MANAGED_TASKS`), CAS on `requestRunStopQ`, `/tasks reconcile` owner
+   command. Out of scope: `publication_state`/`result_id` removal, `OnFrozen` wiring.
+3. Restart phases: typed `RestartPhase` transition table; `restoreDrain` cancels drain
+   mode with notice, keeps force mode blocked with notice; tests for untested paths.
+4. Runner evidence: typed per-folder evidence, exec-unknown clears on proven quiescence,
+   exec/exit ordering, quarantine excludes group native containers, dead label code.
+   Out of scope: persisting evidence across restart (CP-037 overlap).
+5. Legacy tasks: `pause_reason` column replaces `next_run=-1`, status triggers,
+   `UpdateTaskStatus` compare-and-swap, `FinishTaskRun` predicate, epoch rotation
+   limited to legacy rows.
+6. Telegram: explicit login state keyed by chat+thread with shutdown-bounded contexts
+   and slot held through verification; `replyView` reducer, error placeholder, main-chat
+   final edit fallback, `waitPlaceholders` leak, dead `reusePlaceholder`.
+
+Audit findings ranked 7-15 (control message acknowledge CAS, outbox uncertain quota,
+group `Authorize` owner marker, final reply and topic deletion unwired writers, elevated
+flags, `archived` session lifecycle, generation `ready/none` overload, artifact
+`deleting` quota leak, IPC `alreadyAccepted` fail-open, memory status CHECK, trigger
+fallback to `all`) are recorded in the audit and not scheduled.
 
 ## Development hygiene follow-up — 2026-11-06
 
@@ -32,12 +66,11 @@ Owner scope for this batch: merge/push only, no deployment.
 
 ## Current priority
 
-1. CP-002 delivery with necessary CP-003 slices: remaining group/unregistered and
-   non-edit effects, historical uncertainty and explicit reconciliation, eager old-row
-   cleanup, mixed legacy/durable newest-row
-   ordering, then integrated preview/Stop/publication qualification and foreground
-   producer/cutover. Local control/final edit arbitration and More/Back retirement
-   checkpoints are deployed in #187 (`0cd8078`); D069 durable repair journal follows in #189; unknowns stay held without supported settlement.
+1. CP-002 delivery with necessary CP-003 slices: remaining group/unregistered
+   scope, historical uncertainty and explicit reconciliation, then native/client
+   qualification and foreground cutover. Mixed-path ordering, eager old-row cleanup,
+   integrated preview/Stop/publication and registered-private nontext creation
+   provenance are deployed in PR197; the producer remains off.
 2. CP-016 full topic retirement.
 3. CP-018 per-conversation provider/model selection.
 4. CP-019 group command/service UX.
@@ -88,23 +121,35 @@ and bounded acceptance passed; see [handoff](HANDOFF.md). Parent activation gate
 
 ## Current deployed baseline
 
-PRs #168–#180/#182/#183/#186/#187/#189/#191/#193 are deployed on Pi, latest `0200892`; no worker. Exact-main CI,
+PRs #168–#180/#182/#183/#186/#187/#189/#191/#193/#197 are deployed on Pi, latest `56d1a7d`; no worker. Exact-main CI,
 health, state preservation and Telegram version passed. Three D068 scheduling
 guides migrated; actual matching Node consumer passed read-only list/replay/conflict.
-[Latest deployment and cleanup evidence](deployments/2026-11-06-durable-delete-rollout.md).
-Foreground producer remains disconnected; managed tasks remain off.
+[Latest deployment and cleanup evidence](deployments/2026-11-12-priority-rollout.md);
+[historical D071 evidence](deployments/2026-11-06-durable-delete-rollout.md).
+PR197 connects the foreground producer behind its default-off gate. Managed tasks remain off.
 
 ## Unfinished implementation
 
 | Item | Code present and actual runtime wiring | Remaining work / next action |
 |---|---|---|
-| CP-002 foreground final delivery | [result_freeze.go](../internal/runner/result_freeze.go) provides `WithResultFreeze`; [final_reply.go](../internal/telegram/final_reply.go) provides `PrepareFrozenFinalReply`; neither has a non-test caller. Batch identity and immutable publication storage exist. [main.go](../cmd/gopod/main.go) calls `recoverReadyFinalReplies` before queue recovery when the dispatcher is enabled; [recovery adapter](../cmd/gopod/final_reply.go) publishes existing ready plans only. | Implement the foreground producer/context binding and publication call sites together with preview ownership, late cancellation and reply-action parity. Successful voice/text/code presentation parity is corrected in PR #169 (`c1966dc`); conditional code-inline alternatives are deployed in PR #173 (D065); PR #174 adds successful-final process-local ownership; PR #175 holds new publication for currently stopped members; D066 intent and late completion evidence are implemented in PR #176; PR #183 (`261805e`) adds fully ACKed restart-safe callback readthrough. Local control/final arbitration and More/Back retirement checkpoints are merged in #187. D069 repair attempts/barriers and exact-evidence settlement are implemented in #189; D070 registered-private direct edits are implemented in #191; D071 placeholder deletion is deployed in #193; group/unregistered and non-edit effects, historical uncertainty, explicit unknown reconciliation, eager cleanup and mixed-path ordering remain; full preview/reply-action integration, native/client qualification and producer activation remain open. Existing recovery is not foreground cutover. D063/D065 remain the contracts. |
+| CP-002 foreground final delivery | [foreground_delivery.go](../internal/telegram/foreground_delivery.go) binds result freezing and publishes immutable finals from sync/stream/drain paths. `GOPOD_OUTBOX_FOREGROUND` defaults off and requires a started dispatcher. [Reply ordering](reviews/2026-11-12-reply-surface-order.md) now reserves mixed legacy/outbox ordering before effects. [Producer contract](reviews/2026-11-12-foreground-delivery.md). | Exact eager obsolete-keyboard cleanup is implemented; historical/group/unregistered and unknown-operation uncertainty and explicit reconciliation remain. Gone-topic output is saved without sending or rerunning the model, per accepted D075; no main-chat reroute. Native/client parity and activation remain open. Connected code is not production cutover. |
 | CP-003 typed IPC | [artifact_request.go](../internal/ipc/artifact_request.go) validates typed file/voice requests; [outbox.go](../cmd/gopod/outbox.go) wires durable IPC preparation/transport; immutable artifact and voice/code preparation foundations are present. | Complete the wider CP-002-linked typed-output/protected-challenge/release scope. Do not reimplement file delivery already exposed by CP-040. Photo-to-document upload fallback now has separate durable attempts (PR #172, `a016b82`); conditional code-inline assembly is deployed in #173/D065. Full matched recovery remains a separate CP-007 gap. |
-| CP-016 topic deletion | [topic_quiescence.go](../internal/telegram/topic_quiescence.go) implements tested quiescence and refusal reopening. `main.go` calls `RestoreTopicFences` before recovery. Queue/native/transport guards and durable store/outbox fences are wired. `QuiesceTopic` has no non-test caller; no Telegram delete orchestration is exposed. | New main/fallback text-control provenance is implemented in PR #170 (`dacefc0`), including restart-safe lookup and no-replay receipt failures. Positive receipt DB-ACK repair is implemented in PR #171 (`930586a`), with no HTTP resend. Noncontrol restart/lifecycle/IPC main-text ownership and no-replay are merged in #182 (`0ac9b3f`, deployed in `80f4b11`). Exact private topic-target text ownership is deployed in #186 (`0cd8078`). Historical provenance/retention, nontext/edit-attempt ownership, unknown remote ambiguity reconciliation, managed settlement, ordinary native-login exit qualification, then confirmed API/outcome/retirement command remain. Deployed guards do not mean `/thread delete` is usable. D064 remains the contract. |
+| CP-016 topic deletion | [thread.go](../internal/control/thread.go) provides owner-private inspection and bound confirmation; [topic_delete.go](../internal/telegram/topic_delete.go) invokes quiescence, one-shot dispatch, exact outcome settlement and bounded local recovery. `GOPOD_TOPIC_DELETION_ENABLED` defaults off. Preference retirement is transactional with context removal. [Review](reviews/2026-11-12-topic-deletion-orchestration.md). | Exact owner-private TOPIC_DELETED observation is implemented; it never repeats delete HTTP. Registered-private document/voice/As-file creation provenance is implemented; historical and unknown native/remote effects retain holds. D064 qualification and explicitly disposable native/client acceptance remain; no real deletion or activation. |
 | CP-004 managed tasks | `main.go` installs the managed ledger; under `ManagedTasksEnabled` it installs [taskexec](../internal/taskexec) handler/snapshot and runner policy. [task_run.go](../internal/runner/task_run.go) implements isolated native execution. Main supplies no qualified task credential adapter and explicitly keeps task-role execution denied. | PR 4–5 settlement/visibility and schedule policies; owner-deferred credential adapter and native qualification before activation. Flag remains off in the recorded deployment. A wired executor is not an operational managed task service. |
 | CP-007 backups | [backup_cli.go](../cmd/gopod/backup_cli.go), [backup](../internal/backup) and [maintenance](../internal/maintenance) implement create/verify/list/idle/quarantine, writer fences, restore latch and scratch verification. `matched_stopped` includes artifact blobs/config; the backup test covers that manifest. | ChatsDir/provider session/auth/IPC coverage; restore epoch invalidation; activation/restore command and Pi restore drill, then timer and bounded retention. Online artifact leases are needed for an online matched mode, not missing from every existing backup. CP-039 full migration remains proposed. |
 | CP-033 proactive presets | `main.go` registers `/proactive`, resolves owner workspace and upgrades templates. [proactive.go](../cmd/gopod/proactive.go), [catalog/upgrade/outcome](../internal/proactive), control panel and owner integration guide are present. The `Connector` dependency is not supplied, so readiness remains `unknown`, with explicit confirmation on enable. | Provider connector probe/readiness, setup/recheck/discovery-offer lifecycle and acceptance. Schedule quiet-window logic exists; it is not a complete quiet-hour delivery deferral mechanism. PR 3 is no longer “in review”. Presets are not enabled by this audit. |
 | CP-037 parallel sessions | `main.go` wires lifecycle safety and durable session-store/adoption handling, including the durable mapping branch. P0/P1 shipped; recorded production mapping remains `legacy`. | Native resume qualification after adoption; P2–P7 parallel execution and routing work. T5/T5b remain paused; completed T9 cgroup work is not an open reboot task. |
+
+## CP-018 implementation checkpoint — 2026-11-12
+
+[Scoped provider/model selection](reviews/2026-11-12-conversation-provider-selection.md)
+is deployed in `56d1a7d`: resolver/migration, per-attempt metadata,
+commands/confirmations, quota fallback, login/runtime guards and scoped maintenance.
+Retirement deletes only the target topic preferences in the same transaction.
+Pre-native cross-feature scope binding and all task-batch members now have regression tests. Serialized
+legacy mapping remains supported; paused CP-037 remains off. Native image/session
+continuity and the full real-client matrix remain unqualified; bounded checks are
+recorded in the release report.
 
 ## Implemented, with remaining acceptance
 
@@ -139,8 +184,9 @@ owner deferrals. CP-035 hooks research is merged documentation, not activated ho
 
 ## Verification boundary
 
-Production call-site search confirms `WithResultFreeze`, `PrepareFrozenFinalReply`
-and `QuiesceTopic` still have no production callers; ready-plan recovery and topic
-fence restoration are wired. Proactive wiring still omits Connector. These are
+Deployed `56d1a7d` has gated production callers for `WithResultFreeze`,
+`PrepareFrozenFinalReply` and `QuiesceTopic`. The two new activation flags remain
+off in production; foreground/deletion activation and their full live acceptance
+have not occurred. Bounded provider/native acceptance is in the release report. Proactive wiring still omits Connector. These are
 implementation gaps, not failures repaired by the latest rollout. Historical test
 results, including the pre-fix queue failure, are preserved in the archive.

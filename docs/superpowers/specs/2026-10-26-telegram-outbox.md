@@ -161,3 +161,13 @@ thread retirement, scope epoch/revision changes, queue ordering, coalesced resul
 conflict, isolated task history separation, streaming final ownership and old-binary rollback fencing.
 Source-backed planned tests/files and rollout evidence are in the executable plan. This design makes
 no exactly-once Telegram guarantee and does not enqueue every preview/reaction by default.
+
+
+## Accepted foreground destination policy — 2026-11-12
+
+Per [D075](../../DECISIONS.md#d075--preserve-frozen-answers-for-disappeared-topics-without-sending),
+if the original topic disappears after a foreground answer has been frozen, retain
+that answer without sending it. Never rerun the model or automatically redirect it
+to the main chat. Preserve the delivery hold/error; saving is not delivery. Unknown
+remote attempts keep their existing evidence barriers. This policy does not activate
+the foreground producer or change legacy non-frozen fallback behavior.

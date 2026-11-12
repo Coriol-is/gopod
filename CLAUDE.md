@@ -160,7 +160,7 @@ the user before any spec or code exists for it.
 - **Git flow (owner-approved 2026-10-24).** Work happens on a feature branch
   in a git worktree, never directly on `main`. Commit there freely, open a
   PR, have it reviewed, wait for CI (`.github/workflows/ci.yml`) to go green,
-  then squash-merge. Squash title follows `<area>: <imperative summary>`.
+  then squash-merge (the documentation-only exception below applies). Squash title follows `<area>: <imperative summary>`.
   Work is autonomous unless it needs the owner's approval or an
   architectural decision; those stop and ask.
 - **Sonar is a soft gate (owner-approved 2026-11-03).** Build, vet, tests and
@@ -186,7 +186,7 @@ the user before any spec or code exists for it.
   roots. New unreachable functions and stale baseline entries fail. The explicit
   16-symbol baseline is an audit queue, not deletion approval; never auto-expand
   it to pass a commit. See [development checks](docs/DEVELOPMENT-CHECKS.md).
-- **Documentation-only validation.** Use a feature branch and docs PR. Check `git diff --check`, changed local links and consistency with current project state; no additional local full test run is needed for prose alone. Required PR checks remain green before merge. Source, dependency, workflow and executable configuration changes retain full validation. This replaces the earlier direct-push exception.
+- **Documentation-only merges (owner-approved 2026-11-12).** Use a feature branch and docs PR. When the owner requests merging prose-only PRs, resolve conflicts while preserving current project state and merge immediately: no additional local validation, reviewer approval or wait for CI reruns triggered solely by prose changes is required. If GitHub requires approval, admin merge is authorized for that explicitly requested docs-only scope. Do not disable CI or change branch protection. Source, dependency, workflow and executable configuration changes retain independent review, full validation and green mandatory CI. No direct pushes to main; documentation-only changes need no runtime redeploy.
 - **Don't add features the user didn't ask for.** This project's discipline is
   *smaller than NanoClaw*. Resist scope creep aggressively.
 
@@ -209,5 +209,5 @@ the table in [docs/ARCHITECTURE.md §2](docs/ARCHITECTURE.md).
 - Use destructive git operations (force-push, reset --hard, history
   rewrite, branch deletion on shared branches) without explicit user
   permission
-- Push straight to `main` or merge a PR with red CI
+- Push straight to `main` or merge a non-documentation PR with red mandatory CI
 - "Improve" code that the current task didn't ask you to touch

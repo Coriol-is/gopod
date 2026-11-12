@@ -232,3 +232,50 @@ func TestDurableReplyRecheckFailureIsKnownUnsent(t *testing.T) {
 		t.Fatal("known-unsent callback latched topic uncertainty")
 	}
 }
+
+func TestDurableReplyIgnoresOnlyProvenOlderLegacyCache(t *testing.T) {
+	b, _, item, _, owner := durableActionFixture(t)
+	// This fixture already reserved a durable publication. Create a later legacy
+	// presentation, ACK it, then publish a still-later durable reply.
+	legacy := turnIn(t, b, 7, 22)
+	conv, err := b.store.SnapshotConversation(t.Context(), buildChatJID(item.ChatID), 7, store.VisibilityConversation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = b.store.ReserveLegacyReplySurface(t.Context(), conv, legacy.ID); err != nil {
+		t.Fatal(err)
+	}
+	origin, err := b.store.BeginTelegramMessageOwner(t.Context(), item.ChatID, 7, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = b.store.AcknowledgeTelegramMessageOwner(t.Context(), origin, 800); err != nil {
+		t.Fatal(err)
+	}
+	if err = b.store.SetTurnReply(t.Context(), legacy.ID, 800); err != nil {
+		t.Fatal(err)
+	}
+	if err = b.store.RecordLegacyReplySurface(t.Context(), legacy.ID, 800); err != nil {
+		t.Fatal(err)
+	}
+	acknowledgeAction(t, owner, 700, false)
+	newer := turnIn(t, b, 7, 23)
+	publishAction(t, b, newer, "newest")
+	acknowledgeAction(t, owner, 701, false)
+	b.rows.last = map[chatThread]lastReply{{item.ChatID, 7}: {msgID: 800}}
+	turn, err := b.store.GetTurn(t.Context(), newer.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := cbQuery{ChatID: item.ChatID, ThreadID: 7, MessageID: 701, Chat: store.RegisteredChat{Folder: item.Folder}}
+	_, toast, err := b.replyActionViewFor(t.Context(), q, turn)
+	if err != nil || toast != "" {
+		t.Fatal(toast, err)
+	}
+	// A truly unindexed row remains conservative; message ID comparison is not evidence.
+	b.rows.last = map[chatThread]lastReply{{item.ChatID, 7}: {msgID: 2}}
+	_, toast, err = b.replyActionViewFor(t.Context(), q, turn)
+	if err != nil || toast != cbToastExpired {
+		t.Fatal(toast, err)
+	}
+}

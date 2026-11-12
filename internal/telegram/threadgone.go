@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
 
@@ -116,4 +117,15 @@ func (b *Bot) checkThreadGone(chatID int64, thread int, err error) bool {
 	}
 	b.markThreadGone(chatID, thread)
 	return true
+}
+
+// isExactTopicDeleted is deliberately narrower than legacy fallback matching.
+// The SDK wraps a typed 400 plus the API description; only the exact known
+// TOPIC_DELETED description is observation evidence. No substring/timeout rule.
+func isExactTopicDeleted(err error) bool {
+	if err == nil || noReplayError(err) || !errors.Is(err, bot.ErrorBadRequest) {
+		return false
+	}
+	message := strings.ToLower(strings.TrimSpace(err.Error()))
+	return message == "bad request, bad request: topic_deleted" || message == "bad request, topic_deleted"
 }
