@@ -514,6 +514,24 @@ func (b *Bot) runAgentSyncContext(ctx, runCtx context.Context, item queue.Item) 
 		}
 		return nil
 	}
+	if usesForegroundDelivery(ctx) {
+		b.stopWaitDraftRefresh(ctx, item)
+		if err := handoff(ctx); err != nil {
+			if errors.Is(err, queue.ErrStopped) {
+				return b.finishBufferedStopped(ctx, item)
+			}
+			return err
+		}
+		ph := b.popWaitPlaceholder(ctx, item)
+		p := FinalReplyPresentation{EditMessageID: int64(ph)}
+		if ph != 0 && foregroundMode(ctx) == "voice" && stripCodeBlocks(reply) == reply {
+			if err := b.deletePlaceholder(ctx, item.ChatID, ph); err != nil {
+				return &finalPublicationError{err}
+			}
+			p.EditMessageID = 0
+		}
+		return b.publishForeground(ctx, item, p)
+	}
 	if b.waitPlaceholder(ctx, item) != 0 {
 		if b.getReplyMode(item.ChatID, item.IsVoice) == "voice" && stripCodeBlocks(reply) == reply {
 			b.stopWaitDraftRefresh(ctx, item)
@@ -635,6 +653,20 @@ func (b *Bot) NewAgentHandler() queue.Handler {
 			return nil
 		}
 		if item.Source == "task" {
+			if item.ID > 0 && item.Attempts > 0 {
+				scope, err := b.store.SnapshotScope(ctx, item.Folder)
+				if err != nil {
+					return err
+				}
+				members := make([]store.ResultMember, 0, len(items))
+				for _, it := range items {
+					if it.ID <= 0 || it.Attempts <= 0 || it.AttemptID != "" || it.Source != "task" || it.Folder != item.Folder || it.ThreadID != item.ThreadID {
+						return fmt.Errorf("invalid scheduled selection batch")
+					}
+					members = append(members, store.ResultMember{TurnID: it.ID, Attempt: it.Attempts})
+				}
+				ctx = runner.WithScopedSelectionAttempts(ctx, scope, members)
+			}
 			return b.runTaskSilently(ctx, item)
 		}
 		bound, err := b.bindOrdinaryBatch(ctx, items)

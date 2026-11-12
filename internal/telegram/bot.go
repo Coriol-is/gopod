@@ -70,6 +70,10 @@ type Deps struct {
 	// is disabled and /register is rejected from every chat.
 	OwnerChatID int64
 
+	// TopicDeletionEnabled qualifies scoped external deletion observations as well
+	// as the explicit command. Default false preserves existing compatibility.
+	TopicDeletionEnabled bool
+
 	// GroupReason describes privately, for the owner, why a registered group is
 	// not admitted. Optional.
 	GroupReason func(ctx context.Context, jid string) string
@@ -89,41 +93,45 @@ type Deps struct {
 // cancelled (typically by SIGINT/SIGTERM in main). One Bot instance
 // corresponds to one Telegram bot token.
 type Bot struct {
-	topicTransport    runner.ConversationGate
-	topicIngress      runner.ConversationGate
-	topicFences       map[chatThread]topicFence
-	topicMu           sync.Mutex
-	topicMessages     map[topicMessageKey]chatThread
-	topicMessageOrder []topicMessageKey
-	topicUncertain    map[chatThread]bool
-	topicQuiesceMu    sync.Mutex
-	receiptMu         sync.Mutex
-	messageReceipts   map[string]messageReceipt
-	repairReceipts    map[string]repairReceipt
-	editReceipts      map[string]editReceipt
-	deleteReceipts    map[string]deleteReceipt
-	elevated          ElevatedInput
-	capabilities      *capabilityCache
-	api               *bot.Bot
-	store             *store.Store
-	runner            *runner.Runner
-	queue             *queue.Queue
-	router            *control.Router
-	allowlist         *mountsec.Allowlist
-	ownerChatID       int64
-	resolveTries      int   // test seam: negative skips the startup username resolution
-	botID             int64 // from the token; identifies replies to and mentions of this bot
-	groupReason       func(ctx context.Context, jid string) string
-	log               *slog.Logger
-	logins            *loginSessions
-	streamEnabled     bool
+	topicTransport       runner.ConversationGate
+	topicIngress         runner.ConversationGate
+	topicFences          map[chatThread]topicFence
+	topicMu              sync.Mutex
+	topicMessages        map[topicMessageKey]chatThread
+	topicMessageOrder    []topicMessageKey
+	topicUncertain       map[chatThread]bool
+	topicFenceInstallMu  sync.Mutex // serializes non-waiting fence installation
+	topicQuiesceMu       sync.Mutex
+	receiptMu            sync.Mutex
+	messageReceipts      map[string]messageReceipt
+	repairReceipts       map[string]repairReceipt
+	editReceipts         map[string]editReceipt
+	deleteReceipts       map[string]deleteReceipt
+	elevated             ElevatedInput
+	capabilities         *capabilityCache
+	api                  *bot.Bot
+	store                *store.Store
+	runner               *runner.Runner
+	queue                *queue.Queue
+	router               *control.Router
+	allowlist            *mountsec.Allowlist
+	ownerChatID          int64
+	topicDeletionEnabled bool
+	resolveTries         int   // test seam: negative skips the startup username resolution
+	botID                int64 // from the token; identifies replies to and mentions of this bot
+	groupReason          func(ctx context.Context, jid string) string
+	log                  *slog.Logger
+	logins               *loginSessions
+	streamEnabled        bool
 
 	// tts is a test seam for the legacy personal TTS call; nil means the
 	// OpenAI endpoint (textToSpeech).
 	tts func(ctx context.Context, apiKey, text string) ([]byte, error)
 	// prepared turns on immutable preparation of personal attachments
 	// (code documents, voice). Nil: legacy paths only.
-	prepared *PreparedDelivery
+	prepared           *PreparedDelivery
+	foregroundDelivery atomic.Bool
+	replyCleanupAfter  atomic.Int64
 
 	// taskRun overrides how silent scheduled turns run the agent. Tests only.
 	taskRun func(ctx context.Context, folder string, thread int, tier runner.Tier, prompt string) (string, error)
@@ -209,7 +217,13 @@ type Bot struct {
 
 	// inboundHandlers tracks our async handlers; the SDK only waits for
 	// its polling workers, not its default async handler goroutines.
-	inboundHandlers sync.WaitGroup
+	inboundHandlers         sync.WaitGroup
+	topicDeleteJobs         chan store.TopicDeletion
+	topicDeleteReceipts     map[string]topicDeleteReceipt // protected by topicMu
+	topicDeleteAllocated    int                           // reserved queued + executing + unsettled slots, topicMu
+	topicDeleteReservations map[string]bool               // topicMu
+	topicReceiptCursor      int                           // topicMu
+	topicRecoveryCursor     int                           // deletion worker only
 
 	// albums holds media groups being collected (inbound_context.go);
 	// albumClock is their window's clock, nil means the real one.
@@ -269,18 +283,20 @@ func New(token string, deps Deps) (*Bot, error) {
 	}
 
 	b := &Bot{
-		store:         deps.Store,
-		runner:        deps.Runner,
-		elevated:      deps.Elevated,
-		queue:         deps.Queue,
-		router:        deps.Router,
-		allowlist:     deps.Allowlist,
-		ownerChatID:   deps.OwnerChatID,
-		botID:         id,
-		groupReason:   deps.GroupReason,
-		log:           deps.Log,
-		logins:        newLoginSessions(),
-		streamEnabled: deps.StreamEnabled,
+		topicDeleteJobs:      make(chan store.TopicDeletion, 16),
+		store:                deps.Store,
+		runner:               deps.Runner,
+		elevated:             deps.Elevated,
+		queue:                deps.Queue,
+		router:               deps.Router,
+		allowlist:            deps.Allowlist,
+		ownerChatID:          deps.OwnerChatID,
+		topicDeletionEnabled: deps.TopicDeletionEnabled,
+		botID:                id,
+		groupReason:          deps.GroupReason,
+		log:                  deps.Log,
+		logins:               newLoginSessions(),
+		streamEnabled:        deps.StreamEnabled,
 	}
 
 	client := &http.Client{Timeout: time.Minute}
@@ -309,6 +325,24 @@ func New(token string, deps Deps) (*Bot, error) {
 	b.api = api
 	b.registerHandlers(api)
 	b.registerCallbacks()
+	if b.runner != nil {
+		b.runner.SetConversationSelectionGuard(func(ctx context.Context, folder string) error {
+			ref, err := b.store.SnapshotScope(ctx, folder)
+			if err != nil {
+				return err
+			}
+			var chat int64
+			if _, err = fmt.Sscanf(ref.JID, "tg:%d", &chat); err != nil {
+				return err
+			}
+			b.logins.mu.Lock()
+			defer b.logins.mu.Unlock()
+			if b.logins.starting[chat] || b.logins.sessions[chat] != nil {
+				return fmt.Errorf("runner: authentication is active for this chat")
+			}
+			return nil
+		})
+	}
 
 	return b, nil
 }
@@ -345,6 +379,10 @@ func (b *Bot) registerHandlers(api *bot.Bot) {
 // publish failure is logged at warn level and the bot keeps running —
 // command discovery is nice-to-have, not a hard requirement.
 func (b *Bot) Run(ctx context.Context) error {
+	deleteCtx, cancelDelete := context.WithCancel(ctx)
+	deleteDone := make(chan struct{})
+	go func() { defer close(deleteDone); b.runTopicDeletions(deleteCtx) }()
+	defer func() { cancelDelete(); <-deleteDone }()
 	recoveryCtx, cancelRecovery := context.WithCancel(ctx)
 	recoveryDone := make(chan struct{})
 	go func() { defer close(recoveryDone); b.runControlRecovery(recoveryCtx) }()

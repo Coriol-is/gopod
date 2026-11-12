@@ -75,6 +75,13 @@ func (b *Bot) recordReply(ctx context.Context, item queue.Item, msgID int, text 
 		if err := b.store.SetTurnReply(ctx, item.ID, msgID); err != nil {
 			b.log.Warn("record reply", slog.Int64("turn", item.ID), slog.Any("err", err))
 		}
+		if item.ChatID > 0 && (item.ThreadID == 0 || !b.threadGone(item.ChatID, item.ThreadID)) {
+			if err := b.store.RecordLegacyReplySurface(ctx, item.ID, msgID); err != nil {
+				b.log.Debug("legacy reply ordering remains unproven", slog.Int64("turn", item.ID), slog.Any("err", err))
+			} else {
+				b.cleanupReplyKeyboards(ctx)
+			}
+		}
 	}
 	if item.ChatID == 0 {
 		return

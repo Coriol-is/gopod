@@ -25,16 +25,25 @@ func (e *ownershipSendError) Error() string {
 func (e *ownershipSendError) Unwrap() error  { return e.cause }
 func (e *ownershipSendError) NoReplay() bool { return true }
 
-// ownedTextSend journals registered-private text sends before HTTP, including
-// topic targets and main-chat fallback. The source and effective target remain
-// bound to the attempt across the HTTP/receipt crash gap.
-func (b *Bot) ownedTextSend(ctx context.Context, chat int64, source int, p *bot.SendMessageParams) (sent *models.Message, err error) {
+// ownedTextSend preserves the existing text API through the shared creation
+// journal. Payload preparation remains with each caller.
+func (b *Bot) ownedTextSend(ctx context.Context, chat int64, source int, p *bot.SendMessageParams) (*models.Message, error) {
+	return b.ownedMessageSend(ctx, chat, source, p.MessageThreadID, func(call context.Context) (*models.Message, error) {
+		return b.api.SendMessage(call, p)
+	})
+}
+
+// ownedMessageSend journals registered-private sends before HTTP, including
+// topic targets and existing main-chat fallback. The source and effective target
+// remain bound to the attempt across the HTTP/receipt crash gap. It neither
+// authorizes new recipients nor prepares/reopens artifact data.
+func (b *Bot) ownedMessageSend(ctx context.Context, chat int64, source, target int, send func(context.Context) (*models.Message, error)) (sent *models.Message, err error) {
 	origin := topicOrigin(ctx, chat, source)
 	err = b.topicRequest(ctx, chat, source, func(callCtx context.Context) error {
 		var owner store.TelegramMessageOwner
 		if b.store != nil && chat > 0 {
 			var e error
-			owner, e = b.store.BeginTelegramMessageOwner(callCtx, chat, origin.thread, p.MessageThreadID)
+			owner, e = b.store.BeginTelegramMessageOwner(callCtx, chat, origin.thread, target)
 			if e != nil {
 				return &ownershipSendError{cause: e}
 			}
@@ -50,13 +59,26 @@ func (b *Bot) ownedTextSend(ctx context.Context, chat int64, source int, p *bot.
 			return e
 		}
 		var e error
-		sent, e = b.api.SendMessage(callCtx, p)
+		sent, e = send(callCtx)
 		if owner.AttemptID == "" {
 			return e
 		}
 		settle, cancel := context.WithTimeout(context.WithoutCancel(callCtx), 5*time.Second)
 		defer cancel()
 		if e != nil {
+			if b.topicDeletionEnabled && chat == b.ownerChatID && owner.TargetThread == owner.SourceThread && owner.SourceThread > 0 && isExactTopicDeleted(e) {
+				// The source registration was captured before HTTP. Atomically
+				// refuse this send and record the observation; do not resolve a
+				// new registration or let an outer caller reroute into main.
+				observed, observedErr := b.store.ObserveDeletedTelegramTopic(settle, owner)
+				if observedErr != nil {
+					return &ownershipSendError{attempted: true, cause: errors.Join(e, observedErr)}
+				}
+				// Installation seals/cancels but never waits for our current
+				// transport lease. The worker joins it after this call returns.
+				_, fenceErr := b.installTopicFence(observed, false)
+				return &ownershipSendError{attempted: true, receiptBacked: true, cause: errors.Join(e, fenceErr)}
+			}
 			if !definiteTopicRefusal(e) {
 				return &ownershipSendError{attempted: true, cause: e}
 			}
@@ -67,7 +89,7 @@ func (b *Bot) ownedTextSend(ctx context.Context, chat int64, source int, p *bot.
 			}
 			return e
 		}
-		if sent == nil || sent.ID <= 0 {
+		if sent == nil || sent.ID <= 0 || sent.Chat.ID != chat {
 			return &ownershipSendError{attempted: true, cause: store.ErrMessageOwnership}
 		}
 		if e = b.store.AcknowledgeTelegramMessageOwner(settle, owner, sent.ID); e != nil {

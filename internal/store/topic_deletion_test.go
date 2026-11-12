@@ -389,3 +389,68 @@ func TestTopicDeletionRegistrationChangeRequiresReconciliation(t *testing.T) {
 		t.Fatalf("unsafe reopening: %v", err)
 	}
 }
+
+func TestTopicDeletionDispatchClaimAndUnissuedRefusal(t *testing.T) {
+	s := openTestStore(t)
+	ref := ownerScope(t, s)
+	d := beginTopic(t, s, ref, 7)
+	if err := s.ClaimTopicDeletionDispatch(t.Context(), d); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ClaimTopicDeletionDispatch(t.Context(), d); !errors.Is(err, ErrTopicDeletionState) {
+		t.Fatal(err)
+	}
+	if err := s.RefuseUnissuedTopicDeletion(t.Context(), d); !errors.Is(err, ErrTopicDeletionState) {
+		t.Fatal(err)
+	}
+	fresh := beginTopic(t, s, ref, 8)
+	if err := s.RefuseUnissuedTopicDeletion(t.Context(), fresh); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ClaimTopicDeletionDispatch(t.Context(), fresh); !errors.Is(err, ErrTopicDeletionState) {
+		t.Fatal(err)
+	}
+}
+
+func TestTopicDeletionOldSchemaNeverAcquiresDispatch(t *testing.T) {
+	s := openTestStore(t)
+	ref := ownerScope(t, s)
+	d := beginTopic(t, s, ref, 7)
+	if _, err := s.db.ExecContext(t.Context(), `ALTER TABLE topic_deletions DROP COLUMN dispatch_started`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.applyTopicDeletionSchema(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ClaimTopicDeletionDispatch(t.Context(), d); !errors.Is(err, ErrTopicDeletionState) {
+		t.Fatal(err)
+	}
+	if err := s.RefuseUnissuedTopicDeletion(t.Context(), d); !errors.Is(err, ErrTopicDeletionState) {
+		t.Fatal(err)
+	}
+}
+
+func TestTopicDeletionBlocksBackupUntilSettled(t *testing.T) {
+	s := openTestStore(t)
+	ref := ownerScope(t, s)
+	d := beginTopic(t, s, ref, 7)
+	for _, state := range []string{"deleting", "uncertain", "deleted", "retired"} {
+		if state == "retired" {
+			if err := s.RetireDeletedTopic(t.Context(), d); err != nil {
+				t.Fatal(err)
+			}
+		} else if state != "deleting" {
+			if err := s.RecordTopicDeletionOutcome(t.Context(), d, state); err != nil {
+				t.Fatal(err)
+			}
+		}
+		ev, err := ReadWorkEvidence(t.Context(), s.path)
+		want := int64(1)
+		if state == "retired" {
+			want = 0
+		}
+		if err != nil || ev.TopicDeletionsPending != want {
+			t.Fatal(state, ev, err)
+		}
+	}
+}

@@ -15,6 +15,16 @@ D071 (#193) adds durable private placeholder deletion outcomes/tombstones; unkno
 results cannot reach fallback/TTS. Sonar excludes all tests by owner request;
 production-only main analysis remains over the50k plan limit. Go CI unchanged.
 
+## Active implementation — 2026-11-12
+
+Owner resumed priorities 1–3 in isolated agents. The integration branch now contains
+mixed-path reply ordering, gated immutable foreground delivery, gated confirmed
+topic deletion/recovery, and scoped provider/model routing. Shared retirement and
+preference cleanup has a transaction rollback test. Source implementation, required
+CI, merge, deployment and native acceptance are separate; none of these checkpoints
+changes the recorded Pi baseline or enables paused modes. See [BACKLOG](docs/BACKLOG.md)
+for exact remaining code/qualification boundaries. The priority order below remains.
+
 ## Status legend
 
 - ⬜ not started
@@ -339,9 +349,9 @@ implementation.
 
 | Proposal | Status | Implementation scope |
 |---|---|---|
-| CP-016 topic deletion | 🟦 | Store/outbox/ingress and native/queue/transport fences through #167 deployed; command, durable legacy ownership/reconciliation and destructive acceptance remain open |
+| CP-016 topic deletion | 🟦 | PR197 adds gated confirmation/orchestration, exact deletion observation and local retirement; historical/unknown reconciliation and disposable native/client acceptance remain open |
 | CP-017 Telegram diagnostics | ✅ | Separate Telegram settings, subscriptions, code support and contextual rights; owner doctor and scoped help; [execution plan](docs/superpowers/plans/2026-10-25-telegram-capability-diagnostics.md) implemented for private DMs; group reports/notices deferred |
-| CP-018 per-thread providers | ⬜ | Chat default plus topic overrides, provider-specific models and scoped confirmed quota fallback |
+| CP-018 per-thread providers | 🟦 | PR197 implements chat defaults, conversation overrides, immutable attempt selection and scoped quota fallback; merge/deployment and native/client qualification remain open |
 | CP-019 ephemeral command/service/error replies | ⬜ | Public conversational messages unchanged; private delivery never falls back to public |
 
 Specifications are accepted for planning only; no associated mode or routing

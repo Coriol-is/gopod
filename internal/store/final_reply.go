@@ -53,6 +53,15 @@ func (s *Store) BeginFinalReply(ctx context.Context, id string, input json.RawMe
 			if prior.InputHash != hash {
 				return ErrFinalReplyConflict
 			}
+			if prior.State != FinalReplyPublished {
+				res, err := readTurnResult(ctx, q, id)
+				if err != nil {
+					return err
+				}
+				if err = checkResultPublicationQ(ctx, q, res); err != nil {
+					return err
+				}
+			}
 			out = prior
 			return nil
 		}
@@ -65,6 +74,9 @@ func (s *Store) BeginFinalReply(ctx context.Context, id string, input json.RawMe
 		}
 		if res.Kind != ExecInteractive {
 			return ErrInvalidResult
+		}
+		if err = checkResultPublicationQ(ctx, q, res); err != nil {
+			return err
 		}
 		if err = validateConversationQ(ctx, q, res.Conversation); err != nil {
 			return err

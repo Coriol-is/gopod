@@ -46,6 +46,8 @@ var ErrOutboxShutdownTimeout = errors.New("telegram: outbox workers did not stop
 
 // OutboxConfig tunes the dispatcher. Zero values take the defaults.
 type OutboxConfig struct {
+	// Acknowledged is best-effort UI observation after durable ACK, never a retry.
+	Acknowledged func(store.OutboxClaim)
 	// Workers is the number of concurrent workers (default 1, at most 4). The
 	// per-conversation rule holds for any value: the store never hands out two
 	// parts of one conversation.
@@ -393,6 +395,9 @@ func (d *OutboxDispatcher) persist(c store.OutboxClaim, out Outcome) {
 	switch out.Kind {
 	case OutcomeAck:
 		err = d.write(func(ctx context.Context) error { return d.backend.AckPart(ctx, c, out.RemoteMessageID) })
+		if err == nil && d.cfg.Acknowledged != nil {
+			d.cfg.Acknowledged(c)
+		}
 		if err != nil {
 			// Accepted remotely but not recorded: record the truth we can,
 			// with its own retries and fresh contexts.

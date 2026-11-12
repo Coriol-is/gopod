@@ -22,3 +22,15 @@ func (r *Runner) WaitConversationQuiescent(ctx context.Context, folder string, t
 func (r *Runner) ReopenConversation(folder string, thread int, generation uint64) error {
 	return r.conversations.Reopen(folder, thread, generation)
 }
+
+// ForgetRetiredConversationCounters removes only the retired topic's transient
+// auto-compact count. Call after joining its native work and persisting retirement;
+// shared folder activity, sibling counts and admission fences remain intact.
+func (r *Runner) ForgetRetiredConversationCounters(folder string, thread int) {
+	if thread <= 0 {
+		return
+	}
+	r.turnCountMu.Lock()
+	defer r.turnCountMu.Unlock()
+	delete(r.turnCount, convKey{folder, thread})
+}

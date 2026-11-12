@@ -7,12 +7,13 @@ package telegram
 // new final reply goes out, the previous one's row is removed with
 // editMessageReplyMarkup.
 //
-// The record of which message holds the row is in memory only and is
-// not part of the durable turn (D020): after a restart the next reply
-// cannot clear the previous row, which then stays (its buttons still
-// work: Regenerate loads the turn from the store). A failed clear is
-// logged, never retried by the queue. A reply redirected to main from a
-// gone topic has no row and counts as main's newest reply.
+// The in-memory tracker below supports legacy conversations. Registered owner
+// conversations additionally use the durable reply-surface order and bounded
+// keyboard retirement journal, so known obsolete rows can be cleaned after a
+// restart. Older messages without that evidence are never backfilled. Callback
+// authorization is checked independently; removal of a button is only visual.
+// A reply redirected to main from a gone topic has no row and counts as main's
+// newest reply in this legacy tracker.
 
 import (
 	"context"

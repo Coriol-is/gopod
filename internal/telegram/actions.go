@@ -358,7 +358,9 @@ func (b *Bot) asFile(ctx context.Context, q cbQuery) (string, error) {
 	}
 	if view.durable != nil {
 		err := b.durableReplyRequest(ctx, q, turn, view, func(callCtx context.Context) error {
-			_, err := b.api.SendDocument(callCtx, &bot.SendDocumentParams{ChatID: q.ChatID, MessageThreadID: q.ThreadID, Document: &models.InputFileUpload{Filename: "reply.md", Data: strings.NewReader(memo.reply)}})
+			_, err := b.ownedMessageSend(callCtx, q.ChatID, q.ThreadID, q.ThreadID, func(sendCtx context.Context) (*models.Message, error) {
+				return b.api.SendDocument(sendCtx, &bot.SendDocumentParams{ChatID: q.ChatID, MessageThreadID: q.ThreadID, Document: &models.InputFileUpload{Filename: "reply.md", Data: strings.NewReader(memo.reply)}})
+			})
 			return err
 		})
 		if err != nil {
