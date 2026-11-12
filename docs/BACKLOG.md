@@ -11,6 +11,39 @@ Completed slices and explicitly superseded/rejected choices are in the
 [archive](history/BACKLOG-2026-11-05-completed.md). Partial parent proposals remain
 here; proposed, deferred and paused work is not cancelled.
 
+## State machine refactor, items 1-6 — 2026-11-08 (specified, paused)
+
+Source: [implicit state machines audit](reviews/2026-11-08-implicit-state-machines.md);
+briefs: [spec](superpowers/specs/2026-11-08-explicit-state-machines.md). Owner approved
+items 1-6 for parallel agent implementation and paused before dispatch. Worktrees exist
+at `da529a8` with no commits (HANDOFF table). This is the November8 audit snapshot;
+PR197 subsequently connected foreground/topic retirement callers and fixed a
+wait-refresher cancellation race. Reconcile the findings against current main before
+resuming. Merging the documentation does not resume the paused implementation.
+
+1. Turn transitions: guarded `TransitionTurn`, `execution_unknown` column, shutdown
+   race in `internal/queue/queue.go:453-489`, delete dead replay path, spec update.
+2. Managed ledger: fix `cmd/gopod/restart.go:580-593` stale reservation (verified bug,
+   gated by `GOPOD_MANAGED_TASKS`), CAS on `requestRunStopQ`, `/tasks reconcile` owner
+   command. Out of scope: `publication_state`/`result_id` removal, `OnFrozen` wiring.
+3. Restart phases: typed `RestartPhase` transition table; `restoreDrain` cancels drain
+   mode with notice, keeps force mode blocked with notice; tests for untested paths.
+4. Runner evidence: typed per-folder evidence, exec-unknown clears on proven quiescence,
+   exec/exit ordering, quarantine excludes group native containers, dead label code.
+   Out of scope: persisting evidence across restart (CP-037 overlap).
+5. Legacy tasks: `pause_reason` column replaces `next_run=-1`, status triggers,
+   `UpdateTaskStatus` compare-and-swap, `FinishTaskRun` predicate, epoch rotation
+   limited to legacy rows.
+6. Telegram: explicit login state keyed by chat+thread with shutdown-bounded contexts
+   and slot held through verification; `replyView` reducer, error placeholder, main-chat
+   final edit fallback, `waitPlaceholders` leak, dead `reusePlaceholder`.
+
+Audit findings ranked 7-15 (control message acknowledge CAS, outbox uncertain quota,
+group `Authorize` owner marker, final reply and topic deletion unwired writers, elevated
+flags, `archived` session lifecycle, generation `ready/none` overload, artifact
+`deleting` quota leak, IPC `alreadyAccepted` fail-open, memory status CHECK, trigger
+fallback to `all`) are recorded in the audit and not scheduled.
+
 ## Development hygiene follow-up — 2026-11-06
 
 PR194 adds staged-snapshot deadcode pre-commit with a16-symbol reviewed audit

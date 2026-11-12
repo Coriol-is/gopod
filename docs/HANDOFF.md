@@ -47,6 +47,44 @@ unrelated worktrees, rollback images, backups and credentials are preserved.
 The one-time admin authorization applied to PR197 only; do not infer blanket
 permission to bypass future PR approval requirements. Widget docs PR196 is separate.
 
+## Paused — explicit state machines refactor, items 1-6, 2026-11-08
+
+Read-only audit of implicit state machines is recorded in
+[reviews/2026-11-08-implicit-state-machines.md](reviews/2026-11-08-implicit-state-machines.md):
+19 machines, transitions with file:line, Mermaid diagrams, test gaps, risk ranking.
+Twelve high-impact claims were re-verified by reading the cited code; the rest come
+from five area audits that cite lines. One verified production-path bug: forced
+restart with a held managed attempt fails in `cmd/gopod/restart.go:580-593`
+(stale reservation flag after `SettleTaskAttempt` already released; gated by
+`GOPOD_MANAGED_TASKS`, untested).
+
+Owner approved refactoring ranking items 1-6 as parallel agent tasks, then paused
+before dispatch until the five-hour quota window resets. The implementer briefs are
+fixed in [specs/2026-11-08-explicit-state-machines.md](superpowers/specs/2026-11-08-explicit-state-machines.md).
+The six dedicated refactor branches remain unimplemented at base `da529a8`.
+The audit describes the November8 snapshot: PR197 subsequently connected foreground
+and topic retirement callers and fixed a wait-refresher cancellation race. Reconcile
+those changes before resuming; do not reimplement completed slices.
+Six clean worktrees exist with no commits:
+
+| Item | Branch | Worktree |
+|---|---|---|
+| 1 turn transitions | `store/turn-transitions` | `../gopod-turn-transitions` |
+| 2 managed reconcile | `tasks/managed-reconcile` | `../gopod-managed-reconcile` |
+| 3 restart phases | `restart/typed-phases` | `../gopod-restart-phases` |
+| 4 runner evidence | `runner/execution-evidence` | `../gopod-runner-evidence` |
+| 5 legacy task status | `tasks/legacy-status-check` | `../gopod-legacy-task-status` |
+| 6 login/stream state | `telegram/login-stream-state` | `../gopod-telegram-view-state` |
+
+**Next (only on explicit resume):** refresh each branch against current main, then dispatch one implementer
+per brief (spec parts 1-6) into its worktree, following `superpowers:subagent-driven-development`
+with a task review per branch. Merge order to limit conflicts in
+`internal/store/restart.go` and `cmd/gopod/restart.go`: 2 (smallest), 1, 3, then 4, 5, 6
+with a rebase before each. Controller rulings already taken are listed at the end of
+the spec's introduction and in the audit's recommendation table; items 2 and 4 keep
+their out-of-scope lists. No deployment is part of this batch until all six merge
+and the owner confirms Pi scope.
+
 ## Historical checkpoint — deadcode hook and Sonar scope, 2026-11-06
 
 Owner requested deadcode in pre-commit and exclusion of scripts/all Python from
