@@ -23,24 +23,38 @@ See [BACKLOG](BACKLOG.md#current-priority--owner-approved-2026-11-19),
 [ROADMAP](../ROADMAP.md#execution-priority--2026-11-19) and the
 [campaign scope](ACCEPTANCE.md#comprehensive-campaign--after-cp-007).
 
-### In progress — CP-002 edit settlement evidence
+### CP-002 checkpoint — source PR ready, merge blocked
 
-Branch `fix/outbox-settlement-evidence`, worktree `../gopod-outbox-settlement`,
-base `59fcd55`. Regression reproduced: `/outbox settle <edit-part> sent:99`
-accepted a different immutable edit target (42), potentially granting false reply
-authority. The Store now rejects mismatched positive evidence before mutation;
-operator listing includes operation kind and edit target. Proven-unsent cancellation
-and exact-target settlement preserve no-replay behavior. No schema/flag changes.
+[PR #200](https://github.com/Coriol-is/gopod/pull/200), head `d0044df`, branch
+`fix/outbox-settlement-evidence`, worktree `../gopod-outbox-settlement`.
+Reproduced and fixed contradictory operator settlement: an uncertain edit targeting
+message 42 accepted `sent:99`. Store validation now rejects a mismatched target
+before any mutation; `/outbox list` includes operation kind and known edit target.
+Tests cover retained uncertainty/tail blocking, exact settlement, proven-unsent
+cancellation and reply memo protection. No schema, replay or activation changes.
 
-Full build/vet/tests and targeted Store/Control race checks passed. Independent
-source review found no blockers. Source PR/required CI and merge remain pending
-at this checkpoint; no deployment. Next: source PR and required CI, then normal
-merge and Pi controller rollout gates. Broader CP-002 unknown/history and client qualification remain open.
+Full local build/vet/tests, targeted Store/Control races, deadcode hook and independent
+review passed. Required CI [44555457411](https://github.com/Coriol-is/gopod/actions/runs/44555457411)
+passed both `test` and `isolation-spike`. Sonar PR200 ERROR (maintainability C), six
+complexity/parameter-count findings reviewed and retained; advisory, not a blocker.
+Published main Sonar analysis remains stale (2026-10-26, `4e3031a`).
 
-After this slice continue CP-002/016/019/033/014/007, then broad acceptance. Per-batch
-review/CI and per-rollout backups/health checks remain required; gated features stay
-off. The full state-machine refactor, CP-037 and managed activation remain paused.
-Runtime `56d1a7d` below is recorded November 12 evidence, not a fresh live check.
+**Blocker / first action:** normal squash merge was rejected by GitHub's required
+approval rule. Obtain a GitHub approval or explicit owner authorization for a one-time
+admin source merge; the PR197 exception does not carry over. Then merge, resolve any
+handoff/backlog documentation overlap preserving this checkpoint, verify exact-main
+CI and follow normal Pi controller backup/deployment/health gates. No merge or
+deployment has occurred. Keep source worktree/branch and rollback evidence.
+
+Read-only Pi check on November19: controller startup version `56d1a7d`; all12 backup
+idle counters zero. No runtime changes or acceptance traffic. An accidental unsupported
+`gopod version` invocation waited on the controller lock and was terminated; the live
+controller was untouched. Recheck idleness before any future rollout.
+
+After this slice continue remaining CP-002/016/019/033/014/007, then comprehensive
+acceptance. Wider history/unknown reconciliation is not closed by this fix. Foreground,
+topic deletion, managed tasks and CP-037 activation remain off/paused; broad acceptance
+is deferred as requested. No proposal lifecycle is promoted.
 
 ## Recorded deployment — priorities 1–3, 2026-11-12
 
