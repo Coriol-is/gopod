@@ -87,3 +87,77 @@ func TestSettleRefusesSending(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 }
+
+func TestSettleUncertainEditRequiresExactTarget(t *testing.T) {
+	f := newDeliveryFixture(t)
+	o := f.owner()
+	req := f.publishReq("", "edited answer", "tail")
+	req.Parts[0].Kind = PartEdit
+	req.Parts[0].TargetMessageID = 42
+	d, err := f.st.PublishDelivery(t.Context(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := mustClaim(t, o, time.Now())
+	if err := o.MarkUncertain(t.Context(), c, "timeout", ""); err != nil {
+		t.Fatal(err)
+	}
+	parts, err := f.st.ListUncertainParts(t.Context())
+	if err != nil || len(parts) != 1 || parts[0].Kind != PartEdit || parts[0].TargetMessageID != 42 {
+		t.Fatalf("missing edit evidence context: %+v %v", parts, err)
+	}
+	if err := f.st.SettleUncertain(t.Context(), c.PartID, 99); !errors.Is(err, ErrInvalidDelivery) {
+		t.Fatalf("mismatched edit evidence accepted: %v", err)
+	}
+	diag, err := f.st.DeliveryDiagnostic(t.Context(), d.ID)
+	if err != nil || diag.Parts[0].State != PartUncertain || diag.Parts[0].RemoteMessageID != 0 || diag.Parts[1].State != PartPending {
+		t.Fatalf("invalid evidence mutated delivery: %+v %v", diag, err)
+	}
+	noClaim(t, o, time.Now())
+	if err := f.st.SettleUncertain(t.Context(), c.PartID, 42); err != nil {
+		t.Fatal(err)
+	}
+	next := mustClaim(t, o, time.Now())
+	if string(next.Part.Payload) != "tail" {
+		t.Fatalf("unexpected next part: %+v", next)
+	}
+}
+
+func TestSettleUncertainEditPreservesReplyAuthority(t *testing.T) {
+	for _, sent := range []bool{false, true} {
+		t.Run(map[bool]string{false: "unsent", true: "sent"}[sent], func(t *testing.T) {
+			f := newDeliveryFixture(t)
+			o := f.owner()
+			turnID := f.turn("telegram", "1:1", 0, 1)
+			result := f.freeze(ExecInteractive, "answer", ResultMember{TurnID: turnID, Attempt: 1})
+			req := f.publishReq(result.ID, "answer")
+			req.Parts[0].Kind, req.Parts[0].TargetMessageID = PartEdit, 42
+			if _, err := f.st.PublishDelivery(t.Context(), req); err != nil {
+				t.Fatal(err)
+			}
+			c := mustClaim(t, o, time.Now())
+			if err := o.MarkUncertain(t.Context(), c, "timeout", ""); err != nil {
+				t.Fatal(err)
+			}
+			if err := f.st.SettleUncertain(t.Context(), c.PartID, 99); !errors.Is(err, ErrInvalidDelivery) {
+				t.Fatal(err)
+			}
+			turn, err := f.st.GetTurn(t.Context(), turnID)
+			if err != nil || turn.ReplyMsgID != 0 {
+				t.Fatalf("false reply authority: %+v %v", turn, err)
+			}
+			id := int64(0)
+			if sent {
+				id = 42
+			}
+			if err := f.st.SettleUncertain(t.Context(), c.PartID, id); err != nil {
+				t.Fatal(err)
+			}
+			turn, err = f.st.GetTurn(t.Context(), turnID)
+			if err != nil || int64(turn.ReplyMsgID) != id {
+				t.Fatalf("reply authority: %+v %v", turn, err)
+			}
+			noClaim(t, o, time.Now())
+		})
+	}
+}

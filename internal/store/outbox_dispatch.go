@@ -722,15 +722,17 @@ func (s *Store) DeliveryDiagnostic(ctx context.Context, id string) (DeliveryDiag
 
 // UncertainPart identifies an unresolved delivery without exposing its payload.
 type UncertainPart struct {
-	PartID    string
-	ChatJID   string
-	ThreadID  int
-	ExpiresAt int64
+	PartID          string
+	ChatJID         string
+	ThreadID        int
+	ExpiresAt       int64
+	Kind            PartKind
+	TargetMessageID int64
 }
 
 // ListUncertainParts returns a bounded operator queue, including expired parts.
 func (s *Store) ListUncertainParts(ctx context.Context) ([]UncertainPart, error) {
-	rows, err := s.taskDB(ctx).QueryContext(ctx, `SELECT p.part_id,g.chat_jid,g.thread_id,g.expires_at FROM outbox_parts p JOIN delivery_groups g ON g.delivery_id=p.delivery_id WHERE p.state='uncertain' ORDER BY p.updated_at,p.part_id LIMIT 100`)
+	rows, err := s.taskDB(ctx).QueryContext(ctx, `SELECT p.part_id,g.chat_jid,g.thread_id,g.expires_at,p.kind,p.target_message_id FROM outbox_parts p JOIN delivery_groups g ON g.delivery_id=p.delivery_id WHERE p.state='uncertain' ORDER BY p.updated_at,p.part_id LIMIT 100`)
 	if err != nil {
 		return nil, fmt.Errorf("store: list uncertain parts: %w", err)
 	}
@@ -738,7 +740,7 @@ func (s *Store) ListUncertainParts(ctx context.Context) ([]UncertainPart, error)
 	var out []UncertainPart
 	for rows.Next() {
 		var p UncertainPart
-		if err := rows.Scan(&p.PartID, &p.ChatJID, &p.ThreadID, &p.ExpiresAt); err != nil {
+		if err := rows.Scan(&p.PartID, &p.ChatJID, &p.ThreadID, &p.ExpiresAt, &p.Kind, &p.TargetMessageID); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -757,11 +759,18 @@ func (s *Store) SettleUncertain(ctx context.Context, partID string, messageID in
 		var c OutboxClaim
 		var result sql.NullString
 		var state string
-		if err := q.QueryRowContext(ctx, `SELECT p.state,p.delivery_id,g.result_id FROM outbox_parts p JOIN delivery_groups g ON g.delivery_id=p.delivery_id WHERE p.part_id=?`, partID).Scan(&state, &c.DeliveryID, &result); err != nil {
+		var kind PartKind
+		var targetMessageID int64
+		if err := q.QueryRowContext(ctx, `SELECT p.state,p.delivery_id,g.result_id,p.kind,p.target_message_id FROM outbox_parts p JOIN delivery_groups g ON g.delivery_id=p.delivery_id WHERE p.part_id=?`, partID).Scan(&state, &c.DeliveryID, &result, &kind, &targetMessageID); err != nil {
 			return err
 		}
 		if state != PartUncertain {
 			return ErrClaimLost
+		}
+		// An edit cannot have succeeded on a different physical message. Reject
+		// contradictory evidence before changing any state or reply authority.
+		if messageID > 0 && kind == PartEdit && messageID != targetMessageID {
+			return fmt.Errorf("%w: edit evidence must match target message %d", ErrInvalidDelivery, targetMessageID)
 		}
 		c.PartID, c.ResultID = partID, result.String
 		now := time.Now().UnixMilli()
