@@ -22,11 +22,15 @@ func RegisterOutboxCommands(r *Router, st *store.Store) {
 				var b strings.Builder
 				b.WriteString("Uncertain deliveries (up to 100):\n")
 				for _, p := range parts {
-					fmt.Fprintf(&b, "%s — %s thread %d\n", p.PartID, p.ChatJID, p.ThreadID)
+					fmt.Fprintf(&b, "%s — %s thread %d %s", p.PartID, p.ChatJID, p.ThreadID, p.Kind)
+					if p.Kind == store.PartEdit {
+						fmt.Fprintf(&b, " target %d", p.TargetMessageID)
+					}
+					b.WriteByte('\n')
 				}
 				text = b.String()
 			}
-			return Response{Text: text + "\nUsage: /outbox settle <part-id> sent:<message-id>|unsent. Unsent cancels this delivery; it does not resend.", Data: map[string]any{"parts": parts}}, nil
+			return Response{Text: text + "\nUsage: /outbox settle <part-id> sent:<message-id>|unsent. For edits, sent evidence must match the listed target. Unsent cancels this delivery; it does not resend.", Data: map[string]any{"parts": parts}}, nil
 		}
 		if len(cmd.Args) != 3 || cmd.Args[0] != "settle" {
 			return Response{Text: "Usage: /outbox settle <part-id> sent:<message-id>|unsent", Code: 1}, nil

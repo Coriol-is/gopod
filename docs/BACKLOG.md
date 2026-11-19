@@ -105,6 +105,15 @@ remains paused; only concrete blockers become separately bounded fixes. CP-037 a
 managed activation remain paused/off. CP-041 stays design-only outside this queue.
 This planning update starts no implementation, acceptance run or activation.
 
+## CP-002 current implementation slice — 2026-11-19
+
+Edit settlement evidence validation is in progress on `fix/outbox-settlement-evidence`
+(base `59fcd55`). Reproduced contradictory `sent:<id>` evidence for an immutable
+edit target; patch rejects mismatches transactionally and exposes kind/target in the
+operator listing. Tests cover retained uncertainty, blocked tail, exact settlement,
+proven-unsent cancellation and reply memo protection. Not yet merged/deployed;
+this does not implement generic historical/unknown-effect reconciliation.
+
 ## Latest placeholder deletion slice — 2026-11-06
 
 #193 (`0200892`, D071) journals the sole registered-private sync voice-placeholder

@@ -670,3 +670,14 @@ Stale confirmations, Docker unavailable, busy session, changed/missing container
 and failed teardown are distinct refusals. Unknown teardown retains modal routing
 and blocks execution; use `/root stop` again after Docker recovery. Start is
 refused when Docker cannot enforce the required resource limits.
+
+## Outbox uncertainty evidence
+
+Owner-only `/outbox list` shows uncertain part IDs, chat/thread, operation kind and
+known edit target without payloads. `/outbox settle <part-id> sent:<message-id>|unsent`
+requires confirmation. Positive evidence for an edit must equal its immutable target;
+contradictory IDs are rejected without releasing uncertainty or granting reply
+authority. For new sends the owner must supply the actual observed message ID.
+`unsent` means proven not sent and cancels the remaining delivery without replay.
+The command validates evidence consistency; it does not query Telegram to prove
+delivery, resolve legacy journals or authorize arbitrary unknown-effect clearing.

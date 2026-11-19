@@ -23,22 +23,24 @@ See [BACKLOG](BACKLOG.md#current-priority--owner-approved-2026-11-19),
 [ROADMAP](../ROADMAP.md#execution-priority--2026-11-19) and the
 [campaign scope](ACCEPTANCE.md#comprehensive-campaign--after-cp-007).
 
-**First action for the next execution task:** inspect current CP-002 source and
-PR197 evidence; identify a bounded remaining owner-private delivery/reconciliation
-gap and its tests before starting a source worktree. Do not reimplement shipped
-ordering, keyboard retirement, preview/Stop/publication callers or private nontext
-provenance. Group/unregistered and wider historical compatibility stay separate
-unless evidence makes them safety dependencies. Then proceed through the queue.
+### In progress — CP-002 edit settlement evidence
 
-Per-batch tests/races, review and mandatory CI remain required. Per-rollout backups
-and health/version/state checks continue. The final campaign defers broad client/
-provider acceptance only; no dependent feature may activate before safety gates pass.
-CP-007 restore qualification still precedes automation activation. Paused refactor,
-CP-037, managed activation and widget design-only boundaries remain unchanged.
+Branch `fix/outbox-settlement-evidence`, worktree `../gopod-outbox-settlement`,
+base `59fcd55`. Regression reproduced: `/outbox settle <edit-part> sent:99`
+accepted a different immutable edit target (42), potentially granting false reply
+authority. The Store now rejects mismatched positive evidence before mutation;
+operator listing includes operation kind and edit target. Proven-unsent cancellation
+and exact-target settlement preserve no-replay behavior. No schema/flag changes.
 
-Documentation only in this session: no implementation, acceptance run, activation
-or deployment. Runtime `56d1a7d` and flag states below remain November 12 recorded
-evidence, not a new live check. No CP status is promoted.
+Full build/vet/tests and targeted Store/Control race checks passed. Independent
+source review found no blockers. Source PR/required CI and merge remain pending
+at this checkpoint; no deployment. Next: source PR and required CI, then normal
+merge and Pi controller rollout gates. Broader CP-002 unknown/history and client qualification remain open.
+
+After this slice continue CP-002/016/019/033/014/007, then broad acceptance. Per-batch
+review/CI and per-rollout backups/health checks remain required; gated features stay
+off. The full state-machine refactor, CP-037 and managed activation remain paused.
+Runtime `56d1a7d` below is recorded November 12 evidence, not a fresh live check.
 
 ## Recorded deployment — priorities 1–3, 2026-11-12
 
