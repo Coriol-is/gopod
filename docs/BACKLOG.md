@@ -1,8 +1,8 @@
 # Code-backed backlog
 
-Implementation/deployment checkpoint 2026-11-12: PR197 merged as `56d1a7d` and
+Implementation/deployment checkpoint 2026-11-19: PR200 merged as `371dc04` and
 Pi controller deployment passed health/version/state/backup verification.
-[Release evidence](deployments/2026-11-12-priority-rollout.md). Foreground and topic
+[Release evidence](deployments/2026-11-19-outbox-settlement-rollout.md). Foreground and topic
 deletion remain gated off; scoped provider selection is live with bounded acceptance.
 [ROADMAP](../ROADMAP.md) owns priority, [proposal registry](proposals/README.md)
 owns lifecycle and [ACCEPTANCE](ACCEPTANCE.md) owns client/provider qualification.
@@ -105,14 +105,14 @@ remains paused; only concrete blockers become separately bounded fixes. CP-037 a
 managed activation remain paused/off. CP-041 stays design-only outside this queue.
 This planning update starts no implementation, acceptance run or activation.
 
-## CP-002 source checkpoint — 2026-11-19
+## CP-002 completed settlement slice — 2026-11-19
 
-[PR #200](https://github.com/Coriol-is/gopod/pull/200), `d0044df`, rejects contradictory
-positive settlement evidence for immutable edit targets and lists operation/target
-context. Full local checks, races, independent review and required CI passed.
-Merge is blocked by required GitHub approval; no deployment. Sonar PR ERROR is
-advisory (six complexity/parameter findings). Broader reconciliation and native/client
-acceptance remain open. See HANDOFF for the exact next action.
+[PR #200](https://github.com/Coriol-is/gopod/pull/200) merged/deployed as `371dc04`:
+contradictory positive edit settlement is rejected and operator listing exposes the
+immutable target. Full local checks, races, review, required PR/main CI and Pi
+health/hash/state/backup checks passed. Sonar PR ERROR remains advisory.
+[Release](deployments/2026-11-19-outbox-settlement-rollout.md). Broader historical/
+unknown reconciliation and native/client acceptance remain open; flags stay off.
 
 ## Latest placeholder deletion slice — 2026-11-06
 
@@ -153,7 +153,7 @@ and bounded acceptance passed; see [handoff](HANDOFF.md). Parent activation gate
 
 ## Current deployed baseline
 
-PRs #168–#180/#182/#183/#186/#187/#189/#191/#193/#197 are deployed on Pi, latest `56d1a7d`; no worker. Exact-main CI,
+PRs #168–#180/#182/#183/#186/#187/#189/#191/#193/#197/#200 are deployed on Pi, latest `371dc04`; no worker. Exact-main CI,
 health, state preservation and Telegram version passed. Three D068 scheduling
 guides migrated; actual matching Node consumer passed read-only list/replay/conflict.
 [Latest deployment and cleanup evidence](deployments/2026-11-12-priority-rollout.md);

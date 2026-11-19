@@ -23,40 +23,31 @@ See [BACKLOG](BACKLOG.md#current-priority--owner-approved-2026-11-19),
 [ROADMAP](../ROADMAP.md#execution-priority--2026-11-19) and the
 [campaign scope](ACCEPTANCE.md#comprehensive-campaign--after-cp-007).
 
-### CP-002 checkpoint — source PR ready, merge blocked
+### CP-002 checkpoint — edit settlement fix deployed, 2026-11-19
 
-[PR #200](https://github.com/Coriol-is/gopod/pull/200), head `d0044df`, branch
-`fix/outbox-settlement-evidence`, worktree `../gopod-outbox-settlement`.
-Reproduced and fixed contradictory operator settlement: an uncertain edit targeting
-message 42 accepted `sent:99`. Store validation now rejects a mismatched target
-before any mutation; `/outbox list` includes operation kind and known edit target.
-Tests cover retained uncertainty/tail blocking, exact settlement, proven-unsent
-cancellation and reply memo protection. No schema, replay or activation changes.
+[PR #200](https://github.com/Coriol-is/gopod/pull/200) merged as `371dc04` with the
+owner's explicit one-time admin source-merge authorization; it is not a general
+source bypass. Contradictory `sent:<id>` evidence for an immutable edit target is
+rejected before mutation; owner listing exposes operation kind and edit target.
+Full build/vet/tests, targeted races, deadcode, independent review, required PR
+CI44556376294 and exact-main CI44564682905 passed. Sonar PR ERROR remains advisory
+(six complexity/parameter findings), with no findings suppressed.
 
-Full local build/vet/tests, targeted Store/Control races, deadcode hook and independent
-review passed. Required CI [44555457411](https://github.com/Coriol-is/gopod/actions/runs/44555457411)
-passed both `test` and `isolation-spike`. Sonar PR200 ERROR (maintainability C), six
-complexity/parameter-count findings reviewed and retained; advisory, not a blocker.
-Published main Sonar analysis remains stale (2026-10-26, `4e3031a`).
+Pi controller deployed at 2026-11-19 16:24 UTC: exact binary hash, healthy, restart0,
+OOMfalse, all12 idle counters zero. Registered chats, sessions, scheduled tasks,
+conversation preferences and execution sessions retained identical full-row hashes.
+Matched-stopped and post-rollout backups passed scratch verification. No agent/worker
+image or credentials changed. [Release evidence](deployments/2026-11-19-outbox-settlement-rollout.md).
 
-**Blocker / first action:** normal squash merge was rejected by GitHub's required
-approval rule. Obtain a GitHub approval or explicit owner authorization for a one-time
-admin source merge; the PR197 exception does not carry over. Then merge, resolve any
-handoff/backlog documentation overlap preserving this checkpoint, verify exact-main
-CI and follow normal Pi controller backup/deployment/health gates. No merge or
-deployment has occurred. Keep source worktree/branch and rollback evidence.
+**Next:** continue source-backed CP-002 unknown/history reconciliation gaps under
+existing evidence/no-replay contracts; do not reimplement this settlement guard.
+Then CP-016/019/033/014/007, followed by comprehensive acceptance. This fix does not
+provide generic legacy-journal settlement or prove unknown remote outcomes.
+Foreground, topic deletion, managed tasks and CP-037 remain off/paused. No broad
+client/provider acceptance performed. Source worktree and remote branch retained;
+no pending merge approval for this slice. No parent CP lifecycle is promoted.
 
-Read-only Pi check on November19: controller startup version `56d1a7d`; all12 backup
-idle counters zero. No runtime changes or acceptance traffic. An accidental unsupported
-`gopod version` invocation waited on the controller lock and was terminated; the live
-controller was untouched. Recheck idleness before any future rollout.
-
-After this slice continue remaining CP-002/016/019/033/014/007, then comprehensive
-acceptance. Wider history/unknown reconciliation is not closed by this fix. Foreground,
-topic deletion, managed tasks and CP-037 activation remain off/paused; broad acceptance
-is deferred as requested. No proposal lifecycle is promoted.
-
-## Recorded deployment — priorities 1–3, 2026-11-12
+## Historical deployment — priorities 1–3, 2026-11-12
 
 PR197 is squash-merged as `56d1a7d` after explicit owner authorization for a one-time
 admin merge. Required PR and exact-main CI, independent reviews, build/vet/tests
@@ -354,15 +345,15 @@ full visual/native/client matrix or full restore qualification.
 
 ## Release and recovery pointers
 
-- Deployed source: `56d1a7decd3061ef308898805fc82102318ea549`; exact-main
-  [CI43289167370](https://github.com/Coriol-is/gopod/actions/runs/43289167370) passed.
+- Deployed source: `371dc040d480288aa3de5189a384aeca1cb618c1`; exact-main
+  [CI44564682905](https://github.com/Coriol-is/gopod/actions/runs/44564682905) passed.
 - Pi: `ssh spaceinvaderz@192.168.1.128`; checkout `~/gopod`, data `/opt/gopod/data`,
   mounted workspace repository `/opt/gopod/repo`.
-- Rollback: `gopod-rollback:pre-56d1a7d`; preserve prior rollback images and backups.
-- Verified matched-stopped set `20261112T192455Z-ms-c62b8cd3`; post-migration
-  database-only set `20261112T192601Z-db-6dfbb091`.
-- Evidence `/tmp/gopod-release-56d1a7d` on Pi; durable
-  [release report](deployments/2026-11-12-priority-rollout.md).
+- Rollback: `gopod-rollback:pre-371dc04`; preserve prior rollback images and backups.
+- Verified matched-stopped set `20261119T162326Z-ms-eb7e19d4`; post-migration
+  database-only set `20261119T162424Z-db-37b991eb`.
+- Evidence `/tmp/gopod-release-371dc04` on Pi; durable
+  [release report](deployments/2026-11-19-outbox-settlement-rollout.md).
 - Preserve task claim spool and SQLite ledgers before downgrade; full workspace,
   auth/session/IPC restore remains unqualified. No automatic old-binary rollback.
 - Guide originals `~/gopod-backups/consumer-migration-757faa2` and prior cleanup

@@ -17,7 +17,8 @@ Full `go build ./...`, `go vet ./...`, `go test ./...` passed. Targeted
 Store/Control race checks passed. Tests establish retained uncertainty/tail blocking,
 exact-target progress, unsent cancellation and prevention of false reply authority.
 Independent review found no blockers in source/tests; no pending review findings.
-Required CI, merge and deployment remain separate gates. Broad native/client
+Required PR/main CI, merge and controller deployment subsequently passed; see
+[release evidence](../deployments/2026-11-19-outbox-settlement-rollout.md). Broad native/client
 acceptance is deferred to the owner-approved final campaign.
 
 Historical ownership and legacy-journal unknown reconciliation remain open. This

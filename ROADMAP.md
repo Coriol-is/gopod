@@ -1,9 +1,9 @@
 # gopod — Roadmap
 
-Latest rollout: `56d1a7d` on Pi, 2026-11-12 19:25 UTC, includes PR197/D072–D075;
+Latest rollout: `371dc04` on Pi, 2026-11-19 16:24 UTC, includes PR200 and PR197/D072–D075;
 no worker. Required PR/main CI, backups and health/version/state verification pass.
 Foreground/topic deletion remain off; scoped provider selection is live with bounded
-acceptance. [Evidence](docs/deployments/2026-11-12-priority-rollout.md).
+acceptance. [Evidence](docs/deployments/2026-11-19-outbox-settlement-rollout.md).
 
 
 Live milestone tracker. Update the **Status** column whenever you change reality.
@@ -40,8 +40,8 @@ qualification remain separate from this verified controller rollout. See
 ## Current backlog — 2026-11-19
 
 The [active code-backed backlog](docs/BACKLOG.md) separates shipped implementation
-from remaining acceptance and activation. Last recorded Pi deployment is `56d1a7d`
-on 2026-11-12; no live runtime verification was performed for this reprioritization.
+from remaining acceptance and activation. Latest verified Pi deployment is `371dc04` on 2026-11-19 (PR200 edit settlement
+evidence guard); health/hash/state/backup checks passed. Broad acceptance stays deferred.
 Foreground and topic deletion callers are connected but gated off. CP-018 is live
 with bounded acceptance, CP-040 is deployed, and managed tasks remain off.
 
