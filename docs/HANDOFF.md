@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-12 (priorities 1–3 merged and deployed)
+**Last updated:** 2026-11-19 (owner-approved acceptance-first reprioritization)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -13,7 +13,31 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — priorities 1–3 deployed, 2026-11-12
+## Resume here — acceptance-first queue, 2026-11-19
+
+Owner approved documenting this order: **CP-018 acceptance → CP-040 acceptance →
+CP-002 bounded owner-private delivery → CP-016 retirement → CP-019 → CP-033 →
+CP-014 → CP-007**. See [BACKLOG](BACKLOG.md#current-priority--owner-approved-2026-11-19)
+and [ROADMAP](../ROADMAP.md#execution-priority--2026-11-19) for completion gates.
+
+**First action for the next execution task:** inspect current runtime/auth state
+and existing acceptance evidence, then check CP-018 provider/model independence in
+two topics, provider alternation/inheritance and native session continuity. Record
+actual client results before closing acceptance. Next complete CP-040 A22–A25.
+Coordinate one Telegram actor and avoid deployment/auth overlap.
+
+For CP-002, separate group/unregistered and wider historical compatibility into a
+later stage. First verify that deferring them is safe for the owner-private scope;
+real safety dependencies and unknown/reconciliation gaps still block cutover.
+CP-016 follows delivery, with disposable-topic acceptance only. The six-task
+state-machine refactor remains paused; concrete acceptance blockers may be scoped
+as individual fixes. Widgets remain design-only, after delivery stabilization.
+
+This session changes documentation only: no implementation, acceptance run,
+activation or deployment. Runtime `56d1a7d` and flag states below are the last
+recorded November 12 evidence, not a fresh live check. No CP status is promoted.
+
+## Recorded deployment — priorities 1–3, 2026-11-12
 
 PR197 is squash-merged as `56d1a7d` after explicit owner authorization for a one-time
 admin merge. Required PR and exact-main CI, independent reviews, build/vet/tests
@@ -36,9 +60,7 @@ matrix remain open. CP-037 parallel/session activation and managed tasks remain
 paused/off. Owner decision D075: save a gone-topic frozen answer without sending,
 rerunning the model or redirecting to main. There is no pending destination choice.
 
-Next: qualify the remaining group/unregistered scope and historical/unknown
-reconciliation boundaries, native/client delivery parity and disposable-topic
-retirement before activation. No existing user topic deletion is authorized.
+The November 19 queue above supersedes the rollout's old next-action order.
 Do not reopen implemented slices or call these partial parents fully complete.
 
 Rollout documentation PR198 is merged. State-machine audit PR195 and widget
@@ -291,17 +313,13 @@ Separate 556 KiB NanoClaw/OneCLI/systemd archives retained. No broad Docker prun
 
 ## Next implementation and acceptance
 
-Use [active backlog](BACKLOG.md) for remaining scope and
-[ROADMAP](../ROADMAP.md#execution-priority--2026-11-04) for order.
-Before foreground cutover, resolve group/unregistered scope policy, historical
-missing provenance and explicit unknown reconciliation, and qualify the integrated
-preview/Stop/publication paths. Ordering, eager keyboard retirement and registered-
-private document/voice/As-file ownership are now implemented in PR197.
-`WithResultFreeze`, final preparation and `QuiesceTopic` have production callers;
-foreground and `/thread delete` remain disabled by their default-off gates.
-Gone-topic frozen output remains saved without sending or rerunning the model (D075).
-Do not reopen completed #168–#177 slices. Older "next" lists above describe the
-historical deployments, not missing source in deployed `56d1a7d`.
+Follow the acceptance-first order in [ROADMAP](../ROADMAP.md#execution-priority--2026-11-19)
+and the completion gates in [BACKLOG](BACKLOG.md#current-priority--owner-approved-2026-11-19).
+CP-018 and CP-040 acceptance precede CP-002 bounded owner-private qualification.
+Ordering, eager keyboard retirement and private nontext ownership shipped in PR197;
+foreground and topic deletion remain off. D075 preserves frozen gone-topic answers.
+Historical next-action lists above describe earlier deployments, not current missing
+source or execution order. No acceptance checks were run in this documentation task.
 
 Managed-task credentials remain owner-deferred and activation off. CP-037 P2–P7
 and T5/T5b remain paused; P0/P1 are deployed in legacy mapping. T9 cgroup/reboot
