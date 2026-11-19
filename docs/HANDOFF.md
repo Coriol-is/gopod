@@ -67,10 +67,11 @@ Rollout documentation PR198 is merged. State-machine audit PR195 and widget
 specification PR196 preserve their paused/design-only boundaries; neither authorizes
 implementation. Runtime remains `56d1a7d`; these documentation merges need no deploy.
 Source and unrelated worktrees, rollback images, backups and credentials are retained.
-Owner policy (2026-11-12): requested docs-only PRs may merge immediately after conflict
-resolution without additional validation or approval. Use admin merge for that
-explicitly requested docs-only scope when GitHub requires approval; source changes
-retain normal gates. PR197's source admin exception was one-time only.
+Owner policy (2026-11-19): prose-only documentation may be committed/pushed
+without a PR; existing docs PRs may be merged autonomously without reviewer approval
+or waiting for prose-only CI reruns. Admin docs merge is authorized when needed.
+Source changes retain normal worktree/PR/review/CI gates. See CLAUDE.md.
+PR197's source admin exception was one-time only.
 
 ## Current design — Telegram widgets, 2026-11-11
 
