@@ -23,22 +23,38 @@ See [BACKLOG](BACKLOG.md#current-priority--owner-approved-2026-11-19),
 [ROADMAP](../ROADMAP.md#execution-priority--2026-11-19) and the
 [campaign scope](ACCEPTANCE.md#comprehensive-campaign--after-cp-007).
 
-**First action for the next execution task:** inspect current CP-002 source and
-PR197 evidence; identify a bounded remaining owner-private delivery/reconciliation
-gap and its tests before starting a source worktree. Do not reimplement shipped
-ordering, keyboard retirement, preview/Stop/publication callers or private nontext
-provenance. Group/unregistered and wider historical compatibility stay separate
-unless evidence makes them safety dependencies. Then proceed through the queue.
+### CP-002 checkpoint — source PR ready, merge blocked
 
-Per-batch tests/races, review and mandatory CI remain required. Per-rollout backups
-and health/version/state checks continue. The final campaign defers broad client/
-provider acceptance only; no dependent feature may activate before safety gates pass.
-CP-007 restore qualification still precedes automation activation. Paused refactor,
-CP-037, managed activation and widget design-only boundaries remain unchanged.
+[PR #200](https://github.com/Coriol-is/gopod/pull/200), head `d0044df`, branch
+`fix/outbox-settlement-evidence`, worktree `../gopod-outbox-settlement`.
+Reproduced and fixed contradictory operator settlement: an uncertain edit targeting
+message 42 accepted `sent:99`. Store validation now rejects a mismatched target
+before any mutation; `/outbox list` includes operation kind and known edit target.
+Tests cover retained uncertainty/tail blocking, exact settlement, proven-unsent
+cancellation and reply memo protection. No schema, replay or activation changes.
 
-Documentation only in this session: no implementation, acceptance run, activation
-or deployment. Runtime `56d1a7d` and flag states below remain November 12 recorded
-evidence, not a new live check. No CP status is promoted.
+Full local build/vet/tests, targeted Store/Control races, deadcode hook and independent
+review passed. Required CI [44555457411](https://github.com/Coriol-is/gopod/actions/runs/44555457411)
+passed both `test` and `isolation-spike`. Sonar PR200 ERROR (maintainability C), six
+complexity/parameter-count findings reviewed and retained; advisory, not a blocker.
+Published main Sonar analysis remains stale (2026-10-26, `4e3031a`).
+
+**Blocker / first action:** normal squash merge was rejected by GitHub's required
+approval rule. Obtain a GitHub approval or explicit owner authorization for a one-time
+admin source merge; the PR197 exception does not carry over. Then merge, resolve any
+handoff/backlog documentation overlap preserving this checkpoint, verify exact-main
+CI and follow normal Pi controller backup/deployment/health gates. No merge or
+deployment has occurred. Keep source worktree/branch and rollback evidence.
+
+Read-only Pi check on November19: controller startup version `56d1a7d`; all12 backup
+idle counters zero. No runtime changes or acceptance traffic. An accidental unsupported
+`gopod version` invocation waited on the controller lock and was terminated; the live
+controller was untouched. Recheck idleness before any future rollout.
+
+After this slice continue remaining CP-002/016/019/033/014/007, then comprehensive
+acceptance. Wider history/unknown reconciliation is not closed by this fix. Foreground,
+topic deletion, managed tasks and CP-037 activation remain off/paused; broad acceptance
+is deferred as requested. No proposal lifecycle is promoted.
 
 ## Recorded deployment — priorities 1–3, 2026-11-12
 

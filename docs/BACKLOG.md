@@ -105,6 +105,15 @@ remains paused; only concrete blockers become separately bounded fixes. CP-037 a
 managed activation remain paused/off. CP-041 stays design-only outside this queue.
 This planning update starts no implementation, acceptance run or activation.
 
+## CP-002 source checkpoint — 2026-11-19
+
+[PR #200](https://github.com/Coriol-is/gopod/pull/200), `d0044df`, rejects contradictory
+positive settlement evidence for immutable edit targets and lists operation/target
+context. Full local checks, races, independent review and required CI passed.
+Merge is blocked by required GitHub approval; no deployment. Sonar PR ERROR is
+advisory (six complexity/parameter findings). Broader reconciliation and native/client
+acceptance remain open. See HANDOFF for the exact next action.
+
 ## Latest placeholder deletion slice — 2026-11-06
 
 #193 (`0200892`, D071) journals the sole registered-private sync voice-placeholder
