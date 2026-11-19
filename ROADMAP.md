@@ -35,87 +35,60 @@ qualification remain separate from this verified controller rollout. See
 
 ---
 
-## Current backlog — 2026-11-04
+<a id="current-backlog--2026-11-04"></a>
 
-Refreshed 2026-11-06 at `0200892`. The [active code-backed backlog](docs/BACKLOG.md)
-contains remaining implementation and acceptance scope. Pi `0200892` includes
-#168–#180/#182/#183/#186/#187/#189/#191/#193; the foreground producer is disconnected, managed tasks are off and
-CP-037 remains legacy. Health/version and bounded D068 consumer checks passed.
-[Rollout](docs/deployments/2026-11-06-durable-delete-rollout.md).
+## Current backlog — 2026-11-19
 
-Completed queue/delivery/Stop/IPC slices and superseded queues have moved to the
-[completed ledger](docs/history/BACKLOG-2026-11-05-completed.md) and
-[roadmap snapshot](docs/history/ROADMAP-2026-11-05-before-housekeeping.md).
-Stable milestone IDs and their implementation record below remain a reference,
-not extra active queue entries. Partial proposals are not marked complete.
+The [active code-backed backlog](docs/BACKLOG.md) separates shipped implementation
+from remaining acceptance and activation. Last recorded Pi deployment is `56d1a7d`
+on 2026-11-12; no live runtime verification was performed for this reprioritization.
+Foreground and topic deletion callers are connected but gated off. CP-018 is live
+with bounded acceptance, CP-040 is deployed, and managed tasks remain off.
 
-CP-002 bounded draft/Stop-keyboard generation fix merged in #178 (`da8b4fe`),
-with review and required CI passed; wait maps/durable control binding followed
-in #179 (`bbc30b4`) with the same gates passed. Both deployed in `80f4b11`. Integrated
-lifecycle qualification, reply-action parity and foreground cutover remain open.
+Completed slices remain in the [completed ledger](docs/history/BACKLOG-2026-11-05-completed.md)
+and linked deployment/review reports. Historical milestone identifiers below do
+not define execution priority or close partial parent proposals.
 
-CP-002 keyboard-refusal fallback merged in #180 (`6722e6a`), with full checks,
-races, independent review and required CI passed; deployed in `80f4b11`. Advisory Sonar
-ERROR on duplication is recorded in the [review](docs/reviews/2026-11-05-outbox-keyboard-fallback.md).
-Durable reply-action readthrough followed in #183 (`261805e`), with full checks,
-races, independent review and required CI passed; deployed in `80f4b11`. Local arbitration and More/Back retirement checkpoints followed in #187;
-D069 repairs now hold unknowns durably; historical/non-repair reconciliation, eager cleanup, mixed-path ordering and
-foreground lifecycle qualification remain open.
+<a id="execution-priority--2026-11-04"></a>
 
-CP-016 noncontrol main-text notice ownership merged in #182 (`0ac9b3f`);
-restart/lifecycle/IPC reuse durable receipt/no-replay handling. Full checks,
-races, independent review and required CI PASS; deployed in `80f4b11`. Historical/nontext
-ownership, unknown outcomes, managed/native settlement and deletion remain open.
+## Execution priority — 2026-11-19
 
-#186 (`6faa197`) extends text ownership to private topic targets; #187 (`0cd8078`)
-adds local control/final edit arbitration and fixes repair scheduling/requeue.
-Full checks, races, independent review and required CI PASS. Deployed in `0cd8078`;
-parent activation gates remain; D069 below supplies the durable repair barrier.
+Owner-approved reprioritization: close acceptance of enabled features, then qualify
+bounded delivery and topic retirement. This replaces the November 4–5 order.
 
-#189 (`a85b328`, D069) adds durable repair attempts and conservative restart barriers,
-exact DB-only settlement, outbox preclaim holds and backup/idle evidence. Full
-checks/races, independent review and required CI PASS; deployed in `a85b328`. Historical
-and non-repair uncertainty plus wider foreground qualification remain open.
-
-#191 (`6820422`, D070) covers registered-private direct edits with durable provenance,
-exact attempt receipts, raw-target barriers and NoReplay through outer streaming/voice
-paths. Full checks/races, independent review and required CI PASS; deployed in `6820422`.
-Groups/unregistered/history/non-edit effects and broader foreground gates remain.
-
-## Execution priority — 2026-11-04
-
-Owner-approved order, refreshed 2026-11-05 after removing completed queue repair.
-Backup remains lowered. This replaces historical queue recommendations without
-changing activation flags, CP lifecycle or owner deferrals.
-
-| Order | Deliverable | Why now / completion gate |
+| Order | Deliverable | Completion gate |
 |---|---|---|
-| 1 | CP-002 foreground delivery, with the necessary CP-003 slices | Finish an existing reliability investment: wire freeze/preparation/publication with fallback, previews, cancellation and reply-action parity. D063/D065 and staged acceptance remain the activation gates. Protected-challenge work follows its existing contract; do not redo shipped attachment delivery. |
-| 2 | CP-016 complete topic retirement | Finish durable ownership, ambiguity reconciliation and managed settlement before command orchestration. Qualify native-login exit and the full confirmed API/outcome/retirement path under D064. The command stays unavailable until these gates pass. |
-| 3 | CP-018 per-conversation provider/model selection | Follows CP-016 as already agreed; delivers everyday conversation control. Reconcile with CP-037 routing contracts without activating paused parallel execution. |
-| 4 | CP-019 group command/service UX | Bounded user-visible improvement after core conversation reliability; keep ordinary group output public. |
-| 5 | CP-033 connector readiness and discovery | Finish probe/setup/recheck/offer behavior around already shipped presets. Do not add more presets before readiness is trustworthy; connector consent remains with the owner. |
-| 6 | CP-014 media queues | Q1 fidelity/cards/links first, then Q2 document/image/speech, then Q3 video. Keep each queue separately reviewable. |
-| 7 — lowered by owner | CP-007 recoverability, then automation | Existing snapshots do not cover full session/auth/workspace recovery. First complete capture coverage, restore epoch handling and the restore/activation path; qualify an isolated scratch restore and Pi drill without overwriting live state. Then timer/retention under the accepted maintenance window. Do not expand this into CP-039 migration or online matched mode. |
+| 1 | CP-018 provider/model acceptance | Two-topic independence, provider alternation, inheritance and native session continuity with actual client evidence. Already deployed; do not rebuild the feature. |
+| 2 | CP-040 attachment acceptance | A22–A25: fresh Claude/Codex discovery, photo/document, refusal and flag-off cases. |
+| 3 | CP-002 owner-private foreground delivery | Unknown-outcome/reconciliation safety, preview/Stop/restart/publication and client parity before bounded cutover. D063/D065/D072/D075 and operational gates remain. |
+| 4 | CP-016 topic retirement | Qualify quiescence, ambiguity and native/managed settlement as applicable; verify confirmed API/outcome/local retirement on a disposable topic under D064/D073 before activation. |
+| 5 | CP-019 group command/service UX | Keep ordinary group output public. |
+| 6 | CP-033 connector readiness and discovery | Probe/setup/recheck/offer lifecycle before adding presets; retain owner consent. |
+| 7 | CP-014 media queues | Q1 fidelity/cards/links, then Q2 document/image/speech, then Q3 video. |
+| 8 — lowered | CP-007 recoverability, then automation | Capture/session/auth/workspace coverage, restore epochs and isolated restore/Pi drill before timer/retention; preserve live state. |
 
-**Acceptance lane, alongside independent implementation:** CP-040 A22–A25 first,
-then remaining ordinary Stop/restart and CP-020 provider/isolation checks. Keep
-one Telegram actor and avoid overlapping tests with deployment or auth changes.
-Record partial results honestly; visual/native checks require their actual evidence.
-Flag-off/restart cases need a suitable isolated setup or the applicable operational
-authorization. CP-038 Claude browser completion waits for the owner-mediated login
-step; it does not block ordinary reliability work. Optional-runtime health checks
-run when those runtimes are used; no standalone reboot project is introduced.
-Any confirmed security, data-loss or ordinary user-facing failure found here moves
-ahead of feature work, with the evidence and revised priority recorded.
+**CP-002 staging:** group/unregistered support and wider historical compatibility
+are a separate later stage, not an indefinitely expanding first priority. No
+position ahead of CP-016 is assigned to that stage. Before bounded activation,
+verify that deferred paths are not safety dependencies of owner-private delivery;
+any actual dependency blocks cutover. Unknown outcomes cannot be cleared by timeout,
+absence inference or replay. Gone-topic frozen results stay saved without sending.
 
-**Held outside the active sequence:** CP-004 broad managed-task activation remains
-blocked on the owner-deferred credential adapter; only settlement primitives needed
-by CP-002/CP-016 belong in those slices. CP-037 P2–P7/T5/T5b remain paused. CP-035 hooks,
-CP-039 migration, new providers/runtimes and other proposed research stay deferred.
-CP-011/012/032/034 remain accepted designs outside this execution sequence.
-No new dates or effort estimates are asserted before each slice is scoped.
+**Acceptance coordination:** one Telegram actor; no overlap with deployment/auth
+changes. Remaining Stop/restart and CP-020 isolation checks accompany relevant stages.
+Flag-off/restart checks require an isolated setup or applicable operational authority.
+CP-038 Claude browser completion remains open; optional-runtime checks run when used.
+Confirmed security, data-loss or ordinary user-facing failures precede feature work.
 
+**Held outside the sequence:** the six state-machine refactor tasks remain paused;
+only concrete acceptance blockers should become separately bounded fixes. CP-041
+widgets remain design-only and follow delivery stabilization, with no implementation
+authorization. CP-037 P2–P7/T5/T5b remain paused; CP-004 managed activation still
+requires the deferred credential adapter. CP-035 hooks, CP-039 migration and proposed
+research remain deferred; CP-011/012/032/034 retain accepted design scope.
+
+This reprioritization changes planning only. No acceptance results, deployment,
+flag activation or CP lifecycle transition are asserted.
 
 ## Planning candidates — 2026-10-26
 

@@ -20,7 +20,8 @@ because Codex reads `AGENTS.md`, not `CLAUDE.md`. Do not duplicate rules here.
 - Git flow is identical for every agent: feature branch in a separate worktree
   (`git worktree add ../gopod-<topic> -b <branch> main`), never edit `main` directly,
   PR, green CI (`.github/workflows/ci.yml`), squash-merge with `<area>: <summary>`.
-  No force-push, no pushes to `main`, no remote branch deletion without owner approval.
+  Prose-only documentation follows the direct-push exception in `CLAUDE.md`.
+  No force-push, no non-documentation pushes to `main`, no remote branch deletion without owner approval.
 - Verify with `go build ./... && go vet ./... && go test ./...` (add `-race` for
   concurrency changes). CI also runs the Docker isolation job; it needs Docker.
 - Env var names the agent must see must not contain KEY/SECRET/TOKEN (Codex strips them).
