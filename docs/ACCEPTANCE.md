@@ -8,6 +8,39 @@ Last reconciled: 2026-11-05 against deployed `757faa2`. Code merged/deployed
 is distinct from a real-client scenario being accepted. Items below remain pending
 unless explicit evidence is linked. No new live checks were run by this docs refresh.
 
+## Comprehensive campaign — after CP-007
+
+Planning revision 2026-11-19: the owner selected implementation of the whole queue
+CP-002 → CP-016 → CP-019 → CP-033 → CP-014 → CP-007 before broad acceptance.
+This schedules checks; it adds no results. Per-batch tests/review/CI and per-rollout
+health/version/state/backup verification continue. Safety prerequisites precede
+activation, including restore qualification before automated recovery maintenance.
+
+Before execution, reconcile all implemented proposal/milestone areas and current
+source against this register; map every area to scenarios, including existing A IDs.
+Extend missing scenarios instead of assuming this initial grouping is exhaustive.
+
+| Area | Required campaign coverage |
+|---|---|
+| Provider/model and sessions (CP-018) | Two-topic independence, defaults/inheritance, provider alternation, native continuity/recreation, quota consent and scoped clear. |
+| Attachments (CP-040 A22–A25) | Fresh Claude/Codex discoverability, photo/document, refusal and flag-off behavior. |
+| Delivery and typed output (CP-002/003) | Text/code/file/voice presentation, previews, buttons, immutable publication, unknown outcomes/reconciliation, Stop/restart and no replay/reroute. |
+| Topic retirement (CP-016) | Disposable-topic confirmation, refusal/unknown holds, quiescence, local recovery and scoped preference cleanup; preserve siblings/main. |
+| Group UX and isolation (CP-019/020) | Commands/service messages, permissions, scope boundaries and provider/client cases. |
+| Connectors/proactive (CP-033) | Readiness/setup/recheck/discovery, consent, unavailable providers and schedule behavior within implemented scope. |
+| Media (CP-014) | Implemented Q1/Q2/Q3 fidelity, cards/links, documents/images/speech/video and refusal paths. |
+| Recovery and automation (CP-007) | Isolated scratch restore, session/auth/workspace/IPC coverage, epoch handling, Pi drill and qualified timer/retention behavior without overwriting live state. |
+| Other shipped behavior | All remaining register scenarios: tasks/scheduling/IPC, memory, controls/diagnostics, login/elevated (CP-038), healthchecks, Stop/restart and optional runtimes. |
+
+Run on a recorded revision/configuration with one Telegram actor and no overlapping
+deployment/auth changes. Record pass/fail/blocked/not-applicable, exact evidence and
+reason for every exclusion. API acknowledgements alone do not establish visual or
+native-client acceptance. Credentials, unavailable runtimes and paused feature gates
+remain explicit blockers/exclusions; the campaign does not activate CP-037, managed
+tasks or widgets. Use disposable destructive fixtures; preserve real user data.
+Repair failures with focused regression checks and rerun affected scenarios before
+closing them. Never mark an entire feature accepted from a partial result.
+
 ## Latest rollout acceptance — 2026-11-05 15:12 UTC
 
 Pi `757faa2`, exact-main CI and isolated readiness passed; health/state preservation

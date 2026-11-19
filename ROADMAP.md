@@ -53,42 +53,46 @@ not define execution priority or close partial parent proposals.
 
 ## Execution priority — 2026-11-19
 
-Owner-approved reprioritization: close acceptance of enabled features, then qualify
-bounded delivery and topic retirement. This replaces the November 4–5 order.
+Owner-approved revision: complete the entire implementation queue through CP-007,
+then perform comprehensive acceptance of all implemented features. This supersedes
+the earlier November 19 acceptance-first order.
 
-| Order | Deliverable | Completion gate |
+| Order | Deliverable | Implementation boundary / later acceptance |
 |---|---|---|
-| 1 | CP-018 provider/model acceptance | Two-topic independence, provider alternation, inheritance and native session continuity with actual client evidence. Already deployed; do not rebuild the feature. |
-| 2 | CP-040 attachment acceptance | A22–A25: fresh Claude/Codex discovery, photo/document, refusal and flag-off cases. |
-| 3 | CP-002 owner-private foreground delivery | Unknown-outcome/reconciliation safety, preview/Stop/restart/publication and client parity before bounded cutover. D063/D065/D072/D075 and operational gates remain. |
-| 4 | CP-016 topic retirement | Qualify quiescence, ambiguity and native/managed settlement as applicable; verify confirmed API/outcome/local retirement on a disposable topic under D064/D073 before activation. |
-| 5 | CP-019 group command/service UX | Keep ordinary group output public. |
-| 6 | CP-033 connector readiness and discovery | Probe/setup/recheck/offer lifecycle before adding presets; retain owner consent. |
-| 7 | CP-014 media queues | Q1 fidelity/cards/links, then Q2 document/image/speech, then Q3 video. |
-| 8 — lowered | CP-007 recoverability, then automation | Capture/session/auth/workspace coverage, restore epochs and isolated restore/Pi drill before timer/retention; preserve live state. |
+| 1 | CP-002 owner-private foreground delivery | Close source-backed delivery/reconciliation gaps; preserve D063/D065/D072/D075. Full native/client acceptance and cutover remain gated. |
+| 2 | CP-016 topic retirement | Complete ownership/quiescence/reconciliation/retirement gaps under D064/D073; later destructive acceptance uses disposable topics only. |
+| 3 | CP-019 group command/service UX | Keep ordinary group output public; implement the accepted group UX scope. |
+| 4 | CP-033 connector readiness and discovery | Probe/setup/recheck/offer lifecycle; preserve owner consent and avoid adding presets before readiness is trustworthy. |
+| 5 | CP-014 media queues | Q1 fidelity/cards/links → Q2 document/image/speech → Q3 video. |
+| 6 | CP-007 recoverability, then automation | Capture/session/auth/workspace coverage, restore epochs and safe restore path; isolated restore qualification before timer/retention activation. |
+| 7 | Comprehensive acceptance of implemented features | CP-018, CP-040 A22–A25, the six implementation stages and all other implemented feature areas; evidence and explicit unresolved gates in ACCEPTANCE. |
 
 **CP-002 staging:** group/unregistered support and wider historical compatibility
-are a separate later stage, not an indefinitely expanding first priority. No
-position ahead of CP-016 is assigned to that stage. Before bounded activation,
-verify that deferred paths are not safety dependencies of owner-private delivery;
-any actual dependency blocks cutover. Unknown outcomes cannot be cleared by timeout,
-absence inference or replay. Gone-topic frozen results stay saved without sending.
+remain a separate later stage unless they are safety dependencies of bounded
+owner-private operation. Document actual dependencies; no unknown outcome is cleared
+by timeout, absence inference or replay. Gone-topic frozen results stay saved.
 
-**Acceptance coordination:** one Telegram actor; no overlap with deployment/auth
-changes. Remaining Stop/restart and CP-020 isolation checks accompany relevant stages.
-Flag-off/restart checks require an isolated setup or applicable operational authority.
-CP-038 Claude browser completion remains open; optional-runtime checks run when used.
-Confirmed security, data-loss or ordinary user-facing failures precede feature work.
+**Checks during implementation:** build/vet/tests, relevant races, independent
+review and mandatory CI remain per source batch. Rollout health/version/state and
+verified backups remain mandatory. Defer the broad user-facing campaign, not checks
+needed to safely implement or deploy. Features stay off until their activation gates
+pass; CP-007 restore prerequisites still precede automation activation.
 
-**Held outside the sequence:** the six state-machine refactor tasks remain paused;
-only concrete acceptance blockers should become separately bounded fixes. CP-041
-widgets remain design-only and follow delivery stabilization, with no implementation
-authorization. CP-037 P2–P7/T5/T5b remain paused; CP-004 managed activation still
-requires the deferred credential adapter. CP-035 hooks, CP-039 migration and proposed
-research remain deferred; CP-011/012/032/034 retain accepted design scope.
+**Final campaign:** use the [campaign scope](docs/ACCEPTANCE.md#comprehensive-campaign--after-cp-007)
+to cover all implemented features, including previously shipped features. Reconcile
+coverage against current code and proposal status before running. One Telegram actor,
+no deployment/auth overlap, disposable destructive fixtures, and explicit evidence
+for pass/fail/blocked/not-applicable. Missing credentials/runtime or paused scope
+remain visible blockers/exclusions; no blanket completion claim.
 
-This reprioritization changes planning only. No acceptance results, deployment,
-flag activation or CP lifecycle transition are asserted.
+**Held outside the sequence:** six-task state-machine refactor, CP-037 P2–P7/T5/T5b
+and managed activation remain paused; only concrete blockers are individual fixes.
+CP-041 widgets remain design-only, outside this implementation batch. CP-035 hooks,
+CP-039 migration and proposed research remain deferred; CP-011/012/032/034 retain
+accepted design scope. Confirmed security/data-loss/user-facing failures take priority.
+
+This update records planning only; no implementation, acceptance, deployment,
+activation or CP lifecycle change is claimed.
 
 ## Planning candidates — 2026-10-26
 

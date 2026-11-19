@@ -66,39 +66,44 @@ Owner scope for this batch: merge/push only, no deployment.
 
 ## Current priority — owner-approved 2026-11-19
 
-Complete acceptance of enabled features before widening implementation. This order
-supersedes the previous CP-002 → CP-016 → CP-018 sequence; it does not change CP
-lifecycle, activation flags or the recorded deployment baseline.
+Owner revised the order: finish the whole implementation queue through CP-007,
+then run one comprehensive acceptance campaign for all implemented features.
+This supersedes the earlier November 19 acceptance-first order. CP lifecycle,
+activation flags and the last recorded deployment baseline are unchanged.
 
-1. **CP-018 acceptance:** verify provider/model independence across two topics,
-   provider alternation and native session continuity, including inherited settings.
-   Record actual client/native evidence; the bounded Codex check is not completion.
-2. **CP-040 acceptance:** complete A22–A25 for fresh Claude/Codex discovery,
-   photo/document delivery, refusal and flag-off behavior.
-3. **CP-002 bounded owner-private foreground delivery:** qualify unknown outcomes,
-   explicit reconciliation, integrated preview/Stop/restart/publication and client
-   parity in this scope before cutover. Keep group/unregistered support and wider
-   historical compatibility as a separate later stage, with no position ahead of
-   CP-016 by default. First prove these deferred paths are not safety dependencies
-   of the bounded rollout; any dependency remains a blocker, not a waived gate.
-   Mixed-path ordering, keyboard retirement and private nontext provenance already
-   shipped in PR197. D075 still preserves gone-topic frozen answers without sending.
-4. **CP-016 topic retirement:** finish quiescence/reconciliation qualification and
-   confirmed deletion/local retirement acceptance using a disposable test topic.
-   Existing user topics are not authorized for deletion. Activation stays gated.
-5. **CP-019** group command/service UX.
-6. **CP-033** connector readiness and discovery.
-7. **CP-014** media: Q1 fidelity/cards → Q2 document/image/speech → Q3 video.
-8. **CP-007** full recovery, then automation; remains lowered by the owner.
+1. **CP-002 bounded owner-private foreground delivery:** finish source-backed
+   unknown-outcome/reconciliation and preview/Stop/restart/publication gaps.
+   Preserve shipped PR197 ordering, keyboard retirement and private provenance.
+   Group/unregistered support and wider historical compatibility remain a separate
+   later stage unless proved necessary for safe owner-private operation; document
+   dependencies before deferring them. D075 preserves gone-topic frozen answers.
+2. **CP-016 topic retirement:** finish remaining ownership, quiescence,
+   reconciliation and local retirement implementation. Preserve conservative holds
+   for unknown native/remote effects and the disposable-topic acceptance boundary.
+3. **CP-019** group command/service UX.
+4. **CP-033** connector readiness, setup/recheck and discovery.
+5. **CP-014** media: Q1 fidelity/cards → Q2 document/image/speech → Q3 video.
+6. **CP-007** full recoverability first, then automation. Qualify isolated restore
+   safety before enabling timers/retention; preserve live data and credentials.
+7. **Comprehensive acceptance:** reconcile every implemented feature against
+   [ACCEPTANCE](ACCEPTANCE.md#comprehensive-campaign--after-cp-007), including
+   CP-018 provider/model and CP-040 A22–A25, delivery/topic retirement, group UX,
+   connectors, media, recovery, Stop/restart, isolation and elevated/runtime cases.
+   Record pass/fail/blocked/not-applicable with evidence; do not equate deployed
+   code or API acknowledgement with native/client acceptance.
 
-Remaining Stop/restart and CP-020 isolation checks accompany the relevant stages;
-coordinate one Telegram actor and avoid deployment/auth overlap. Confirmed security,
-data-loss or ordinary user-facing failures take precedence with recorded evidence.
-The six-item state-machine refactor remains paused: select only concrete blockers
-of these checks as separately bounded fixes, without resuming the full batch.
-CP-041 widgets stay design-only, after delivery stabilization; implementation still
-requires an owner request. CP-037 and managed-task activation remain paused/off.
-This documentation change starts no implementation, acceptance run or activation.
+CP-018 and CP-040 acceptance move to the final campaign; they are not new
+implementation tasks. Found defects get bounded fixes. Build/vet/tests, relevant
+races, independent review and mandatory CI still run per source batch. Deployment
+health/version/state/backup checks remain per rollout; only the broad user-facing
+acceptance campaign is deferred. Safety-critical prerequisites cannot be postponed
+past dependent activation; gated features remain off until their gates pass.
+
+Coordinate one Telegram actor during acceptance. Confirmed security, data-loss or
+ordinary user-facing failures take precedence. The six-item state-machine refactor
+remains paused; only concrete blockers become separately bounded fixes. CP-037 and
+managed activation remain paused/off. CP-041 stays design-only outside this queue.
+This planning update starts no implementation, acceptance run or activation.
 
 ## Latest placeholder deletion slice — 2026-11-06
 
@@ -180,7 +185,7 @@ recorded in the release report.
 
 ## Accepted designs and deferred candidates
 
-CP-018 acceptance now leads the queue. CP-019 group service UX and
+CP-018 acceptance belongs to the final campaign. CP-019 group service UX and
 CP-014 media queues remain in the approved later order; existing per-chat
 provider and media functionality does not complete these broader designs.
 CP-011/012/032/034 retain accepted design scope. CP-005/006/021–030/035/039 retain

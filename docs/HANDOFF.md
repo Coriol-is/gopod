@@ -1,6 +1,6 @@
 # gopod — current handoff
 
-**Last updated:** 2026-11-19 (owner-approved acceptance-first reprioritization)
+**Last updated:** 2026-11-19 (owner-approved implementation-first reprioritization)
 
 Read this first; use [ROADMAP](../ROADMAP.md) for the
 approved queue, [proposal registry](proposals/README.md) for CP status and
@@ -13,29 +13,32 @@ per-check permission. See [CLAUDE.md](../CLAUDE.md#workflow-rules). Older refere
 to "owner in Telegram" do not require handing automatable checks back to the
 owner. No acceptance result or deployment status changes with this instruction.
 
-## Resume here — acceptance-first queue, 2026-11-19
+## Resume here — implementation first, then comprehensive acceptance, 2026-11-19
 
-Owner approved documenting this order: **CP-018 acceptance → CP-040 acceptance →
-CP-002 bounded owner-private delivery → CP-016 retirement → CP-019 → CP-033 →
-CP-014 → CP-007**. See [BACKLOG](BACKLOG.md#current-priority--owner-approved-2026-11-19)
-and [ROADMAP](../ROADMAP.md#execution-priority--2026-11-19) for completion gates.
+Owner explicitly selected the **whole queue through CP-007, then acceptance**:
+**CP-002 → CP-016 → CP-019 → CP-033 → CP-014 → CP-007 → comprehensive acceptance**.
+This supersedes the earlier acceptance-first order. CP-018 and CP-040 acceptance
+move to the final campaign, which covers all implemented features, not only new code.
+See [BACKLOG](BACKLOG.md#current-priority--owner-approved-2026-11-19),
+[ROADMAP](../ROADMAP.md#execution-priority--2026-11-19) and the
+[campaign scope](ACCEPTANCE.md#comprehensive-campaign--after-cp-007).
 
-**First action for the next execution task:** inspect current runtime/auth state
-and existing acceptance evidence, then check CP-018 provider/model independence in
-two topics, provider alternation/inheritance and native session continuity. Record
-actual client results before closing acceptance. Next complete CP-040 A22–A25.
-Coordinate one Telegram actor and avoid deployment/auth overlap.
+**First action for the next execution task:** inspect current CP-002 source and
+PR197 evidence; identify a bounded remaining owner-private delivery/reconciliation
+gap and its tests before starting a source worktree. Do not reimplement shipped
+ordering, keyboard retirement, preview/Stop/publication callers or private nontext
+provenance. Group/unregistered and wider historical compatibility stay separate
+unless evidence makes them safety dependencies. Then proceed through the queue.
 
-For CP-002, separate group/unregistered and wider historical compatibility into a
-later stage. First verify that deferring them is safe for the owner-private scope;
-real safety dependencies and unknown/reconciliation gaps still block cutover.
-CP-016 follows delivery, with disposable-topic acceptance only. The six-task
-state-machine refactor remains paused; concrete acceptance blockers may be scoped
-as individual fixes. Widgets remain design-only, after delivery stabilization.
+Per-batch tests/races, review and mandatory CI remain required. Per-rollout backups
+and health/version/state checks continue. The final campaign defers broad client/
+provider acceptance only; no dependent feature may activate before safety gates pass.
+CP-007 restore qualification still precedes automation activation. Paused refactor,
+CP-037, managed activation and widget design-only boundaries remain unchanged.
 
-This session changes documentation only: no implementation, acceptance run,
-activation or deployment. Runtime `56d1a7d` and flag states below are the last
-recorded November 12 evidence, not a fresh live check. No CP status is promoted.
+Documentation only in this session: no implementation, acceptance run, activation
+or deployment. Runtime `56d1a7d` and flag states below remain November 12 recorded
+evidence, not a new live check. No CP status is promoted.
 
 ## Recorded deployment — priorities 1–3, 2026-11-12
 
@@ -314,9 +317,10 @@ Separate 556 KiB NanoClaw/OneCLI/systemd archives retained. No broad Docker prun
 
 ## Next implementation and acceptance
 
-Follow the acceptance-first order in [ROADMAP](../ROADMAP.md#execution-priority--2026-11-19)
+Follow the implementation-first order in [ROADMAP](../ROADMAP.md#execution-priority--2026-11-19)
 and the completion gates in [BACKLOG](BACKLOG.md#current-priority--owner-approved-2026-11-19).
-CP-018 and CP-040 acceptance precede CP-002 bounded owner-private qualification.
+Complete CP-002/016/019/033/014/007 implementation before the comprehensive
+acceptance campaign; CP-018 and CP-040 are included in that campaign.
 Ordering, eager keyboard retirement and private nontext ownership shipped in PR197;
 foreground and topic deletion remain off. D075 preserves frozen gone-topic answers.
 Historical next-action lists above describe earlier deployments, not current missing
